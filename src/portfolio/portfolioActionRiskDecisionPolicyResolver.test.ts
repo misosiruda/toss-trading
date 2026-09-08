@@ -261,21 +261,24 @@ test("policy-bound risk creation waits for activation fsync and fails without a 
   try {
     await storePolicyFixture(directory, fixture);
     const eventPath = createRuntimePortfolioPolicyActivationPaths(directory).eventsPath;
-    const eventStat = await stat(eventPath);
+    const eventStat = await stat(eventPath, { bigint: true });
     const probe = await open(eventPath, "r+");
     const prototype = Object.getPrototypeOf(probe) as FileHandle;
     const originalSync = prototype.sync;
     await probe.close();
     let syncedAt: number | null = null;
+    let successfulSourceSyncs = 0;
     let failSync = true;
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() });
     const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
-      const metadata = await this.stat();
+      const metadata = await this.stat({ bigint: true });
       if (metadata.isFile() && metadata.ino === eventStat.ino &&
         (process.platform === "win32" || metadata.dev === eventStat.dev)) {
         if (failSync) throw new Error("injected activation fsync failure");
-        await new Promise((resolve) => setTimeout(resolve, 20));
         await originalSync.call(this);
+        context.mock.timers.setTime(Date.now() + 20);
         syncedAt = Date.now();
+        successfulSourceSyncs++;
         return;
       }
       return originalSync.call(this);
@@ -287,11 +290,12 @@ test("policy-bound risk creation waits for activation fsync and fails without a 
       assert.deepEqual(await repository.readAll(), []);
       failSync = false;
       const record = await repository.createAndAppendWithPolicyOrigin(creationInput);
+      assert.equal(successfulSourceSyncs, 1);
       const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(await repository.readVerifiedHistory(), record.riskDecisionId);
       assert.ok(syncedAt !== null);
       assert.ok(Date.parse(origin.policyOrigin!.observedAt) >= syncedAt);
       assert.ok(Date.parse(record.decidedAt) >= syncedAt);
-    } finally { mock.mock.restore(); }
+    } finally { mock.mock.restore(); context.mock.timers.reset(); }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -420,7 +424,7 @@ test("plan-bound risk resolver rejects rehashed receipts and missing stored plan
 test("plan-bound risk waits for plan and event sync and preserves failures without a decision", async (context) => {
   for (const sourceKind of ["plan", "events"] as const) await withPlanFixture("BUY", false, async ({ directory, repository, candidate }) => {
     const path = sourceKind === "plan" ? createRebalancePlanPaths(directory).recordsPath : createRebalancePlanEventPaths(directory).eventsPath;
-    const sourceStat = await stat(path);
+    const sourceStat = await stat(path, { bigint: true });
     const probe = await open(path, "r+");
     const prototype = Object.getPrototypeOf(probe) as FileHandle;
     const originalSync = prototype.sync;
@@ -428,7 +432,7 @@ test("plan-bound risk waits for plan and event sync and preserves failures witho
     let failSync = true;
     let syncedAt = 0;
     const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
-      const own = await this.stat();
+      const own = await this.stat({ bigint: true });
       if (own.isFile() && own.ino === sourceStat.ino && (process.platform === "win32" || own.dev === sourceStat.dev)) {
         if (failSync) throw new Error("injected plan source fsync failure");
         await new Promise((resolve) => setTimeout(resolve, 10));
@@ -607,8 +611,8 @@ test("plan-bound persistence holds the activation lock through Risk fsync and re
     await probe.close();
     let checked = false;
     const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
-      const own = await this.stat();
-      const source = await stat(path).catch(() => undefined);
+      const own = await this.stat({ bigint: true });
+      const source = await stat(path, { bigint: true }).catch(() => undefined);
       if (!checked && source !== undefined && own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev)) {
         checked = true;
         await assert.rejects(retire(), /lock is unavailable/);
@@ -752,7 +756,7 @@ test("mandate retry preserves original generation and rejects lost or replaced o
 test("mandate-bound creation waits for both source syncs and holds source lock through Risk commit", async (context) => {
   await withMandateFixture("BUY", async ({ directory, repository, candidate, mandate, mandates }) => {
     const paths = createInvestmentMandatePaths(directory);
-    const metadata = await Promise.all([stat(paths.recordsPath), stat(paths.eventsPath)]);
+    const metadata = await Promise.all([stat(paths.recordsPath, { bigint: true }), stat(paths.eventsPath, { bigint: true })]);
     const probe = await open(paths.recordsPath, "r+");
     const prototype = Object.getPrototypeOf(probe) as FileHandle;
     const originalSync = prototype.sync;
@@ -764,7 +768,7 @@ test("mandate-bound creation waits for both source syncs and holds source lock t
     const synced = new Map<number, number>();
     let commitProbed = false;
     const syncMock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
-      const own = await this.stat();
+      const own = await this.stat({ bigint: true });
       const sourceIndex = metadata.findIndex((source) => own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev));
       if (sourceIndex >= 0) {
         if (failingIndex === sourceIndex) throw new Error("injected mandate fsync failure");
@@ -984,7 +988,7 @@ test("snapshot-bound Risk fails closed on source fsync and holds the Snapshot le
     const snapshots = new PortfolioSizingSnapshotFileRepository(directory, { lockTimeoutMs: 30, lockRetryDelayMs: 5 });
     const extra = snapshotFixture(candidate, false, { portfolioVersion: "v2" });
     const path = createPortfolioSizingSnapshotPaths(directory).recordsPath;
-    const source = await stat(path);
+    const source = await stat(path, { bigint: true });
     const probe = await open(path, "r+");
     const prototype = Object.getPrototypeOf(probe) as FileHandle;
     const originalSync = prototype.sync;
@@ -993,7 +997,7 @@ test("snapshot-bound Risk fails closed on source fsync and holds the Snapshot le
     let failSync = true;
     let commitProbed = false;
     const syncMock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
-      const own = await this.stat();
+      const own = await this.stat({ bigint: true });
       if (failSync && own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev)) throw new Error("injected snapshot fsync failure");
       return originalSync.call(this);
     });
@@ -1386,7 +1390,7 @@ test("price-bound Risk fails closed on price fsync and retains the source lock t
     const prices = new SourcePriceEvidenceFileRepository(directory, { lockTimeoutMs: 30, lockRetryDelayMs: 5 });
     const extra = createSourcePriceEvidenceRecord({ ...pricePayload(candidate), sourceContractId: "fixture-price-next", priceKrw: 101 });
     const path = createSourcePriceEvidencePaths(directory).recordsPath;
-    const source = await stat(path);
+    const source = await stat(path, { bigint: true });
     const probe = await open(path, "r+");
     const prototype = Object.getPrototypeOf(probe) as FileHandle;
     const originalSync = prototype.sync;
@@ -1395,7 +1399,7 @@ test("price-bound Risk fails closed on price fsync and retains the source lock t
     let failSync = true;
     let commitProbed = false;
     const syncMock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
-      const own = await this.stat();
+      const own = await this.stat({ bigint: true });
       if (failSync && own.isFile() && own.ino === source.ino && (process.platform === "win32" || own.dev === source.dev)) throw new Error("injected price fsync failure");
       return originalSync.call(this);
     });
@@ -2504,8 +2508,8 @@ test("turnover rejects a marker fsync that crosses the window even when committe
     let crossed = false;
     context.mock.timers.enable({ apis: ["Date"], now: Date.now() });
     const sync = context.mock.method(prototype, "sync", async function (this: FileHandle) {
-      const own = await this.stat();
-      const target = await stat(path);
+      const own = await this.stat({ bigint: true });
+      const target = await stat(path, { bigint: true });
       await originalSync.call(this);
       if (own.isFile() && own.ino === target.ino && (process.platform === "win32" || own.dev === target.dev) &&
         (await readFile(path, "utf8")).trimEnd().split("\n").length === 5) {
@@ -2690,8 +2694,8 @@ test("turnover event append failures and boundary-crossing fsync retain a pendin
     let logSyncs = 0;
     context.mock.timers.enable({ apis: ["Date"], now: Date.now() + 1 });
     const mock = context.mock.method(prototype, "sync", async function (this: FileHandle) {
-      const own = await this.stat();
-      const target = await stat(paths.eventsPath).catch(() => undefined);
+      const own = await this.stat({ bigint: true });
+      const target = await stat(paths.eventsPath, { bigint: true }).catch(() => undefined);
       await originalSync.call(this);
       if (target !== undefined && own.isFile() && own.ino === target.ino && (process.platform === "win32" || own.dev === target.dev)) {
         logSyncs++;
