@@ -262,6 +262,70 @@ test("selection request durable observation refuses a directory at the source pa
   });
 });
 
+test("selection request observation rejects future restored records and wall clock rollback before issuing a lease", async (context) => {
+  for (const mode of ["restored_future", "clock_rollback"] as const) await temporary(async (dir) => {
+    const repo = new BucketSelectionRequestFileRepository(dir);
+    const paths = createBucketSelectionRequestPaths(dir);
+    const first = request("first");
+    const last = { ...request("second"), createdAt: "2026-09-01T02:00:00.000Z" };
+    const raw = [first, last].map((value) => `${JSON.stringify(value)}\n`).join("");
+    await writeFile(paths.recordsPath, raw);
+    const createdAt = Date.parse(last.createdAt);
+    context.mock.timers.enable({ apis: ["Date"], now: createdAt + (mode === "clock_rollback" ? 1 : -1) });
+    const originalOpen = fs.open;
+    let called = false;
+    let synced = false;
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      const handle = await originalOpen(...args);
+      if (args[0] === paths.recordsPath && args[1] === "r+") {
+        const originalSync = handle.sync;
+        context.mock.method(handle, "sync", async () => {
+          await originalSync.call(handle);
+          synced = true;
+          if (mode === "clock_rollback") context.mock.timers.setTime(createdAt - 1);
+        });
+      }
+      return handle;
+    });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(repo.withDurableVerifiedHistory(async () => { called = true; }), /observation predates a stored request/);
+      assert.equal(synced, true);
+      assert.equal(called, false);
+    } finally { mock.mock.restore(); syncBuiltinESMExports(); context.mock.timers.reset(); }
+    assert.equal(await readFile(paths.recordsPath, "utf8"), raw);
+    await assert.rejects(readFile(paths.lockPath), { code: "ENOENT" });
+  });
+});
+
+test("selection request saved observation must not predate its prefix even after the clock advances", async (context) => {
+  await temporary(async (dir) => {
+    const repo = new BucketSelectionRequestFileRepository(dir);
+    const value = request("first");
+    await repo.append(value);
+    const createdAt = Date.parse(value.createdAt);
+    context.mock.timers.enable({ apis: ["Date"], now: createdAt });
+    try {
+      const receipt = await repo.withDurableVerifiedHistory(async (history) => {
+        const observation = getDurableBucketSelectionRequestObservation(history);
+        assert.equal(Date.parse(observation.observedAt), createdAt);
+        assert.deepEqual(resolveObservedBucketSelectionRequestHistory(history, observation), [value]);
+        return observation;
+      });
+      context.mock.timers.setTime(createdAt + 10_000);
+      await repo.withDurableVerifiedHistory(async (history) => {
+        assert.throws(() => resolveObservedBucketSelectionRequestHistory(history, {
+          ...receipt, observedAt: new Date(createdAt - 1).toISOString()
+        }), /observation predates a stored request/);
+        assert.deepEqual(resolveObservedBucketSelectionRequestHistory(history, receipt), [value]);
+        assert.deepEqual(resolveObservedBucketSelectionRequestHistory(history, {
+          ...receipt, observedAt: "2026-09-01T10:00:00.000+09:00"
+        }), [value]);
+      });
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
 test("selection request observation rejects invalid UTF-8 even when lossy decoding would produce a hashed request", async () => {
   await temporary(async (dir) => {
     const value = request("replacement-\uFFFD");

@@ -47,6 +47,7 @@ export function resolveObservedBucketSelectionRequestHistory(history: VerifiedBu
   if (prefix.length !== observation.requestCount || hashCanonicalPayload(prefix) !== observation.requestsHash) {
     throw new Error("bucket selection request observation does not match durable source prefix");
   }
+  assertObservationChronology(prefix, observation.observedAt);
   return Object.freeze(prefix);
 }
 
@@ -235,6 +236,7 @@ async function readDurableBoundRequestSource(path: string): Promise<{ requests: 
     await syncOutputDirectory(dirname(path));
     // Capture the flushed generation before revalidation, not after descriptor close.
     const observedAt = new Date().toISOString();
+    assertObservationChronology(requests, observedAt);
     const verified = Buffer.alloc(bytes.length);
     let offset = 0;
     while (offset < verified.length) {
@@ -259,6 +261,12 @@ async function readDurableBoundRequestSource(path: string): Promise<{ requests: 
     return { requests, observedAt };
   } finally {
     await handle.close();
+  }
+}
+
+function assertObservationChronology(requests: readonly BucketSelectionRequest[], observedAt: string): void {
+  if (requests.some((request) => Date.parse(request.createdAt) > Date.parse(observedAt))) {
+    throw new Error("bucket selection request observation predates a stored request");
   }
 }
 

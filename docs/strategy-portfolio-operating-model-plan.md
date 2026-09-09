@@ -3656,6 +3656,10 @@ Private WeakMap의 관측 lease는 callback 성공·실패·lock release 오류 
 이 prefix hash에는 포함한다. `resolveObservedBucketSelectionRequestHistory`는 현재 live lease에서
 count/hash와 관측 시각을 대조해 과거 prefix를 다시 확인한다. 이후 append와 restart는 허용하지만
 과거 prefix 삭제·교체·createdAt 변경은 거절한다. 기존 semantic retry는 최초 저장된 createdAt을 유지한다.
+새 관측 발급 시 모든 request의 createdAt이 관측 시각 이하여야 하며, 과거 prefix 재검증에서도
+각 request의 createdAt이 저장된 observedAt 이하여야 한다. 시계 역행·미래 시각의 복구 로그는 consumer
+호출 전에 거절하고, 시계가 회복된 뒤라도 생성 이전 시각을 가진 과거 관측값을 승인하지 않는다.
+동일 시각은 허용하며 offset 표기는 instant로 비교한다.
 
 Lock 획득은 monotonic timeout 내 exclusive open의 EEXIST 및 Windows EPERM만 재시도한다.
 Token write/fsync 실패는 재시도하지 않고 소유권을 확정할 수 없는 lock 파일을 복구용으로 보존한다.
