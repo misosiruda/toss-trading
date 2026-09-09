@@ -8,12 +8,14 @@ import { riskDecisionSnapshotIdentity, validateRiskDecisionSnapshotState } from 
 import { validateRiskDecisionCashCapacity } from "./portfolioActionRiskDecisionCashCapacity.js";
 
 /** Replays stored pre-state inputs, not current execution authority or numeric rule results. */
-export async function resolvePortfolioActionRiskDecisionSnapshot(input: { baseDir: string; riskDecisionId: string }) {
+export async function resolvePortfolioActionRiskDecisionSnapshot(input: { baseDir: string; riskDecisionId: string },
+  options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+  const lockOptions = { ...options };
   const parsed = z.object({ baseDir: z.string().min(1), riskDecisionId: z.string().min(1) }).strict().parse(input);
-  const plan = await resolvePortfolioActionRiskDecisionPlan(parsed);
+  const plan = await resolvePortfolioActionRiskDecisionPlan(parsed, lockOptions);
   const receipt = plan.origin.snapshotOrigin;
   if (receipt === null) throw new Error("risk decision lacks snapshot-before-creation provenance; legacy record requires review");
-  return new PortfolioSizingSnapshotFileRepository(parsed.baseDir).withDurableVerifiedHistory(async (history) => {
+  return new PortfolioSizingSnapshotFileRepository(parsed.baseDir, lockOptions).withDurableVerifiedHistory(async (history) => {
     const observed = resolveObservedPortfolioSizingSnapshotHistory(history, receipt.observation);
     const sizing = validateRiskDecisionSnapshotState(plan, observed);
     const { observation: _observation, ...identity } = receipt;
@@ -26,7 +28,7 @@ export async function resolvePortfolioActionRiskDecisionSnapshot(input: { baseDi
       return Object.freeze({ ...result, mandate: null });
     }
     if (mandateReceipt === null) throw new Error("snapshot risk decision lacks mandate origin");
-    return new InvestmentMandateFileRepository(parsed.baseDir).withDurableVerifiedHistory(async (mandates) => {
+    return new InvestmentMandateFileRepository(parsed.baseDir, lockOptions).withDurableVerifiedHistory(async (mandates) => {
       const mandate = validateRiskDecisionMandateState(plan, resolveObservedInvestmentMandateHistory(mandates, mandateReceipt.observation));
       const { observation: _time, ...mandateIdentity } = mandateReceipt;
       if (!isDeepStrictEqual(mandateIdentity, riskDecisionMandateIdentity(mandate))) throw new Error("risk decision mandate origin does not match stored source");

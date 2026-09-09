@@ -70,16 +70,17 @@ export class BucketTurnoverWindowFileRepository {
 
   /** Holds snapshot and window writers excluded through dependent projection persistence. */
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedBucketTurnoverWindowHistory) => Promise<T>): Promise<T> {
-    const policies = await readStoredRuntimePortfolioPolicyActivationSnapshot(this.baseDir);
-    return new PortfolioSizingSnapshotFileRepository(this.baseDir).withDurableVerifiedHistory((snapshots) =>
+    const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
+    const policies = await readStoredRuntimePortfolioPolicyActivationSnapshot(this.baseDir, options);
+    return new PortfolioSizingSnapshotFileRepository(this.baseDir, options).withDurableVerifiedHistory((snapshots) =>
       this.withLock(async () => operation(await this.readUnderLock(snapshots, policies))));
   }
 
   /** Owns price -> snapshot -> window acquisition; callers must reuse these histories instead of re-entering their stores. */
   async withDurableRiskSources<T>(operation: (windows: VerifiedBucketTurnoverWindowHistory,
     prices: VerifiedSourcePriceEvidenceHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
-    const policies = await readStoredRuntimePortfolioPolicyActivationSnapshot(this.baseDir);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
+    const policies = await readStoredRuntimePortfolioPolicyActivationSnapshot(this.baseDir, options);
     return new SourcePriceEvidenceFileRepository(this.baseDir, options).withDurableVerifiedHistory((prices) =>
       new PortfolioSizingSnapshotFileRepository(this.baseDir, options).withDurableVerifiedHistory((snapshots) =>
         this.withLock(async () => operation(await this.readUnderLock(snapshots, policies), prices, snapshots))));

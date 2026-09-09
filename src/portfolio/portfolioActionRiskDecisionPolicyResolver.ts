@@ -21,15 +21,16 @@ const inputSchema = z.object({ baseDir: z.string().min(1), riskDecisionId: z.str
 export async function resolvePortfolioActionRiskDecisionPolicy(input: {
   baseDir: string;
   riskDecisionId: string;
-}) {
+}, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+  const lockOptions = { ...options };
   const { baseDir, riskDecisionId } = inputSchema.parse(input);
   const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(
-    await new PortfolioActionRiskDecisionFileRepository(baseDir).readVerifiedHistory(), riskDecisionId
+    await new PortfolioActionRiskDecisionFileRepository(baseDir, lockOptions).readVerifiedHistory(), riskDecisionId
   );
   const decision = origin.record;
   const receipt = origin.policyOrigin;
   if (receipt === null) throw new Error("risk decision lacks policy-before-creation provenance; legacy record requires review");
-  const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir);
+  const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir, lockOptions);
   let events = snapshot.events;
   if (receipt.activationHistory !== undefined) {
     const boundary = receipt.activationHistory;

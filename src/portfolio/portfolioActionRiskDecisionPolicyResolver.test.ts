@@ -62,7 +62,7 @@ import {
 } from "./runtimePolicyContracts.js";
 import { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
 import { createImmutablePolicyDependencyPaths } from "./runtimePolicyDependencyFiles.js";
-import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
+import { RuntimePortfolioPolicyFileRepository, createRuntimePortfolioPolicyPaths } from "./runtimePortfolioPolicyFiles.js";
 import { createRuntimePortfolioPolicyActivationPaths, RuntimePortfolioPolicyActivationFileRepository, readStoredRuntimePortfolioPolicyActivationSnapshot } from "./runtimePortfolioPolicyActivationFiles.js";
 import { parseRuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
 import { createPortfolioPolicyActivatedEvent } from "./runtimePortfolioPolicyActivation.js";
@@ -3090,6 +3090,41 @@ test("turnover Risk sources retain repository leases and exclude other processes
       assert.ok(getDurableSourcePriceEvidenceObservation(prices));
       assert.ok(getDurablePortfolioSizingSnapshotObservation(snapshots));
     });
+  });
+});
+
+test("turnover Risk sources honor short lock timeouts throughout nonempty historical source resolution", async () => {
+  await withCompletedTurnoverFillFixture(async ({ baseDir, root, fill }) => {
+    await new BucketTurnoverEventFileRepository(baseDir).appendFillWithCompletion({ paperFillRecordId: fill.paperFillRecordId,
+      expectedTurnoverStateHash: root.snapshotOrigin.initialState.turnoverStateHash });
+    const repository = new BucketTurnoverStateFileRepository(baseDir, { lockTimeoutMs: 40, lockRetryDelayMs: 5 });
+    await repository.refresh({ expectedProjectionHash: null });
+    const paths = [createSourcePriceEvidencePaths(baseDir).lockPath, createPortfolioSizingSnapshotPaths(baseDir).lockPath,
+      createBucketTurnoverWindowPaths(baseDir).lockPath, createPaperFillExecutionPaths(baseDir).lockPath,
+      createPortfolioActionRiskDecisionPaths(baseDir).lockPath, createRebalancePlanPaths(baseDir).lockPath,
+      createRebalancePlanEventPaths(baseDir).lockPath, createInvestmentMandatePaths(baseDir).lockPath,
+      createRuntimePortfolioPolicyPaths(baseDir).lockPath, createRuntimePortfolioPolicyActivationPaths(baseDir).lockPath];
+    for (const path of paths) {
+      await writeFile(path, "synthetic contended source", { flag: "wx" });
+      let calls = 0;
+      const started = performance.now();
+      try {
+        await assert.rejects(repository.withDurableRiskSources(async () => { calls += 1; }), (error: unknown) => {
+          let cause = error;
+          while (cause instanceof Error) {
+            if (/lock is unavailable/.test(cause.message)) return true;
+            cause = cause.cause;
+          }
+          return false;
+        });
+        // Allow filesystem/CI overhead, but detect a forgotten default 5-second acquisition wait.
+        assert.ok(performance.now() - started < 4_000, `historical source ignored the short timeout: ${path}`);
+        assert.equal(calls, 0);
+        assert.equal(await readFile(path, "utf8"), "synthetic contended source");
+      } finally { await rm(path); }
+      await repository.withDurableRiskSources(async () => undefined);
+      assert.deepEqual((await readdir(baseDir)).filter((name) => name.endsWith(".lock")), []);
+    }
   });
 });
 

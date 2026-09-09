@@ -358,6 +358,8 @@ event → price → snapshot → window 순서로 잠가 기존 price → snapsh
 missing/stale/corrupt projection과 pending을 소비자 호출 전에 거절한다. Callback 성공·예외 뒤
 lease를 폐기하고 lock을 해제한다. 저장 형식과 기존 read/refresh는 유지하며 Risk 생성·receipt
 저장 자체는 후속이다. Callback 안에서 기존 원본 저장소 또는 Risk 생성 메서드를 재진입하지 않는다.
+Lock timeout/retry는 과거 fill/Risk의 policy·plan·snapshot·mandate·price·window 조회까지 전달하며,
+전체 실행 기한이 아닌 각 잠금의 경합 대기 설정이다. 기존 옵션 생략 호출의 기본값은 유지한다.
 
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고

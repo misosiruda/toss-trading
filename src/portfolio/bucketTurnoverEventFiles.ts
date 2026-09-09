@@ -57,7 +57,9 @@ export class BucketTurnoverEventFileRepository {
     windows: VerifiedBucketTurnoverWindowHistory) => Promise<T>): Promise<T> {
     return this.withLock(async () => {
       const events = await this.readUnderLock();
-      return new BucketTurnoverWindowFileRepository(this.baseDir).withDurableVerifiedHistory((windows) => operation(events, windows));
+      return new BucketTurnoverWindowFileRepository(this.baseDir, {
+        lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs
+      }).withDurableVerifiedHistory((windows) => operation(events, windows));
     });
   }
 
@@ -96,7 +98,8 @@ export class BucketTurnoverEventFileRepository {
     return this.withLock(async () => {
       const history = await this.readUnderLock();
       const metadata = histories.get(history)!;
-      const source = await resolveBucketTurnoverFillOrigin({ baseDir: this.baseDir, paperFillRecordId: input.paperFillRecordId });
+      const source = await resolveBucketTurnoverFillOrigin({ baseDir: this.baseDir, paperFillRecordId: input.paperFillRecordId },
+        { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs });
       const existing = metadata.fills.get(fillKey(source));
       if (existing !== undefined) {
         if (requireCompletion && existing.completion === undefined) throw new Error("turnover event completion cannot be added after persistence");
@@ -171,7 +174,8 @@ export class BucketTurnoverEventFileRepository {
         const entry = entrySchema.parse(value);
         const event = parseBucketTurnoverEvent(entry.event);
         const sourceRef = z.object({ paperFillOrigin: z.object({ paperFillRecordId: identifier }).passthrough() }).passthrough().parse(entry.source);
-        const source = await resolveBucketTurnoverFillOrigin({ baseDir: this.baseDir, paperFillRecordId: sourceRef.paperFillOrigin.paperFillRecordId });
+        const source = await resolveBucketTurnoverFillOrigin({ baseDir: this.baseDir, paperFillRecordId: sourceRef.paperFillOrigin.paperFillRecordId },
+          { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs });
         const initial = source.windowOrigin.snapshotOrigin.initialState;
         const prior = states.get(initial.turnoverStateId) ?? initial;
         assertRiskPrior(source, prior);

@@ -4303,6 +4303,9 @@ price를 새로 잠그면 price → snapshot 순서의 Risk writer와 교착될 
 저장소가 같은 baseDir의 가격·snapshot 원본을 직접 읽으며 caller가 다른 저장소의 history를 주입하지
 못한다. Event/window writer 배제와 기존 projection 검증을 유지하고 모든 source lock을 callback의
 성공·실패 종료까지 보존한다. Callback은 전달받은 history를 재사용하고 같은 저장소를 재진입하지 않는다.
+설정된 lock timeout/retry는 event의 과거 fill → Risk → policy/plan/snapshot/mandate/price 및 window
+원본 조회에도 전달한다. 제한은 각 잠금 획득의 경합 대기 값이며 전체 replay·파일 I/O·callback의 총
+실행 시간 제한이 아니다. 옵션을 생략한 기존 resolver의 기본값은 유지한다.
 
 가격 → snapshot → projection 관측 시각의 역행은 소비자 호출 전에 거절한다. Clone 및 callback 종료
 뒤에는 원본 lease getter가 실패한다. Missing/stale/corrupt projection, pending event 및 각 source
