@@ -3152,6 +3152,50 @@ test("current turnover Risk resolver rejects expired windows and retirement or s
   });
 });
 
+test("current turnover observation cannot predate the durable Risk commit after clock rollback", async (context) => {
+  await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    const root = await new BucketTurnoverWindowFileRepository(baseDir).createOrResolve({ portfolioId: candidate.portfolioId,
+      bucket: "swing", expectedPolicyHash: candidate.policyHash });
+    const initial = root.snapshotOrigin.initialState;
+    if (candidate.turnoverAssessment.scopeKind !== "bucket") throw new Error("bucket required");
+    const bound = { ...candidate, turnoverAssessment: { ...candidate.turnoverAssessment,
+      turnoverStateId: initial.turnoverStateId, turnoverStateHash: initial.turnoverStateHash,
+      turnoverWindowOpenPortfolioNetWorthKrw: initial.windowOpenPortfolioNetWorthKrw,
+      resultingBucketTurnoverRatio: candidate.worstCaseFillNotionalKrw / initial.windowOpenPortfolioNetWorthKrw } };
+    const probe = await open(createPortfolioSizingSnapshotPaths(baseDir).recordsPath, "r");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalSync = prototype.sync;
+    await probe.close();
+    const riskPath = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    let riskSyncs = 0;
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() + 100 });
+    const sync = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const actual = await this.stat({ bigint: true });
+      const target = await stat(riskPath, { bigint: true }).catch(() => undefined);
+      await originalSync.call(this);
+      if (actual.isFile() && target !== undefined && actual.ino === target.ino &&
+        (process.platform === "win32" || actual.dev === target.dev)) {
+        riskSyncs += 1; context.mock.timers.tick(20);
+      }
+    });
+    try {
+      const decision = await repository.createAndAppendWithExecutionOrigin(bound, selection);
+      sync.mock.restore();
+      assert.ok(riskSyncs >= 2);
+      const origin = resolveVerifiedPortfolioActionRiskDecisionOrigin(await repository.readVerifiedHistory(), decision.riskDecisionId);
+      const rollbackAt = Date.parse(origin.appendedAt) - 1;
+      assert.ok(rollbackAt > Date.parse(decision.decidedAt));
+      await new BucketTurnoverStateFileRepository(baseDir).refresh({ expectedProjectionHash: null });
+      const input = { baseDir, riskDecisionId: decision.riskDecisionId };
+      context.mock.timers.setTime(rollbackAt);
+      await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /observation chronology/);
+      context.mock.timers.setTime(Date.parse(origin.appendedAt));
+      const result = await resolveCurrentPortfolioActionRiskDecisionTurnover(input);
+      assert.equal(result.turnoverObservation.observedAt, origin.appendedAt);
+    } finally { sync.mock.restore(); context.mock.timers.reset(); }
+  });
+});
+
 test("current turnover Risk resolver fails on projection fsync without returning a current observation", async (context) => {
   await withTurnoverFillFixture(async ({ baseDir }) => {
     const decision = (await new PortfolioActionRiskDecisionFileRepository(baseDir).readAll())[0]!;
