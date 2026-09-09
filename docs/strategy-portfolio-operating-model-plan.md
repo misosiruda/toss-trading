@@ -3066,6 +3066,27 @@ mandate activation의 원자 commit은 후속이다. 새 record 파일은 아직
 Risk 생성 및 실행 경로는 변경하지 않는다. Schema migration이나 artifact 변환이 없어 코드 rollback만
 필요하다. 전체 수용 기준의 예약 원장 완료로 표시하지 않는다.
 
+예약 lifecycle 이벤트 계약 분할은 `openingCapacityReservationEvent.ts`에서 `reserved`,
+`bound_to_mandate`, `partially_consumed`, `consumed_by_position`, `released`의 strict union과
+factory/parser를 구현한다. 최초 예약만 predecessor를 생략하며 manual/selector source와
+취소/mandate terminal release origin을 별도 strict variant로 검증한다. ID/hash/createdAt을
+제외한 전체 payload를 독립 rehash하고 hash-derived ID를 대조한다. Source/release origin도
+freeze하며 safe integer, 음의 0, canonical UTC 및 `asOf <= createdAt`을 검사한다.
+
+Reserved/bound/partial의 잔액은 양수이고 released는 잔액 0 및 slot 미점유다. Partial/position
+consumption은 slot을 점유하지 않으며 selector의 신규 예약은 slot을 점유해야 한다. 신규 position의
+첫 체결이 slot을 position으로 전환한 뒤에도 notional 잔액이 남을 수 있으므로
+`consumed_by_position`에는 0 또는 양수 잔액을 허용한다. 이후 잔액 소진·terminal 판정은
+단일 event의 이름만으로 결정하지 않고 후속 chain replay가 검증해야 한다.
+
+Manual reserved event의 pure binding은 manual event와 reservation record를 독립 파싱하고
+event의 reservation ID/hash, scope, ledger version, 초기 예약 금액과 new/increase slot flag,
+source 생성 시각을 대조한다. 이는 실제 저장된 원본의 관측 증명이나 현재 capacity 권한이 아니다.
+Predecessor의 실존/분기, global ledger version 순서, 잔액 감소·fill 금액 일치, selector 및 mandate/fill
+실제 원본, 중복 binding/slot과 append-only 저장·원자 commit은 후속이다. 기존 writer나 Risk 경로에
+연결하지 않으며 자동 migration·artifact 생성·live surface 변경은 없다. 계약만으로 예약 원장이나
+전체 수용 기준이 완료됐다고 표시하지 않는다.
+
 ### PR 4. `PortfolioGapAnalyzer`
 
 - bucket/symbol/cash gap read model
