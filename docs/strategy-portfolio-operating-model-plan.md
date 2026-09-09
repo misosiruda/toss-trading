@@ -3669,7 +3669,8 @@ Token write/fsync 실패는 재시도하지 않고 소유권을 확정할 수 �
 이 기능은 실제 요청 파일 관측만 증명한다. 원래 append 완료 시각, trigger/policy/snapshot source,
 gap/current capacity, feature/eligibility/score/cost/sizing 계산 또는 allocation 권한을 증명하지 않는다.
 기존 `resolveBucketSelectionRequest`의 재계산과 실제 원본 결속은 downstream에서 별도로 필요하다.
-Candidate input 저장소와 selector/manual 공용 ledger 연결은 후속이다. 새 artifact/기존 JSONL 형식과
+원본 조회 자체는 candidate input을 저장하지 않는다. 입력 저장은 아래 저장 분할에서 다루며
+selector/manual 공용 ledger 연결은 후속이다. 원본 조회의 새 artifact/기존 JSONL 형식과
 runtime writer 연결 변경은 없으며 schema/data migration 없이 코드 rollback할 수 있다. 새 조회는
 fsync를 수행하므로 pure filesystem read-only API로 보지 않는다. Windows directory sync의 기존 EPERM
 제한은 유지하며 실제 저장 장치 장애 복구를 검증했다고 주장하지 않는다.
@@ -3712,6 +3713,34 @@ Model version 문자열도 지원되는 실행 모델이나 계산 완료라는 
 sizing range 계산, canonical input 저장소, assignment/set 및 shared capacity ledger 연결은 후속이다.
 기존 fill simulator의 계산과 다른 추정식을 같은 version의 결과로 합성하지 않는다. 기존 실행 경로에
 연결하거나 artifact를 쓰지 않아 migration 없이 코드 rollback이 가능하다.
+
+입력 저장 분할은 `CandidateSizingInputFileRepository`를 통해 계획된
+`candidate-sizing-input-records.jsonl`에 canonical input과 실제 원본 관측값을 함께 보존한다.
+Request → portfolio sizing snapshot → candidate input 순서로 source/destination lock을 획득하며
+전체 조회·신규 append·exact retry 및 live consumer 동안 유지한다. `candidate_sizing_input_entry.v1`은
+complete record, request/snapshot prefix 관측값, appendStartedAt, previousCommitHash와 entryHash를
+보존하고 `candidate_sizing_input_commit.v1`은 해당 entryHash, committedAt 및 commitHash를 결속한다.
+각 조회는 record hash/ID, entry/marker hash·연속 chain·시각·unique input ID를 독립 검증한다.
+
+실제 request prefix에서 request를 찾고 input의 portfolio/snapshot/policy/bucket/as-of 및 생성 순서를
+대조한다. 실제 snapshot prefix도 읽어 snapshot ID/hash, portfolio/policy/as-of와 관측 이전 존재 조건을
+확인한다. 저장 당시 prefix는 이후 append/restart에서도 다시 검증하며 corrupt suffix를 무시하지 않는다.
+같은 request/market/symbol의 완전히 같은 record만 최초 origin 그대로 반환한다. Score/feature/cap/cost/
+model 또는 createdAt이 바뀐 동일 identity는 collision이며 새 observation으로 원래 origin을 덮어쓰지 않는다.
+
+Pending barrier를 먼저 sync한 뒤 entry와 commit marker를 각각 append/fsync한다. 모든 단계가 성공한
+뒤에만 pending을 제거하고 directory sync한다. Pending 존재, 불완전 pair 또는 corrupt log는 자동 복구하지
+않으며 명시적인 복구가 필요하다. Pending 제거 후 마지막 directory sync 실패는 이미 pair가 남아 있을 수
+있는 불확실한 결과이므로 성공으로 가정하지 않고 전체 source/log를 다시 검증해야 한다. Commit marker의
+작성 시각은 전체 transaction의 durable completion 시각이 아니다. Getter의 durable observation은 새
+원본/log flush·bytes/경로 identity 재검증을 마친 callback 동안만 유효하며 종료 시 만료한다. 잘못된 UTF-8,
+관측 중 파일 변경, 과거/미래 시각 및 fsync 실패는 fail-closed한다.
+
+저장은 supplied feature/score/cap/cost의 선언을 원본 요청·snapshot과 결속하는 책임이다. 실제 feature와
+classification/evidence source 검증, active policy/trigger/gap의 재계산, eligibility·score·cost·sizing output
+평가와 assignment/set/공용 capacity CAS는 아직 구현하지 않는다. 저장 성공을 후보 채택이나 mandate 발급
+권한으로 사용하지 않는다. 기존 runner/Risk/writer의 자동 연결이나 거래 기본값 변경은 없고 새 opt-in
+artifact만 추가한다. 코드 rollback으로 기존 경로를 유지할 수 있으며 신규 artifact를 자동 삭제하지 않는다.
 
 완료 조건:
 
