@@ -3045,6 +3045,27 @@ fill 또는 broker mutation을 만들지 않는다. cadence orchestrator가 due 
 - position strategy state의 peak/partial-exit/holding/review payload rehash가 일치한다.
 - 재시작 후 bucket equity event replay와 risk snapshot이 같은 unit NAV/high-water mark를 만든다.
 
+예약 원본 계약 분할은 `ManualOpeningCapacityReservationRecord`의 strict
+`new_position | increase_existing` variant와 factory/parser를 구현한다. Manual assignment ID/hash,
+portfolio/policy/bucket/market/symbol, transaction의 current snapshot ID/hash, CAS ledger version,
+예약 notional과 resulting aggregate notional, authorization ref 및 slot ordinal 또는 기존 position ref를
+완전한 payload hash에 포함한다. ID/hash/createdAt만 digest에서 제외하고 ID는 digest에서 파생한다.
+Safe-integer 금액·version·slot, 양수 예약 금액, aggregate >= individual 예약과 canonical UTC 시각을
+검증하며 variant 간 필드 혼합·unknown field·정규화가 필요한 문자열을 거절한다.
+
+Pure binding은 독립 rehash한 `open_or_increase` manual event의 exact ID/hash, scope, authorization,
+maximum notional 및 생성 시각을 대조한다. `classify_existing_reduce_only`로는 opening 예약을 만들 수 없다.
+Manual opening mandate와 연결할 때 기존 assignment binding에 더해 reservation ID/hash, 종류,
+slot 또는 position ref, 예약 notional 전체와 생성 순서를 확인한다. Current transaction snapshot은
+manual event의 과거 sizing snapshot과 다를 수 있으므로 동일하다고 강제하지 않는다.
+
+이 분할은 불변 record와 원본 payload 간 결속 계약이며 현재 capacity를 예약·소비하는 권한은 아니다.
+실제 current snapshot/position, active policy, evidence/sizing 원본, selector/manual 공용 ledger의
+slot/budget/CAS 재계산, single-use mandate binding, reservation lifecycle event 저장과 manual event·
+mandate activation의 원자 commit은 후속이다. 새 record 파일은 아직 쓰지 않으며 기존 mandate writer,
+Risk 생성 및 실행 경로는 변경하지 않는다. Schema migration이나 artifact 변환이 없어 코드 rollback만
+필요하다. 전체 수용 기준의 예약 원장 완료로 표시하지 않는다.
+
 ### PR 4. `PortfolioGapAnalyzer`
 
 - bucket/symbol/cash gap read model
