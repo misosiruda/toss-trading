@@ -4267,8 +4267,9 @@ Window 생성도 snapshot lock을 먼저 필요로 하므로 activation/window l
 현재 정책의 bucket/market, policy hash와 activation ID/hash를 결정 당시 원본과 대조한다. 같은 정책을
 retire 후 다시 활성화한 경우도 이전 Risk가 새 activation의 승인이 되지 않는다. 현재 UTC window를
 정책 duration으로 계산하고 실제 state의 hash, 누계 및 최초 snapshot 분모와 assessment를 비교한다.
-전체 원본을 재생한 projection의 window 및 마지막 event completion 가용 시각이 `decidedAt` 이하인지
+전체 원본을 재생한 projection의 window 및 마지막 event completion 가용 시각이 `decidedAt`보다 엄격히 이전인지
 검사해, 아직 저장되지 않았던 미래 누계를 과거 결정이 미리 참조한 것처럼 rehash하는 입력도 거절한다.
+밀리초 시각이 같으면 독립적으로 생성된 Risk와 원본 저장 완료의 선후관계를 증명할 수 없어 거절한다.
 관측 시각은 선택된 Risk의 실제 commit 시각 이상이어야 하며, 결정 시각 이후라도 commit 이전으로
 시계가 역행하면 거절한다. 최신 상태 및 정책 대조 뒤 기존 정책 회전율 상한 검증을 다시 적용한다.
 

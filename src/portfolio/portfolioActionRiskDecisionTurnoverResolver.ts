@@ -48,7 +48,8 @@ export async function resolveCurrentPortfolioActionRiskDecisionTurnover(value: z
         assessment.turnoverWindowOpenPortfolioNetWorthKrw !== state.windowOpenPortfolioNetWorthKrw) {
         throw new Error("current turnover Risk assessment differs from actual state");
       }
-      if (Date.parse(decision.decidedAt) < Date.parse(source.availableAt) || Date.parse(decision.decidedAt) > Date.parse(observedAt) ||
+      // Millisecond equality cannot establish that completion preceded an independently created Risk decision.
+      if (Date.parse(decision.decidedAt) <= Date.parse(source.availableAt) || Date.parse(decision.decidedAt) > Date.parse(observedAt) ||
         Date.parse(observedAt) < Date.parse(resolved.origin.appendedAt) ||
         Date.parse(observedAt) < Date.parse(observation.observedAt) || Date.parse(observedAt) < Date.parse(source.availableAt)) {
         throw new Error("current turnover Risk source availability or observation chronology mismatch");

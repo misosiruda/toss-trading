@@ -3057,6 +3057,29 @@ test("current turnover Risk resolver binds BUY and SELL to actual current state 
   }, { side });
 });
 
+test("current turnover rejects window completion equality and accepts a decision one millisecond later", async (context) => {
+  for (const decisionDelay of [0, 1]) await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() + 100 });
+    try {
+      const root = await new BucketTurnoverWindowFileRepository(baseDir).createOrResolveWithCompletion({
+        portfolioId: candidate.portfolioId, bucket: "swing", expectedPolicyHash: candidate.policyHash });
+      const initial = root.snapshotOrigin.initialState;
+      if (candidate.turnoverAssessment.scopeKind !== "bucket") throw new Error("bucket required");
+      context.mock.timers.tick(decisionDelay);
+      const decision = await repository.createAndAppendWithExecutionOrigin({ ...candidate,
+        turnoverAssessment: { ...candidate.turnoverAssessment, turnoverStateId: initial.turnoverStateId,
+          turnoverStateHash: initial.turnoverStateHash, turnoverWindowOpenPortfolioNetWorthKrw: initial.windowOpenPortfolioNetWorthKrw,
+          resultingBucketTurnoverRatio: candidate.worstCaseFillNotionalKrw / initial.windowOpenPortfolioNetWorthKrw } }, selection);
+      assert.equal(Date.parse(decision.decidedAt), Date.parse(root.completion!.completedAt) + decisionDelay);
+      await new BucketTurnoverStateFileRepository(baseDir).refresh({ expectedProjectionHash: null });
+      const input = { baseDir, riskDecisionId: decision.riskDecisionId };
+      await resolvePortfolioActionRiskDecisionExecution(input);
+      if (decisionDelay === 0) await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /source availability/);
+      else assert.equal((await resolveCurrentPortfolioActionRiskDecisionTurnover(input)).decision.riskDecisionId, decision.riskDecisionId);
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
 test("current turnover Risk resolver rejects stale projections and superseded Risk assessments after a fill", async () => {
   await withCompletedTurnoverFillFixture(async ({ baseDir, root, fill, createNextFill }) => {
     const risks = new PortfolioActionRiskDecisionFileRepository(baseDir);
@@ -3074,7 +3097,7 @@ test("current turnover Risk resolver rejects stale projections and superseded Ri
     const result = await resolveCurrentPortfolioActionRiskDecisionTurnover({ baseDir, riskDecisionId: next.riskDecisionId });
     assert.equal(result.turnoverObservation.state.cumulativeAbsoluteFilledNotionalKrw, fill.filledNotionalKrw);
     assert.equal(result.turnoverObservation.lastEventCompletionHash, latest.sourceEventGenerationHash);
-    assert.ok(Date.parse(result.turnoverObservation.availableAt) <= Date.parse(next.decidedAt));
+    assert.ok(Date.parse(result.turnoverObservation.availableAt) < Date.parse(next.decidedAt));
     // Historical replay still explains the old decision; the current check is deliberately stricter.
     assert.equal((await resolvePortfolioActionRiskDecisionExecution(input)).decision.riskDecisionId, original.riskDecisionId);
   });
@@ -3323,7 +3346,7 @@ test("window completion follows marker fsync and pending barrier removal", async
 });
 
 test("current Risk cannot use an event still finalizing when its decision was created", async (context) => {
-  await withCompletedTurnoverFillFixture(async ({ baseDir, root, fill, createNextFill }) => {
+  for (const completionDelay of [0, 20]) await withCompletedTurnoverFillFixture(async ({ baseDir, root, fill, createNextRisk }) => {
     const paths = createBucketTurnoverEventPaths(baseDir);
     const probe = await open(createBucketTurnoverWindowPaths(baseDir).recordsPath, "r");
     const prototype = Object.getPrototypeOf(probe) as FileHandle;
@@ -3340,15 +3363,14 @@ test("current Risk cannot use an event still finalizing when its decision was cr
         const lines = (await readFile(paths.eventsPath, "utf8")).trimEnd().split("\n");
         if (lines.length === 2) {
           entered = true;
+          context.mock.timers.enable({ apis: ["Date"], now: Date.now() + 100 });
+          mockedTime = true;
           const state = replayBucketTurnoverEvents({ initialState: root.snapshotOrigin.initialState, events: [JSON.parse(lines[0]!).event] });
-          const next = await createNextFill(state, "risk-during-turnover-finalization");
-          const fills = await new PaperFillExecutionFileRepository(baseDir).readVerifiedHistory();
-          concurrentRiskId = resolvePersistedPaperFillExecutionOrigin(fills, next.paperFillRecordId).riskOrigin!.riskDecisionId;
+          concurrentRiskId = (await createNextRisk(state)).riskDecisionId;
           decisionTime = Date.parse((await new PortfolioActionRiskDecisionFileRepository(baseDir).resolveById(concurrentRiskId)).decidedAt);
           assert.ok(decisionTime >= Date.parse(JSON.parse(lines[1]!).committedAt));
           assert.ok((await stat(paths.pendingPath)).isFile());
-          context.mock.timers.enable({ apis: ["Date"], now: Math.max(Date.now(), decisionTime) + 20 });
-          mockedTime = true;
+          context.mock.timers.tick(completionDelay);
         }
       }
       await originalSync.call(this);
@@ -3360,7 +3382,7 @@ test("current Risk cannot use an event still finalizing when its decision was cr
       sync.mock.restore();
       assert.ok(entered && concurrentRiskId !== undefined);
       const origin = resolveVerifiedBucketTurnoverEventOrigin(await events.readVerifiedHistory(), event.turnoverEventId);
-      assert.ok(Date.parse(origin.completion!.completedAt) > decisionTime);
+      assert.equal(Date.parse(origin.completion!.completedAt), decisionTime + completionDelay);
       await new BucketTurnoverStateFileRepository(baseDir).refresh({ expectedProjectionHash: null });
       const input = { baseDir, riskDecisionId: concurrentRiskId };
       await resolvePortfolioActionRiskDecisionExecution(input);
@@ -3447,6 +3469,7 @@ async function withCompletedTurnoverFillFixture(run: Parameters<typeof withTurno
 
 async function withTurnoverFillFixture(run: (input: { baseDir: string; fill: ReturnType<typeof createPaperFillExecutionRecord>;
   root: Awaited<ReturnType<BucketTurnoverWindowFileRepository["createOrResolve"]>>;
+  createNextRisk: (prior: BucketTurnoverState) => Promise<ReturnType<typeof createPortfolioActionRiskDecision>>;
   createNextFill: (prior: BucketTurnoverState, fillId: string) => Promise<ReturnType<typeof createPaperFillExecutionRecord>> }) => Promise<void>,
 options: { side?: "BUY" | "SELL"; whole?: boolean; completion?: boolean; assessment?: { turnoverStateId?: string; turnoverWindowOpenPortfolioNetWorthKrw?: number } } = {}) {
   await withRiskExecutionFixture(async ({ baseDir, repository, candidate, selection }) => {
@@ -3465,10 +3488,14 @@ options: { side?: "BUY" | "SELL"; whole?: boolean; completion?: boolean; assessm
     const history = await repository.readVerifiedHistory();
     const preview = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, decision.riskDecisionId).executionOrigin!.preview;
     const fill = await new PaperFillExecutionFileRepository(baseDir).createAndAppendWithRiskCompletion(executionBoundFillInput(bound, preview), history, decision.riskDecisionId);
-    await run({ baseDir, fill, root, createNextFill: async (prior, fillId) => {
-      const next = { ...bound, turnoverAssessment: { ...bound.turnoverAssessment, turnoverStateHash: prior.turnoverStateHash,
+    const nextCandidate = (prior: BucketTurnoverState) => ({ ...bound,
+      turnoverAssessment: { ...bound.turnoverAssessment, turnoverStateHash: prior.turnoverStateHash,
         priorBucketTurnoverNotionalKrw: prior.cumulativeAbsoluteFilledNotionalKrw,
-        resultingBucketTurnoverRatio: (prior.cumulativeAbsoluteFilledNotionalKrw + bound.turnoverAssessment.requestedBucketTurnoverNotionalKrw) / denominator } };
+        resultingBucketTurnoverRatio: (prior.cumulativeAbsoluteFilledNotionalKrw + bound.turnoverAssessment.requestedBucketTurnoverNotionalKrw) / denominator } });
+    await run({ baseDir, fill, root,
+      createNextRisk: (prior) => repository.createAndAppendWithExecutionOrigin(nextCandidate(prior), selection),
+      createNextFill: async (prior, fillId) => {
+      const next = nextCandidate(prior);
       const nextDecision = await repository.createAndAppendWithExecutionOrigin(next, selection);
       const nextHistory = await repository.readVerifiedHistory();
       const nextPreview = resolveVerifiedPortfolioActionRiskDecisionOrigin(nextHistory, nextDecision.riskDecisionId).executionOrigin!.preview;
