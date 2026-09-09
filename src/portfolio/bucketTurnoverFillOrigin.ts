@@ -5,6 +5,7 @@ import { BucketTurnoverWindowFileRepository, resolveVerifiedBucketTurnoverWindow
 import { PaperFillExecutionFileRepository, resolvePersistedPaperFillExecutionOrigin } from "./paperFillExecutionFiles.js";
 import { assertRiskExecutionFillBinding } from "./portfolioActionRiskDecisionExecutionContext.js";
 import { resolvePortfolioActionRiskDecisionExecution } from "./portfolioActionRiskDecisionExecutionResolver.js";
+import { type VerifiedBucketTurnoverEventHistory } from "./bucketTurnoverEventFiles.js";
 
 const identifier = z.string().min(1).max(240).refine((value) => value === value.trim());
 const inputSchema = z.object({ baseDir: z.string().min(1), paperFillRecordId: identifier }).strict();
@@ -15,7 +16,7 @@ const inputSchema = z.object({ baseDir: z.string().min(1), paperFillRecordId: id
  * validation, current Risk authorization or an accounting transaction.
  */
 export async function resolveBucketTurnoverFillOrigin(value: z.input<typeof inputSchema>,
-  options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+  options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}, knownEvents?: VerifiedBucketTurnoverEventHistory) {
   const lockOptions = { ...options };
   const input = inputSchema.parse(value);
   if (!isDeepStrictEqual(value, input)) throw new Error("turnover fill request must already be canonical");
@@ -24,7 +25,7 @@ export async function resolveBucketTurnoverFillOrigin(value: z.input<typeof inpu
   const fill = fillOrigin.record;
   if (fillOrigin.riskOrigin === null) throw new Error("turnover fill requires a persisted Risk origin");
   const risk = await resolvePortfolioActionRiskDecisionExecution({ baseDir: input.baseDir,
-    riskDecisionId: fillOrigin.riskOrigin.riskDecisionId }, lockOptions);
+    riskDecisionId: fillOrigin.riskOrigin.riskDecisionId }, lockOptions, knownEvents);
   const decision = risk.decision;
   const expectedRiskOrigin = { riskDecisionId: decision.riskDecisionId, riskDecisionHash: decision.riskDecisionHash,
     appendedAt: risk.origin.appendedAt, commitHash: risk.origin.commitHash };

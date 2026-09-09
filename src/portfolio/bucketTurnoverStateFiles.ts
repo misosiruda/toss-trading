@@ -6,11 +6,12 @@ import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
 import { parseBucketTurnoverState, replayBucketTurnoverEvents, type BucketTurnoverState } from "./bucketTurnover.js";
 import { BucketTurnoverEventFileRepository, resolveVerifiedBucketTurnoverEventOrigin,
-  type VerifiedBucketTurnoverEventHistory } from "./bucketTurnoverEventFiles.js";
-import { resolveVerifiedBucketTurnoverWindowOrigin, type VerifiedBucketTurnoverWindowHistory } from "./bucketTurnoverWindowFiles.js";
+  assertBucketTurnoverEventHistorySource, type VerifiedBucketTurnoverEventHistory } from "./bucketTurnoverEventFiles.js";
+import { BucketTurnoverWindowFileRepository, resolveVerifiedBucketTurnoverWindowOrigin, type VerifiedBucketTurnoverWindowHistory } from "./bucketTurnoverWindowFiles.js";
 import { compareText, hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { getDurableSourcePriceEvidenceObservation, type VerifiedSourcePriceEvidenceHistory } from "./sourcePriceEvidenceFiles.js";
 import { getDurablePortfolioSizingSnapshotObservation, type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
+import { bucketTurnoverObservationSchema, type BucketTurnoverObservation } from "./bucketTurnoverObservation.js";
 
 export const BUCKET_TURNOVER_STATE_FILE_NAME = "bucket-turnover-state.json";
 const count = z.number().int().nonnegative().safe().refine((value) => !Object.is(value, -0));
@@ -30,7 +31,8 @@ const observationSources = new WeakMap<VerifiedBucketTurnoverStateSnapshot, {
 export class BucketTurnoverStateFileRepository {
   private readonly statePath: string;
   private readonly events: BucketTurnoverEventFileRepository;
-  constructor(baseDir: string, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+  constructor(private readonly baseDir: string, private readonly options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+    this.options = { ...options };
     this.statePath = join(baseDir, BUCKET_TURNOVER_STATE_FILE_NAME);
     this.events = new BucketTurnoverEventFileRepository(baseDir, options);
   }
@@ -51,6 +53,15 @@ export class BucketTurnoverStateFileRepository {
 
   async readVerifiedSnapshot(): Promise<VerifiedBucketTurnoverStateSnapshot> {
     return this.withDurableSnapshot(async (snapshot) => snapshot);
+  }
+
+  /** Historical prefix replay only. A supplied history must be repository-issued for this root; it may be a validated event prefix. */
+  async resolveObservedState(value: unknown, turnoverStateId: string, knownEvents?: VerifiedBucketTurnoverEventHistory) {
+    const events = knownEvents ?? await this.events.readVerifiedHistory();
+    await assertBucketTurnoverEventHistorySource(events, this.baseDir, knownEvents !== undefined);
+    const windows = await new BucketTurnoverWindowFileRepository(this.baseDir, this.options).readVerifiedHistory();
+    if (knownEvents !== undefined) await assertBucketTurnoverEventHistorySource(events, this.baseDir, true);
+    return resolveObservedState({ events, windows }, value, turnoverStateId);
   }
 
   /** The callback holds event/snapshot/window locks, not policy/Risk/reservation/execution authority. */
@@ -119,6 +130,53 @@ export function getDurableBucketTurnoverStateObservation(snapshot: VerifiedBucke
 export function getDurableBucketTurnoverStateSource(snapshot: VerifiedBucketTurnoverStateSnapshot, turnoverStateId: string) {
   getDurableBucketTurnoverStateObservation(snapshot);
   const sources = observationSources.get(snapshot)!;
+  return stateSource(snapshot, sources, turnoverStateId);
+}
+
+export function getDurableBucketTurnoverObservation(snapshot: VerifiedBucketTurnoverStateSnapshot): BucketTurnoverObservation {
+  const { observedAt } = getDurableBucketTurnoverStateObservation(snapshot);
+  const { sourceWindowCount, sourceWindowGenerationHash, sourceEventCount, sourceEventGenerationHash, projectionHash } = snapshot;
+  return Object.freeze({ sourceWindowCount, sourceWindowGenerationHash, sourceEventCount, sourceEventGenerationHash, projectionHash, observedAt });
+}
+
+/** Replays a retry's old prefix inside the currently held source locks without acquiring them again. */
+export function resolveObservedBucketTurnoverState(snapshot: VerifiedBucketTurnoverStateSnapshot, value: unknown, turnoverStateId: string) {
+  const current = getDurableBucketTurnoverStateObservation(snapshot);
+  const observation = bucketTurnoverObservationSchema.parse(value);
+  if (Date.parse(observation.observedAt) > Date.parse(current.observedAt)) throw new Error("turnover source observation is in the future");
+  return resolveObservedState(observationSources.get(snapshot)!, value, turnoverStateId);
+}
+
+function resolveObservedState(sources: { events: VerifiedBucketTurnoverEventHistory; windows: VerifiedBucketTurnoverWindowHistory },
+  value: unknown, turnoverStateId: string) {
+  const observation = bucketTurnoverObservationSchema.parse(value);
+  if (!isDeepStrictEqual(value, observation) || Date.parse(observation.observedAt) > Date.now()) throw new Error("turnover observation is noncanonical or in the future");
+  const projection = deriveProjection(sources.events, sources.windows, observation.sourceEventCount, observation.sourceWindowCount);
+  const { states: _states, schemaVersion: _schema, ...identity } = projection;
+  const { observedAt, ...expected } = observation;
+  if (!isDeepStrictEqual(identity, expected)) throw new Error("turnover observation does not match its actual source prefix");
+  const cutoff = Date.parse(observedAt);
+  for (const window of sources.windows.windows.slice(0, observation.sourceWindowCount)) {
+    if (Date.parse(window.completion?.completedAt ?? window.appendedAt) > cutoff) throw new Error("turnover window prefix was unavailable at observation");
+  }
+  for (const event of sources.events.events.slice(0, observation.sourceEventCount)) {
+    const origin = resolveVerifiedBucketTurnoverEventOrigin(sources.events, event.turnoverEventId);
+    if (Date.parse(origin.completion?.completedAt ?? origin.appendedAt) > cutoff) throw new Error("turnover event prefix was unavailable at observation");
+  }
+  // A receipt may not omit a source already completed before its observation. Equal millisecond
+  // timestamps do not prove ordering; current creation instead uses the complete locked histories.
+  for (const window of sources.windows.windows.slice(observation.sourceWindowCount)) {
+    if (Date.parse(window.completion?.completedAt ?? window.appendedAt) < cutoff) throw new Error("turnover observation omits an already available window");
+  }
+  for (const event of sources.events.events.slice(observation.sourceEventCount)) {
+    const origin = resolveVerifiedBucketTurnoverEventOrigin(sources.events, event.turnoverEventId);
+    if (Date.parse(origin.completion?.completedAt ?? origin.appendedAt) < cutoff) throw new Error("turnover observation omits an already available event");
+  }
+  return Object.freeze({ projection, source: stateSource(projection, sources, turnoverStateId) });
+}
+
+function stateSource(snapshot: VerifiedBucketTurnoverStateSnapshot,
+  sources: { events: VerifiedBucketTurnoverEventHistory; windows: VerifiedBucketTurnoverWindowHistory }, turnoverStateId: string) {
   const state = snapshot.states.find((item) => item.turnoverStateId === turnoverStateId);
   if (state === undefined) throw new Error("turnover projection has no matching window state");
   const root = resolveVerifiedBucketTurnoverWindowOrigin(sources.windows, turnoverStateId);
