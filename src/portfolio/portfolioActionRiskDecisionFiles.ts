@@ -32,6 +32,10 @@ import { portfolioExecutionRuleParametersSchema } from "./portfolioPolicyExecuti
 import { riskRuleParameterRefFor } from "./runtimePolicyContracts.js";
 import { assertRiskExecutionDecisionBinding, parseRiskDecisionExecutionOrigin, riskDecisionExecutionOriginSchema,
   verifyRiskExecutionLiquidity, type RiskDecisionExecutionOrigin } from "./portfolioActionRiskDecisionExecutionContext.js";
+import { BucketTurnoverStateFileRepository, type VerifiedBucketTurnoverStateSnapshot } from "./bucketTurnoverStateFiles.js";
+import { assertRiskDecisionTurnoverOriginBinding, createRiskDecisionTurnoverOrigin, parseRiskDecisionTurnoverOrigin,
+  riskDecisionTurnoverOriginSchema, verifyRiskDecisionTurnoverOriginInProjection,
+  type RiskDecisionTurnoverOrigin } from "./portfolioActionRiskDecisionTurnoverContext.js";
 
 export const PORTFOLIO_ACTION_RISK_DECISION_RECORDS_FILE_NAME =
   "portfolio-action-risk-decision-records.jsonl";
@@ -60,6 +64,7 @@ export interface VerifiedPortfolioActionRiskDecisionOrigin {
   snapshotOrigin: RiskDecisionSnapshotOrigin | null;
   priceOrigin: RiskDecisionPriceOrigin | null;
   executionOrigin: RiskDecisionExecutionOrigin | null;
+  turnoverOrigin?: RiskDecisionTurnoverOrigin;
 }
 
 interface VerifiedHistoryMetadata {
@@ -71,6 +76,7 @@ interface VerifiedHistoryMetadata {
   snapshotOriginById: ReadonlyMap<string, RiskDecisionSnapshotOrigin>;
   priceOriginById: ReadonlyMap<string, RiskDecisionPriceOrigin>;
   executionOriginById: ReadonlyMap<string, RiskDecisionExecutionOrigin>;
+  turnoverOriginById: ReadonlyMap<string, RiskDecisionTurnoverOrigin>;
   lastEntryHash: string | null;
   lastCommittedAt: string | null;
 }
@@ -139,6 +145,10 @@ const executionBoundEntrySchema = priceBoundEntrySchema.extend({
   schemaVersion: z.literal("portfolio_action_risk_decision_entry.v8"),
   executionOrigin: riskDecisionExecutionOriginSchema
 }).strict();
+const turnoverBoundEntrySchema = executionBoundEntrySchema.extend({
+  schemaVersion: z.literal("portfolio_action_risk_decision_entry.v9"),
+  turnoverOrigin: riskDecisionTurnoverOriginSchema
+}).strict();
 
 const commitMarkerSchema = z.object({
   schemaVersion: z.literal("portfolio_action_risk_decision_commit.v1"),
@@ -157,6 +167,7 @@ interface ParsedRiskDecisionEntry {
   snapshotOrigin: RiskDecisionSnapshotOrigin | null;
   priceOrigin: RiskDecisionPriceOrigin | null;
   executionOrigin: RiskDecisionExecutionOrigin | null;
+  turnoverOrigin?: RiskDecisionTurnoverOrigin;
 }
 
 export function createPortfolioActionRiskDecisionPaths(baseDir: string): {
@@ -274,6 +285,21 @@ export class PortfolioActionRiskDecisionFileRepository {
     input: Omit<Parameters<typeof createPortfolioActionRiskDecision>[0], "decidedAt">,
     request: Omit<z.input<typeof portfolioPlanExecutionPreviewInputSchema>, "baseDir" | "planId">
   ): Promise<PortfolioActionRiskDecision> {
+    return this.#createWithExecutionOrigin(input, request, false);
+  }
+
+  /** Opt-in v9: bind actual current turnover sources through persistence. Not a reservation or all-rule execution permit. */
+  async createAndAppendWithTurnoverOrigin(
+    input: Omit<Parameters<typeof createPortfolioActionRiskDecision>[0], "decidedAt">,
+    request: Omit<z.input<typeof portfolioPlanExecutionPreviewInputSchema>, "baseDir" | "planId">
+  ): Promise<PortfolioActionRiskDecision> {
+    return this.#createWithExecutionOrigin(input, request, true);
+  }
+
+  async #createWithExecutionOrigin(
+    input: Omit<Parameters<typeof createPortfolioActionRiskDecision>[0], "decidedAt">,
+    request: Omit<z.input<typeof portfolioPlanExecutionPreviewInputSchema>, "baseDir" | "planId">, bindTurnover: boolean
+  ): Promise<PortfolioActionRiskDecision> {
     for (const key of ["decidedAt", "riskDecisionId", "riskDecisionHash", "riskInputHash"]) {
       if (key in input) throw new Error("execution-bound risk creation cannot accept a record or timestamp");
     }
@@ -286,6 +312,7 @@ export class PortfolioActionRiskDecisionFileRepository {
     const existing = history.records.find((record) => sameCreationInput(record, candidate));
     if (existing !== undefined) {
       const prior = resolveVerifiedPortfolioActionRiskDecisionOrigin(history, existing.riskDecisionId);
+      if (bindTurnover && prior.turnoverOrigin === undefined) throw new Error("Risk turnover origin cannot be added after persistence");
       if (prior.executionOrigin === null || prior.planOrigin?.predecessorEventHash !== selected.expectedPlanEventHash ||
         prior.priceOrigin?.evidenceRef !== selected.priceEvidenceRef || prior.executionOrigin.liquidity.packetHash !== selected.liquidityPacketHash) {
         throw new Error("risk execution origin cannot be added or replaced after persistence");
@@ -303,6 +330,13 @@ export class PortfolioActionRiskDecisionFileRepository {
       });
     }
     const execution = await createPortfolioPlanExecutionPreview({ ...selected, baseDir, planId: creationInput.planId });
+    if (bindTurnover) {
+      return new BucketTurnoverStateFileRepository(baseDir, {
+        lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs
+      }).withDurableRiskSources(({ projection, prices, snapshots }) =>
+        this.#createWithOrigins(creationInput, true, true, snapshots,
+          { history: prices, evidenceRef: selected.priceEvidenceRef }, execution, projection));
+    }
     return new SourcePriceEvidenceFileRepository(baseDir).withDurableVerifiedHistory(async (history) =>
       new PortfolioSizingSnapshotFileRepository(baseDir).withDurableVerifiedHistory(async (snapshots) =>
         this.#createWithOrigins(creationInput, true, true, snapshots,
@@ -313,7 +347,8 @@ export class PortfolioActionRiskDecisionFileRepository {
     input: Omit<Parameters<typeof createPortfolioActionRiskDecision>[0], "decidedAt">, bindPlan: boolean, bindMandate = false,
     snapshotHistory?: VerifiedPortfolioSizingSnapshotHistory,
     priceContext?: { history: VerifiedSourcePriceEvidenceHistory; evidenceRef: string },
-    executionContext?: Awaited<ReturnType<typeof createPortfolioPlanExecutionPreview>>
+    executionContext?: Awaited<ReturnType<typeof createPortfolioPlanExecutionPreview>>,
+    turnoverProjection?: VerifiedBucketTurnoverStateSnapshot
   ): Promise<PortfolioActionRiskDecision> {
     for (const key of ["decidedAt", "riskDecisionId", "riskDecisionHash", "riskInputHash"]) {
       if (key in input) throw new Error("policy-bound risk creation cannot accept a record or timestamp");
@@ -323,7 +358,8 @@ export class PortfolioActionRiskDecisionFileRepository {
     const context = bindPlan ? await readStoredRiskDecisionPlanContext({ baseDir: dirname(this.recordsPath), planId: creationInput.planId }) : null;
     if (context !== null) {
       const persist = async (mandateHistory?: VerifiedInvestmentMandateHistory) => {
-        // Lock order: price (when bound) -> snapshot -> mandate (when assigned) -> activation -> risk.
+        // V9 holds event -> price -> snapshot -> window first; then mandate -> activation -> risk.
+        // Earlier writers keep price (when bound) -> snapshot -> mandate (when assigned) -> activation -> risk.
         const snapshot = await readStoredRuntimePortfolioPolicyActivationSnapshot(dirname(this.recordsPath));
         const activationStore = new RuntimePortfolioPolicyActivationFileRepository(dirname(this.recordsPath), snapshot.policies, snapshot.dependencies.repository);
         return activationStore.withDurableActivePolicy(creationInput.portfolioId, async (active, observedAt, activationHistory, verifyHistory) => {
@@ -404,8 +440,12 @@ export class PortfolioActionRiskDecisionFileRepository {
             assertRiskExecutionDecisionBinding(record, executionOrigin);
             await verifyRiskExecutionLiquidity(dirname(this.recordsPath), executionOrigin);
           }
+          const turnoverOrigin = turnoverProjection === undefined ? null : createRiskDecisionTurnoverOrigin(record, active.policy, turnoverProjection);
+          const verifyTurnoverHistory = turnoverProjection === undefined ? undefined
+            : (prior: RiskDecisionTurnoverOrigin, existing: PortfolioActionRiskDecision) =>
+              verifyRiskDecisionTurnoverOriginInProjection(existing, active.policy, prior, turnoverProjection);
           if (mandateHistory === undefined) return this.#appendRecord(record, policyOrigin, context.origin, verifyHistory,
-            null, undefined, snapshotOrigin, verifySnapshotHistory, priceOrigin, verifyPriceHistory, executionOrigin);
+            null, undefined, snapshotOrigin, verifySnapshotHistory, priceOrigin, verifyPriceHistory, executionOrigin, turnoverOrigin, verifyTurnoverHistory);
           const observation = getDurableInvestmentMandateObservation(mandateHistory);
           if (Date.parse(observedAt) < Date.parse(observation.observedAt)) throw new Error("mandate-bound risk creation clock moved backwards");
           const mandate = validateRiskDecisionMandateState(binding, mandateHistory);
@@ -415,7 +455,7 @@ export class PortfolioActionRiskDecisionFileRepository {
             const previous = validateRiskDecisionMandateState({ ...binding, decision: existing }, original);
             const { observation: _time, ...identity } = prior;
             if (!isDeepStrictEqual(identity, riskDecisionMandateIdentity(previous))) throw new Error("risk decision retry mandate source mismatch");
-          }, snapshotOrigin, verifySnapshotHistory, priceOrigin, verifyPriceHistory, executionOrigin);
+          }, snapshotOrigin, verifySnapshotHistory, priceOrigin, verifyPriceHistory, executionOrigin, turnoverOrigin, verifyTurnoverHistory);
         });
       };
       const legacySnapshot = snapshotHistory !== undefined && creationInput.riskRuleScope?.scopeKind === "legacy_reduce_only";
@@ -450,7 +490,8 @@ export class PortfolioActionRiskDecisionFileRepository {
     verifySnapshotHistory?: (origin: RiskDecisionSnapshotOrigin, existing: PortfolioActionRiskDecision) => void,
     priceOrigin: RiskDecisionPriceOrigin | null = null,
     verifyPriceHistory?: (origin: RiskDecisionPriceOrigin, existing: PortfolioActionRiskDecision) => void,
-    executionOrigin: RiskDecisionExecutionOrigin | null = null): Promise<PortfolioActionRiskDecision> {
+    executionOrigin: RiskDecisionExecutionOrigin | null = null, turnoverOrigin: RiskDecisionTurnoverOrigin | null = null,
+    verifyTurnoverHistory?: (origin: RiskDecisionTurnoverOrigin, existing: PortfolioActionRiskDecision) => void): Promise<PortfolioActionRiskDecision> {
     const candidate = cloneRecord(value);
     return this.withLock(async () => {
       const history = await this.readHistoryUnderLock();
@@ -514,6 +555,11 @@ export class PortfolioActionRiskDecisionFileRepository {
           assertRiskExecutionDecisionBinding(existing, prior);
           await verifyRiskExecutionLiquidity(dirname(this.recordsPath), prior);
         }
+        if (turnoverOrigin !== null) {
+          const prior = getVerifiedHistoryMetadata(history).turnoverOriginById.get(existing.riskDecisionId);
+          if (prior === undefined || verifyTurnoverHistory === undefined) throw new Error("Risk turnover origin cannot be added after persistence");
+          verifyTurnoverHistory(prior, existing);
+        }
         await syncDurableJsonFile(this.recordsPath);
         return existing;
       }
@@ -531,7 +577,7 @@ export class PortfolioActionRiskDecisionFileRepository {
         record: candidate,
         appendStartedAt,
         previousEntryHash: metadata.lastEntryHash,
-        policyOrigin, planOrigin, mandateOrigin, snapshotOrigin, priceOrigin, executionOrigin
+        policyOrigin, planOrigin, mandateOrigin, snapshotOrigin, priceOrigin, executionOrigin, turnoverOrigin
       });
       await appendDurableJsonLine(this.recordsPath, entry);
       // Sample availability only after the record and directory sync complete.
@@ -618,7 +664,8 @@ function parsePortfolioActionRiskDecisionEntries(
     try {
       const value: unknown = JSON.parse(line);
       if (value !== null && typeof value === "object" && "schemaVersion" in value) {
-        const parsed = value.schemaVersion === "portfolio_action_risk_decision_entry.v8" ? executionBoundEntrySchema.parse(value)
+        const parsed = value.schemaVersion === "portfolio_action_risk_decision_entry.v9" ? turnoverBoundEntrySchema.parse(value)
+          : value.schemaVersion === "portfolio_action_risk_decision_entry.v8" ? executionBoundEntrySchema.parse(value)
           : value.schemaVersion === "portfolio_action_risk_decision_entry.v7" ? priceBoundEntrySchema.parse(value)
           : value.schemaVersion === "portfolio_action_risk_decision_entry.v6" ? snapshotBoundEntrySchema.parse(value)
           : value.schemaVersion === "portfolio_action_risk_decision_entry.v5" ? mandateBoundEntrySchema.parse(value)
@@ -631,6 +678,8 @@ function parsePortfolioActionRiskDecisionEntries(
         const snapshotOrigin = "snapshotOrigin" in parsed ? parsed.snapshotOrigin : null;
         const priceOrigin = "priceOrigin" in parsed ? parsed.priceOrigin : null;
         const executionOrigin = "executionOrigin" in parsed ? parseRiskDecisionExecutionOrigin(parsed.executionOrigin) : null;
+        const turnoverOrigin = "turnoverOrigin" in parsed ? parseRiskDecisionTurnoverOrigin(parsed.turnoverOrigin) : undefined;
+        if (turnoverOrigin !== undefined) assertRiskDecisionTurnoverOriginBinding(record, turnoverOrigin);
         if (executionOrigin !== null) {
           assertRiskExecutionDecisionBinding(record, executionOrigin);
           if (priceOrigin?.evidenceRef !== executionOrigin.preview.input.sourcePriceEvidence.evidenceRef ||
@@ -646,7 +695,8 @@ function parsePortfolioActionRiskDecisionEntries(
           ...(planOrigin === null ? {} : { planOrigin }),
           ...(snapshotOrigin === null ? (mandateOrigin === null ? {} : { mandateOrigin }) : { mandateOrigin, snapshotOrigin }),
           ...(priceOrigin === null ? {} : { priceOrigin }),
-          ...(executionOrigin === null ? {} : { executionOrigin })
+          ...(executionOrigin === null ? {} : { executionOrigin }),
+          ...(turnoverOrigin === undefined ? {} : { turnoverOrigin })
         };
         if (parsed.previousEntryHash !== previousEntryHash ||
           parsed.entryHash !== hashCanonicalPayload(payload) ||
@@ -679,7 +729,8 @@ function parsePortfolioActionRiskDecisionEntries(
           Date.parse(marker.committedAt) < Date.parse(parsed.appendStartedAt)) {
           throw new Error("portfolio action risk decision durable commit origin mismatch");
         }
-        entry = { record, committedAt: marker.committedAt, tailHash: marker.commitHash, policyOrigin, planOrigin, mandateOrigin, snapshotOrigin, priceOrigin, executionOrigin };
+        entry = { record, committedAt: marker.committedAt, tailHash: marker.commitHash, policyOrigin, planOrigin, mandateOrigin, snapshotOrigin, priceOrigin, executionOrigin,
+          ...(turnoverOrigin === undefined ? {} : { turnoverOrigin }) };
         previousCommittedAt = marker.committedAt;
         hasCommittedEntry = true;
       } else {
@@ -744,7 +795,8 @@ export function resolveVerifiedPortfolioActionRiskDecisionOrigin(
     mandateOrigin: metadata.mandateOriginById.get(riskDecisionId) ?? null,
     snapshotOrigin: metadata.snapshotOriginById.get(riskDecisionId) ?? null,
     priceOrigin: metadata.priceOriginById.get(riskDecisionId) ?? null,
-    executionOrigin: metadata.executionOriginById.get(riskDecisionId) ?? null
+    executionOrigin: metadata.executionOriginById.get(riskDecisionId) ?? null,
+    ...(metadata.turnoverOriginById.has(riskDecisionId) ? { turnoverOrigin: metadata.turnoverOriginById.get(riskDecisionId)! } : {})
   });
 }
 
@@ -773,6 +825,8 @@ function createVerifiedPortfolioActionRiskDecisionHistory(
       .map((entry) => [entry.record.riskDecisionId, deepFreeze(entry.priceOrigin!)])),
     executionOriginById: new Map(entries.filter((entry) => entry.executionOrigin !== null)
       .map((entry) => [entry.record.riskDecisionId, deepFreeze(entry.executionOrigin!)])),
+    turnoverOriginById: new Map(entries.filter((entry) => entry.turnoverOrigin !== undefined)
+      .map((entry) => [entry.record.riskDecisionId, deepFreeze(entry.turnoverOrigin!)])),
     lastEntryHash: entries.at(-1)?.tailHash ?? null,
     lastCommittedAt: entries.at(-1)?.committedAt ?? null
   });
@@ -799,6 +853,7 @@ function createPortfolioActionRiskDecisionFileEntry(input: {
   snapshotOrigin: RiskDecisionSnapshotOrigin | null;
   priceOrigin: RiskDecisionPriceOrigin | null;
   executionOrigin: RiskDecisionExecutionOrigin | null;
+  turnoverOrigin: RiskDecisionTurnoverOrigin | null;
 }) {
   if (Date.parse(input.appendStartedAt) < Date.parse(input.record.decidedAt)) {
     throw new Error("portfolio action risk decision cannot be appended before decision time");
@@ -809,11 +864,12 @@ function createPortfolioActionRiskDecisionFileEntry(input: {
     previousEntryHash: input.previousEntryHash
   };
   const payload = input.executionOrigin !== null
-    ? { schemaVersion: "portfolio_action_risk_decision_entry.v8" as const, ...common,
+    ? { schemaVersion: input.turnoverOrigin === null ? "portfolio_action_risk_decision_entry.v8" as const : "portfolio_action_risk_decision_entry.v9" as const, ...common,
       policyOrigin: generationBoundPolicyOriginSchema.parse(input.policyOrigin), planOrigin: riskDecisionPlanOriginSchema.parse(input.planOrigin),
       mandateOrigin: input.mandateOrigin === null ? null : riskDecisionMandateOriginSchema.parse(input.mandateOrigin),
       snapshotOrigin: riskDecisionSnapshotOriginSchema.parse(input.snapshotOrigin), priceOrigin: riskDecisionPriceOriginSchema.parse(input.priceOrigin),
-      executionOrigin: parseRiskDecisionExecutionOrigin(input.executionOrigin) }
+      executionOrigin: parseRiskDecisionExecutionOrigin(input.executionOrigin),
+      ...(input.turnoverOrigin === null ? {} : { turnoverOrigin: parseRiskDecisionTurnoverOrigin(input.turnoverOrigin) }) }
     : input.priceOrigin !== null
     ? { schemaVersion: "portfolio_action_risk_decision_entry.v7" as const, ...common,
       policyOrigin: generationBoundPolicyOriginSchema.parse(input.policyOrigin), planOrigin: riskDecisionPlanOriginSchema.parse(input.planOrigin),

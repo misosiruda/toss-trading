@@ -33,7 +33,9 @@ const histories = new WeakMap<VerifiedBucketTurnoverEventHistory, {
   fills: ReadonlyMap<string, VerifiedBucketTurnoverEventOrigin>;
   states: ReadonlyMap<string, BucketTurnoverState>;
   lastCommittedAt: string | null;
+  sourceDirectory: string;
 }>();
+const activeReplayHistories = new WeakSet<VerifiedBucketTurnoverEventHistory>();
 
 export function createBucketTurnoverEventPaths(baseDir: string) {
   return { eventsPath: join(baseDir, BUCKET_TURNOVER_EVENTS_FILE_NAME), lockPath: join(baseDir, `.${BUCKET_TURNOVER_EVENTS_FILE_NAME}.lock`),
@@ -98,8 +100,8 @@ export class BucketTurnoverEventFileRepository {
     return this.withLock(async () => {
       const history = await this.readUnderLock();
       const metadata = histories.get(history)!;
-      const source = await resolveBucketTurnoverFillOrigin({ baseDir: this.baseDir, paperFillRecordId: input.paperFillRecordId },
-        { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs });
+      const source = await withReplayHistory(history, () => resolveBucketTurnoverFillOrigin({ baseDir: this.baseDir, paperFillRecordId: input.paperFillRecordId },
+        { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs }, history));
       const existing = metadata.fills.get(fillKey(source));
       if (existing !== undefined) {
         if (requireCompletion && existing.completion === undefined) throw new Error("turnover event completion cannot be added after persistence");
@@ -166,6 +168,7 @@ export class BucketTurnoverEventFileRepository {
     const fills = new Map<string, VerifiedBucketTurnoverEventOrigin>();
     const states = new Map<string, BucketTurnoverState>();
     const groups = new Map<string, BucketTurnoverEvent[]>();
+    const sourceDirectory = await realpath(this.baseDir);
     let previousHash: string | null = null;
     let previousTime: string | null = null;
     for (let index = 0; index < lines.length; index += 2) {
@@ -174,8 +177,9 @@ export class BucketTurnoverEventFileRepository {
         const entry = entrySchema.parse(value);
         const event = parseBucketTurnoverEvent(entry.event);
         const sourceRef = z.object({ paperFillOrigin: z.object({ paperFillRecordId: identifier }).passthrough() }).passthrough().parse(entry.source);
-        const source = await resolveBucketTurnoverFillOrigin({ baseDir: this.baseDir, paperFillRecordId: sourceRef.paperFillOrigin.paperFillRecordId },
-          { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs });
+        const prefix = issueHistory(origins, fills, states, previousHash, previousTime, sourceDirectory);
+        const source = await withReplayHistory(prefix, () => resolveBucketTurnoverFillOrigin({ baseDir: this.baseDir, paperFillRecordId: sourceRef.paperFillOrigin.paperFillRecordId },
+          { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs }, prefix));
         const initial = source.windowOrigin.snapshotOrigin.initialState;
         const prior = states.get(initial.turnoverStateId) ?? initial;
         assertRiskPrior(source, prior);
@@ -213,9 +217,7 @@ export class BucketTurnoverEventFileRepository {
       } catch (error) { throw new Error(`turnover event corrupt entry at line ${index + 1}`, { cause: error }); }
     }
     if (origins.size > 0) await syncFile(this.paths.eventsPath);
-    const history = Object.freeze({ events: Object.freeze([...origins.values()].map(({ event }) => event)), generationHash: previousHash });
-    histories.set(history, { origins, fills, states, lastCommittedAt: previousTime });
-    return history;
+    return issueHistory(origins, fills, states, previousHash, previousTime, sourceDirectory);
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -232,6 +234,30 @@ export function resolveVerifiedBucketTurnoverEventOrigin(history: VerifiedBucket
   const origin = metadata.origins.get(eventId);
   if (origin === undefined) throw new Error("turnover event does not resolve exactly once");
   return origin;
+}
+
+/** Reject caller clones and histories from another storage root, including for an empty prefix. */
+export async function assertBucketTurnoverEventHistorySource(history: VerifiedBucketTurnoverEventHistory, baseDir: string, requireActiveReplay = false): Promise<void> {
+  const source = histories.get(history);
+  if (source === undefined) throw new Error("turnover event history is not repository-verified");
+  const actual = await realpath(baseDir);
+  const normalize = (path: string) => process.platform === "win32" ? path.toLowerCase() : path;
+  if (normalize(source.sourceDirectory) !== normalize(actual)) throw new Error("turnover event history belongs to another storage root");
+  if (requireActiveReplay && !activeReplayHistories.has(history)) throw new Error("turnover event prefix has no active replay context");
+}
+
+async function withReplayHistory<T>(history: VerifiedBucketTurnoverEventHistory, operation: () => Promise<T>): Promise<T> {
+  activeReplayHistories.add(history);
+  try { return await operation(); } finally { activeReplayHistories.delete(history); }
+}
+
+function issueHistory(origins: ReadonlyMap<string, VerifiedBucketTurnoverEventOrigin>, fills: ReadonlyMap<string, VerifiedBucketTurnoverEventOrigin>,
+  states: ReadonlyMap<string, BucketTurnoverState>, generationHash: string | null, lastCommittedAt: string | null,
+  sourceDirectory: string): VerifiedBucketTurnoverEventHistory {
+  const history = Object.freeze({ events: Object.freeze([...origins.values()].map(({ event }) => event)), generationHash });
+  // A prefix passed to a Risk resolver must not grow when the enclosing event parser advances.
+  histories.set(history, { origins: new Map(origins), fills: new Map(fills), states: new Map(states), lastCommittedAt, sourceDirectory });
+  return history;
 }
 function assertRiskPrior(source: Source, prior: BucketTurnoverState): void {
   if (source.turnoverAssessment.turnoverStateHash !== prior.turnoverStateHash ||

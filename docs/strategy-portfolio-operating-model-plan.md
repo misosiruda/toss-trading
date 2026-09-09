@@ -4318,6 +4318,45 @@ prefix 재검증, 현금·수량 예약 및 원자 체결은 후속이다. 현�
 그대로 호출하면 원본 저장소 재진입이므로 허용하지 않는다. 기존 데이터를 변환하지 않으며 rollback은
 신규 consumer를 중지하고 코드만 되돌릴 수 있다. 거래·MCP·HTTP 설정과 paper-only 기본값은 유지한다.
 
+서른한 번째 분할은 `PortfolioActionRiskDecisionFileRepository.createAndAppendWithTurnoverOrigin`으로
+실제 회전율 원본을 Risk 생성과 append까지 연결한다. Opt-in Risk entry v9는 기존 v8의 policy,
+plan, mandate, snapshot, price 및 execution 원본에 strict `portfolio_risk_turnover_origin.v1`을
+추가한다. 이 원본은 선택한 state ID/hash, window/마지막 event의 commit·completion hash,
+가용 시각과 전체 projection의 window/event count·generation hash·projection hash·관측 시각을
+저장한다. 전체 원본은 entry hash 재계산에 포함되며 domain Risk record hash는 변경하지 않는다.
+
+생성은 event → price → snapshot → window → mandate → activation → Risk 잠금 순서로 실제
+원본을 보존한다. 가격·잔고 이력을 재사용하고 원본 저장소를 재진입하지 않는다. 실제 정책의
+window ID, 고정 분모, 이전 누계, state hash 및 회전율 한도를 입력과 비교한다. 원본 completion은
+decision보다 엄격히 앞서야 하고 source observation은 decision보다 늦을 수 없다. Projection의
+missing/stale/corrupt 또는 completion 없는 legacy 원본은 새 v9 생성 전에 거절한다. 자동 refresh,
+가용 시각 합성 및 기존 v8 결정에 대한 v9 원본 소급 추가는 하지 않는다.
+
+동일 입력 재시도는 원래 저장한 관측 prefix를 실제 원본에서 재검증하고 기존 결정을 반환한다.
+새 원본으로 과거 결정을 덮어쓰지 않는다. 동시 생성이 Risk 잠금에서 같은 결정을 발견하면 이미
+보유한 source lease 안에서 원래 prefix를 재생한다. 과거 execution resolver는 v9 원본도 검증하지만
+현재 projection cache를 요구하지 않으며 현재 실행 권한을 발급하지 않는다. Event reader는 각 event
+이전까지 검증한 prefix를 내부 replay 동안만 전달하여 event → fill → Risk → event 순환 조회를
+방지한다. Prefix metadata는 복사하고 저장소 root 및 내부 replay 수명을 확인하므로 caller clone,
+다른 root의 이력과 반환 후 캐시한 이력을 재주입할 수 없다.
+
+재생은 실제 prefix count·generation·projection hash와 선택 source identity를 모두 비교한다.
+관측 시각보다 뒤에 완료된 포함 원본과 관측 시각보다 엄격히 앞서 완료됐지만 누락된 원본은
+거절한다. 같은 millisecond의 시각만으로 전후 순서를 증명하지 않으며 새 생성 경로에서는 전체
+잠긴 이력을 사용한다. Source receipt 자체가 현재 실행 권한이나 현금·수량 예약을 의미하지 않는다.
+Risk append fsync 실패 시 성공 결과를 반환하지 않고 원본 lock을 해제하며 불완전 Risk 이력은
+자동 복구·삭제하지 않는다. 전체 artifact에 걸친 원자 체결/회계 rollback은 여전히 후속 범위이다.
+
+기존 v1~v8 reader/writer와 저장된 fill/event source payload는 유지하고 v9에만 선택적
+`turnoverOrigin` 필드를 반환한다. 자동 migration은 없다. V9 reader를 먼저 배포하고 opt-in writer를
+사용해야 한다. V9 기록 후에는 writer/consumer를 중지하고 v9 reader를 유지해야 하며 v9를 모르는
+코드로 즉시 rollback하면 이력 조회가 실패한다. 기존 파일을 변환하거나 삭제하지 않는다.
+테스트는 BUY/SELL, exact/concurrent retry, 두 번의 실제 paper fill 이후 prefix 재생, v8 소급 변경
+거절, 독립 rehash 원본 위조, 가용 시각 경계, cached/clone/foreign prefix, stale projection,
+실제 Risk fsync 동안 source lock 유지 및 실패 후 해제·불완전 이력 보존을 검증한다.
+현재 가격·잔고·수량 예약 및 모든 Risk rule 수치 재평가, runner/원자 체결 coordinator 연결은 후속이다.
+MCP·HTTP·live order surface와 mock/paper-only 기본값은 변경하지 않는다.
+
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
 - cadence scheduler와 conflict resolver
