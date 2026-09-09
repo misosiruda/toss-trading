@@ -68,6 +68,36 @@ version, OS/architecture와 availableParallelism을 출력한다. 경과 시간�
 CPU·메모리·디스크 중 원인을 단정하지 않는다. 이 변경은 캐시·증분 빌드·동시성 설정 변경이나
 속도 배수 보장을 포함하지 않는다.
 
+## Risk 통합 테스트의 파일 단위 분리
+
+`portfolioActionRiskDecisionPolicyResolver.test.ts`에 모여 있던 155개 테스트를
+정책, plan, mandate, snapshot, price, preview, execution 및 turnover의 원본·event·projection·
+생성·lease·현재 상태 영역별 13개 파일로 나눈다. 테스트 이름, 본문, assertion, timeout과
+fault injection은 변경하지 않는다. 공통 상수·타입·함수 35개는
+`portfolioActionRiskDecisionTestFixtures.ts`로 이동하며 fixture import 자체는 테스트를 등록하지 않는다.
+
+기존 Node test runner의 파일별 프로세스 격리/병렬 실행을 사용하고 파일 내부 테스트는
+직렬 실행을 유지한다. 따라서 `Date`, filesystem mock과 `syncBuiltinESMExports()`가 다른
+파일의 테스트에 섞이지 않는다. 기존 `mkdtemp` 기반 저장소 격리와 `finally` cleanup도 유지한다.
+Runner의 concurrency 옵션, 영향 선택 임계값, 전체 검증 gate나 production 구현은 바꾸지 않는다.
+
+원래 정책 테스트 파일은 정책 검증 16개를 계속 등록하므로 이전 compiled 파일이 추가 suite로
+남는 rename/delete 문제는 없다. 공통 fixture 변경은 역의존성으로 모든 분리 파일을 선택한다.
+테스트 분리는 production API·저장 형식 변경이 아니며 코드 rollback에 데이터 변환은 없다.
+분리 뒤 생성된 `dist/portfolio/portfolioActionRiskDecision*.test.js`는 rollback 후 예전 소스에
+없는 파일만 정확히 확인해 정리하거나 깨끗한 checkout에서 빌드해야 한다. TypeScript build는
+삭제된 source의 오래된 compiled 파일을 자동으로 지우지 않는다.
+
+성능 비교는 동일 Node/OS에서 기존 단일 파일의 155개 테스트와 분리된 13개 파일의 같은
+155개 테스트를 각각 실행한다. 애플리케이션 전체 검증도 별도로 확인하며, 테스트 개수 감소나
+skip으로 속도를 얻었다고 주장하지 않는다. 단일 측정은 환경별 성능 보장이 아니다.
+
+2026-09-09 Windows x64 / Node v22.15.0 / availableParallelism 8 측정에서 기존 155개
+단일 파일의 TAP duration은 211.686초, 분리 후 같은 155개는 71.564초였다(약 66% 감소).
+양쪽 모두 실패·skip·cancel 0이다. 분리 후 `check:review`의 build/quality/tooling을 포함한
+총 시간은 97.425초, 영향 단계는 분석 비용을 포함해 74.053초다. 이전 단일 파일 측정에는
+build/quality가 포함되지 않았으므로 211.686초와 97.425초를 같은 범위의 수치로 비교하지 않는다.
+
 ## 호환성·롤백
 
 ### Windows 활성화 저장소 잠금 경합
