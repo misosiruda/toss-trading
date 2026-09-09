@@ -3087,6 +3087,29 @@ Predecessor의 실존/분기, global ledger version 순서, 잔액 감소·fill 
 연결하지 않으며 자동 migration·artifact 생성·live surface 변경은 없다. 계약만으로 예약 원장이나
 전체 수용 기준이 완료됐다고 표시하지 않는다.
 
+예약 이력 재생 분할은 `replayOpeningCapacityReservationEvents`로 단일 portfolio/policy/bucket의
+supplied event 목록을 처음부터 fold한다. 빈 원장은 version 0이며 모든 event는 전체 원장 순서대로
+1씩 증가한다. 여러 예약이 교차 진행할 수 있으므로 predecessor는 전역 직전 event가 아니라 해당
+reservation의 현재 head여야 한다. 독립 event parser를 재사용하고 scope/hash 변경, version gap,
+ID 재사용, branch, asOf/createdAt 역행 및 terminal 이후 전이를 거절한다.
+
+Bind는 reserved에서 한 번만 가능하고 slot·notional을 유지하며 mandate ID는 다른 reservation에
+재사용하지 않는다. Fill은 bound mandate ID/hash와 같고 잔액을 엄격히 줄여야 한다. 신규 slot의
+첫 fill은 consumed_by_position이어야 하며 이후 partial에서도 이미 소비한 position ref를 보존한다.
+같은 fill/paper record ID 재사용과 position 바꿔치기를 거절한다. 잔액 0 또는 released는 terminal이다.
+Unbound 취소는 request_cancelled, bound 이후 해제는 같은 mandate의 terminal origin만 허용한다.
+Selector assignment ID를 새 예약에서 재사용하지 않으며 모든 중간 단계의 aggregate notional을
+BigInt로 계산해 safe integer 범위를 넘는 이력은 거절한다.
+
+반환값은 immutable event 목록과 scope 및 complete event 목록(createdAt 포함)의 history hash,
+reservation별 head·mandate·position ref·소비/해제 금액,
+전체 잔액 및 pending/bound-unused 신규 slot 수다. 이 값은 source claim의 구조적 재생 결과이며
+`BucketOpeningCapacityState`나 latest ledger/CAS 증명이 아니다. 실제 manual/selector/mandate terminal/
+fill 원본, fill notional과 차감액 일치, manual/selector 전역 slot ordinal uniqueness, current snapshot의
+active position과 gap/budget, policy migration 및 persistence/atomic commit은 후속이다. 유효한 prefix도
+성공할 수 있으므로 이 결과만으로 최신 상태나 실행 권한을 발급하지 않는다. Artifact·기존 writer·Risk
+동작과 live surface는 변경하지 않으며 데이터 migration 없이 코드 rollback이 가능하다.
+
 ### PR 4. `PortfolioGapAnalyzer`
 
 - bucket/symbol/cash gap read model
