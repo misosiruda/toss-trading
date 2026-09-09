@@ -3110,6 +3110,31 @@ active position과 gap/budget, policy migration 및 persistence/atomic commit은
 성공할 수 있으므로 이 결과만으로 최신 상태나 실행 권한을 발급하지 않는다. Artifact·기존 writer·Risk
 동작과 live surface는 변경하지 않으며 데이터 migration 없이 코드 rollback이 가능하다.
 
+수동 예약의 실제 원본 조회 선행 분할은 `ManualAssignmentFileRepository.withDurableVerifiedHistory`로
+manual assignment의 전체 이력을 독립 검증·동기화하고 consumer가 끝날 때까지 기존 source lock을
+유지한다. 일반 `readAll`과 동일한 strict JSONL parser를 사용해 torn/blank/corrupt/duplicate 이력을
+거절하며, 새 조회는 regular file과 동일 descriptor의 bytes 및 inode/size/수정 시각을 동기화 전후에
+대조한다. Pathname을 다시 열어 descriptor identity도 비교하므로 관측 중 rewrite/replace/append/
+truncate를 정상 이력으로 승격하지 않는다. 없는 파일은 directory sync 후 부재를 재확인하며 빈
+원본 파일을 생성하지 않는다. Windows directory fsync의 기존 EPERM 제한은 유지하고 그 외 오류는
+consumer 호출 전에 거절한다.
+
+관측값은 전체 event count와 createdAt을 포함한 complete event 목록의 hash, fsync 이후이면서
+마지막 재검증 이전의 observedAt이다. Frozen history의 private WeakMap lease는 callback 동안에만
+유효하고 정상 반환·예외 모두 즉시 폐기한다. 일반 read 결과, 복사한 history나 callback 밖에 보관한
+객체는 durable observation으로 사용할 수 없다. 저장된 receipt는 현재 live lease 안에서 count/hash와
+관측 시각 상한을 대조해 동일 prefix를 재검증할 수 있지만, receipt 문자열 자체를 신뢰하거나 과거
+commit 시각·최신 원장·실행 권한을 증명하지 않는다. Consumer는 자신이 선택한 원본 repository에서
+직접 lease를 취득해야 하며 같은 저장소를 callback 안에서 재진입하지 않는다.
+
+테스트는 classification/opening 이력, absent/empty, append/restart prefix, createdAt 변경과 손상,
+다른 프로세스의 writer 차단, fsync/directory 오류, 관측 중 원본 변경, 관측 시각과 callback 실패 후
+lease/lock 해제를 검증한다. 기존 append 형식·기본값과 writer 호출 경로는 유지한다. 이 조회는
+원본을 fsync하므로 순수 read-only I/O는 아니지만 domain event를 append하거나 고치지 않는다.
+Manual reservation 저장소와 actual snapshot 결속, evidence/sizing/active policy, shared capacity
+ledger/CAS 및 mandate activation 원자 commit은 후속이며 예약 원장 완료로 표시하지 않는다.
+Artifact migration이 없고 신규 consumer를 중지한 뒤 코드 rollback이 가능하다.
+
 ### PR 4. `PortfolioGapAnalyzer`
 
 - bucket/symbol/cash gap read model
