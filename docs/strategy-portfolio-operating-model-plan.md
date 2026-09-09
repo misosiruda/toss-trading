@@ -4267,22 +4267,33 @@ Window 생성도 snapshot lock을 먼저 필요로 하므로 activation/window l
 현재 정책의 bucket/market, policy hash와 activation ID/hash를 결정 당시 원본과 대조한다. 같은 정책을
 retire 후 다시 활성화한 경우도 이전 Risk가 새 activation의 승인이 되지 않는다. 현재 UTC window를
 정책 duration으로 계산하고 실제 state의 hash, 누계 및 최초 snapshot 분모와 assessment를 비교한다.
-전체 원본을 재생한 projection의 window 및 마지막 event commit 가용 시각이 `decidedAt` 이하인지
+전체 원본을 재생한 projection의 window 및 마지막 event completion 가용 시각이 `decidedAt` 이하인지
 검사해, 아직 저장되지 않았던 미래 누계를 과거 결정이 미리 참조한 것처럼 rehash하는 입력도 거절한다.
 관측 시각은 선택된 Risk의 실제 commit 시각 이상이어야 하며, 결정 시각 이후라도 commit 이전으로
 시계가 역행하면 거절한다. 최신 상태 및 정책 대조 뒤 기존 정책 회전율 상한 검증을 다시 적용한다.
 
-`getDurableBucketTurnoverStateSource`는 활성 projection 관측에서만 원본 가용 시각과 commit hash를
-반환한다. Clone, callback 종료·예외 뒤 접근은 거절한다. Resolver는 상태 파일을 자동 생성·refresh하지
+`getDurableBucketTurnoverStateSource`는 활성 projection 관측에서만 원본 가용 시각과 commit/completion hash를
+반환한다. Marker timestamp는 마지막 fsync와 pending 제거 전일 수 있어 가용 시각으로 쓰지 않는다.
+Window `createOrResolveWithCompletion`과 event `appendFillWithCompletion`은 opt-in v2 entry를 기록하고,
+entry/marker fsync와 pending barrier의 durable 제거 후 completion 시각을 샘플링해 세 번째 행으로
+저장한다. Completion은 source kind·marker commit hash·시각의 전체 payload를 hash로 결속하며 다음
+global predecessor와 projection generation은 completion hash를 사용한다. V2의 누락·손상된 세 번째 행은
+완료되지 않은 이력으로 거절한다. V1 root/event에 completion을 사후 추가하거나 시각을 합성하지 않는다.
+V1의 과거 replay와 기존 writer는 유지하지만, 선택한 root 또는 마지막 event의 completion이 없으면
+current 검사를 거절한다. Clone, callback 종료·예외 뒤 접근은 거절한다. Resolver는 상태 파일을 자동 생성·refresh하지
 않고 missing/stale/corrupt/pending 및 fsync 실패를 그대로 차단한다. 체결 후 projection을 refresh해도
 이전 누계를 참조한 Risk는 current 검사에서 거절하며, 기존 historical resolver의 과거 설명은 유지한다.
 
 반환된 `turnoverObservation`은 `observedAt`의 검사 결과이지 재사용 가능한 lease나 실행 권한이 아니다.
 Risk 생성 receipt/재시도 원본 결속, 현재 가격·잔고·소유 수량·예약·전체 rule 재평가 및 원자 체결 coordinator는
-여전히 후속이다. 기존 Risk entry/turnover 파일 형식·runner·MCP·HTTP·거래 기본값은 변경하지 않는다.
-Migration은 없으며 아직 자동 소비자가 없으므로 이 읽기 전용 경로의 코드 rollback은 저장 파일을 변환하지 않는다.
+여전히 후속이다. Risk entry·runner·MCP·HTTP·거래 기본값은 변경하지 않는다. 자동 migration은 없으며
+v2 reader를 먼저 배포하고 opt-in writer를 사용해야 한다. 새 형식 기록 후에는 관련 consumer를 중지하고
+v2 reader를 유지해야 하며, v2를 모르는 코드로 곧바로 rollback하면 해당 이력 조회가 실패한다. 기존 파일을
+자동 삭제·변환하지 않고 operator review 대상으로 남긴다. Completion은 앞선 실제 데이터와 barrier 제거의
+완료 증명이지 자기 자신의 fsync 또는 여러 artifact의 원자 실행을 증명하는 receipt가 아니다.
 통합 테스트는 BUY/SELL, stale projection/체결 후 old Risk, rehash한 누계·분모·hash, 원본 가용성,
-구간 만료·retirement·동일 정책 재활성화, source lease 수명과 fsync 실패를 검증한다.
+구간 만료·retirement·동일 정책 재활성화, source lease 수명과 fsync 실패를 검증한다. 추가로 marker fsync
+도중 실제 다음 Risk를 생성하는 경합을 재현해, marker 이후라도 completion 이전 결정은 current 검사가 거절함을 검증한다.
 
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 

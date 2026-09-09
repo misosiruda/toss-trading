@@ -40,6 +40,7 @@ export async function resolveCurrentPortfolioActionRiskDecisionTurnover(value: z
         windowOpenPortfolioNetWorthKrw: 1 });
       if (identity.turnoverStateId !== assessment.turnoverStateId) throw new Error("current turnover Risk window expired or mismatched");
       const source = getDurableBucketTurnoverStateSource(snapshot, identity.turnoverStateId);
+      if (source.availableAt === null) throw new Error("current turnover requires post-fsync source completion; legacy sources require review");
       const observation = getDurableBucketTurnoverStateObservation(snapshot);
       const state = source.state;
       if (assessment.turnoverStateHash !== state.turnoverStateHash ||
@@ -53,7 +54,7 @@ export async function resolveCurrentPortfolioActionRiskDecisionTurnover(value: z
         throw new Error("current turnover Risk source availability or observation chronology mismatch");
       }
       const turnoverCapacity = validateRiskDecisionTurnoverCapacity({ decision, policy: active.policy });
-      return Object.freeze({ ...resolved, turnoverCapacity, turnoverObservation: Object.freeze({ ...source,
+      return Object.freeze({ ...resolved, turnoverCapacity, turnoverObservation: Object.freeze({ ...source, availableAt: source.availableAt,
         projectionHash: snapshot.projectionHash, sourceEventCount: snapshot.sourceEventCount,
         sourceWindowCount: snapshot.sourceWindowCount, observedAt, activationHistory }) });
     });

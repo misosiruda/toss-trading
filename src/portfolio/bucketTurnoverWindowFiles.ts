@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { sha256HashSchema, strategyBucketSchema } from "../domain/schemas.js";
 import { createInitialBucketTurnoverState } from "./bucketTurnover.js";
+import { createBucketTurnoverCompletion, parseBucketTurnoverCompletion, type BucketTurnoverCompletion } from "./bucketTurnoverCompletion.js";
 import { bucketTurnoverSnapshotOriginSchema, createBucketTurnoverSnapshotOrigin, resolveBucketTurnoverSnapshotOrigin,
   type BucketTurnoverSnapshotOrigin } from "./bucketTurnoverSnapshotOrigin.js";
 import { PortfolioSizingSnapshotFileRepository, getDurablePortfolioSizingSnapshotObservation,
@@ -23,7 +24,7 @@ const policyOriginSchema = z.object({ activationId: identifier, activationEventH
   activationHistory: z.object({ eventCount: z.number().int().positive().safe(), eventsHash: sha256HashSchema }).strict()
 }).strict();
 type PolicyOrigin = z.infer<typeof policyOriginSchema>;
-const entrySchema = z.object({ schemaVersion: z.literal("bucket_turnover_window_entry.v1"),
+const entrySchema = z.object({ schemaVersion: z.enum(["bucket_turnover_window_entry.v1", "bucket_turnover_window_entry.v2"]),
   snapshotOrigin: bucketTurnoverSnapshotOriginSchema, policyOrigin: policyOriginSchema,
   appendStartedAt: offsetQualifiedIsoDateTimeSchema, previousEntryHash: sha256HashSchema.nullable(), entryHash: sha256HashSchema
 }).strict();
@@ -35,6 +36,7 @@ export interface VerifiedBucketTurnoverWindowOrigin {
   policyOrigin: Readonly<PolicyOrigin>;
   appendedAt: string;
   commitHash: string;
+  completion?: BucketTurnoverCompletion;
 }
 export interface VerifiedBucketTurnoverWindowHistory {
   windows: readonly VerifiedBucketTurnoverWindowOrigin[];
@@ -73,6 +75,15 @@ export class BucketTurnoverWindowFileRepository {
   }
 
   async createOrResolve(value: z.input<typeof inputSchema>): Promise<VerifiedBucketTurnoverWindowOrigin> {
+    return this.#createOrResolve(value, false);
+  }
+
+  /** New v2 roots attest completion after pair fsync and durable pending-barrier removal. Never upgrades existing v1 roots. */
+  async createOrResolveWithCompletion(value: z.input<typeof inputSchema>): Promise<VerifiedBucketTurnoverWindowOrigin> {
+    return this.#createOrResolve(value, true);
+  }
+
+  async #createOrResolve(value: z.input<typeof inputSchema>, requireCompletion: boolean): Promise<VerifiedBucketTurnoverWindowOrigin> {
     const input = inputSchema.parse(value);
     if (!isDeepStrictEqual(input, value)) throw new Error("turnover window request must already be canonical");
     // Match the established source -> activation -> destination lock order.
@@ -95,6 +106,7 @@ export class BucketTurnoverWindowFileRepository {
           const history = await this.readUnderLock(snapshots, policies);
           const existing = history.windows.find((origin) => origin.snapshotOrigin.initialState.turnoverStateId === window.turnoverStateId);
           if (existing !== undefined) {
+            if (requireCompletion && existing.completion === undefined) throw new Error("turnover window completion cannot be added after persistence");
             verifyHistory(existing.policyOrigin.activationHistory);
             await syncFile(this.recordsPath);
             return existing;
@@ -107,11 +119,12 @@ export class BucketTurnoverWindowFileRepository {
           // Reject a policy generation appended after the initial source composition; a fresh call can retry.
           verifyPolicyOrigin(snapshotOrigin, policyOrigin, policies);
           const appendStartedAt = new Date().toISOString();
-          const previousTime = history.windows.at(-1)?.appendedAt;
+          const previousOrigin = history.windows.at(-1);
+          const previousTime = previousOrigin?.completion?.completedAt ?? previousOrigin?.appendedAt;
           if (Date.parse(appendStartedAt) < Date.parse(observedAt) ||
             (previousTime !== undefined && Date.parse(appendStartedAt) < Date.parse(previousTime)) ||
             Date.parse(appendStartedAt) >= Date.parse(window.windowEndsAt)) throw new Error("turnover window append clock or boundary mismatch");
-          const payload = { schemaVersion: "bucket_turnover_window_entry.v1" as const, snapshotOrigin, policyOrigin,
+          const payload = { schemaVersion: requireCompletion ? "bucket_turnover_window_entry.v2" as const : "bucket_turnover_window_entry.v1" as const, snapshotOrigin, policyOrigin,
             appendStartedAt, previousEntryHash: history.generationHash };
           const entryHash = hashCanonicalPayload(payload);
           // A retained barrier makes even a fully written but late marker unreadable after restart.
@@ -136,6 +149,13 @@ export class BucketTurnoverWindowFileRepository {
           }
           await unlink(this.pendingPath);
           await syncDirectory(dirname(this.pendingPath));
+          if (requireCompletion) {
+            const receiptTime = new Date().toISOString();
+            const completion = parseBucketTurnoverCompletion(createBucketTurnoverCompletion({ sourceKind: "window", commitHash, completedAt: receiptTime }),
+              { sourceKind: "window", commitHash, committedAt, windowEndsAt: window.windowEndsAt, observedAt: receiptTime });
+            await appendLine(this.recordsPath, completion);
+            return deepFreeze({ snapshotOrigin, policyOrigin, appendedAt: committedAt, commitHash, completion });
+          }
           return deepFreeze({ snapshotOrigin, policyOrigin, appendedAt: committedAt, commitHash });
         });
       });
@@ -181,8 +201,13 @@ export class BucketTurnoverWindowFileRepository {
         }
         if (ids.has(initial.turnoverStateId)) throw new Error("turnover window duplicate root identity");
         ids.add(initial.turnoverStateId);
-        windows.push(deepFreeze({ snapshotOrigin, policyOrigin: entry.policyOrigin, appendedAt: marker.committedAt, commitHash }));
-        previousHash = commitHash; previousTime = marker.committedAt;
+        const completion = entry.schemaVersion === "bucket_turnover_window_entry.v2"
+          ? parseBucketTurnoverCompletion(JSON.parse(lines[index + 2] ?? ""), { sourceKind: "window", commitHash, committedAt: marker.committedAt,
+            windowEndsAt: initial.windowEndsAt, observedAt: getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt }) : undefined;
+        if (completion !== undefined) index += 1;
+        windows.push(deepFreeze({ snapshotOrigin, policyOrigin: entry.policyOrigin, appendedAt: marker.committedAt, commitHash,
+          ...(completion === undefined ? {} : { completion }) }));
+        previousHash = completion?.completionHash ?? commitHash; previousTime = completion?.completedAt ?? marker.committedAt;
       } catch (error) { throw new Error(`turnover window corrupt entry at line ${index + 1}`, { cause: error }); }
     }
     if (windows.length > 0) await syncFile(this.recordsPath);

@@ -61,10 +61,11 @@ export class BucketTurnoverStateFileRepository {
       await syncFile(this.statePath);
       const observedAt = new Date().toISOString();
       for (const origin of windows.windows) {
-        if (Date.parse(observedAt) < Date.parse(origin.appendedAt)) throw new Error("turnover projection observation clock moved backward");
+        if (Date.parse(observedAt) < Date.parse(origin.completion?.completedAt ?? origin.appendedAt)) throw new Error("turnover projection observation clock moved backward");
       }
       for (const event of events.events) {
-        if (Date.parse(observedAt) < Date.parse(resolveVerifiedBucketTurnoverEventOrigin(events, event.turnoverEventId).appendedAt)) {
+        const origin = resolveVerifiedBucketTurnoverEventOrigin(events, event.turnoverEventId);
+        if (Date.parse(observedAt) < Date.parse(origin.completion?.completedAt ?? origin.appendedAt)) {
           throw new Error("turnover projection observation clock moved backward");
         }
       }
@@ -105,8 +106,12 @@ export function getDurableBucketTurnoverStateSource(snapshot: VerifiedBucketTurn
   const root = resolveVerifiedBucketTurnoverWindowOrigin(sources.windows, turnoverStateId);
   const last = state.lastTurnoverEventId === undefined ? null
     : resolveVerifiedBucketTurnoverEventOrigin(sources.events, state.lastTurnoverEventId);
-  const availableAt = last !== null && Date.parse(last.appendedAt) > Date.parse(root.appendedAt) ? last.appendedAt : root.appendedAt;
-  return Object.freeze({ state, availableAt, windowCommitHash: root.commitHash, lastEventCommitHash: last?.commitHash ?? null });
+  const rootTime = root.completion?.completedAt;
+  const eventTime = last?.completion?.completedAt;
+  const availableAt = rootTime === undefined || (last !== null && eventTime === undefined) ? null
+    : eventTime !== undefined && Date.parse(eventTime) > Date.parse(rootTime) ? eventTime : rootTime;
+  return Object.freeze({ state, availableAt, windowCommitHash: root.commitHash, lastEventCommitHash: last?.commitHash ?? null,
+    windowCompletionHash: root.completion?.completionHash ?? null, lastEventCompletionHash: last?.completion?.completionHash ?? null });
 }
 
 function deriveProjection(events: VerifiedBucketTurnoverEventHistory, windows: VerifiedBucketTurnoverWindowHistory,
@@ -126,9 +131,11 @@ function deriveProjection(events: VerifiedBucketTurnoverEventHistory, windows: V
       events: prefix.filter((event) => event.turnoverStateId === id) });
   }).sort((a, b) => compareText(a.turnoverStateId, b.turnoverStateId));
   const lastEvent = prefix.at(-1);
+  const lastOrigin = lastEvent === undefined ? undefined : resolveVerifiedBucketTurnoverEventOrigin(events, lastEvent.turnoverEventId);
+  const lastWindow = roots.at(-1);
   const payload = { schemaVersion: "bucket_turnover_state_document.v1" as const, sourceWindowCount: windowCount,
-    sourceWindowGenerationHash: roots.at(-1)?.commitHash ?? null, sourceEventCount: eventCount,
-    sourceEventGenerationHash: lastEvent === undefined ? null : resolveVerifiedBucketTurnoverEventOrigin(events, lastEvent.turnoverEventId).commitHash,
+    sourceWindowGenerationHash: lastWindow?.completion?.completionHash ?? lastWindow?.commitHash ?? null, sourceEventCount: eventCount,
+    sourceEventGenerationHash: lastOrigin?.completion?.completionHash ?? lastOrigin?.commitHash ?? null,
     states: Object.freeze(states) };
   return Object.freeze({ ...payload, projectionHash: hashCanonicalPayload(payload) });
 }

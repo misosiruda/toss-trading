@@ -342,7 +342,12 @@ current projection state/hash/분모의 실제 원본 연결이나 전체 Risk r
 저장된 execution-bound Risk의 전체 과거 원본을 해소한 뒤 현재 projection과 활성 정책을 대조하는 읽기
 전용 검사다. 실제 state/hash/누계/고정 분모, 현재 구간, activation identity 및 결정 이전 원본 가용성을
 검증한다. State source accessor는 살아 있는 projection 관측에서만 window/마지막 event commit과
-가용 시각을 제공한다. 반환값은 `observedAt` 시점의 검사이며 reservation·최종 실행 권한이 아니다.
+가용 시각을 제공한다. 가용 시각은 marker 기록 시각이 아니라 `bucketTurnoverCompletion.ts`의 실제
+post-pair-fsync 및 pending 제거 후 completion 증명을 사용한다. Window의 `createOrResolveWithCompletion`,
+event의 `appendFillWithCompletion`은 v2 entry + marker + completion을 기록한다. 다음 global predecessor와
+projection generation은 completion hash를 사용한다. 기존 v1은 과거 조회를 유지하지만 completion을
+사후 추가하지 않으며 증명이 없는 선택 source는 current 검사에서 거절한다. 반환값은 `observedAt`
+시점의 검사이며 reservation·최종 실행 권한이 아니다.
 기존 Risk 생성·historical retry·runner에 자동 연결하지 않으며 stale projection은 명시적 refresh가 필요하다.
 
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
