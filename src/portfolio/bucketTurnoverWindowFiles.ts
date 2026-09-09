@@ -10,6 +10,7 @@ import { bucketTurnoverSnapshotOriginSchema, createBucketTurnoverSnapshotOrigin,
   type BucketTurnoverSnapshotOrigin } from "./bucketTurnoverSnapshotOrigin.js";
 import { PortfolioSizingSnapshotFileRepository, getDurablePortfolioSizingSnapshotObservation,
   type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
+import { SourcePriceEvidenceFileRepository, type VerifiedSourcePriceEvidenceHistory } from "./sourcePriceEvidenceFiles.js";
 import { readStoredRuntimePortfolioPolicyActivationSnapshot, RuntimePortfolioPolicyActivationFileRepository,
   type RuntimePortfolioPolicyActivationSnapshot } from "./runtimePortfolioPolicyActivationFiles.js";
 import { resolveActiveRuntimePortfolioPolicyAsOf } from "./runtimePortfolioPolicyActivation.js";
@@ -72,6 +73,16 @@ export class BucketTurnoverWindowFileRepository {
     const policies = await readStoredRuntimePortfolioPolicyActivationSnapshot(this.baseDir);
     return new PortfolioSizingSnapshotFileRepository(this.baseDir).withDurableVerifiedHistory((snapshots) =>
       this.withLock(async () => operation(await this.readUnderLock(snapshots, policies))));
+  }
+
+  /** Owns price -> snapshot -> window acquisition; callers must reuse these histories instead of re-entering their stores. */
+  async withDurableRiskSources<T>(operation: (windows: VerifiedBucketTurnoverWindowHistory,
+    prices: VerifiedSourcePriceEvidenceHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
+    const policies = await readStoredRuntimePortfolioPolicyActivationSnapshot(this.baseDir);
+    const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
+    return new SourcePriceEvidenceFileRepository(this.baseDir, options).withDurableVerifiedHistory((prices) =>
+      new PortfolioSizingSnapshotFileRepository(this.baseDir, options).withDurableVerifiedHistory((snapshots) =>
+        this.withLock(async () => operation(await this.readUnderLock(snapshots, policies), prices, snapshots))));
   }
 
   async createOrResolve(value: z.input<typeof inputSchema>): Promise<VerifiedBucketTurnoverWindowOrigin> {

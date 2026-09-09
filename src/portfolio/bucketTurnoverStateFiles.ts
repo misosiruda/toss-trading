@@ -9,6 +9,8 @@ import { BucketTurnoverEventFileRepository, resolveVerifiedBucketTurnoverEventOr
   type VerifiedBucketTurnoverEventHistory } from "./bucketTurnoverEventFiles.js";
 import { resolveVerifiedBucketTurnoverWindowOrigin, type VerifiedBucketTurnoverWindowHistory } from "./bucketTurnoverWindowFiles.js";
 import { compareText, hashCanonicalPayload } from "./runtimePolicyContracts.js";
+import { getDurableSourcePriceEvidenceObservation, type VerifiedSourcePriceEvidenceHistory } from "./sourcePriceEvidenceFiles.js";
+import { getDurablePortfolioSizingSnapshotObservation, type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
 
 export const BUCKET_TURNOVER_STATE_FILE_NAME = "bucket-turnover-state.json";
 const count = z.number().int().nonnegative().safe().refine((value) => !Object.is(value, -0));
@@ -53,26 +55,42 @@ export class BucketTurnoverStateFileRepository {
 
   /** The callback holds event/snapshot/window locks, not policy/Risk/reservation/execution authority. */
   async withDurableSnapshot<T>(operation: (snapshot: VerifiedBucketTurnoverStateSnapshot) => Promise<T>): Promise<T> {
-    return this.events.withDurableStateSources(async (events, windows) => {
-      const current = deriveProjection(events, windows);
-      const stored = await this.readStored(events, windows);
-      if (stored === null) throw new Error("turnover projection is missing; explicit refresh is required");
-      if (!isDeepStrictEqual(stored, current)) throw new Error("turnover projection is stale; explicit refresh is required");
-      await syncFile(this.statePath);
-      const observedAt = new Date().toISOString();
-      for (const origin of windows.windows) {
-        if (Date.parse(observedAt) < Date.parse(origin.completion?.completedAt ?? origin.appendedAt)) throw new Error("turnover projection observation clock moved backward");
+    return this.events.withDurableStateSources((events, windows) => this.withObservedSnapshot(events, windows, operation));
+  }
+
+  /** Source leases only, not Risk approval. Holds event -> price -> snapshot -> window; never re-enter those stores. */
+  async withDurableRiskSources<T>(operation: (sources: Readonly<{ projection: VerifiedBucketTurnoverStateSnapshot;
+    prices: VerifiedSourcePriceEvidenceHistory; snapshots: VerifiedPortfolioSizingSnapshotHistory }>) => Promise<T>): Promise<T> {
+    return this.events.withDurableRiskSources((events, windows, prices, snapshots) =>
+      this.withObservedSnapshot(events, windows, (projection) => {
+        const priceAt = Date.parse(getDurableSourcePriceEvidenceObservation(prices).observedAt);
+        const snapshotAt = Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt);
+        const projectionAt = Date.parse(getDurableBucketTurnoverStateObservation(projection).observedAt);
+        if (priceAt > snapshotAt || snapshotAt > projectionAt) throw new Error("turnover Risk source observation clock moved backward");
+        return operation(Object.freeze({ projection, prices, snapshots }));
+      }));
+  }
+
+  private async withObservedSnapshot<T>(events: VerifiedBucketTurnoverEventHistory, windows: VerifiedBucketTurnoverWindowHistory,
+    operation: (snapshot: VerifiedBucketTurnoverStateSnapshot) => Promise<T>): Promise<T> {
+    const current = deriveProjection(events, windows);
+    const stored = await this.readStored(events, windows);
+    if (stored === null) throw new Error("turnover projection is missing; explicit refresh is required");
+    if (!isDeepStrictEqual(stored, current)) throw new Error("turnover projection is stale; explicit refresh is required");
+    await syncFile(this.statePath);
+    const observedAt = new Date().toISOString();
+    for (const origin of windows.windows) {
+      if (Date.parse(observedAt) < Date.parse(origin.completion?.completedAt ?? origin.appendedAt)) throw new Error("turnover projection observation clock moved backward");
+    }
+    for (const event of events.events) {
+      const origin = resolveVerifiedBucketTurnoverEventOrigin(events, event.turnoverEventId);
+      if (Date.parse(observedAt) < Date.parse(origin.completion?.completedAt ?? origin.appendedAt)) {
+        throw new Error("turnover projection observation clock moved backward");
       }
-      for (const event of events.events) {
-        const origin = resolveVerifiedBucketTurnoverEventOrigin(events, event.turnoverEventId);
-        if (Date.parse(observedAt) < Date.parse(origin.completion?.completedAt ?? origin.appendedAt)) {
-          throw new Error("turnover projection observation clock moved backward");
-        }
-      }
-      observations.set(stored, Object.freeze({ observedAt }));
-      observationSources.set(stored, { events, windows });
-      try { return await operation(stored); } finally { observations.delete(stored); observationSources.delete(stored); }
-    });
+    }
+    observations.set(stored, Object.freeze({ observedAt }));
+    observationSources.set(stored, { events, windows });
+    try { return await operation(stored); } finally { observations.delete(stored); observationSources.delete(stored); }
   }
 
   private async readStored(events: VerifiedBucketTurnoverEventHistory, windows: VerifiedBucketTurnoverWindowHistory): Promise<VerifiedBucketTurnoverStateSnapshot | null> {

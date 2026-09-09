@@ -4296,6 +4296,25 @@ v2 reader를 유지해야 하며, v2를 모르는 코드로 곧바로 rollback�
 구간 만료·retirement·동일 정책 재활성화, source lease 수명과 fsync 실패를 검증한다. 추가로 marker fsync
 도중 실제 다음 Risk를 생성하는 경합을 재현해, marker 이후라도 completion 이전 결정은 current 검사가 거절함을 검증한다.
 
+서른 번째 분할은 `BucketTurnoverStateFileRepository.withDurableRiskSources`로 회전율 projection,
+가격 및 portfolio snapshot의 실제 원본 관측을 한 callback에 제공한다. 기존 projection 조회 안에서
+price를 새로 잠그면 price → snapshot 순서의 Risk writer와 교착될 수 있으므로 새 경로는 event를
+잠그고 과거 fill/Risk 원본을 먼저 해소한 다음 price → snapshot → window 순서로 잠근다. Window
+저장소가 같은 baseDir의 가격·snapshot 원본을 직접 읽으며 caller가 다른 저장소의 history를 주입하지
+못한다. Event/window writer 배제와 기존 projection 검증을 유지하고 모든 source lock을 callback의
+성공·실패 종료까지 보존한다. Callback은 전달받은 history를 재사용하고 같은 저장소를 재진입하지 않는다.
+
+가격 → snapshot → projection 관측 시각의 역행은 소비자 호출 전에 거절한다. Clone 및 callback 종료
+뒤에는 원본 lease getter가 실패한다. Missing/stale/corrupt projection, pending event 및 각 source
+fsync 실패에서 callback은 호출되지 않는다. 기존 read/refresh 및 저장 형식은 변경하지 않으며
+projection을 자동 생성하거나 refresh하지 않는다. 별도 프로세스의 잠금 경합, price owner가 snapshot을
+읽을 수 있는 획득 순서, 예외 해제, fsync 실패 및 시계 역행을 실제 임시 저장소로 검증한다.
+
+이 분할은 Risk 생성 연결의 잠금 선행조건이며 policy/mandate/Risk 생성·receipt 저장, 과거 turnover
+prefix 재검증, 현금·수량 예약 및 원자 체결은 후속이다. 현재 Risk 생성 메서드를 이 callback 안에서
+그대로 호출하면 원본 저장소 재진입이므로 허용하지 않는다. 기존 데이터를 변환하지 않으며 rollback은
+신규 consumer를 중지하고 코드만 되돌릴 수 있다. 거래·MCP·HTTP 설정과 paper-only 기본값은 유지한다.
+
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
 - cadence scheduler와 conflict resolver
