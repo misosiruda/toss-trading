@@ -15,8 +15,9 @@ import { resolveBucketTurnoverFillOrigin } from "./bucketTurnoverFillOrigin.js";
 import { BucketTurnoverWindowFileRepository, createBucketTurnoverWindowPaths } from "./bucketTurnoverWindowFiles.js";
 import { createBucketTurnoverEvent, replayBucketTurnoverEvents, type BucketTurnoverState } from "./bucketTurnover.js";
 import { BucketTurnoverEventFileRepository, createBucketTurnoverEventPaths, resolveVerifiedBucketTurnoverEventOrigin } from "./bucketTurnoverEventFiles.js";
-import { BUCKET_TURNOVER_STATE_FILE_NAME, BucketTurnoverStateFileRepository, getDurableBucketTurnoverStateObservation } from "./bucketTurnoverStateFiles.js";
+import { BUCKET_TURNOVER_STATE_FILE_NAME, BucketTurnoverStateFileRepository, getDurableBucketTurnoverStateObservation, getDurableBucketTurnoverStateSource } from "./bucketTurnoverStateFiles.js";
 import { validateRiskDecisionTurnoverCapacity } from "./portfolioActionRiskDecisionTurnoverCapacity.js";
+import { resolveCurrentPortfolioActionRiskDecisionTurnover } from "./portfolioActionRiskDecisionTurnoverResolver.js";
 
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { createPortfolioActionRiskDecisionPaths, PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
@@ -61,7 +62,7 @@ import {
 import { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
 import { createImmutablePolicyDependencyPaths } from "./runtimePolicyDependencyFiles.js";
 import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
-import { createRuntimePortfolioPolicyActivationPaths, RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
+import { createRuntimePortfolioPolicyActivationPaths, RuntimePortfolioPolicyActivationFileRepository, readStoredRuntimePortfolioPolicyActivationSnapshot } from "./runtimePortfolioPolicyActivationFiles.js";
 import { parseRuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
 import { createPortfolioPolicyActivatedEvent } from "./runtimePortfolioPolicyActivation.js";
 
@@ -2875,11 +2876,18 @@ test("turnover projection persists initial and filled states and requires explic
     await repository.withDurableSnapshot(async (snapshot) => {
       leased = snapshot;
       assert.ok(getDurableBucketTurnoverStateObservation(snapshot).observedAt);
+      const source = getDurableBucketTurnoverStateSource(snapshot, initial.turnoverStateId);
+      assert.deepEqual(source.state, current.states[0]);
+      assert.equal(source.windowCommitHash, root.commitHash);
+      assert.equal(source.lastEventCommitHash, current.sourceEventGenerationHash);
+      assert.throws(() => getDurableBucketTurnoverStateSource({ ...snapshot }, initial.turnoverStateId), /no active durable/);
+      assert.throws(() => getDurableBucketTurnoverStateSource(snapshot, "missing"), /no matching window/);
       assert.throws(() => getDurableBucketTurnoverStateObservation({ ...snapshot }), /no active durable/);
       await assert.rejects(new BucketTurnoverEventFileRepository(baseDir, { lockTimeoutMs: 30, lockRetryDelayMs: 5 }).readVerifiedHistory(), /lock is unavailable/);
       assert.ok((await stat(createBucketTurnoverWindowPaths(baseDir).lockPath)).isFile());
     });
     assert.throws(() => getDurableBucketTurnoverStateObservation(leased!), /no active durable/);
+    assert.throws(() => getDurableBucketTurnoverStateSource(leased!, initial.turnoverStateId), /no active durable/);
     await assert.rejects(repository.withDurableSnapshot(async (snapshot) => { leased = snapshot; throw new Error("callback failure"); }), /callback failure/);
     assert.throws(() => getDurableBucketTurnoverStateObservation(leased!), /no active durable/);
     assert.deepEqual(await repository.readVerifiedSnapshot(), current);
@@ -3025,6 +3033,153 @@ function rehashTurnoverFillPair(entry: Record<string, unknown>, marker: Record<s
   const proof = { ...previousCompletion, commitHash };
   return `${pair}${JSON.stringify({ ...proof, completionHash: hashCanonicalPayload(proof) })}\n`;
 }
+
+test("current turnover Risk resolver binds BUY and SELL to actual current state without writing or refreshing", async () => {
+  for (const side of ["BUY", "SELL"] as const) await withTurnoverFillFixture(async ({ baseDir, root }) => {
+    const decision = (await new PortfolioActionRiskDecisionFileRepository(baseDir).readAll())[0]!;
+    const input = { baseDir, riskDecisionId: decision.riskDecisionId };
+    await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /projection is missing/);
+    const projection = await new BucketTurnoverStateFileRepository(baseDir).refresh({ expectedProjectionHash: null });
+    const path = join(baseDir, BUCKET_TURNOVER_STATE_FILE_NAME);
+    const bytes = await readFile(path, "utf8");
+    const result = await resolveCurrentPortfolioActionRiskDecisionTurnover(input);
+    assert.deepEqual(result.turnoverObservation.state, root.snapshotOrigin.initialState);
+    assert.equal(result.turnoverObservation.availableAt, root.appendedAt);
+    assert.equal(result.turnoverObservation.windowCommitHash, root.commitHash);
+    assert.equal(result.turnoverObservation.lastEventCommitHash, null);
+    assert.equal(result.turnoverObservation.projectionHash, projection.projectionHash);
+    assert.equal(result.turnoverCapacity!.withinTurnoverLimit, true);
+    assert.ok(Object.isFrozen(result.turnoverObservation));
+    assert.ok(Date.parse(result.turnoverObservation.observedAt) >= Date.parse(decision.decidedAt));
+    assert.equal(await readFile(path, "utf8"), bytes);
+    await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover({ ...input, state: result.turnoverObservation.state } as typeof input));
+  }, { side });
+});
+
+test("current turnover Risk resolver rejects stale projections and superseded Risk assessments after a fill", async () => {
+  await withTurnoverFillFixture(async ({ baseDir, root, fill, createNextFill }) => {
+    const risks = new PortfolioActionRiskDecisionFileRepository(baseDir);
+    const original = (await risks.readAll())[0]!;
+    const input = { baseDir, riskDecisionId: original.riskDecisionId };
+    const states = new BucketTurnoverStateFileRepository(baseDir);
+    const empty = await states.refresh({ expectedProjectionHash: null });
+    await new BucketTurnoverEventFileRepository(baseDir).appendFill({ paperFillRecordId: fill.paperFillRecordId,
+      expectedTurnoverStateHash: root.snapshotOrigin.initialState.turnoverStateHash });
+    await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /projection is stale/);
+    const latest = await states.refresh({ expectedProjectionHash: empty.projectionHash });
+    await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /differs from actual state/);
+    await createNextFill(latest.states[0]!, "current-turnover-next-fill");
+    const next = (await risks.readAll()).at(-1)!;
+    const result = await resolveCurrentPortfolioActionRiskDecisionTurnover({ baseDir, riskDecisionId: next.riskDecisionId });
+    assert.equal(result.turnoverObservation.state.cumulativeAbsoluteFilledNotionalKrw, fill.filledNotionalKrw);
+    assert.equal(result.turnoverObservation.lastEventCommitHash, latest.sourceEventGenerationHash);
+    assert.ok(Date.parse(result.turnoverObservation.availableAt) <= Date.parse(next.decidedAt));
+    // Historical replay still explains the old decision; the current check is deliberately stricter.
+    assert.equal((await resolvePortfolioActionRiskDecisionExecution(input)).decision.riskDecisionId, original.riskDecisionId);
+  });
+});
+
+test("current turnover Risk resolver rejects self-consistent rehashed hash, prior and denominator claims", async () => {
+  await withTurnoverFillFixture(async ({ baseDir }) => {
+    await new BucketTurnoverStateFileRepository(baseDir).refresh({ expectedProjectionHash: null });
+    const path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    const bytes = await readFile(path, "utf8");
+    const [entry, marker] = bytes.trimEnd().split("\n").map((line) => JSON.parse(line));
+    const { riskDecisionId: _id, riskDecisionHash: _hash, riskInputHash: _input, ...candidate } = entry.record as ReturnType<typeof createPortfolioActionRiskDecision>;
+    if (candidate.turnoverAssessment.scopeKind !== "bucket") throw new Error("bucket required");
+    for (const patch of [{ turnoverStateHash: HASH }, { priorBucketTurnoverNotionalKrw: 1 },
+      { turnoverWindowOpenPortfolioNetWorthKrw: candidate.turnoverAssessment.turnoverWindowOpenPortfolioNetWorthKrw * 2 }]) {
+      const assessment = { ...candidate.turnoverAssessment, ...patch };
+      assessment.resultingBucketTurnoverRatio = (assessment.priorBucketTurnoverNotionalKrw + assessment.requestedBucketTurnoverNotionalKrw) /
+        assessment.turnoverWindowOpenPortfolioNetWorthKrw;
+      const record = createPortfolioActionRiskDecision({ ...candidate, turnoverAssessment: assessment });
+      const tampered = rehashTurnoverFillPair({ ...entry, record }, marker);
+      await writeFile(path, tampered);
+      const input = { baseDir, riskDecisionId: record.riskDecisionId };
+      await resolvePortfolioActionRiskDecisionExecution(input);
+      await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /differs from actual state/);
+      assert.equal(await readFile(path, "utf8"), tampered);
+    }
+    await writeFile(path, bytes);
+  });
+});
+
+test("current turnover Risk resolver rejects a state that became durable after the decision", async () => {
+  await withTurnoverFillFixture(async ({ baseDir, fill, root }) => {
+    await new BucketTurnoverEventFileRepository(baseDir).appendFill({ paperFillRecordId: fill.paperFillRecordId,
+      expectedTurnoverStateHash: root.snapshotOrigin.initialState.turnoverStateHash });
+    const latest = await new BucketTurnoverStateFileRepository(baseDir).refresh({ expectedProjectionHash: null });
+    const state = latest.states[0]!;
+    const path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    const bytes = await readFile(path, "utf8");
+    const [entry, marker] = bytes.trimEnd().split("\n").map((line) => JSON.parse(line));
+    const { riskDecisionId: _id, riskDecisionHash: _hash, riskInputHash: _input, ...candidate } = entry.record as ReturnType<typeof createPortfolioActionRiskDecision>;
+    if (candidate.turnoverAssessment.scopeKind !== "bucket") throw new Error("bucket required");
+    const record = createPortfolioActionRiskDecision({ ...candidate, turnoverAssessment: { ...candidate.turnoverAssessment,
+      turnoverStateHash: state.turnoverStateHash, priorBucketTurnoverNotionalKrw: state.cumulativeAbsoluteFilledNotionalKrw,
+      resultingBucketTurnoverRatio: (state.cumulativeAbsoluteFilledNotionalKrw + candidate.worstCaseFillNotionalKrw) / state.windowOpenPortfolioNetWorthKrw } });
+    const now = new Date().toISOString();
+    await writeFile(path, bytes + rehashTurnoverFillPair({ ...entry, record, appendStartedAt: now, previousEntryHash: marker.commitHash },
+      { ...marker, committedAt: now }));
+    const input = { baseDir, riskDecisionId: record.riskDecisionId };
+    await resolvePortfolioActionRiskDecisionExecution(input);
+    await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /source availability/);
+  });
+});
+
+test("current turnover Risk resolver rejects expired windows and retirement or same-policy reactivation", async (context) => {
+  await withTurnoverFillFixture(async ({ baseDir, root }) => {
+    const decision = (await new PortfolioActionRiskDecisionFileRepository(baseDir).readAll())[0]!;
+    const input = { baseDir, riskDecisionId: decision.riskDecisionId };
+    await new BucketTurnoverStateFileRepository(baseDir).refresh({ expectedProjectionHash: null });
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse(root.snapshotOrigin.initialState.windowEndsAt) });
+    try { await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /window expired or mismatched/); }
+    finally { context.mock.timers.reset(); }
+    const original = await resolvePortfolioActionRiskDecisionExecution(input);
+    const policies = await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir);
+    const store = new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies.policies, policies.dependencies.repository);
+    const now = Date.now() + 100;
+    context.mock.timers.enable({ apis: ["Date"], now });
+    try {
+      await store.appendRetired({ portfolioId: decision.portfolioId, retiredActivationId: original.activePolicy.activation.activationId,
+        reasonCode: "current-turnover-test", createdAt: new Date().toISOString() });
+      await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /active runtime portfolio policy is required/);
+      context.mock.timers.tick(1);
+      await store.appendActivated({ policy: original.activePolicy.policy, createdAt: new Date().toISOString() });
+      await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /activation drift/);
+      await resolvePortfolioActionRiskDecisionExecution(input);
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
+test("current turnover Risk resolver fails on projection fsync without returning a current observation", async (context) => {
+  await withTurnoverFillFixture(async ({ baseDir }) => {
+    const decision = (await new PortfolioActionRiskDecisionFileRepository(baseDir).readAll())[0]!;
+    const input = { baseDir, riskDecisionId: decision.riskDecisionId };
+    await new BucketTurnoverStateFileRepository(baseDir).refresh({ expectedProjectionHash: null });
+    const path = join(baseDir, BUCKET_TURNOVER_STATE_FILE_NAME);
+    const bytes = await readFile(path, "utf8");
+    const identity = await stat(path, { bigint: true });
+    const handle = await open(path, "r+");
+    const prototype = Object.getPrototypeOf(handle) as FileHandle;
+    const original = prototype.sync;
+    await handle.close();
+    let matched = 0;
+    context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const actual = await this.stat({ bigint: true });
+      if (actual.isFile() && actual.ino === identity.ino && (process.platform === "win32" || actual.dev === identity.dev)) {
+        matched += 1; throw new Error("injected current turnover sync failure");
+      }
+      await original.call(this);
+    });
+    try {
+      await assert.rejects(resolveCurrentPortfolioActionRiskDecisionTurnover(input), /injected current turnover sync failure/);
+      assert.equal(matched, 1);
+      assert.equal(await readFile(path, "utf8"), bytes);
+    } finally { context.mock.restoreAll(); }
+    await resolveCurrentPortfolioActionRiskDecisionTurnover(input);
+  });
+});
 
 async function withTurnoverFillFixture(run: (input: { baseDir: string; fill: ReturnType<typeof createPaperFillExecutionRecord>;
   root: Awaited<ReturnType<BucketTurnoverWindowFileRepository["createOrResolve"]>>;

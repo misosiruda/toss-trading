@@ -20,6 +20,9 @@ export interface VerifiedBucketTurnoverStateSnapshot extends Omit<z.infer<typeof
   states: readonly BucketTurnoverState[];
 }
 const observations = new WeakMap<VerifiedBucketTurnoverStateSnapshot, Readonly<{ observedAt: string }>>();
+const observationSources = new WeakMap<VerifiedBucketTurnoverStateSnapshot, {
+  events: VerifiedBucketTurnoverEventHistory; windows: VerifiedBucketTurnoverWindowHistory;
+}>();
 
 /** Explicit projection refresh only; stale or missing projections never silently become current Risk authority. */
 export class BucketTurnoverStateFileRepository {
@@ -66,7 +69,8 @@ export class BucketTurnoverStateFileRepository {
         }
       }
       observations.set(stored, Object.freeze({ observedAt }));
-      try { return await operation(stored); } finally { observations.delete(stored); }
+      observationSources.set(stored, { events, windows });
+      try { return await operation(stored); } finally { observations.delete(stored); observationSources.delete(stored); }
     });
   }
 
@@ -90,6 +94,19 @@ export function getDurableBucketTurnoverStateObservation(snapshot: VerifiedBucke
   const observation = observations.get(snapshot);
   if (observation === undefined) throw new Error("turnover projection has no active durable observation");
   return observation;
+}
+
+/** Source availability for a state in the actively locked projection, never for a clone or expired observation. */
+export function getDurableBucketTurnoverStateSource(snapshot: VerifiedBucketTurnoverStateSnapshot, turnoverStateId: string) {
+  getDurableBucketTurnoverStateObservation(snapshot);
+  const sources = observationSources.get(snapshot)!;
+  const state = snapshot.states.find((item) => item.turnoverStateId === turnoverStateId);
+  if (state === undefined) throw new Error("turnover projection has no matching window state");
+  const root = resolveVerifiedBucketTurnoverWindowOrigin(sources.windows, turnoverStateId);
+  const last = state.lastTurnoverEventId === undefined ? null
+    : resolveVerifiedBucketTurnoverEventOrigin(sources.events, state.lastTurnoverEventId);
+  const availableAt = last !== null && Date.parse(last.appendedAt) > Date.parse(root.appendedAt) ? last.appendedAt : root.appendedAt;
+  return Object.freeze({ state, availableAt, windowCommitHash: root.commitHash, lastEventCommitHash: last?.commitHash ?? null });
 }
 
 function deriveProjection(events: VerifiedBucketTurnoverEventHistory, windows: VerifiedBucketTurnoverWindowHistory,

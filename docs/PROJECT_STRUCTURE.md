@@ -338,6 +338,13 @@ bucket의 `maxTurnoverRatio`를 수치 한도로 적용한다. Canonical decimal
 설명할 수 있으며 legacy reduce-only는 bucket 회전율에서 제외한다. 입력된 assessment의 산술·정책 상한이며
 current projection state/hash/분모의 실제 원본 연결이나 전체 Risk rule 독립 평가를 대신하지 않는다.
 
+`portfolioActionRiskDecisionTurnoverResolver.ts`의 `resolveCurrentPortfolioActionRiskDecisionTurnover`는
+저장된 execution-bound Risk의 전체 과거 원본을 해소한 뒤 현재 projection과 활성 정책을 대조하는 읽기
+전용 검사다. 실제 state/hash/누계/고정 분모, 현재 구간, activation identity 및 결정 이전 원본 가용성을
+검증한다. State source accessor는 살아 있는 projection 관측에서만 window/마지막 event commit과
+가용 시각을 제공한다. 반환값은 `observedAt` 시점의 검사이며 reservation·최종 실행 권한이 아니다.
+기존 Risk 생성·historical retry·runner에 자동 연결하지 않으며 stale projection은 명시적 refresh가 필요하다.
+
 `portfolioExposureSnapshot.ts`의 optional `unassignedExposureKrw`는 bucket 미분류 보유분의 양수 노출을
 별도로 보존한다. `portfolioSizingSnapshotResolver.ts`는 이를 실제 미분류 lot의 mark/quantity로 재생하고
 root dimension/NAV에는 포함하되 bucket·mandate를 합성하지 않는다. 기존 fully assigned snapshot의

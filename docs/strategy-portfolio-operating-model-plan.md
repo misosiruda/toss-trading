@@ -4257,6 +4257,32 @@ prior를 현재 원본으로 인증했다고 간주하지 않는다. 통합 테�
 - unassigned legacy position은 observed state에 연결된 reduce-only SELL로만 표현된다.
 - unassigned legacy SELL은 bucket lineage 없이 portfolio-level accounting record로 원자 반영된다.
 
+스물아홉 번째 분할은 `resolveCurrentPortfolioActionRiskDecisionTurnover`로 실제 저장된 execution-bound
+Risk를 현재 회전율 projection 및 활성 정책과 연결해 읽기 전용 재검증한다. 전체 Risk/plan/mandate/
+snapshot/price/liquidity 원본은 projection lock 전에 해소한다. 이후 event → snapshot → window lock을
+유지한 상태에서 선택된 Risk 원본이 그대로인지 재확인하고 Risk lock을 해제한 뒤 activation을 잠근다.
+Window 생성도 snapshot lock을 먼저 필요로 하므로 activation/window lock 순서가 교착하는 writer는
+동시에 진입하지 못한다. Projection callback 안에서 price/snapshot resolver를 다시 호출하지 않는다.
+
+현재 정책의 bucket/market, policy hash와 activation ID/hash를 결정 당시 원본과 대조한다. 같은 정책을
+retire 후 다시 활성화한 경우도 이전 Risk가 새 activation의 승인이 되지 않는다. 현재 UTC window를
+정책 duration으로 계산하고 실제 state의 hash, 누계 및 최초 snapshot 분모와 assessment를 비교한다.
+전체 원본을 재생한 projection의 window 및 마지막 event commit 가용 시각이 `decidedAt` 이하인지
+검사해, 아직 저장되지 않았던 미래 누계를 과거 결정이 미리 참조한 것처럼 rehash하는 입력도 거절한다.
+최신 상태 및 정책 대조 뒤 기존 정책 회전율 상한 검증을 다시 적용한다.
+
+`getDurableBucketTurnoverStateSource`는 활성 projection 관측에서만 원본 가용 시각과 commit hash를
+반환한다. Clone, callback 종료·예외 뒤 접근은 거절한다. Resolver는 상태 파일을 자동 생성·refresh하지
+않고 missing/stale/corrupt/pending 및 fsync 실패를 그대로 차단한다. 체결 후 projection을 refresh해도
+이전 누계를 참조한 Risk는 current 검사에서 거절하며, 기존 historical resolver의 과거 설명은 유지한다.
+
+반환된 `turnoverObservation`은 `observedAt`의 검사 결과이지 재사용 가능한 lease나 실행 권한이 아니다.
+Risk 생성 receipt/재시도 원본 결속, 현재 가격·잔고·소유 수량·예약·전체 rule 재평가 및 원자 체결 coordinator는
+여전히 후속이다. 기존 Risk entry/turnover 파일 형식·runner·MCP·HTTP·거래 기본값은 변경하지 않는다.
+Migration은 없으며 아직 자동 소비자가 없으므로 이 읽기 전용 경로의 코드 rollback은 저장 파일을 변환하지 않는다.
+통합 테스트는 BUY/SELL, stale projection/체결 후 old Risk, rehash한 누계·분모·hash, 원본 가용성,
+구간 만료·retirement·동일 정책 재활성화, source lease 수명과 fsync 실패를 검증한다.
+
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
 - cadence scheduler와 conflict resolver
