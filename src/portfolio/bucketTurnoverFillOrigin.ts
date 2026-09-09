@@ -14,15 +14,17 @@ const inputSchema = z.object({ baseDir: z.string().min(1), paperFillRecordId: id
  * price, liquidity and window origins. Not event persistence, cumulative-state
  * validation, current Risk authorization or an accounting transaction.
  */
-export async function resolveBucketTurnoverFillOrigin(value: z.input<typeof inputSchema>) {
+export async function resolveBucketTurnoverFillOrigin(value: z.input<typeof inputSchema>,
+  options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+  const lockOptions = { ...options };
   const input = inputSchema.parse(value);
   if (!isDeepStrictEqual(value, input)) throw new Error("turnover fill request must already be canonical");
-  const fills = await new PaperFillExecutionFileRepository(input.baseDir).readVerifiedHistory();
+  const fills = await new PaperFillExecutionFileRepository(input.baseDir, lockOptions).readVerifiedHistory();
   const fillOrigin = resolvePersistedPaperFillExecutionOrigin(fills, input.paperFillRecordId);
   const fill = fillOrigin.record;
   if (fillOrigin.riskOrigin === null) throw new Error("turnover fill requires a persisted Risk origin");
   const risk = await resolvePortfolioActionRiskDecisionExecution({ baseDir: input.baseDir,
-    riskDecisionId: fillOrigin.riskOrigin.riskDecisionId });
+    riskDecisionId: fillOrigin.riskOrigin.riskDecisionId }, lockOptions);
   const decision = risk.decision;
   const expectedRiskOrigin = { riskDecisionId: decision.riskDecisionId, riskDecisionHash: decision.riskDecisionHash,
     appendedAt: risk.origin.appendedAt, commitHash: risk.origin.commitHash };
@@ -49,7 +51,7 @@ export async function resolveBucketTurnoverFillOrigin(value: z.input<typeof inpu
   const windowIdentity = createInitialBucketTurnoverState({ portfolioId: fill.portfolioId,
     bucket: decision.riskRuleScope.bucket, policyHash: decision.policyHash, asOf: fill.asOf,
     durationSeconds: risk.bucketPolicy.turnoverWindow.durationSeconds, windowOpenPortfolioNetWorthKrw: 1 });
-  const windows = await new BucketTurnoverWindowFileRepository(input.baseDir).readVerifiedHistory();
+  const windows = await new BucketTurnoverWindowFileRepository(input.baseDir, lockOptions).readVerifiedHistory();
   const windowOrigin = resolveVerifiedBucketTurnoverWindowOrigin(windows, windowIdentity.turnoverStateId);
   const initial = windowOrigin.snapshotOrigin.initialState;
   const assessment = decision.turnoverAssessment;

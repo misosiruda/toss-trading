@@ -7,9 +7,10 @@ import { portfolioExecutionRuleParametersSchema } from "./portfolioPolicyExecuti
 import { riskRuleParameterRefFor } from "./runtimePolicyContracts.js";
 
 /** Replays the stored fixed execution inputs; not current Risk permission or all-rule evaluation. */
-export async function resolvePortfolioActionRiskDecisionExecution(input: { baseDir: string; riskDecisionId: string }) {
+export async function resolvePortfolioActionRiskDecisionExecution(input: { baseDir: string; riskDecisionId: string },
+  options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
   const parsed = z.object({ baseDir: z.string().min(1), riskDecisionId: z.string().min(1) }).strict().parse(input);
-  const resolved = await resolvePortfolioActionRiskDecisionPrice(parsed);
+  const resolved = await resolvePortfolioActionRiskDecisionPrice(parsed, { ...options });
   const origin = resolved.origin.executionOrigin;
   if (origin === null) throw new Error("risk decision lacks frozen execution inputs; legacy record requires review");
   assertRiskExecutionDecisionBinding(resolved.decision, origin);

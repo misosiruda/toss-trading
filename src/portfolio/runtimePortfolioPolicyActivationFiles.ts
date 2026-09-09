@@ -49,12 +49,13 @@ export interface RuntimePortfolioPolicyActivationSnapshot {
 
 /** Concrete storage composition; callers cannot substitute a history prefix. */
 export async function readStoredRuntimePortfolioPolicyActivationSnapshot(
-  baseDir: string
+  baseDir: string, options: RuntimePortfolioPolicyActivationFileRepositoryOptions = {}
 ): Promise<RuntimePortfolioPolicyActivationSnapshot> {
+  const lockOptions = { ...options };
   return readConsistentRuntimePortfolioPolicyActivationSnapshot({
     loadDependencies: () => new ImmutablePolicyDependencyFileLoader(baseDir).load(),
-    readPolicies: (dependencies) => new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository).readGeneration(),
-    readEvents: (policies, dependencies) => new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies, dependencies.repository).readDurableGeneration()
+    readPolicies: (dependencies) => new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository, lockOptions).readGeneration(),
+    readEvents: (policies, dependencies) => new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies, dependencies.repository, lockOptions).readDurableGeneration()
   });
 }
 

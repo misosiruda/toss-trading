@@ -18,10 +18,12 @@ export const riskDecisionPlanOriginSchema = z.object({
 export type RiskDecisionPlanOrigin = Readonly<z.infer<typeof riskDecisionPlanOriginSchema>>;
 
 /** Reads the configured store; an explicit predecessor is for historical explanation only. */
-export async function readStoredRiskDecisionPlanContext(input: { baseDir: string; planId: string; predecessorEventId?: string }) {
+export async function readStoredRiskDecisionPlanContext(input: { baseDir: string; planId: string; predecessorEventId?: string },
+  options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+  const lockOptions = { ...options };
   const parsed = z.object({ baseDir: z.string().min(1), planId: z.string().min(1), predecessorEventId: z.string().min(1).optional() }).strict().parse(input);
-  const plans = new RebalancePlanFileRepository(parsed.baseDir);
-  const events = new RebalancePlanEventFileRepository(parsed.baseDir, plans);
+  const plans = new RebalancePlanFileRepository(parsed.baseDir, lockOptions);
+  const events = new RebalancePlanEventFileRepository(parsed.baseDir, plans, lockOptions);
   const history = await events.readDurableVerifiedHistory();
   const latest = replayVerifiedRebalancePlanEventHistory(history, parsed.planId);
   const predecessorId = parsed.predecessorEventId ?? latest.lastEvent.planEventId;
