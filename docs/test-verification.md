@@ -70,6 +70,25 @@ CPU·메모리·디스크 중 원인을 단정하지 않는다. 이 변경은 �
 
 ## 호환성·롤백
 
+### Windows 활성화 저장소 잠금 경합
+
+전체 검증의 `activation file repository serializes exact retries across processes`에서
+활성화 lock 파일의 exclusive `open`이 `EPERM`으로 실패한 사례가 있었다. 단독 11회 및 동일
+커밋 전체 재실행은 통과했지만 그 사실만으로 OS 수준 원인을 확정하거나 오류가 해결됐다고
+판단하지 않는다. 활성화 저장소에는 기존 runtime policy 저장소와 같은 제한된 획득 재시도를
+적용한다. `EEXIST` 및 Windows에서의 `EPERM`만 `lockTimeoutMs` 안에서 재시도하며 시간 제한은
+벽시계가 멈추거나 역행해도 유효하도록 monotonic clock으로 계산한다. 영구 실패는 마지막
+오류를 cause로 보존한 timeout이다. `EACCES`, 획득 후 token write/fsync, 작업 본문과
+release/ownership 오류는 재시도하지 않는다. 기존·교체된 다른 소유자의 lock을 자동 삭제하지 않는다.
+
+`runtimePortfolioPolicyActivationLocks.test.ts`는 실제 concurrent read와 주입한 획득/쓰기/fsync
+오류, frozen Date, abandoned/replaced token을 검증한다. 이 변경은 전체 테스트 runner의
+자동 재시도·실패 무시나 테스트 제외가 아니며 activation artifact/정책 결정 시각/기본 timeout을
+바꾸지 않는다. 데이터 변환 없이 코드 rollback할 수 있으나 획득 중 Windows EPERM 즉시 실패가
+다시 나타날 수 있다. OS 오류 발생 빈도 감소나 전체 실행 시간 개선은 별도 측정 전에는 주장하지 않는다.
+
+### 검증 프로필 호환성
+
 기존 `check`는 전체 검증이고 `check:changed`는 영향 검증이라는 의미를 유지한다. 새 runner는 기존
 `build`와 동일한 로컬 TypeScript compiler/config를 사용하며 quality gate가 build 명령의 일치를
 검사한다. 새 profile의 stage 구성이 바뀌면 runner 테스트와 gate도 함께 검토한다.
