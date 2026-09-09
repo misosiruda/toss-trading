@@ -10,10 +10,12 @@ import { resolveBucketTurnoverFillOrigin } from "./bucketTurnoverFillOrigin.js";
 import { BucketTurnoverWindowFileRepository, resolveVerifiedBucketTurnoverWindowOrigin, type VerifiedBucketTurnoverWindowHistory } from "./bucketTurnoverWindowFiles.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
+import { createBucketTurnoverCompletion, parseBucketTurnoverCompletion, type BucketTurnoverCompletion } from "./bucketTurnoverCompletion.js";
+
 export const BUCKET_TURNOVER_EVENTS_FILE_NAME = "bucket-turnover-events.jsonl";
 const identifier = z.string().min(1).max(240).refine((value) => value === value.trim());
 const requestSchema = z.object({ paperFillRecordId: identifier, expectedTurnoverStateHash: sha256HashSchema }).strict();
-const entrySchema = z.object({ schemaVersion: z.literal("bucket_turnover_event_entry.v1"), event: z.unknown(), source: z.unknown(),
+const entrySchema = z.object({ schemaVersion: z.enum(["bucket_turnover_event_entry.v1", "bucket_turnover_event_entry.v2"]), event: z.unknown(), source: z.unknown(),
   priorStateHash: sha256HashSchema, appendStartedAt: offsetQualifiedIsoDateTimeSchema,
   previousEntryHash: sha256HashSchema.nullable(), entryHash: sha256HashSchema }).strict();
 const markerSchema = z.object({ schemaVersion: z.literal("bucket_turnover_event_commit.v1"), entryHash: sha256HashSchema,
@@ -21,6 +23,7 @@ const markerSchema = z.object({ schemaVersion: z.literal("bucket_turnover_event_
 type Source = Awaited<ReturnType<typeof resolveBucketTurnoverFillOrigin>>;
 export interface VerifiedBucketTurnoverEventOrigin {
   event: BucketTurnoverEvent; source: Source; priorStateHash: string; appendedAt: string; commitHash: string;
+  completion?: BucketTurnoverCompletion;
 }
 export interface VerifiedBucketTurnoverEventHistory { events: readonly BucketTurnoverEvent[]; generationHash: string | null }
 const histories = new WeakMap<VerifiedBucketTurnoverEventHistory, {
@@ -66,6 +69,15 @@ export class BucketTurnoverEventFileRepository {
   }
 
   async appendFill(value: z.input<typeof requestSchema>): Promise<BucketTurnoverEvent> {
+    return this.#appendFill(value, false);
+  }
+
+  /** New v2 event completion follows pair fsync and pending-barrier removal; existing events cannot acquire it later. */
+  async appendFillWithCompletion(value: z.input<typeof requestSchema>): Promise<BucketTurnoverEvent> {
+    return this.#appendFill(value, true);
+  }
+
+  async #appendFill(value: z.input<typeof requestSchema>, requireCompletion: boolean): Promise<BucketTurnoverEvent> {
     const input = requestSchema.parse(value);
     if (!isDeepStrictEqual(value, input)) throw new Error("turnover append request must already be canonical");
     return this.withLock(async () => {
@@ -74,6 +86,7 @@ export class BucketTurnoverEventFileRepository {
       const source = await resolveBucketTurnoverFillOrigin({ baseDir: this.baseDir, paperFillRecordId: input.paperFillRecordId });
       const existing = metadata.fills.get(fillKey(source));
       if (existing !== undefined) {
+        if (requireCompletion && existing.completion === undefined) throw new Error("turnover event completion cannot be added after persistence");
         if (!isDeepStrictEqual(existing.source, source) || existing.priorStateHash !== input.expectedTurnoverStateHash) {
           throw new Error("turnover fill retry origin or original state mismatch");
         }
@@ -81,6 +94,7 @@ export class BucketTurnoverEventFileRepository {
         return existing.event;
       }
       const initial = source.windowOrigin.snapshotOrigin.initialState;
+      if (requireCompletion && source.windowOrigin.completion === undefined) throw new Error("turnover event completion requires a completed window root");
       const prior = metadata.states.get(initial.turnoverStateId) ?? initial;
       if (prior.turnoverStateHash !== input.expectedTurnoverStateHash) throw new Error("turnover state CAS mismatch");
       assertRiskPrior(source, prior);
@@ -99,7 +113,7 @@ export class BucketTurnoverEventFileRepository {
         ...(prior.lastTurnoverEventId === undefined ? {} : { previousTurnoverEventId: prior.lastTurnoverEventId }) });
       replayBucketTurnoverEvents({ initialState: initial,
         events: [...history.events.filter((item) => item.turnoverStateId === initial.turnoverStateId), event] });
-      const payload = { schemaVersion: "bucket_turnover_event_entry.v1" as const, event, source,
+      const payload = { schemaVersion: requireCompletion ? "bucket_turnover_event_entry.v2" as const : "bucket_turnover_event_entry.v1" as const, event, source,
         priorStateHash: prior.turnoverStateHash, appendStartedAt: createdAt, previousEntryHash: history.generationHash };
       const entryHash = hashCanonicalPayload(payload);
       const pending = await open(this.paths.pendingPath, "wx");
@@ -109,10 +123,17 @@ export class BucketTurnoverEventFileRepository {
       const committedAt = new Date().toISOString();
       assertCommitTime(committedAt, createdAt, initial.windowEndsAt);
       const marker = { schemaVersion: "bucket_turnover_event_commit.v1" as const, entryHash, committedAt };
-      await appendLine(this.paths.eventsPath, { ...marker, commitHash: hashCanonicalPayload(marker) });
+      const commitHash = hashCanonicalPayload(marker);
+      await appendLine(this.paths.eventsPath, { ...marker, commitHash });
       assertCommitTime(new Date().toISOString(), committedAt, initial.windowEndsAt);
       await unlink(this.paths.pendingPath);
       await syncDirectory(dirname(this.paths.pendingPath));
+      if (requireCompletion) {
+        const completedAt = new Date().toISOString();
+        const completion = parseBucketTurnoverCompletion(createBucketTurnoverCompletion({ sourceKind: "event", commitHash, completedAt }),
+          { sourceKind: "event", commitHash, committedAt, windowEndsAt: initial.windowEndsAt, observedAt: completedAt });
+        await appendLine(this.paths.eventsPath, completion);
+      }
       return event;
     });
   }
@@ -157,13 +178,21 @@ export class BucketTurnoverEventFileRepository {
         if (!isDeepStrictEqual(markerValue, marker) || marker.entryHash !== entry.entryHash ||
           commitHash !== hashCanonicalPayload(markerPayload) || Date.parse(marker.committedAt) > Date.now()) throw new Error("turnover event commit mismatch");
         assertCommitTime(marker.committedAt, entry.appendStartedAt, initial.windowEndsAt);
+        const completion = entry.schemaVersion === "bucket_turnover_event_entry.v2"
+          ? parseBucketTurnoverCompletion(JSON.parse(lines[index + 2] ?? ""), { sourceKind: "event", commitHash, committedAt: marker.committedAt,
+            windowEndsAt: initial.windowEndsAt, observedAt: new Date().toISOString() }) : undefined;
+        if (completion !== undefined) {
+          if (source.windowOrigin.completion === undefined) throw new Error("turnover event completion requires a completed window root");
+          index += 1;
+        }
         if (origins.has(event.turnoverEventId) || fills.has(fillKey(source))) throw new Error("turnover event duplicate identity or portfolio fill");
         const events = [...(groups.get(initial.turnoverStateId) ?? []), event];
         states.set(initial.turnoverStateId, replayBucketTurnoverEvents({ initialState: initial, events }));
         groups.set(initial.turnoverStateId, events);
-        const origin = Object.freeze({ event, source, priorStateHash: prior.turnoverStateHash, appendedAt: marker.committedAt, commitHash });
+        const origin = Object.freeze({ event, source, priorStateHash: prior.turnoverStateHash, appendedAt: marker.committedAt, commitHash,
+          ...(completion === undefined ? {} : { completion }) });
         origins.set(event.turnoverEventId, origin); fills.set(fillKey(source), origin);
-        previousHash = commitHash; previousTime = marker.committedAt;
+        previousHash = completion?.completionHash ?? commitHash; previousTime = completion?.completedAt ?? marker.committedAt;
       } catch (error) { throw new Error(`turnover event corrupt entry at line ${index + 1}`, { cause: error }); }
     }
     if (origins.size > 0) await syncFile(this.paths.eventsPath);

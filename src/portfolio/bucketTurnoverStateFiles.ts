@@ -20,6 +20,9 @@ export interface VerifiedBucketTurnoverStateSnapshot extends Omit<z.infer<typeof
   states: readonly BucketTurnoverState[];
 }
 const observations = new WeakMap<VerifiedBucketTurnoverStateSnapshot, Readonly<{ observedAt: string }>>();
+const observationSources = new WeakMap<VerifiedBucketTurnoverStateSnapshot, {
+  events: VerifiedBucketTurnoverEventHistory; windows: VerifiedBucketTurnoverWindowHistory;
+}>();
 
 /** Explicit projection refresh only; stale or missing projections never silently become current Risk authority. */
 export class BucketTurnoverStateFileRepository {
@@ -58,15 +61,17 @@ export class BucketTurnoverStateFileRepository {
       await syncFile(this.statePath);
       const observedAt = new Date().toISOString();
       for (const origin of windows.windows) {
-        if (Date.parse(observedAt) < Date.parse(origin.appendedAt)) throw new Error("turnover projection observation clock moved backward");
+        if (Date.parse(observedAt) < Date.parse(origin.completion?.completedAt ?? origin.appendedAt)) throw new Error("turnover projection observation clock moved backward");
       }
       for (const event of events.events) {
-        if (Date.parse(observedAt) < Date.parse(resolveVerifiedBucketTurnoverEventOrigin(events, event.turnoverEventId).appendedAt)) {
+        const origin = resolveVerifiedBucketTurnoverEventOrigin(events, event.turnoverEventId);
+        if (Date.parse(observedAt) < Date.parse(origin.completion?.completedAt ?? origin.appendedAt)) {
           throw new Error("turnover projection observation clock moved backward");
         }
       }
       observations.set(stored, Object.freeze({ observedAt }));
-      try { return await operation(stored); } finally { observations.delete(stored); }
+      observationSources.set(stored, { events, windows });
+      try { return await operation(stored); } finally { observations.delete(stored); observationSources.delete(stored); }
     });
   }
 
@@ -92,6 +97,23 @@ export function getDurableBucketTurnoverStateObservation(snapshot: VerifiedBucke
   return observation;
 }
 
+/** Source availability for a state in the actively locked projection, never for a clone or expired observation. */
+export function getDurableBucketTurnoverStateSource(snapshot: VerifiedBucketTurnoverStateSnapshot, turnoverStateId: string) {
+  getDurableBucketTurnoverStateObservation(snapshot);
+  const sources = observationSources.get(snapshot)!;
+  const state = snapshot.states.find((item) => item.turnoverStateId === turnoverStateId);
+  if (state === undefined) throw new Error("turnover projection has no matching window state");
+  const root = resolveVerifiedBucketTurnoverWindowOrigin(sources.windows, turnoverStateId);
+  const last = state.lastTurnoverEventId === undefined ? null
+    : resolveVerifiedBucketTurnoverEventOrigin(sources.events, state.lastTurnoverEventId);
+  const rootTime = root.completion?.completedAt;
+  const eventTime = last?.completion?.completedAt;
+  const availableAt = rootTime === undefined || (last !== null && eventTime === undefined) ? null
+    : eventTime !== undefined && Date.parse(eventTime) > Date.parse(rootTime) ? eventTime : rootTime;
+  return Object.freeze({ state, availableAt, windowCommitHash: root.commitHash, lastEventCommitHash: last?.commitHash ?? null,
+    windowCompletionHash: root.completion?.completionHash ?? null, lastEventCompletionHash: last?.completion?.completionHash ?? null });
+}
+
 function deriveProjection(events: VerifiedBucketTurnoverEventHistory, windows: VerifiedBucketTurnoverWindowHistory,
   eventCount = events.events.length, windowCount = windows.windows.length): VerifiedBucketTurnoverStateSnapshot {
   if (eventCount > events.events.length || windowCount > windows.windows.length) throw new Error("turnover projection source prefix is unavailable");
@@ -109,9 +131,11 @@ function deriveProjection(events: VerifiedBucketTurnoverEventHistory, windows: V
       events: prefix.filter((event) => event.turnoverStateId === id) });
   }).sort((a, b) => compareText(a.turnoverStateId, b.turnoverStateId));
   const lastEvent = prefix.at(-1);
+  const lastOrigin = lastEvent === undefined ? undefined : resolveVerifiedBucketTurnoverEventOrigin(events, lastEvent.turnoverEventId);
+  const lastWindow = roots.at(-1);
   const payload = { schemaVersion: "bucket_turnover_state_document.v1" as const, sourceWindowCount: windowCount,
-    sourceWindowGenerationHash: roots.at(-1)?.commitHash ?? null, sourceEventCount: eventCount,
-    sourceEventGenerationHash: lastEvent === undefined ? null : resolveVerifiedBucketTurnoverEventOrigin(events, lastEvent.turnoverEventId).commitHash,
+    sourceWindowGenerationHash: lastWindow?.completion?.completionHash ?? lastWindow?.commitHash ?? null, sourceEventCount: eventCount,
+    sourceEventGenerationHash: lastOrigin?.completion?.completionHash ?? lastOrigin?.commitHash ?? null,
     states: Object.freeze(states) };
   return Object.freeze({ ...payload, projectionHash: hashCanonicalPayload(payload) });
 }
