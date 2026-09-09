@@ -3643,6 +3643,37 @@ v3 저장 뒤 구 reader는 fail-closed하므로 rollback 시 새 reader를 유�
 
 ### PR 5. Bucket candidate selector contract
 
+Candidate input 저장의 source 의존성으로 `BucketSelectionRequestFileRepository`는
+`withDurableVerifiedHistory`를 제공한다. 기존 request writer와 같은 lock을 consumer 완료까지
+유지하고 실제 전체 파일의 strict parsing, ID/hash 및 cycle/bucket unique origin 검증을 재사용한다.
+Regular file과 UTF-8 bytes를 확인한 뒤 file/directory sync, 동일 descriptor bytes 및 경로 재개방
+identity/size/mtime/ctime 재검증을 수행한다. 파일이 없으면 directory sync 후 부재를 다시 확인하며
+빈 artifact를 만들지 않는다. 관측 중 변경, 잘린 마지막 줄 또는 corrupt suffix는 consumer 호출 전에 거절한다.
+
+Private WeakMap의 관측 lease는 callback 성공·실패·lock release 오류 모두에서 만료하며 clone이나
+일반 `readAll()` 결과로 대체할 수 없다. 저장 가능한 관측값은 `requestCount`, complete request 배열의
+`requestsHash`, flush 뒤 재검증 전 `observedAt`이다. Semantic request hash가 제외하는 `createdAt`도
+이 prefix hash에는 포함한다. `resolveObservedBucketSelectionRequestHistory`는 현재 live lease에서
+count/hash와 관측 시각을 대조해 과거 prefix를 다시 확인한다. 이후 append와 restart는 허용하지만
+과거 prefix 삭제·교체·createdAt 변경은 거절한다. 기존 semantic retry는 최초 저장된 createdAt을 유지한다.
+새 관측 발급 시 모든 request의 createdAt이 관측 시각 이하여야 하며, 과거 prefix 재검증에서도
+각 request의 createdAt이 저장된 observedAt 이하여야 한다. 시계 역행·미래 시각의 복구 로그는 consumer
+호출 전에 거절하고, 시계가 회복된 뒤라도 생성 이전 시각을 가진 과거 관측값을 승인하지 않는다.
+동일 시각은 허용하며 offset 표기는 instant로 비교한다.
+
+Lock 획득은 monotonic timeout 내 exclusive open의 EEXIST 및 Windows EPERM만 재시도한다.
+Token write/fsync 실패는 재시도하지 않고 소유권을 확정할 수 없는 lock 파일을 복구용으로 보존한다.
+기존/교체된 lock을 자동 삭제하지 않으며 wall clock 정지에도 경합 timeout이 끝난다. Consumer는 이미
+받은 history를 재사용해야 하고 같은 저장소 재진입은 lock 경합이다.
+
+이 기능은 실제 요청 파일 관측만 증명한다. 원래 append 완료 시각, trigger/policy/snapshot source,
+gap/current capacity, feature/eligibility/score/cost/sizing 계산 또는 allocation 권한을 증명하지 않는다.
+기존 `resolveBucketSelectionRequest`의 재계산과 실제 원본 결속은 downstream에서 별도로 필요하다.
+Candidate input 저장소와 selector/manual 공용 ledger 연결은 후속이다. 새 artifact/기존 JSONL 형식과
+runtime writer 연결 변경은 없으며 schema/data migration 없이 코드 rollback할 수 있다. 새 조회는
+fsync를 수행하므로 pure filesystem read-only API로 보지 않는다. Windows directory sync의 기존 EPERM
+제한은 유지하며 실제 저장 장치 장애 복구를 검증했다고 주장하지 않는다.
+
 - 공통 hard gate와 bucket별 scoring interface
 - immutable selection policy record와 hash resolver
 - price/volume 기반 `market_technical` feature부터 구현
