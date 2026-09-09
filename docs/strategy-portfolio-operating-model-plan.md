@@ -3135,6 +3135,41 @@ Manual reservation 저장소와 actual snapshot 결속, evidence/sizing/active p
 ledger/CAS 및 mandate activation 원자 commit은 후속이며 예약 원장 완료로 표시하지 않는다.
 Artifact migration이 없고 신규 consumer를 중지한 뒤 코드 rollback이 가능하다.
 
+수동 예약 기록 저장 분할은 `ManualOpeningCapacityReservationFileRepository`에서 계획한
+`manual-opening-capacity-reservations.jsonl`을 실제 작성하고 재시작 시 재검증한다. Manual assignment →
+portfolio sizing snapshot → reservation 순서로 lock을 획득하고 실제 두 source의 durable lease를
+예약 파일 처리 및 consumer 종료까지 유지한다. Reservation record는 기존 독립 parser/binding을
+통과해야 하며 실제 manual event의 ID/hash·authorization·scope·maximum notional과 실제 snapshot의
+ID/hash·portfolio/policy·asOf를 대조한다. Source 관측보다 뒤의 event/snapshot, append 시각보다 뒤의
+record/관측 시각은 거절한다. Snapshot이 실제 저장됐음을 검증하지만 최신 current portfolio라는
+판단과 existing position 존재·gap/slot/budget 계산은 아직 이 저장소의 권한이 아니다.
+
+각 entry는 complete reservation, createdAt을 포함한 manual/snapshot prefix 관측값,
+appendStartedAt 및 previousCommitHash를 독립 hash하고, 별도 commit marker가 entryHash와
+committedAt을 hash한다. Read/append마다 전체 pair와 실제 source prefix를 재검증하므로 source
+삭제·변조·손상 suffix, 자체 재해시한 잘못된 source receipt, predecessor/marker/hash/시각 불일치와
+duplicate ID를 거절한다. Exact retry는 원래 저장한 source 관측값을 그대로 반환하고 새 관측값으로
+과거 origin을 덮어쓰지 않는다. 같은 record ID에 다른 createdAt은 collision이다.
+
+Append는 pending barrier를 먼저 동기화한 뒤 entry와 marker를 각각 append/fsync하고 마지막에
+barrier를 제거·directory sync한다. 도중 실패 시 성공을 반환하지 않으며 남은 pending/torn/불완전
+pair는 자동 복구하거나 삭제하지 않는다. Marker의 committedAt은 entry fsync 이후 marker 작성
+시각이지 전체 transaction 완료 시각 증명이 아니다. 미래 consumer는 callback 동안만 유효한
+`getDurableManualCapacityReservationObservation`의 새 관측 시각을 사용해야 한다. 유효한 이력
+prefix만으로 latest ledger를 증명하지 않으며 여러 artifact의 rollback이나 예약 승인으로 승격하지 않는다.
+
+Source와 destination의 파일 관측은 실제 bytes/descriptor/path identity를 재검증하고, callback의
+정상/실패 종료에서 lease를 폐기한다. Destination lock은 monotonic deadline으로 획득 경합을 제한하고
+초기화 실패 시 ownership을 추정해 pathname을 삭제하지 않는다. 테스트는 실제 파일·원본 재조회,
+두 예약 variant와 retry/restart, 동시 exact retry, pending/entry/marker/fsync/remove 실패,
+source lock 유지, 관측 중 rewrite, frozen wall clock의 abandoned lock을 검증한다.
+
+이 저장소는 opt-in source-bound record 보존이며 기존 mandate/Risk/runner에 연결하지 않는다.
+Shared capacity event 저장·projection/CAS, manual event/예약/mandate activation의 원자 commit과
+policy/evidence/sizing/current portfolio 연결은 후속이다. 기존 artifact 변환은 없고 rollback 시
+새 consumer/writer를 중지한 뒤 파일을 보존해야 한다. 이전 코드가 새 artifact를 읽지 못하는 상태를
+예약이 없는 것으로 취급해 실행하지 않도록 consumer 배포 순서를 별도로 검증해야 한다.
+
 ### PR 4. `PortfolioGapAnalyzer`
 
 - bucket/symbol/cash gap read model
