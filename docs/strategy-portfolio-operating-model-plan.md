@@ -3655,6 +3655,33 @@ v3 저장 뒤 구 reader는 fail-closed하므로 rollback 시 새 reader를 유�
 - canonical candidate sizing input repository와 input hash replay
 - manifest bucket은 observed metadata로 유지하되 자동 acceptance 근거로 사용하지 않음
 
+Selector sizing 입력의 첫 분할은 `candidateSizingInput.ts`의 strict `CandidateSizingInputRecord`
+계약과 factory/parser 및 순수 request binding이다. Request/portfolio/snapshot/policy/as-of,
+market/symbol/bucket, scoring/sizing version과 score, 분류 provenance, feature value/evidence,
+모든 exposure cap, liquidity 및 complete execution-cost input을 명시적으로 보존한다. Cost input의
+fill rule·fee/tax/spread/slippage·fractional/fill/liquidity/staleness/market-impact parameter는 기존
+strict paper execution policy schema를 재사용하되 cost model version을 별도 식별자로 보존한다.
+누락된 parameter를 runtime default로 보충하지 않는다.
+
+Sizing input hash는 record ID/hash/createdAt을 제외한 complete payload다. Record ID는 이 hash가
+아니라 `requestId + market + symbol` tuple에서 `candidate_sizing_input` domain prefix로 파생한다.
+따라서 같은 candidate의 score/feature/cap/model 변경은 같은 ID의 다른 payload hash이며 후속
+repository가 이를 exact retry와 구분해 collision으로 거절해야 한다. CreatedAt만 달라지면 ID/hash는
+같지만 이 계약 자체가 저장소 retry를 승인하지 않는다.
+
+Factory는 featureDefinitionRef와 각 evidence ref 배열을 UTF-8 순서로 정렬하고 duplicate feature/ref를
+거절한다. Parser는 이미 canonical인 순서만 허용하고 hash/ID를 독립 계산한다. Unknown nested field,
+필수 parameter 누락, non-finite·음의 0, unsafe/음수 KRW, 범위 밖 ratio, 잘못된 Unicode/identifier와
+asOf 이전 createdAt을 거절한다. 결과 전체는 deep-freeze한다. Pure request binding은 request를 독립
+파싱하고 request ID, portfolio/snapshot/policy/bucket과 asOf instant 및 생성 순서를 대조한다.
+
+이는 supplied sizing input의 불변 계약이며 실제 feature/evidence/classification source, score와
+eligibility/hard gate, exposure/liquidity cap 및 estimatedCostKrw의 독립 재계산을 증명하지 않는다.
+Model version 문자열도 지원되는 실행 모델이나 계산 완료라는 증명이 아니다. Versioned 비용 추정과
+sizing range 계산, canonical input 저장소, assignment/set 및 shared capacity ledger 연결은 후속이다.
+기존 fill simulator의 계산과 다른 추정식을 같은 version의 결과로 합성하지 않는다. 기존 실행 경로에
+연결하거나 artifact를 쓰지 않아 migration 없이 코드 rollback이 가능하다.
+
 완료 조건:
 
 - 같은 입력은 같은 ordering과 reason code를 만든다.
