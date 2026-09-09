@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import { dirname, join } from "node:path";
+import { z } from "zod";
+import { sha256HashSchema } from "../domain/schemas.js";
+import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
 import {
   type ManualAssignmentEvent,
@@ -21,6 +24,36 @@ export const MANUAL_ASSIGNMENT_EVENTS_FILE_NAME =
 export interface ManualAssignmentFileRepositoryOptions {
   lockTimeoutMs?: number;
   lockRetryDelayMs?: number;
+}
+
+export const manualAssignmentObservationSchema = z.object({
+  eventCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).refine((value) => !Object.is(value, -0)),
+  eventsHash: sha256HashSchema,
+  observedAt: offsetQualifiedIsoDateTimeSchema
+}).strict();
+export type ManualAssignmentObservation = Readonly<z.infer<typeof manualAssignmentObservationSchema>>;
+export interface VerifiedManualAssignmentHistory {
+  readonly events: readonly ManualAssignmentEvent[];
+}
+const durableObservations = new WeakMap<VerifiedManualAssignmentHistory, ManualAssignmentObservation>();
+
+/** Only a live repository-issued observation; this does not authorize opening capacity. */
+export function getDurableManualAssignmentObservation(history: VerifiedManualAssignmentHistory): ManualAssignmentObservation {
+  const observation = durableObservations.get(history);
+  if (observation === undefined) throw new Error("manual assignment history lacks a durable observation lease");
+  return observation;
+}
+
+/** Revalidates a saved prefix against a currently locked source, without issuing another lease. */
+export function resolveObservedManualAssignmentHistory(history: VerifiedManualAssignmentHistory, value: unknown): readonly ManualAssignmentEvent[] {
+  const current = getDurableManualAssignmentObservation(history);
+  const observation = manualAssignmentObservationSchema.parse(value);
+  if (Date.parse(observation.observedAt) > Date.parse(current.observedAt)) throw new Error("manual assignment observation is in the future");
+  const prefix = history.events.slice(0, observation.eventCount);
+  if (prefix.length !== observation.eventCount || hashCanonicalPayload(prefix) !== observation.eventsHash) {
+    throw new Error("manual assignment observation does not match durable source prefix");
+  }
+  return Object.freeze(prefix);
 }
 
 export function createManualAssignmentPaths(baseDir: string): {
@@ -59,6 +92,21 @@ export class ManualAssignmentFileRepository {
 
   async readAll(): Promise<readonly ManualAssignmentEvent[]> {
     return this.withLock(async () => this.readAllUnderLock());
+  }
+
+  /** Holds the source lock through the consumer; the observation expires on either outcome. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedManualAssignmentHistory) => Promise<T>): Promise<T> {
+    return this.withLock(async () => {
+      const { events, observedAt } = await readDurableBoundManualSource(this.eventsPath);
+      const history = Object.freeze({ events });
+      durableObservations.set(history, Object.freeze({ eventCount: events.length,
+        eventsHash: hashCanonicalPayload(events), observedAt }));
+      try {
+        return await operation(history);
+      } finally {
+        durableObservations.delete(history);
+      }
+    });
   }
 
   async resolveById(manualAssignmentEventId: string): Promise<ManualAssignmentEvent> {
@@ -131,35 +179,7 @@ export class ManualAssignmentFileRepository {
       }
       throw error;
     }
-    if (raw.length > 0 && !raw.endsWith("\n")) {
-      throw new Error("manual assignment event file has a torn final line");
-    }
-    const lines = raw.split(/\r?\n/);
-    lines.pop();
-    const events: ManualAssignmentEvent[] = [];
-    const ids = new Set<string>();
-    for (const [index, line] of lines.entries()) {
-      if (line.length === 0) {
-        throw new Error(
-          `manual assignment event file contains corrupt line ${index + 1}`
-        );
-      }
-      let event: ManualAssignmentEvent;
-      try {
-        event = parseManualAssignmentEvent(JSON.parse(line));
-      } catch (error) {
-        throw new Error(
-          `manual assignment event file contains corrupt line ${index + 1}`,
-          { cause: error }
-        );
-      }
-      if (ids.has(event.manualAssignmentEventId)) {
-        throw new Error("manual assignment event file contains a duplicate ID");
-      }
-      ids.add(event.manualAssignmentEventId);
-      events.push(event);
-    }
-    return Object.freeze(events);
+    return parseManualAssignmentHistory(raw);
   }
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -176,6 +196,85 @@ export class ManualAssignmentFileRepository {
     } finally {
       await release();
     }
+  }
+}
+
+function parseManualAssignmentHistory(raw: string): readonly ManualAssignmentEvent[] {
+  if (raw.length > 0 && !raw.endsWith("\n")) {
+    throw new Error("manual assignment event file has a torn final line");
+  }
+  const lines = raw.split(/\r?\n/);
+  lines.pop();
+  const events: ManualAssignmentEvent[] = [];
+  const ids = new Set<string>();
+  for (const [index, line] of lines.entries()) {
+    if (line.length === 0) {
+      throw new Error(`manual assignment event file contains corrupt line ${index + 1}`);
+    }
+    let event: ManualAssignmentEvent;
+    try {
+      event = parseManualAssignmentEvent(JSON.parse(line));
+    } catch (error) {
+      throw new Error(`manual assignment event file contains corrupt line ${index + 1}`, { cause: error });
+    }
+    if (ids.has(event.manualAssignmentEventId)) {
+      throw new Error("manual assignment event file contains a duplicate ID");
+    }
+    ids.add(event.manualAssignmentEventId);
+    events.push(event);
+  }
+  return Object.freeze(events);
+}
+
+async function readDurableBoundManualSource(path: string): Promise<{ events: readonly ManualAssignmentEvent[]; observedAt: string }> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(path, "r+");
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") throw error;
+    await syncOutputDirectory(dirname(path));
+    const observedAt = new Date().toISOString();
+    try {
+      await lstat(path);
+    } catch (recheckError) {
+      if (isNodeError(recheckError) && recheckError.code === "ENOENT") return { events: Object.freeze([]), observedAt };
+      throw recheckError;
+    }
+    throw new Error("manual assignment source appeared during durable observation");
+  }
+  try {
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile() || !(await lstat(path)).isFile()) throw new Error("manual assignment source must be a regular file");
+    const bytes = await handle.readFile();
+    const events = parseManualAssignmentHistory(bytes.toString("utf8"));
+    await handle.sync();
+    await syncOutputDirectory(dirname(path));
+    // Capture the flushed generation before revalidation, not after closing the descriptor.
+    const observedAt = new Date().toISOString();
+    const verified = Buffer.alloc(bytes.length);
+    let offset = 0;
+    while (offset < verified.length) {
+      const { bytesRead } = await handle.read(verified, offset, verified.length - offset, offset);
+      if (bytesRead === 0) throw new Error("manual assignment source changed during durable observation");
+      offset += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    if (!(await lstat(path)).isFile()) throw new Error("manual assignment source must be a regular file");
+    // Descriptor identities avoid Windows pathname stat dev=0 differences.
+    const namedHandle = await open(path, "r");
+    let named;
+    try { named = await namedHandle.stat({ bigint: true }); }
+    finally { await namedHandle.close(); }
+    if (!bytes.equals(verified) || before.size !== BigInt(bytes.length) ||
+      before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs ||
+      after.dev !== named.dev || after.ino !== named.ino || after.size !== named.size ||
+      after.mtimeNs !== named.mtimeNs || after.ctimeNs !== named.ctimeNs) {
+      throw new Error("manual assignment source changed during durable observation");
+    }
+    return { events, observedAt };
+  } finally {
+    await handle.close();
   }
 }
 
