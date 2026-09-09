@@ -2128,6 +2128,40 @@ candidate는 `unknown` 또는 `blocked`로 남긴다. 가격 상승만으로 기
 
 ### 7.2 Score와 sizing 분리
 
+`calculateMarketTechnicalCandidateFeatures`의 `market_technical_features.v1`은 supplied historical
+snapshot의 순수 계산 분할이다. 단일 market/symbol/interval, 명시적 windowStart/asOf,
+minimumObservationCount(2~4096), maximumAgeSeconds를 받아 다음 6개 versioned feature를 만든다.
+
+| Feature definition | 계산·단위 |
+| --- | --- |
+| `market_technical.window_return_ratio.v1` | 마지막/첫 last price의 변화 비율 |
+| `market_technical.observation_return_population_stddev.v1` | 인접 last price 단순 수익률의 모집단 표준편차; 연율화 없음 |
+| `market_technical.maximum_last_price_drawdown_ratio.v1` | 각 last price 이전 누적 최고값 대비 최대 하락 비율 |
+| `market_technical.positive_observation_return_ratio.v1` | 양수인 인접 수익률 수 / 전체 인접 수익률 수; 보합은 양수 아님 |
+| `market_technical.average_bar_volume.v1` | 제공된 bar volume의 산술평균 |
+| `market_technical.average_bar_last_price_notional_krw.v1` | 제공된 bar의 lastPriceKrw × volume 산술평균; 실제 체결 거래대금 아님 |
+
+가격은 lastPriceKrw를 사용하며 optional close/OHLC로 대체하지 않는다. 양수 safe-integer last price,
+모든 bar의 nonnegative safe-integer volume과 safe-integer price×volume을 요구한다. 평균 합계는
+BigInt로 계산해 개별 값은 안전하지만 합이 safe integer를 넘는 경우의 손실을 피한다. Numeric feature는
+finite·음의 0 없음이 필요하다. 부족한 관측, 누락 volume, 잘못된 수치·Unicode 식별자·qualified timestamp,
+mixed scope/interval, duplicate ID 또는 같은 instant, window 밖/미래 observedAt과 stale latest는 거절한다.
+Maximum age 경계는 포함한다. Snapshot createdAt은 observedAt 이상이어야 하지만 과거 이력의 나중 생성
+시각일 수 있다. CreatedAt이 역사적 asOf 뒤인 입력을 계산할 수 있다는 사실은 point-in-time availability를
+증명하지 않는다.
+
+계산은 snapshot을 observedAt 순서로, sourceRefs/riskTags를 canonical 순서로 복제 정렬하고 입력을
+변경하지 않는다. Input hash는 model version·scope·window·limit 및 complete normalized snapshot을
+결속한다. 각 source snapshot의 ID/전체 hash를 반환하며 6개 feature의 evidenceRef는 같은 full input hash에서
+파생한다. Output hash는 모든 반환 payload를 결속하고 결과는 deep-freeze한다. 이 reference는 계산 입력의
+identity일 뿐 durable evidence artifact의 존재·원본 신뢰도·검증 완료를 뜻하지 않는다.
+
+Daily/intraday interval은 scope와 hash에 보존한다. 누락 session/bar를 채우거나 calendar completeness,
+동일 간격, source trust, adjusted-price/FX provenance, spread/실제 execution fit 또는 fundamental quality를
+추론하지 않는다. 2개 관측의 변동성 0도 충분한 변동성 evidence라는 뜻은 아니다. 실제 원본 저장소의 전체
+검증, feature evidence 저장/resolve, bucket policy의 required evidence·hard gate 및 scoring은 후속이다.
+현재 함수는 selectionScore/eligibility를 만들지 않고 candidate input writer·runner·Risk에 연결하지 않는다.
+
 - `selectionScore`는 같은 bucket 안에서 candidate 우선순위를 정한다.
 - score는 target weight를 직접 결정하지 않는다.
 - backend는 bucket gap, available slots, symbol cap, liquidity cap, concentration cap,
