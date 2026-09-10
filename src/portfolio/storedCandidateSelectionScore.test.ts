@@ -35,6 +35,7 @@ const CREATED = "2026-09-01T00:00:00.000Z";
 type Payload = Parameters<typeof createCandidateSizingInputRecord>[0];
 type Options = { patch?: (input: Payload) => Payload; market?: "KR" | "US"; portfolioId?: string;
   execution?: ExecutionFixtureOptions;
+  costEstimationModelVersion?: string | null;
   policyHash?: string; legacy?: boolean; extraModelFeature?: boolean; upperBound?: number;
   requiredEvidence?: Parameters<typeof createBucketSelectionPolicyRecord>[0]["requiredEvidence"];
   hardGateRules?: CandidateHardGateRule[];
@@ -361,14 +362,14 @@ test("stored candidate cost cannot accept caller cost parameters or hide corrupt
   assert.equal(await readFile(path, "utf8"), before);
 }));
 
-test("stored cost parameters bind exact as-of bucket policy without promoting cost evidence or estimation model authority", async () => {
+test("stored cost model and parameters bind exact as-of bucket policy without promoting cost evidence authority", async () => {
   for (const side of ["BUY", "SELL"] as const) await temporary(async (baseDir) => {
     const { record, dependencies } = await seed(baseDir, { execution: executionOptions(), patch: (input) => costCandidate(input, { side }) });
     const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
     const result = await resolveStoredPolicyCandidateExecutionCost(input);
     assert.equal(result.assessment.side, side);
     assert.equal(result.assessment.costParameterAuthority, "as_of_policy_bound");
-    assert.equal(result.assessment.costEstimationModelSelection, "not_verified");
+    assert.equal(result.assessment.costEstimationModelSelection, "as_of_selection_policy_bound");
     assert.equal(result.assessment.costEvidenceAuthority, "not_verified");
     assert.equal(result.assessment.executionModelVersion, "execution_simulator.v4");
     assert.equal(result.assessment.estimationModelVersion, CANDIDATE_EXECUTION_COST_MODEL_VERSION);
@@ -380,6 +381,17 @@ test("stored cost parameters bind exact as-of bucket policy without promoting co
     frozen(result);
     assert.deepEqual(await resolveStoredPolicyCandidateExecutionCost(input), result);
   });
+});
+
+test("stored cost model selection refuses absent or unsupported policy versions despite valid arithmetic and execution parameters", async () => {
+  for (const costEstimationModelVersion of [null, "candidate_reference_notional_cost.v2", "paper_cost_model.v5"]) {
+    await temporary(async (baseDir) => {
+      const { record } = await seed(baseDir, { execution: executionOptions(), costEstimationModelVersion, patch: costCandidate });
+      const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+      await resolveStoredCandidateExecutionCost(input); // The weaker arithmetic-only API remains usable.
+      await assert.rejects(resolveStoredPolicyCandidateExecutionCost(input), /model is not selected/);
+    });
+  }
 });
 
 test("stored cost parameters reject every changed shared execution setting even with correctly recomputed costs", async () => {
@@ -483,6 +495,8 @@ async function seed(baseDir: string, options: Options = {}) {
     hardGateRuleIds: options.hardGateRules?.map((rule) => rule.ruleId) ?? ["not-yet-evaluated"],
     ...(options.hardGateRules === undefined ? {} : { hardGateRules: options.hardGateRules }), scoringModelVersion: scoringModel.version,
     ...(options.legacy ? {} : { scoringModelRef: candidateScoringModelRefFor(scoringModel) }),
+    ...(options.costEstimationModelVersion === null ? {} : {
+      costEstimationModelVersion: options.costEstimationModelVersion ?? CANDIDATE_EXECUTION_COST_MODEL_VERSION }),
     featureDefinitionRefs: scoringModel.terms.map((term) => term.featureDefinitionRef) });
   const records = { ...original.records, scoringModels: [scoringModel],
     selectionPolicies: original.records.selectionPolicies.map((item) => item.bucket === "swing" ? selection : item) };

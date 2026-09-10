@@ -256,6 +256,7 @@ interface BucketSelectionPolicyRecord {
   };
   hardGateRuleIds: string[];
   hardGateRules?: CandidateHardGateRule[];
+  costEstimationModelVersion?: string;
   scoringModelVersion: string;
   scoringModelRef?: {
     scoringModelRecordId: string;
@@ -4140,7 +4141,7 @@ source/participation/reference notional, 분류·cap·최종 sizing·eligibility
 코드 rollback에 데이터 변환이나 artifact 삭제는 필요 없고 새 버전 재생 기능만 사용할 수 없게 된다.
 
 `resolveStoredPolicyCandidateExecutionCost`는 비용 선언의 산술 재생에 실제 as-of bucket 정책의
-파라미터 결속을 추가한다. 먼저 실제 dependency/policy/activation snapshot을 읽고 그 전체 hash를
+모델 선택과 파라미터 결속을 추가한다. 먼저 실제 dependency/policy/activation snapshot을 읽고 그 전체 hash를
 기존 score/evidence/hard gate/cost 재생이 읽은 policySnapshotHash와 정확히 대조한다. 두 읽기 사이의
 append라도 다른 generation을 혼합하지 않고 거절하며, 새로운 전체 호출로 재시도할 수 있다. Policy
 snapshot은 candidate source lock보다 먼저 읽어 역순 잠금을 추가하지 않는다.
@@ -4155,15 +4156,25 @@ liquidity fill ratio와 stale 설정 전체를 candidate와 대조한다. Legacy
 결과는 exact rule-set/parameter ref, activation identity, policy/snapshot hash, 두 모델 version,
 execution parameters와 비용 재생 assessment hash를 보존한다. Scope는
 `stored_as_of_cost_parameter_binding_only`, costParameterAuthority는 as_of_policy_bound다.
-이는 파라미터의 as-of 정책 출처를 증명하며 후보 추정 모델의 별도 policy 선택이나 비용 증거의 진위를
-증명하지 않는다. costEstimationModelSelection/costEvidenceAuthority는 not_verified,
+선택 정책의 optional costEstimationModelVersion은 complete policy hash/identity/lineage에 포함된다.
+강화된 비용 재생은 이 필드가 존재하고 실제 candidate 계산기의 modelVersion과 정확히 같은지 검사한다.
+필드 누락이나 다른 version은 비용과 실행 파라미터가 일치해도 거절한다. Model 선택까지 검증한 결과의
+costEstimationModelSelection은 as_of_selection_policy_bound다. Unknown model label을 정책 record로
+보존할 수 있어도 지원되는 계산기로 재생되지 않으면 승인하지 않는다. Runtime 기본 모델은 합성하지 않는다.
+이는 모델·파라미터의 as-of 정책 출처를 증명하지만 비용 증거의 진위는 증명하지 않는다. costEvidenceAuthority는 not_verified,
 fillSimulation은 not_performed이고 이전 hard gate 실패를 그대로 유지한다. 가격 source allowlist와
 freshness 설정도 원래 parameter ref에 결속되지만 이 함수 자체가 price evidence를 읽지는 않는다.
 이후 정책 retirement가 있어도 과거 진단은 가능하며 현재 실행 권한으로 사용하지 않는다.
 
-기존 비용 재생 함수와 반환 형식, 저장 계약·writer·정책 활성화·거래 기본값은 변경하지 않는다.
-새 API나 artifact가 없으므로 migration/데이터 삭제 없이 코드 rollback할 수 있다. 정책에 실행 규칙이나
-해당 시장 파라미터가 없는 legacy 기록은 기존 진단으로 읽을 수 있지만 이 강화된 함수는 거절한다.
+산술 전용 `resolveStoredCandidateExecutionCost`의 반환 형식과 candidate 입력 저장 계약·writer·정책
+활성화·거래 기본값은 변경하지 않는다. 정책 결속 함수는 모델 선택 검사를 추가하고 해당 결과 값을
+not_verified에서 as_of_selection_policy_bound로 변경한다.
+새 API나 artifact는 없다. costEstimationModelVersion 없는 legacy policy의 기존 bytes/hash는 유지된다.
+다만 강화된 함수는 모델 선택 필드가 없거나 실행 규칙/해당 시장 파라미터가 없는 legacy 기록을 거절한다.
+기존 산술 전용 비용 진단은 계속 사용할 수 있다. 새 필드가 있는 정책은 호환 reader를 먼저 배포한 뒤
+새 policy record로 활성화한다. Old strict reader가 새 필드를 거절하므로 rollback 시 새 정책 사용을
+중단하고 호환 reader를 유지하며 append-only 기록에서 필드를 소급 삭제하지 않는다. 운영 정책 활성화와
+데이터 변환은 실행하지 않았다.
 
 완료 조건:
 

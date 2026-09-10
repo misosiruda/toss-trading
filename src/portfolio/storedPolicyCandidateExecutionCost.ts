@@ -5,7 +5,7 @@ import { hashCanonicalPayload, riskRuleParameterRefFor, riskRuleSetRefFor } from
 import { readStoredRuntimePortfolioPolicyActivationSnapshot } from "./runtimePortfolioPolicyActivationFiles.js";
 import { resolveStoredCandidateExecutionCost } from "./storedCandidateExecutionCost.js";
 
-/** Historical binding of declared cost parameters, not cost-source/model selection or current execution authority. */
+/** Historical binding of selected cost model and parameters, not cost-source or current execution authority. */
 export async function resolveStoredPolicyCandidateExecutionCost(
   input: Parameters<typeof resolveStoredCandidateExecutionCost>[0],
   options: NonNullable<Parameters<typeof resolveStoredCandidateExecutionCost>[1]> = {}
@@ -21,6 +21,10 @@ export async function resolveStoredPolicyCandidateExecutionCost(
   const costReplay = await resolveStoredCandidateExecutionCost(lookup, capturedOptions);
   const scoreReplay = costReplay.hardGateAssessment.evidenceAssessment.scoreReplay;
   if (policySnapshotHash !== scoreReplay.policySnapshotHash) throw new Error("candidate cost policy snapshot changed during replay");
+  if (scoreReplay.selectionPolicy.costEstimationModelVersion === undefined ||
+    scoreReplay.selectionPolicy.costEstimationModelVersion !== costReplay.calculation.input.modelVersion) {
+    throw new Error("candidate cost estimation model is not selected by the as-of selection policy");
+  }
   const candidate = scoreReplay.sizingInputOrigin.record;
   const selected = snapshot.dependencies.repository.resolveRiskRuleSetDependencies(scoreReplay.bucketPolicy.riskRuleSetRef);
   const executionRule = selected.riskRules.find(({ rule }) => rule.ruleId === "paper_execution");
@@ -47,7 +51,7 @@ export async function resolveStoredPolicyCandidateExecutionCost(
     executionParameters: settings.executionPolicy, executionModelVersion, estimationModelVersion,
     costReplayAssessmentHash: costReplay.assessmentHash,
     costParameterAuthority: "as_of_policy_bound" as const,
-    costEstimationModelSelection: "not_verified" as const,
+    costEstimationModelSelection: "as_of_selection_policy_bound" as const,
     costEvidenceAuthority: "not_verified" as const, fillSimulation: "not_performed" as const,
     evidenceAndHardGateConditionsSatisfied: costReplay.assessment.evidenceAndHardGateConditionsSatisfied });
   // The parameter schema creates a copy; freeze this nested copy as well as the result.
