@@ -86,6 +86,7 @@ const bucketSelectionPolicyPayloadSchema = z
     costEstimationModelVersion: versionSchema.optional(),
     liquidityEstimationModelVersion: versionSchema.optional(),
     costBasisModelVersion: versionSchema.optional(),
+    classificationModelVersion: versionSchema.optional(),
     featureDefinitionRefs: z.array(identifierSchema).min(1).max(128)
   })
   .strict();

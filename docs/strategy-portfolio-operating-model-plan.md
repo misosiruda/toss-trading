@@ -259,6 +259,7 @@ interface BucketSelectionPolicyRecord {
   costEstimationModelVersion?: string;
   liquidityEstimationModelVersion?: string;
   costBasisModelVersion?: string;
+  classificationModelVersion?: string;
   scoringModelVersion: string;
   scoringModelRef?: {
     scoringModelRecordId: string;
@@ -4260,6 +4261,34 @@ SELL을 BUY cash capacity로 재해석하는 호출은 거절한다.
 새 writer/API/정책 필드/저장 형식과 거래 기본값 변경이 없고 데이터 변환 없이 코드 rollback이
 가능하다. 과거 candidate가 임의 현금값을 가졌다면 새 검증이 거절할 수 있으며 append-only 원본을
 소급 수정하지 않는다. 실제 장치 장애·운영 배포·전체 운용 E2E는 이 분할의 검증 범위가 아니다.
+
+분류 원본 연결은 `candidate_packet_classification.v1`로 명시한다. 선택 정책의 optional
+`classificationModelVersion`이 이 모델을 선택했을 때만 `resolveStoredCandidateClassification`을
+사용한다. `classificationEvidenceRef`는 complete packet hash·market·symbol·모델의 content address다.
+실제 market packet JSONL 전체를 canonical parsing한 뒤 exact ref와 packet ID가 각각 한 번만
+해소되어야 한다. Packet portfolio와 후보 market/symbol을 확인하고, 선언된 sector/region 및 시장
+결제통화를 재생하여 candidate의 모든 exposureKeys와 대조한다. 순수 parser도 전체 packet과
+projection을 독립 재생하므로 output만 수정해 재해시한 입력을 거절한다.
+
+`country`는 기존 portfolio snapshot의 `position.region`과 같은 KR/US/GLOBAL 지역 분류이며 기업
+법적 소재지를 뜻하지 않는다. `currency`는 KR→KRW, US→USD 시장 결제통화이고 ETF·기업의 실제
+look-through 환위험을 뜻하지 않는다. Sector는 명시적인 값이 필요하고 공백/비정규 Unicode,
+배열 인덱스 형태 및 prototype 관련 예약 key를 거절한다. Source refs는 중복 없이 보존한다.
+관측된 strategyBucket은 metadata로만 반환하며 후보 bucket 배정에 사용하지 않는다.
+
+Candidate collectedAt은 packet generatedAt 이하여야 하고 generatedAt은 expiresAt/staleAfter보다
+엄격히 이전이어야 한다. 실제 연결은 generatedAt ≤ request evidenceCutoffAt 및 request asOf가
+두 만료 시각보다 엄격히 이전임을 요구한다. 분류·현금·기존 evidence/hard gate 결과는 각각 구분한다.
+분류가 일치한다고 required portfolio_fit evidence나 최종 eligibility로 승격하지 않는다.
+
+Scope는 `stored_packet_classification_content_only`이며 source trust와 과거 디스크 가용성은
+검증하지 않는다. Canonical packet read는 durable lease가 아니며 임의 파일 재작성에 대한 외부 인증이
+아니다. 후속 정상 append는 기존 분류 projection을 바꾸지 않지만 관측한 전체 sourceHistoryHash와
+record count는 바뀐다. Corrupt/torn/비canonical suffix 또는 중복 원본은 자동 수리하지 않는다.
+새 artifact/writer/API·거래 기본값 변경은 없다. Legacy 정책에는 필드를 합성하지 않으며 새 함수는
+모델 누락을 거절한다. 새 정책 사용 전 호환 reader를 배포하고 rollback 시 호환 reader를 유지한 채
+새 모델 사용을 중단한다. Append-only 정책 필드를 소급 제거하지 않는다. 실제 외부 source 호출,
+운영 정책 활성화, 노출 cap·최종 sizing·배정·전체 운용 E2E는 후속이다.
 
 완료 조건:
 
