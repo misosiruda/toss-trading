@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { z } from "zod";
 import type { CandidateScoringModel } from "./candidateScoringModel.js";
+import { candidateHardGateRuleSchema, type CandidateHardGateRule } from "./candidateHardGateRules.js";
 
 import {
   isoDateTimeSchema,
@@ -79,6 +80,7 @@ const bucketSelectionPolicyPayloadSchema = z
     requiredEvidence: z.array(evidenceRequirementSchema).min(1).max(32),
     everyTickSourceRequirement: everyTickSourceRequirementSchema.optional(),
     hardGateRuleIds: z.array(identifierSchema).min(1).max(64),
+    hardGateRules: z.array(candidateHardGateRuleSchema).min(1).max(64).optional(),
     scoringModelVersion: versionSchema,
     scoringModelRef: candidateScoringModelRefSchema.optional(),
     featureDefinitionRefs: z.array(identifierSchema).min(1).max(128)
@@ -464,6 +466,7 @@ export function createBucketSelectionPolicyRecord(
   const { createdAt, ...unparsedPayload } = input;
   const payload = bucketSelectionPolicyPayloadSchema.parse({
     ...unparsedPayload,
+    ...(unparsedPayload.hardGateRules === undefined ? {} : { hardGateRules: canonicalHardGateRules(unparsedPayload.hardGateRules) }),
     requiredEvidence: canonicalEvidenceRequirements(
       unparsedPayload.requiredEvidence
     ),
@@ -479,6 +482,7 @@ export function createBucketSelectionPolicyRecord(
   const hash = hashCanonicalPayload(payload);
   const identity = immutableRecordIdentity("selection_policy", hash, createdAt);
   assertScoringModelVersion(payload);
+  assertHardGateRules(payload);
   return deepFreeze({
     ...payload,
     selectionPolicyRecordId: identity.recordId,
@@ -493,6 +497,7 @@ export function parseBucketSelectionPolicyRecord(
 ): BucketSelectionPolicyRecord {
   const record = bucketSelectionPolicyRecordSchema.parse(value);
   assertScoringModelVersion(record);
+  assertHardGateRules(record);
   assertCanonicalEvidenceRequirements(record.requiredEvidence);
   assertCanonicalUniqueText(record.hardGateRuleIds, "hardGateRuleIds");
   assertCanonicalUniqueText(
@@ -522,6 +527,33 @@ export function selectionPolicyRefFor(
 function assertScoringModelVersion(policy: { scoringModelVersion: string; scoringModelRef?: CandidateScoringModelRef | undefined }) {
   if (policy.scoringModelRef && policy.scoringModelRef.version !== policy.scoringModelVersion) {
     throw new Error("selection policy scoring model version mismatch");
+  }
+}
+
+function canonicalHardGateRules(values: readonly CandidateHardGateRule[]): CandidateHardGateRule[] {
+  const rules = values.map((value) => {
+    const rule = candidateHardGateRuleSchema.parse(value);
+    if (!isDeepStrictEqual(value, rule)) throw new Error("hard gate parameters must already be canonical");
+    return rule.algorithm === "market_interval.v1"
+      ? { ...rule, allowedIntervals: canonicalUniqueText(rule.allowedIntervals, "hard gate intervals") } : rule;
+  }).sort((left, right) => compareText(left.ruleId, right.ruleId));
+  assertNoDuplicateKeys(rules, (rule) => rule.ruleId, "hard gate rules");
+  return rules;
+}
+
+function assertHardGateRules(policy: { hardGateRuleIds: string[]; featureDefinitionRefs: string[];
+  hardGateRules?: CandidateHardGateRule[] | undefined }) {
+  if (policy.hardGateRules === undefined) return;
+  if (!isDeepStrictEqual(policy.hardGateRules, canonicalHardGateRules(policy.hardGateRules))) {
+    throw new Error("hard gate rules must use canonical order");
+  }
+  if (!isDeepStrictEqual(policy.hardGateRuleIds, policy.hardGateRules.map((rule) => rule.ruleId))) {
+    throw new Error("hard gate rule definitions must exactly cover required IDs");
+  }
+  for (const rule of policy.hardGateRules) {
+    if (rule.algorithm === "numeric_feature_range.v1" && !policy.featureDefinitionRefs.includes(rule.featureDefinitionRef)) {
+      throw new Error("hard gate feature must be declared by selection policy");
+    }
   }
 }
 
