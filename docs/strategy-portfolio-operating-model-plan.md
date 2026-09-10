@@ -4139,6 +4139,32 @@ source/participation/reference notional, 분류·cap·최종 sizing·eligibility
 변경하지 않아 legacy record는 그대로 읽히며 새 계산기를 사용하지 않으면 기존 동작에 영향이 없다.
 코드 rollback에 데이터 변환이나 artifact 삭제는 필요 없고 새 버전 재생 기능만 사용할 수 없게 된다.
 
+`resolveStoredPolicyCandidateExecutionCost`는 비용 선언의 산술 재생에 실제 as-of bucket 정책의
+파라미터 결속을 추가한다. 먼저 실제 dependency/policy/activation snapshot을 읽고 그 전체 hash를
+기존 score/evidence/hard gate/cost 재생이 읽은 policySnapshotHash와 정확히 대조한다. 두 읽기 사이의
+append라도 다른 generation을 혼합하지 않고 거절하며, 새로운 전체 호출로 재시도할 수 있다. Policy
+snapshot은 candidate source lock보다 먼저 읽어 역순 잠금을 추가하지 않는다.
+
+후보 asOf의 active bucket이 참조한 risk rule set에서 `paper_execution v1`을 찾고 side 적용 여부를
+확인한다. Exact parameter record의 `portfolio_execution_rule.v1`과 candidate market 설정을 strict
+파싱한 뒤 fill rule, fee/tax/slippage/spread/impact, fillRatio, fractional, participation cap, minimum
+liquidity fill ratio와 stale 설정 전체를 candidate와 대조한다. Legacy reduce-only scope 또는 caller가
+지정한 다른 파라미터로 대체하지 않는다. BUY에서 계산에 사용하지 않는 tax 설정도 일치해야 한다.
+올바른 비용을 다시 계산해 저장했어도 정책과 파라미터가 다르면 거절한다.
+
+결과는 exact rule-set/parameter ref, activation identity, policy/snapshot hash, 두 모델 version,
+execution parameters와 비용 재생 assessment hash를 보존한다. Scope는
+`stored_as_of_cost_parameter_binding_only`, costParameterAuthority는 as_of_policy_bound다.
+이는 파라미터의 as-of 정책 출처를 증명하며 후보 추정 모델의 별도 policy 선택이나 비용 증거의 진위를
+증명하지 않는다. costEstimationModelSelection/costEvidenceAuthority는 not_verified,
+fillSimulation은 not_performed이고 이전 hard gate 실패를 그대로 유지한다. 가격 source allowlist와
+freshness 설정도 원래 parameter ref에 결속되지만 이 함수 자체가 price evidence를 읽지는 않는다.
+이후 정책 retirement가 있어도 과거 진단은 가능하며 현재 실행 권한으로 사용하지 않는다.
+
+기존 비용 재생 함수와 반환 형식, 저장 계약·writer·정책 활성화·거래 기본값은 변경하지 않는다.
+새 API나 artifact가 없으므로 migration/데이터 삭제 없이 코드 rollback할 수 있다. 정책에 실행 규칙이나
+해당 시장 파라미터가 없는 legacy 기록은 기존 진단으로 읽을 수 있지만 이 강화된 함수는 거절한다.
+
 완료 조건:
 
 - 같은 입력은 같은 ordering과 reason code를 만든다.
