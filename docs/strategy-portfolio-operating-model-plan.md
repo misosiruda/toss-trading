@@ -260,6 +260,10 @@ interface BucketSelectionPolicyRecord {
   liquidityEstimationModelVersion?: string;
   costBasisModelVersion?: string;
   classificationModelVersion?: string;
+  exposureLimitPolicy?: {
+    modelVersion: string;
+    maximumSectorExposureRatio: number;
+  };
   scoringModelVersion: string;
   scoringModelRef?: {
     scoringModelRecordId: string;
@@ -4297,6 +4301,31 @@ record count는 바뀐다. Corrupt/torn/비canonical suffix 또는 중복 원본
 업종 key는 `prototype`과 `Object.prototype`의 모든 own property 이름을 거절한다.
 `toString`, `valueOf`, `hasOwnProperty`처럼 기존 plain-object 노출 합산에서 상속값을
 읽게 만드는 이름도 저장 packet 분류 단계에서 차단한다.
+
+보유분 기준 노출 상한 분할은 `candidate_position_exposure_bounds.v1`이다. 선택 정책의 optional
+`exposureLimitPolicy`는 modelVersion과 (0, 1]의 maximumSectorExposureRatio를 함께 보존한다.
+선택 정책 hash/ID/lineage가 두 값을 결속하고 legacy 정책에 필드나 기본 한도를 합성하지 않는다.
+업종 비율은 해당 선택 정책이 후보 편입에 요구하는 portfolio-wide 업종 ceiling이며, 모든 bucket에
+새 전역 기본값을 설정하는 의미가 아니다. Bucket은 실제 runtime bucket maxWeightRatio,
+symbol/country/currency는 실제 runtime exposurePolicy를 사용한다.
+
+`calculateCandidatePositionExposureBounds`는 supplied runtime policy, exact selection policy ref,
+완전한 sizing snapshot과 packet classification을 독립 재생하고 scope/model/chronology를 확인한다.
+각 상한은 canonical decimal NAV×ratio의 BigInt 곱을 원 단위로 내림하며 보유 exposure를 차감하고
+0에서 자른다. Symbol은 market+symbol 전체 보유분, sector/country/currency는 모든 bucket의 보유분,
+bucket은 대상 bucket만 차감한다. 전체 input/output hash와 independent parser를 제공한다.
+
+`resolveStoredCandidatePositionExposureBounds`는 실제 분류·현금·스냅샷 원본 경로 뒤에서 이 계산을
+수행하고 후보가 선언한 다섯 cap 각각이 position-only 상한 이하인지 진단한다. 낮은 선언 cap의
+정확성은 증명하지 않는다. Scope는 `stored_position_exposure_upper_bounds_only`, exactCandidateCaps와
+pendingAndReservationAuthority는 `not_verified`, finalSizing은 `not_performed`다. Pending BUY/SELL
+총액은 결과에 보존하지만 보유 노출과 혼합하지 않으며 SELL 예정 금액으로 보유 여력을 늘리지 않는다.
+대기 BUY의 분류별 차감·opening reservation·request budget·비용·최종 sizing 검증은 후속이며
+allDeclaredCapsWithinPositionBounds를 eligibility 또는 execution 권한으로 사용하면 안 된다.
+
+새 writer/API·정책 활성화·거래 기본값 변경은 없다. 기존 artifact는 계속 읽을 수 있지만 신규 필드가
+있는 정책은 이전 strict reader가 거절하므로 호환 reader를 먼저 배포해야 한다. Rollback 시 새 모델
+사용을 중단하고 신규 필드를 읽는 reader를 유지한다. Append-only 정책을 소급 수정하지 않는다.
 
 완료 조건:
 

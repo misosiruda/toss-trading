@@ -87,6 +87,8 @@ const bucketSelectionPolicyPayloadSchema = z
     liquidityEstimationModelVersion: versionSchema.optional(),
     costBasisModelVersion: versionSchema.optional(),
     classificationModelVersion: versionSchema.optional(),
+    exposureLimitPolicy: z.object({ modelVersion: versionSchema,
+      maximumSectorExposureRatio: ratioSchema.positive() }).strict().optional(),
     featureDefinitionRefs: z.array(identifierSchema).min(1).max(128)
   })
   .strict();
