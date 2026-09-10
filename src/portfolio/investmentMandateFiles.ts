@@ -493,44 +493,47 @@ async function acquireExclusiveLock(input: {
   timeoutMs: number;
   retryDelayMs: number;
 }): Promise<() => Promise<void>> {
-  const deadline = Date.now() + input.timeoutMs;
+  const deadline = performance.now() + input.timeoutMs;
+  let lastContention: unknown;
   while (true) {
-    if (Date.now() >= deadline) {
-      throw new Error("investment mandate repository lock is unavailable");
+    if (performance.now() >= deadline) {
+      throw new Error("investment mandate repository lock is unavailable", { cause: lastContention });
     }
+    let handle: Awaited<ReturnType<typeof open>>;
     try {
-      const handle = await open(input.lockPath, "wx");
-      const token = randomUUID();
-      try {
-        await handle.writeFile(`${token}\n`, "utf8");
-        await handle.sync();
-      } catch (error) {
-        await handle.close();
-        await unlink(input.lockPath).catch(() => undefined);
-        throw error;
-      }
-      return async () => {
-        try {
-          const storedToken = await readFile(input.lockPath, "utf8");
-          if (storedToken !== `${token}\n`) {
-            throw new Error("investment mandate lock ownership changed");
-          }
-        } finally {
-          await handle.close();
-        }
-        await unlink(input.lockPath);
-        await syncOutputDirectory(dirname(input.lockPath));
-      };
+      handle = await open(input.lockPath, "wx");
     } catch (error) {
-      if (!isNodeError(error) || error.code !== "EEXIST") {
+      // Retry only acquisition contention. Token initialization, repository work
+      // and release must never be repeated by this loop.
+      if (!isNodeError(error) || !(error.code === "EEXIST" || (process.platform === "win32" && error.code === "EPERM"))) {
         throw error;
       }
-      const remainingMs = deadline - Date.now();
-      if (remainingMs <= 0) {
-        throw new Error("investment mandate repository lock is unavailable");
-      }
-      await delay(Math.min(input.retryDelayMs, remainingMs));
+      lastContention = error;
+      await delay(Math.max(1, Math.min(input.retryDelayMs, deadline - performance.now())));
+      continue;
     }
+    const token = randomUUID();
+    try {
+      await handle.writeFile(`${token}\n`, "utf8");
+      await handle.sync();
+    } catch (error) {
+      // A failed/partial token write cannot prove ownership of the current path.
+      // Preserve the barrier for recovery rather than deleting a replacement.
+      await handle.close();
+      throw error;
+    }
+    return async () => {
+      try {
+        const storedToken = await readFile(input.lockPath, "utf8");
+        if (storedToken !== `${token}\n`) {
+          throw new Error("investment mandate lock ownership changed");
+        }
+      } finally {
+        await handle.close();
+      }
+      await unlink(input.lockPath);
+      await syncOutputDirectory(dirname(input.lockPath));
+    };
   }
 }
 

@@ -117,6 +117,25 @@ release/ownership 오류는 재시도하지 않는다. 기존·교체된 다른 
 바꾸지 않는다. 데이터 변환 없이 코드 rollback할 수 있으나 획득 중 Windows EPERM 즉시 실패가
 다시 나타날 수 있다. OS 오류 발생 빈도 감소나 전체 실행 시간 개선은 별도 측정 전에는 주장하지 않는다.
 
+### Windows mandate 저장소 잠금 경합
+
+전체 검증에서 `mandate repository atomically converges concurrent exact retries`도
+`.instrument-mandates.lock`의 exclusive open이 Windows `EPERM`을 반환해 실패했다. Mandate 저장소는
+잠금 획득의 `EEXIST`와 Windows `EPERM`만 기존 timeout 내 재시도하고, monotonic clock으로
+wall clock 정지·역행에도 대기를 제한한다. Timeout에는 마지막 경합 오류를 cause로 보존한다.
+`EACCES`, token write/fsync, consumer 작업 및 release/ownership 오류는 재시도하지 않는다.
+Token 초기화가 실패하면 불완전하거나 교체된 lock의 소유권을 확정할 수 없으므로 descriptor만 닫고
+barrier를 명시적 복구용으로 보존한다. Abandoned/replaced lock 자동 삭제는 하지 않는다.
+
+`investmentMandateLocks.test.ts`는 실제 40개 concurrent read, 주입한 acquisition/initialization 실패,
+frozen Date와 영구 경합, abandoned/replaced token 및 consumer 오류를 검증한다. 기존 concurrent
+exact retry 테스트는 유지한다. 테스트 runner 재시도·skip·timeout 완화가 아니라 저장소 획득 경계의
+수정이다. Mandate record/event 형식, default timeout과 거래 정책은 변경하지 않는다. Migration이나
+artifact 삭제 없이 코드 rollback할 수 있지만 Windows EPERM 즉시 실패와 초기화 실패 시 lock 삭제
+동작이 돌아온다. 보존된 실패 lock은 진행 중인 writer가 없고 원본이 일관적인지 확인하는 별도 복구가
+필요하며 이 변경은 자동 stale lock 복구를 제공하지 않는다. 실제 OS 오류 원인이나 빈도 감소는
+이 테스트만으로 확정하지 않는다.
+
 ### 검증 프로필 호환성
 
 기존 `check`는 전체 검증이고 `check:changed`는 영향 검증이라는 의미를 유지한다. 새 runner는 기존
