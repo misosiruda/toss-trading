@@ -26,6 +26,8 @@ import { resolveStoredCandidateSelectionScore } from "./storedCandidateSelection
 import { assessStoredCandidateEvidenceRequirements } from "./storedCandidateEvidenceRequirements.js";
 import { assessStoredCandidateHardGates } from "./storedCandidateHardGates.js";
 import type { CandidateHardGateRule } from "./candidateHardGateRules.js";
+import { CANDIDATE_EXECUTION_COST_MODEL_VERSION } from "./candidateExecutionCost.js";
+import { resolveStoredCandidateExecutionCost } from "./storedCandidateExecutionCost.js";
 
 const AT = "2026-09-04T00:00:00.000Z";
 const CREATED = "2026-09-01T00:00:00.000Z";
@@ -316,6 +318,45 @@ test("stored hard gates propagate corrupt actual policy parameters without rewri
   await writeFile(path, changed);
   await assert.rejects(assessStoredCandidateHardGates({ baseDir, sizingInputRecordId: record.sizingInputRecordId }), /hash mismatch/);
   assert.equal(await readFile(path, "utf8"), changed);
+}));
+
+test("stored candidate cost replays actual input without granting cost source trust or overriding blocked hard gates", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, { patch: (input) => ({ ...input, executionCostInput: {
+    ...input.executionCostInput, modelVersion: CANDIDATE_EXECUTION_COST_MODEL_VERSION, estimatedCostKrw: 4 } }) });
+  const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+  const result = await resolveStoredCandidateExecutionCost(input);
+  assert.equal(result.calculation.estimatedCostKrw, 4);
+  assert.equal(result.assessment.sizingInputHash, record.sizingInputHash);
+  assert.equal(result.assessment.evidenceAndHardGateConditionsSatisfied, false);
+  assert.equal(result.assessment.costParameterAuthority, "not_verified");
+  assert.equal(result.assessment.costEvidenceAuthority, "not_verified");
+  assert.equal(result.assessment.fillSimulation, "not_performed");
+  assert.equal(result.assessmentHash, hashCanonicalPayload(result.assessment));
+  assert.equal("eligibility" in result.assessment, false);
+  frozen(result);
+  assert.deepEqual(await resolveStoredCandidateExecutionCost(input), result);
+}));
+
+test("stored candidate cost refuses unknown models and rehashed wrong estimates from actual storage", async () => {
+  for (const patch of [undefined, (input: Payload) => ({ ...input, executionCostInput: {
+    ...input.executionCostInput, modelVersion: CANDIDATE_EXECUTION_COST_MODEL_VERSION, estimatedCostKrw: 0 } })]) {
+    await temporary(async (baseDir) => {
+      const { record } = await seed(baseDir, patch ? { patch } : {});
+      await assert.rejects(resolveStoredCandidateExecutionCost({ baseDir, sizingInputRecordId: record.sizingInputRecordId }));
+    });
+  }
+});
+
+test("stored candidate cost cannot accept caller cost parameters or hide corrupt actual evidence", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, { patch: (input) => ({ ...input, executionCostInput: {
+    ...input.executionCostInput, modelVersion: CANDIDATE_EXECUTION_COST_MODEL_VERSION, estimatedCostKrw: 4 } }) });
+  const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+  await assert.rejects(resolveStoredCandidateExecutionCost({ ...input, estimatedCostKrw: 0 } as typeof input));
+  const path = createMarketTechnicalEvidencePaths(baseDir).recordsPath;
+  await appendFile(path, '{"corrupt":true}\n');
+  const before = await readFile(path, "utf8");
+  await assert.rejects(resolveStoredCandidateExecutionCost(input));
+  assert.equal(await readFile(path, "utf8"), before);
 }));
 
 function model(version = "synthetic-score.v1", upperBound = 10000, extra = false) {

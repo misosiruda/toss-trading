@@ -3969,8 +3969,8 @@ asOf 이전 createdAt을 거절한다. 결과 전체는 deep-freeze한다. Pure 
 
 이는 supplied sizing input의 불변 계약이며 실제 feature/evidence/classification source, score와
 eligibility/hard gate, exposure/liquidity cap 및 estimatedCostKrw의 독립 재계산을 증명하지 않는다.
-Model version 문자열도 지원되는 실행 모델이나 계산 완료라는 증명이 아니다. Versioned 비용 추정과
-sizing range 계산, canonical input 저장소, assignment/set 및 shared capacity ledger 연결은 후속이다.
+Model version 문자열도 지원되는 실행 모델이나 계산 완료라는 증명이 아니다. Versioned 비용 추정은
+아래 별도 분할이 담당하며 sizing range 계산, assignment/set 및 shared capacity ledger 연결은 후속이다.
 기존 fill simulator의 계산과 다른 추정식을 같은 version의 결과로 합성하지 않는다. 기존 실행 경로에
 연결하거나 artifact를 쓰지 않아 migration 없이 코드 rollback이 가능하다.
 
@@ -4097,6 +4097,47 @@ Ref 없는 legacy 정책과 마찬가지로 hardGateRules 없는 정책의 기�
 새 policy record/활성화 순서다. Old strict reader는 새 필드를 읽지 못하므로 rollback 시 새 정책을
 비활성화하고 호환 reader를 유지해야 한다. 기존 record에서 field를 소급 제거하거나 artifact를
 삭제하지 않는다. 이 PR에서 운영 policy 활성화, 저장 형식 변환, API/runner/거래 기본값 변경은 없다.
+
+후보 비용 추정의 명시적 알고리즘은 `candidate_reference_notional_cost.v1`이다.
+`calculateCandidateExecutionCost`는 complete execution-cost parameter에서 estimatedCostKrw만 제외한
+입력을 받고, `referenceNotionalKrw`를 이미 정해진 계산 기준 금액으로 사용한다. Side와 비용률에 따라
+다음 각 항목을 원 단위로 올림하고 합산한다.
+
+```text
+fee       = ceil(referenceNotionalKrw × feeBps / 10000)
+tax       = SELL ? ceil(referenceNotionalKrw × taxBps / 10000) : 0
+slippage  = ceil(referenceNotionalKrw × slippageBps / 10000)
+spread    = ceil(referenceNotionalKrw × halfSpreadBps / 10000)
+impact    = ceil(referenceNotionalKrw × participationRate × marketImpactBpsPerParticipationRate / 10000)
+estimatedCostKrw = fee + tax + slippage + spread + impact
+```
+
+비용률은 finite·nonnegative·음의 0 제외·MAX_SAFE_INTEGER 이하이며 모든 파라미터가 명시되어야 한다.
+각 JS number의 canonical decimal 표기를 기존 canonicalQuantityUnits/BigInt로 변환해 계산하므로 binary
+곱셈의 경계 오차나 작은 양수의 underflow로 비용이 사라지지 않는다. 기준 금액 0과 participation 0은
+해당 비용 0이다. 개별 비용 또는 합계가 safe-integer KRW를 넘으면 clamp하지 않고 거절한다.
+증거 ref는 canonical unique 순서여야 한다. Complete input hash 및 모든 component/rounding/scope를
+포함한 output hash를 반환하고 `parseCandidateExecutionCost`는 재해시뿐 아니라 전체 수식을 재계산한다.
+
+이 모델은 기존 `paper_cost_model.v5` 또는 `execution_simulator.v4/v5`가 아니다. 해당 legacy version을
+자동 매핑하지 않으며 새 계산기는 거절한다. 기존 fill simulator는 가격·수량·slippage 가격 반올림과
+실제 fillable volume을 사용하므로 이 기준 금액 모델과 parity나 실제 비용의 상한을 주장하지 않는다.
+fillRatio·fractionalShares·volume participation cap·staleness 설정도 input hash에 보존하지만 이미 지정된
+기준 금액에 fillRatio를 다시 곱하거나 수량·체결 상태를 합성하지 않는다. 이 값들은 추후 fill/sizing
+단계에서 별도로 적용해야 하며 비용 추정만으로 liquidity limit 준수를 증명하지 않는다.
+
+`replayCandidateSizingExecutionCost`는 complete sizing input을 독립 파싱한 뒤 계산한 비용과 저장된
+estimatedCostKrw의 정확한 일치를 요구한다. `resolveStoredCandidateExecutionCost`는 실제 저장 ID만 받아
+기존 score/evidence/hard gate 경로를 거친 input의 비용을 재생한다. Caller override, 잘못된 비용을 담은
+정상 hash의 record, unknown model과 손상된 실제 source는 거절한다. Hard gate가 blocked여도 진단용
+비용 재생은 가능하지만 evidenceAndHardGateConditionsSatisfied=false를 그대로 보존한다.
+
+반환 범위는 `stored_reference_notional_cost_only`이며 costParameterAuthority/costEvidenceAuthority는
+not_verified, fillSimulation은 not_performed다. 아직 비용 파라미터의 active policy 선택, 실제 비용
+source/participation/reference notional, 분류·cap·최종 sizing·eligibility·현재 실행 권한을 검증하지 않는다.
+새 artifact, 운영 정책 활성화, writer/runner/API 또는 거래 기본값 변경은 없다. 기존 저장 parser는
+변경하지 않아 legacy record는 그대로 읽히며 새 계산기를 사용하지 않으면 기존 동작에 영향이 없다.
+코드 rollback에 데이터 변환이나 artifact 삭제는 필요 없고 새 버전 재생 기능만 사용할 수 없게 된다.
 
 완료 조건:
 
