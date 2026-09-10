@@ -2256,7 +2256,7 @@ binding을 생성하며 supplied evidence/receipt/createdAt append를 제공하�
 evidence log 순서로 잠금을 획득하고 전체 기존 log 검증, 신규 capture, 재시도와 조회 consumer 동안
 원본 writer를 막는다. 각 entry는 complete binding, appendStartedAt, previousCommitHash와 entryHash를
 보존하고 commit marker는 entryHash, committedAt과 commitHash를 결속한다. Source prefix 및 구간·모든
-feature를 매번 재검증하며 log의 strict pair, hash/chain, unique evidenceRef와 시각 순서도 확인한다.
+feature를 매번 재검증하며 log의 strict v1 pair/v2 triple, hash/chain, unique evidenceRef와 시각 순서도 확인한다.
 
 같은 canonical 계산 입력과 sourceContractId의 capture는 최초 binding/createdAt/receipt/commit을
 그대로 반환한다. API 입력에 createdAt이 없으므로 새 관측 시각으로 기존 record를 대체하지 않는다.
@@ -2264,9 +2264,9 @@ feature를 매번 재검증하며 log의 strict pair, hash/chain, unique evidenc
 append는 기존 capture를 변경하지 않으며 새 matching bar로 계산 input hash가 달라지면 새 capture다.
 이것은 capture 연산의 멱등성이지 서로 다른 createdAt을 가진 supplied record의 exact retry 승인이 아니다.
 
-Pending 표시를 먼저 동기화하고 entry/commit marker를 각각 append/fsync한 후에만 pending을 제거한다.
+Pending 표시를 먼저 동기화하고 entry/commit marker와 신규 v2 completion을 각각 append/fsync한 후에만 pending을 제거한다.
 중단된 쓰기, 남은 pending, blank/corrupt/torn line, 잘못된 UTF-8와 hash/시간/원본 불일치는 자동
-복구하지 않는다. Pending 제거 이후 directory sync 실패는 complete pair가 남아 있을 수 있으므로
+복구하지 않는다. Pending 제거 이후 directory sync 실패는 complete capture가 남아 있을 수 있으므로
 성공을 가정하지 않고 다음 접근에서 전체 source/log를 재검증한다. Commit 시각은 최종 flush 완료
 시각이 아니다. 새 durable 관측은 log의 flush와 byte/path identity 재대조 후 callback 동안만 발급한다.
 Receipt는 complete origins hash(원본 관측·본문·commit 시각과 hash 포함), count와 observedAt이며
@@ -2277,9 +2277,47 @@ EEXIST/Windows EPERM 재시도만 허용하고 초기화 실패·foreign/abandon
 destination의 직접 경로 중복은 거절한다. 기존 Windows directory sync EPERM 제한과 협력 writer
 경계는 유지하며 OS 접근 제어·전원 장애 보장을 추가하지 않는다. `readAll` 결과는 새 lease가 아니므로
 downstream 원자적 처리는 `withDurableVerifiedHistory` callback을 사용해야 한다. 기존 API/거래 설정과
-runner는 변경하지 않고 새 artifact만 opt-in으로 작성한다. Rollback은 신규 경로를 사용하지 않는
-코드로 되돌리며 artifact를 자동 삭제하지 않는다. 실제 sizing input의 evidence origin 연결과
-정책·hard gate·score·배분/주문 실행은 후속이며 저장 성공을 후보 승인이나 source 신뢰 승격으로 쓰지 않는다.
+runner는 변경하지 않고 새 artifact만 opt-in으로 작성한다. Rollback은 아래 v1/v2 호환성 경계를
+따르며 artifact를 자동 삭제하지 않는다. 실제 sizing input의 evidence origin 연결은 아래 resolver가
+수행한다. 정책·hard gate·score·배분/주문 실행은 후속이며 저장 성공을 후보 승인이나 source 신뢰 승격으로 쓰지 않는다.
+
+저장된 sizing 입력의 시장 지표 연결은 `CandidateMarketTechnicalFeatureResolver.withResolvedFeatures`다.
+Record ID로 실제 candidate sizing input을 읽고, 6개 versioned market feature의 evidenceRef를 실제
+market technical evidence log의 unique committed origin에 연결한다. 기존 순수 feature resolver로
+market/symbol/asOf instant, 각 definition/value/ref 전체를 재검증한다. 누락·복수·mixed ref나 다른
+값은 input 자체를 다시 hash하고 정상 저장했더라도 거절한다. Evidence의 생성 시각뿐 아니라 실제
+marker 동기화 이후 관측한 completion 시각이 sizing input createdAt 및 appendStartedAt보다 엄격히
+앞서야 한다. 같은 밀리초 시각은 선후관계를 입증하지 못하므로 거절한다. 메모리에서 만든 evidence나
+파일에 commit되지 않은 reference는 통과하지 않는다.
+
+Lock 순서는 request → portfolio sizing snapshot → candidate input → historical source → market
+technical evidence다. 기존 저장소의 실제 source/원본·hash/시각 재검증을 모두 사용하고 consumer
+완료까지 잠금을 유지한다. 현재 evidence capture는 candidate input 저장소에 재진입하지 않으므로
+이 순서와 역방향 의존성을 만들지 않는다. Consumer는 같은 source 저장소에 재진입하지 않아야 한다.
+선택된 두 origin은 immutable binding으로 반환하며 `getCandidateMarketTechnicalFeatureSources`는
+callback 동안만 실제 두 history의 durable 관측을 조회한다. Clone이나 callback 종료/실패 후의
+binding은 lease가 아니며 별도 transaction/저장 성공을 인증하지 않는다.
+
+이 연결은 저장된 시장 지표 6개에 한정한다. 나머지 feature, selectionScore/scoring model 지원,
+classification·exposure/liquidity cap·execution cost·sizing 계산, 정책의 required evidence/선택 구간,
+cutoff/PIT·provider 신뢰 및 eligibility를 평가하지 않는다. Request/portfolio snapshot 원본 검증은
+기존 저장소를 사용하지만 active policy/trigger/gap/capacity 재계산을 대신하지 않는다. Runner/Risk나
+주문 surface를 자동 연결하지 않으며 input 파일 형식·writer API·거래 기본값은 유지한다.
+
+기존 evidence `committedAt`은 marker 쓰기·fsync 전에 채집한 시각이므로 후보 입력의 availability
+근거로 사용하지 않는다. 신규 capture는 `market_technical_evidence_entry.v2`와 기존 commit marker를
+먼저 file/directory sync하고, 그 이후의 `observedAt`, entryHash, commitHash를 담은
+`market_technical_evidence_completion.v1`을 세 번째 줄로 기록·동기화한다. Completion hash는 세 번째
+줄의 complete payload에서 계산하고 다음 entry의 predecessor 및 observation prefix hash에 포함한다.
+Reader는 v2의 completion 누락·변조·미래/역행 시각, 다음 append보다 늦은 completion을 거절한다.
+Completion 쓰기·동기화 실패와 clock 역행은 pending barrier를 유지한다. 이 증거는 앞의 entry/marker
+동기화 완료를 증명하며 completion 자신의 저장 완료나 여러 artifact의 원자 transaction을 뜻하지 않는다.
+
+기존 v1의 2줄 기록은 조회·exact capture retry에서 그대로 반환하고 completion을 소급 추가하지 않는다.
+새 resolver는 completion 없는 v1 evidence를 후보 입력의 저장 완료 증거로 거절한다. V1/v2 혼합 이력은
+기존 v1 commit hash 또는 신규 v2 completion hash를 predecessor로 이어 독립 검증한다. V1-only reader는
+v2를 읽을 수 없으므로 writer보다 먼저 호환 reader를 배포해야 한다. Rollback은 새 capture/consumer를
+비활성화하되 v1/v2 reader를 유지하고 기록을 삭제·v1으로 변환하지 않는다. 운영 artifact 변경은 실행하지 않았다.
 
 - `selectionScore`는 같은 bucket 안에서 candidate 우선순위를 정한다.
 - score는 target weight를 직접 결정하지 않는다.
