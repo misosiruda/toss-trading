@@ -19,8 +19,10 @@ import {
   type SessionCalendarRecord
 } from "./runtimePolicyContracts.js";
 import { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
+import { parseCandidateScoringModel } from "./candidateScoringModel.js";
 
 export const IMMUTABLE_POLICY_DEPENDENCY_FILE_NAMES = {
+  scoringModels: "candidate-scoring-model-records.jsonl",
   selectionPolicies: "bucket-selection-policy-records.jsonl",
   riskParameters: "portfolio-risk-rule-parameter-records.jsonl",
   riskRuleSets: "portfolio-risk-rule-set-records.jsonl",
@@ -51,6 +53,7 @@ export function createImmutablePolicyDependencyPaths(
   baseDir: string
 ): ImmutablePolicyDependencyPaths {
   return {
+    scoringModels: join(baseDir, IMMUTABLE_POLICY_DEPENDENCY_FILE_NAMES.scoringModels),
     selectionPolicies: join(
       baseDir,
       IMMUTABLE_POLICY_DEPENDENCY_FILE_NAMES.selectionPolicies
@@ -114,6 +117,7 @@ export class ImmutablePolicyDependencyFileLoader {
 
   private async readAllDependencyFiles(): Promise<ImmutablePolicyDependencyRawGeneration> {
     const [
+      scoringModels,
       selectionPolicies,
       riskParameters,
       riskRuleSets,
@@ -121,6 +125,7 @@ export class ImmutablePolicyDependencyFileLoader {
       sessionCalendars,
       scheduleBoundaries
     ] = await Promise.all([
+      new JsonlStore(this.paths.scoringModels, rawDependencyRecordSchema, "candidateScoringModelRecord").readAll(),
       new JsonlStore(
         this.paths.selectionPolicies,
         rawDependencyRecordSchema,
@@ -154,6 +159,7 @@ export class ImmutablePolicyDependencyFileLoader {
     ]);
 
     return {
+      scoringModels,
       selectionPolicies,
       riskParameters,
       riskRuleSets,
@@ -165,6 +171,7 @@ export class ImmutablePolicyDependencyFileLoader {
 }
 
 export interface ImmutablePolicyDependencyRawGeneration {
+  scoringModels?: JsonlReadResult<unknown>;
   selectionPolicies: JsonlReadResult<unknown>;
   riskParameters: JsonlReadResult<unknown>;
   riskRuleSets: JsonlReadResult<unknown>;
@@ -209,6 +216,7 @@ function loadDependencyReads(
   legacyOffsetlessCreatedAtOffset: string | undefined
 ): LoadedImmutablePolicyDependencies {
   assertNoCorruptDependencyLines(reads);
+  const scoringModels = (reads.scoringModels?.records ?? []).map(parseCandidateScoringModel);
   const migratedSelectionPolicies = reads.selectionPolicies.records.map(
     (record) =>
       migrateRecordLineage(
@@ -278,6 +286,7 @@ function loadDependencyReads(
       )
   );
   const records: ImmutablePolicyDependencyRecords = deepFreeze({
+    ...(scoringModels.length ? { scoringModels } : {}),
     selectionPolicies: migratedSelectionPolicies,
     riskParameters: migratedRiskParameters,
     riskRuleSets: migratedRiskRuleSets,
@@ -296,6 +305,7 @@ function dependencyReadGenerationRelation(
   right: ImmutablePolicyDependencyRawGeneration
 ): DependencyReadGenerationRelation {
   const relations: DependencyReadGenerationRelation[] = [
+    rawRecordGenerationRelation(left.scoringModels?.records ?? [], right.scoringModels?.records ?? []),
     rawRecordGenerationRelation(
       left.selectionPolicies.records,
       right.selectionPolicies.records
@@ -649,8 +659,8 @@ function assertNoCorruptDependencyLines(
   reads: ImmutablePolicyDependencyRawGeneration
 ): void {
   const corrupt = Object.entries(reads)
-    .filter(([, result]) => result.corruptLineCount > 0)
-    .map(([kind, result]) => `${kind}:${result.corruptLineCount}`);
+    .filter(([, result]) => result !== undefined && result.corruptLineCount > 0)
+    .map(([kind, result]) => `${kind}:${result!.corruptLineCount}`);
   if (corrupt.length > 0) {
     throw new Error(
       `immutable policy dependency files contain corrupt lines: ${corrupt.join(
@@ -664,7 +674,7 @@ function hasCorruptDependencyLines(
   reads: ImmutablePolicyDependencyRawGeneration
 ): boolean {
   return Object.values(reads).some(
-    (result) => result.corruptLineCount > 0
+    (result) => result !== undefined && result.corruptLineCount > 0
   );
 }
 

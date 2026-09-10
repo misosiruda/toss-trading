@@ -1,4 +1,5 @@
 import type {
+  CandidateScoringModelRef,
   BucketDrawdownSemanticsRecord,
   BucketDrawdownSemanticsRef,
   BucketSelectionPolicyRecord,
@@ -14,7 +15,10 @@ import type {
   SessionCalendarRecord,
   StrategyBucketRuntimePolicy
 } from "./runtimePolicyContracts.js";
+import { isDeepStrictEqual } from "node:util";
+import { parseCandidateScoringModel, type CandidateScoringModel } from "./candidateScoringModel.js";
 import {
+  candidateScoringModelRefSchema,
   parseBucketDrawdownSemanticsRecord,
   parseBucketSelectionPolicyRecord,
   parsePortfolioRiskRuleParameterRecord,
@@ -40,6 +44,7 @@ export interface ResolvedScheduleBoundary {
 }
 
 export interface ResolvedStrategyBucketRuntimePolicy {
+  scoringModel?: CandidateScoringModel;
   policy: StrategyBucketRuntimePolicy;
   selectionPolicy: BucketSelectionPolicyRecord;
   riskRuleSet: PortfolioRiskRuleSetRecord;
@@ -57,6 +62,7 @@ export interface ResolvedStrategyBucketRuntimePolicy {
  * responsibility.
  */
 export class ImmutablePolicyDependencyRepository {
+  private readonly scoringModels: ReadonlyMap<string, CandidateScoringModel>;
   private readonly selectionPolicies: ReadonlyMap<
     string,
     BucketSelectionPolicyRecord
@@ -77,6 +83,13 @@ export class ImmutablePolicyDependencyRepository {
   >;
 
   constructor(records: ImmutablePolicyDependencyRecords) {
+    this.scoringModels = verifiedRecordMap(records.scoringModels ?? [], parseCandidateScoringModel,
+      (record) => record.scoringModelRecordId, "scoring model");
+    const versions = new Set<string>();
+    for (const model of this.scoringModels.values()) {
+      if (versions.has(model.version)) throw new Error("scoring model version must resolve exactly once");
+      versions.add(model.version);
+    }
     this.selectionPolicies = verifiedRecordMap(
       records.selectionPolicies,
       parseBucketSelectionPolicyRecord,
@@ -113,6 +126,32 @@ export class ImmutablePolicyDependencyRepository {
       (record) => record.scheduleBoundaryRecordId,
       "schedule boundary"
     );
+    for (const policy of this.selectionPolicies.values()) {
+      if (policy.scoringModelRef) this.resolveSelectionScoringModel(policy);
+    }
+  }
+
+  resolveScoringModel(ref: CandidateScoringModelRef): CandidateScoringModel {
+    const parsed = candidateScoringModelRefSchema.parse(ref);
+    if (!isDeepStrictEqual(ref, parsed)) throw new Error("scoring model ref must already be canonical");
+    const model = this.scoringModels.get(parsed.scoringModelRecordId);
+    if (!model) throw new Error("scoring model ref does not resolve");
+    if (model.version !== parsed.version || model.scoringModelHash !== parsed.hash) throw new Error("scoring model ref version/hash mismatch");
+    return model;
+  }
+
+  resolveSelectionScoringModel(value: unknown): CandidateScoringModel {
+    const policy = parseBucketSelectionPolicyRecord(value);
+    const stored = this.selectionPolicies.get(policy.selectionPolicyRecordId);
+    if (!stored || !isDeepStrictEqual(stored, policy)) throw new Error("scoring selection policy does not match the repository record");
+    if (!policy.scoringModelRef) throw new Error("selection policy lacks an exact scoring model reference");
+    const model = this.resolveScoringModel(policy.scoringModelRef);
+    if (policy.scoringModelVersion !== model.version ||
+      !isDeepStrictEqual(policy.featureDefinitionRefs, model.terms.map((term) => term.featureDefinitionRef))) {
+      throw new Error("selection policy scoring model version or feature set mismatch");
+    }
+    assertNestedDependencyChronology(model, policy, "scoring model cannot be created after its selection policy");
+    return model;
   }
 
   resolveSelectionPolicy(
@@ -306,6 +345,7 @@ export function resolveStrategyBucketRuntimePolicyDependencyIdentities(
   if (selectionPolicy.bucket !== policy.bucket) {
     throw new Error("selection policy bucket does not match runtime policy bucket");
   }
+  const scoringModel = selectionPolicy.scoringModelRef ? repository.resolveSelectionScoringModel(selectionPolicy) : undefined;
 
   if (policy.reviewCadence.mode === "every_tick") {
     if (selectionPolicy.everyTickSourceRequirement === undefined) {
@@ -339,6 +379,7 @@ export function resolveStrategyBucketRuntimePolicyDependencyIdentities(
   return deepFreeze({
     policy,
     selectionPolicy,
+    ...(scoringModel ? { scoringModel } : {}),
     riskRuleSet,
     riskRules,
     drawdownSemantics,

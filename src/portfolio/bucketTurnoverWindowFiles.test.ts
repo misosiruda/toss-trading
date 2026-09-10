@@ -255,7 +255,8 @@ async function withFixture(run: (value: { baseDir: string; fixture: ReturnType<t
     const fixture = policyFixture();
     const paths = createImmutablePolicyDependencyPaths(baseDir);
     for (const key of Object.keys(paths) as Array<keyof typeof paths>) {
-      await writeFile(paths[key], `${fixture.records[key].map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
+      const records = fixture.records[key];
+      if (records !== undefined) await writeFile(paths[key], `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
     }
     await new RuntimePortfolioPolicyFileRepository(baseDir, fixture.dependencies).append(fixture.policy);
     await new RuntimePortfolioPolicyActivationFileRepository(baseDir, [fixture.policy], fixture.dependencies).appendActivated({ policy: fixture.policy, createdAt: CREATED_AT });

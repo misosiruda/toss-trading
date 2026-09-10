@@ -256,6 +256,11 @@ interface BucketSelectionPolicyRecord {
   };
   hardGateRuleIds: string[];
   scoringModelVersion: string;
+  scoringModelRef?: {
+    scoringModelRecordId: string;
+    version: string;
+    hash: string;
+  };
   featureDefinitionRefs: string[];
   createdAt: string;
 }
@@ -2344,8 +2349,37 @@ outputHash를 보존한다. `parseCandidateSelectionScore`는 모델과 계산�
 
 이 순수 모델은 source availability/PIT·provider trust, hard gate·eligibility, sizing·allocation,
 버킷별 ordering/top-N, active selection policy와 모델의 exact hash 결속을 대신하지 않는다.
-모델 repository/version 충돌 검증 및 실제 sizing input의 selectionScore 재검증은 후속 연결이다.
+모델 exact reference/repository 연결은 아래 분할이 담당하며 실제 sizing input의 selectionScore 재검증은 후속이다.
 API·artifact writer·기존 정책/거래 기본값 변경은 없으며 코드 rollback에 데이터 변환이 없다.
+
+선택 정책의 모델 연결은 optional `scoringModelRef`의 exact record ID/version/hash다. Ref version은
+기존 scoringModelVersion과 같아야 하며 complete selection policy hash/lineage에 포함된다. Ref가 없는
+기존 정책의 bytes/hash/ID는 유지하지만 모델을 version label로 찾아 자동 추가하지 않는다.
+`resolveSelectionScoringModel`은 실제 repository의 exact selection record에만 모델을 연결하며
+ref 없는 정책은 거절한다. 모델 createdAt은 selection policy createdAt 이하여야 하고 모델 terms와
+정책 featureDefinitionRefs 집합은 정확히 같아야 한다. 다른 hash/ID/version, 누락·추가 feature와
+역전된 생성 시각은 독립 재검증에서 거절한다.
+
+기존 `ImmutablePolicyDependencyRepository`는 optional scoringModels의 모든 기록을 재생하고 duplicate
+ID 및 동일 version을 가진 복수 모델을 거절한다. 다른 createdAt/parameter의 모델은 다른 ID라도 같은
+version을 재사용할 수 없으며 별도 version을 써야 한다. 등록된 모든 selection policy의 명시적 ref를
+constructor에서 검증하므로 사용하지 않는 손상 모델이나 dangling ref도 전체 load를 실패시킨다.
+Runtime bucket dependency identity resolution은 명시적 ref가 있을 때만 resolved scoringModel을 반환한다.
+이 연결은 이미 존재하는 activation/dependency 검증 경로에 적용되지만 점수 계산·후보 선정은 자동 실행하지 않는다.
+
+실제 파일 loader는 `candidate-scoring-model-records.jsonl`을 기존 의존성 파일들과 함께 읽는다.
+모델 파일이 없고 ref도 없으면 기존 빈/legacy load를 유지하며 파일을 만들지 않는다. Ref가 있는데 모델이
+없으면 거절하고, append 도중 누락된 모델이 두 번째 generation에 추가된 경우만 기존 제한된 재조회로
+다시 검증한다. 모델 prefix의 삭제·교체나 지속적인 corrupt line/duplicate/version collision은 거절한다.
+모델에는 legacy lineage backfill을 적용하지 않고 원본 model hash/createdAt을 그대로 검사한다.
+빈 scoringModels는 기존 loaded.records의 모양을 유지하도록 생략한다. 기존 loader의 read-only/content
+검증이며 새로운 durable lease/잠금·commit marker나 writer를 제공하지 않는다.
+
+배포는 모델을 읽을 수 있는 reader를 먼저 배포하고 모델 record를 준비한 뒤 이를 참조한 새 selection
+policy를 활성화하는 순서다. 오래된 strict reader는 ref 포함 정책을 읽지 못한다. Rollback 시 신규 ref
+정책을 비활성화하고 호환 reader를 유지하며 기존 record를 수정·삭제하거나 model ref를 소급 제거하지
+않는다. 운영 artifact 작성/정책 활성화는 실행하지 않았다. 모델 ref 없는 legacy 정책의 기존 동작과
+paper-only/mock/Risk 기본값은 유지한다.
 
 - backend는 bucket gap, available slots, symbol cap, liquidity cap, concentration cap,
   cash reserve와 execution cost를 적용해 target range를 산정한다.
@@ -2684,6 +2718,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | Artifact | 형태 | 책임 |
 | --- | --- | --- |
 | `bucket-selection-policy-records.jsonl` | 신규 append-only | evidence/freshness/hard gate/scoring rule set |
+| `candidate-scoring-model-records.jsonl` | 신규 immutable dependency, read-only loader | 명시적 가중치/정규화 모델의 exact ID/version/hash; writer는 후속 |
 | `portfolio-risk-rule-parameter-records.jsonl` | 신규 append-only | rule별 canonical parameter payload와 immutable hash |
 | `portfolio-risk-rule-set-records.jsonl` | 신규 append-only | side별 required Risk Engine rule과 parameter ref |
 | `bucket-drawdown-semantics-records.jsonl` | 신규 append-only | unit NAV/HWM/reset/carry 계산 규칙 payload |

@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
-import { compareText, hashCanonicalPayload, hashDerivedId, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
+import { candidateScoringModelRefSchema, compareText, hashCanonicalPayload, hashDerivedId, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
 export const CANDIDATE_SCORING_ALGORITHM = "weighted_clamped_feature_score.v1";
 const identifier = z.string().min(1).max(240).refine((value) => value.trim() === value &&
@@ -43,6 +43,14 @@ export function parseCandidateScoringModel(value: unknown): CandidateScoringMode
   const expected = createCandidateScoringModel(payload);
   if (!isDeepStrictEqual(value, expected)) throw new Error("candidate scoring model identity parameter or order mismatch");
   return expected;
+}
+
+export function candidateScoringModelRefFor(value: unknown) {
+  const model = parseCandidateScoringModel(value);
+  const ref = { scoringModelRecordId: model.scoringModelRecordId, version: model.version, hash: model.scoringModelHash };
+  const parsed = candidateScoringModelRefSchema.parse(ref);
+  if (!isDeepStrictEqual(ref, parsed)) throw new Error("candidate scoring model cannot be represented by a canonical policy reference");
+  return Object.freeze(parsed);
 }
 
 /** Pure numeric calculation, not source evidence validation, hard-gate eligibility, allocation or ranking. */

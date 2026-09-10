@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { candidateScoringModelRefFor, CANDIDATE_SCORING_ALGORITHM, createCandidateScoringModel } from "./candidateScoringModel.js";
 
 import {
   createBucketDrawdownSemanticsRecord,
@@ -22,6 +23,21 @@ import {
 } from "./runtimePolicyDependencyResolver.js";
 
 const CREATED_AT = "2026-08-28T00:00:00.000Z";
+
+test("runtime policy identity resolution carries the exact optional scoring model without promoting legacy policies", () => {
+  const fixture = dependencyFixture();
+  const model = createCandidateScoringModel({ algorithm: CANDIDATE_SCORING_ALGORITHM, version: fixture.selection.scoringModelVersion, createdAt: CREATED_AT,
+    terms: [{ featureDefinitionRef: "momentum.v1", weight: 1, lowerBound: -1, upperBound: 1, direction: "higher_is_better" }] });
+  const { selectionPolicyRecordId: ignoredId, hash: ignoredHash, lineageHash: ignoredLineage, ...payload } = fixture.selection;
+  void ignoredId; void ignoredHash; void ignoredLineage;
+  const selection = createBucketSelectionPolicyRecord({ ...payload, scoringModelRef: candidateScoringModelRefFor(model) });
+  const resolved = resolveStrategyBucketRuntimePolicyDependencies({ ...scheduledPolicy(fixture), selectionPolicyRef: selectionPolicyRefFor(selection) },
+    new ImmutablePolicyDependencyRepository({ ...fixture.records, selectionPolicies: [selection], scoringModels: [model] }), [{ market: "KR", exchangeDate: "2026-08-28" }]);
+  assert.deepEqual(resolved.scoringModel, model);
+  const legacy = resolveStrategyBucketRuntimePolicyDependencies(scheduledPolicy(fixture), new ImmutablePolicyDependencyRepository(fixture.records),
+    [{ market: "KR", exchangeDate: "2026-08-28" }]);
+  assert.equal("scoringModel" in legacy, false);
+});
 
 test("scheduled policy resolves exact immutable dependencies and calendar coverage", () => {
   const fixture = dependencyFixture();

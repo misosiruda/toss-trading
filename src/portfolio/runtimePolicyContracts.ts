@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
 import { z } from "zod";
+import type { CandidateScoringModel } from "./candidateScoringModel.js";
 
 import {
   isoDateTimeSchema,
@@ -67,6 +68,10 @@ const everyTickSourceRequirementSchema = z
   })
   .strict();
 
+export const candidateScoringModelRefSchema = z.object({ scoringModelRecordId: identifierSchema,
+  version: versionSchema, hash: sha256HashSchema }).strict();
+export type CandidateScoringModelRef = z.infer<typeof candidateScoringModelRefSchema>;
+
 const bucketSelectionPolicyPayloadSchema = z
   .object({
     bucket: strategyBucketSchema,
@@ -75,6 +80,7 @@ const bucketSelectionPolicyPayloadSchema = z
     everyTickSourceRequirement: everyTickSourceRequirementSchema.optional(),
     hardGateRuleIds: z.array(identifierSchema).min(1).max(64),
     scoringModelVersion: versionSchema,
+    scoringModelRef: candidateScoringModelRefSchema.optional(),
     featureDefinitionRefs: z.array(identifierSchema).min(1).max(128)
   })
   .strict();
@@ -441,6 +447,7 @@ export type StrategyBucketRuntimePolicy = z.infer<
 >;
 
 export interface ImmutablePolicyDependencyRecords {
+  scoringModels?: readonly CandidateScoringModel[];
   selectionPolicies: readonly BucketSelectionPolicyRecord[];
   riskParameters: readonly PortfolioRiskRuleParameterRecord[];
   riskRuleSets: readonly PortfolioRiskRuleSetRecord[];
@@ -471,6 +478,7 @@ export function createBucketSelectionPolicyRecord(
   });
   const hash = hashCanonicalPayload(payload);
   const identity = immutableRecordIdentity("selection_policy", hash, createdAt);
+  assertScoringModelVersion(payload);
   return deepFreeze({
     ...payload,
     selectionPolicyRecordId: identity.recordId,
@@ -484,6 +492,7 @@ export function parseBucketSelectionPolicyRecord(
   value: unknown
 ): BucketSelectionPolicyRecord {
   const record = bucketSelectionPolicyRecordSchema.parse(value);
+  assertScoringModelVersion(record);
   assertCanonicalEvidenceRequirements(record.requiredEvidence);
   assertCanonicalUniqueText(record.hardGateRuleIds, "hardGateRuleIds");
   assertCanonicalUniqueText(
@@ -508,6 +517,12 @@ export function selectionPolicyRefFor(
     hash: parsed.hash,
     lineageHash: parsed.lineageHash
   });
+}
+
+function assertScoringModelVersion(policy: { scoringModelVersion: string; scoringModelRef?: CandidateScoringModelRef | undefined }) {
+  if (policy.scoringModelRef && policy.scoringModelRef.version !== policy.scoringModelVersion) {
+    throw new Error("selection policy scoring model version mismatch");
+  }
 }
 
 export function createPortfolioRiskRuleParameterRecord(
