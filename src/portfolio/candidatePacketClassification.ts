@@ -35,7 +35,7 @@ export function deriveCandidatePacketClassification(value: unknown) {
   const sector = identifier.parse(candidate.sector);
   const numeric = Number(sector);
   if ((Number.isInteger(numeric) && numeric >= 0 && numeric < 4294967295 && String(numeric) === sector) ||
-    ["__proto__", "constructor", "prototype"].includes(sector)) throw new Error("classification sector requires a safe non-index key");
+    sector === "prototype" || Object.hasOwn(Object.prototype, sector)) throw new Error("classification sector requires a safe non-index key");
   if (candidate.region === undefined) throw new Error("classification requires an explicit region");
   const sourceRefs = z.array(identifier).min(1).max(128).parse(candidate.sourceRefs);
   if (new Set(sourceRefs).size !== sourceRefs.length) throw new Error("classification source refs must be unique");

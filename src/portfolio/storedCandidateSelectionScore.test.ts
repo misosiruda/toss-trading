@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createStoragePaths, FileHistoricalMarketSnapshotStore, FileMarketPacketStore } from "../storage/repositories.js";
 import type { MarketPacket } from "../domain/schemas.js";
+import { createMarketPacketHash } from "../market/packetHash.js";
 import { createBucketSelectionRequest } from "./bucketSelectionRequest.js";
 import { BucketSelectionRequestFileRepository, createBucketSelectionRequestPaths } from "./bucketSelectionRequestFiles.js";
 import { candidateScoringModelRefFor, calculateCandidateSelectionScore, CANDIDATE_SCORING_ALGORITHM, createCandidateScoringModel } from "./candidateScoringModel.js";
@@ -37,7 +38,7 @@ import { CANDIDATE_DAILY_COST_BASIS_MODEL_VERSION } from "./candidateDailyCostBa
 import { resolveStoredCandidateDailyCostBasis } from "./storedCandidateDailyCostBasis.js";
 import { resolveStoredCandidateCashCapacity } from "./storedCandidateCashCapacity.js";
 import { pendingActionExposureTotals, type PendingPortfolioActionInput } from "./portfolioSizingInputs.js";
-import { CANDIDATE_PACKET_CLASSIFICATION_MODEL_VERSION, deriveCandidatePacketClassification } from "./candidatePacketClassification.js";
+import { candidatePacketClassificationRef, CANDIDATE_PACKET_CLASSIFICATION_MODEL_VERSION, deriveCandidatePacketClassification } from "./candidatePacketClassification.js";
 import { classificationPacket } from "./candidatePacketClassificationTestFixtures.js";
 import { resolveStoredCandidateClassification } from "./storedCandidateClassification.js";
 
@@ -764,6 +765,17 @@ test("stored classification rejects forged sector region currency and evidence r
       await assert.rejects(resolveStoredCandidateClassification(input), /keys differ|exactly once/);
     });
   }
+});
+
+test("stored classification rejects inherited exposure-map keys present in actual packets", async () => {
+  for (const sector of ["toString", "valueOf", "hasOwnProperty"]) await temporary(async (baseDir) => {
+    const options = classificationOptions(classificationPacket("KR", { sector })), packet = options.classificationPacket!;
+    options.patch = (input) => ({ ...cashOptions(850).patch!(input), exposureKeys: { sector, country: "KR", currency: "KRW",
+      classificationEvidenceRef: candidatePacketClassificationRef(createMarketPacketHash(packet), "KR", input.symbol) } });
+    const { record } = await seed(baseDir, options), lookup = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+    await resolveStoredCandidateCashCapacity(lookup);
+    await assert.rejects(resolveStoredCandidateClassification(lookup), /safe non-index key/);
+  });
 });
 
 test("stored classification requires an explicit supported as-of policy model", async () => {

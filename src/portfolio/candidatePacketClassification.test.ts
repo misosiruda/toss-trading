@@ -50,6 +50,12 @@ test("packet classification preserves the upstream candidate symbol contract for
   }
 });
 
+test("packet classification rejects every inherited plain-object exposure key", () => {
+  for (const sector of [...Object.getOwnPropertyNames(Object.prototype), "prototype"]) {
+    assert.throws(() => deriveCandidatePacketClassification({ ...input(), packet: classificationPacket("KR", { sector }) }), /safe non-index key/);
+  }
+});
+
 test("packet classification refuses invalid source chronology including exact expiry boundaries", () => {
   for (const patch of [{ collectedAt: "2026-09-04T00:00:00.000Z" }, { staleAfter: "2026-09-03T12:00:00.000Z" }]) {
     assert.throws(() => deriveCandidatePacketClassification({ ...input(), packet: classificationPacket("KR", patch) }), /chronology/);

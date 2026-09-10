@@ -4294,6 +4294,9 @@ record count는 바뀐다. Corrupt/torn/비canonical suffix 또는 중복 원본
 재사용해 기존 후보의 1~240자 canonical 식별자 계약을 유지한다. 업종·source ref의 160자
 제한을 종목 식별자에 적용하지 않는다. 161자·240자 후보는 실제 historical 원본과 packet을
 저장한 통합 재생으로 검증하며 241자·공백 정규화·잘못된 Unicode는 거절한다.
+업종 key는 `prototype`과 `Object.prototype`의 모든 own property 이름을 거절한다.
+`toString`, `valueOf`, `hasOwnProperty`처럼 기존 plain-object 노출 합산에서 상속값을
+읽게 만드는 이름도 저장 packet 분류 단계에서 차단한다.
 
 완료 조건:
 
