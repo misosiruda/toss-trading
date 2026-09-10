@@ -2223,6 +2223,33 @@ source-window 결속·저장과 bucket policy/score/sizing 연결은 후속이�
 유지하며 rollback 시 구버전 writer를 새 관측 consumer와 섞지 않아야 한다. 실패 lock/임시 파일은
 writer 부재와 원본 일관성을 확인한 후 명시적으로 복구해야 하며 자동 stale lock 회수는 제공하지 않는다.
 
+원본과 지표의 연결 분할은 `MarketTechnicalEvidenceFileSource.withEvidence`다. 실제 지정된 historical
+파일의 strict 관측과 writer lock 안에서 `market/symbol/interval/windowStart/asOf`가 일치하는 모든
+record를 추출해 기존 지표 evidence factory로 전달한다. Query는 snapshots를 받지 않으며 caller가
+선택한 배열이나 상위 N개로 source를 대체하지 않는다. 양 끝 시각을 포함하고 최소 관측 수·4096개
+상한·freshness·중복 instant·가격/volume 검증은 기존 calculator normalizer를 사용한다. Scope 밖
+record도 파일 전체 검증에서 제외하지 않는다. 실제 원본은 보존하고 계산 입력의 record/sourceRef
+순서만 기존 규칙으로 정규화한다. 비동기 잠금 대기 전에 query를 복제한다.
+
+`createMarketTechnicalEvidenceFromHistory`는 live history lease를 요구하고 관측 이후의 실제 생성
+시각으로 evidence를 만든다. 생성 clock이 source 관측보다 역행하면 거절한다. 반환되는
+`market_technical_source_binding.v1`은 complete evidence와 전체 source prefix 관측값을 묶는다.
+`resolveMarketTechnicalEvidenceSourceBinding`은 실제 live history에서 저장 prefix를 검증하고 그
+prefix의 같은 query 구간을 다시 추출·정규화해 complete calculationInput과 비교한다. 일부 bar 누락,
+가격 바꾸기와 evidence 전체 rehash도 실제 source window와 다르면 거절한다. Evidence 생성 시각은
+source 관측 시각 이상이어야 한다. 이후 append된 이력은 예전 receipt의 구간에 소급 포함하지 않으며
+prefix 안의 관련 없는 record도 삭제·수정되면 hash 검증이 실패한다.
+
+File source는 consumer가 끝날 때까지 writer lock을 유지하고 실제 history도 함께 전달한다. 새 관측
+또는 downstream transaction이 필요하면 callback 안의 history를 재사용해야 한다. 종료 후 또는
+clone한 history로는 factory/resolver를 사용할 수 없다. 반환 binding 자체는 저장 commit이나 독립
+lease가 아니며 supplied receipt의 과거 발급 사실을 인증하지 않는다. 영구 보존에는 실제 source lock
+안에서 receipt와 evidence를 함께 commit하고 조회 때 재검증하는 후속 append-only 저장소가 필요하다.
+SourceContractId는 여전히 선언이며 provider 신뢰·PIT availability·calendar completeness·FX 검증이나
+bucket policy가 선택한 window의 정당성을 증명하지 않는다. 후보 eligibility/score/sizing/실행 권한,
+runner 자동 연결과 저장 artifact는 추가하지 않는다. 기존 API·JSONL·지표 v1 계산 형식은 유지하며
+새 opt-in 연결 코드의 rollback에는 데이터 변환이 없다. 영구 evidence 저장과 실제 sizing 연결은 후속이다.
+
 - `selectionScore`는 같은 bucket 안에서 candidate 우선순위를 정한다.
 - score는 target weight를 직접 결정하지 않는다.
 - backend는 bucket gap, available slots, symbol cap, liquidity cap, concentration cap,
