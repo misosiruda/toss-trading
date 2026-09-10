@@ -136,6 +136,25 @@ artifact 삭제 없이 코드 rollback할 수 있지만 Windows EPERM 즉시 실
 필요하며 이 변경은 자동 stale lock 복구를 제공하지 않는다. 실제 OS 오류 원인이나 빈도 감소는
 이 테스트만으로 확정하지 않는다.
 
+### Windows 수동 배정 저장소 잠금 경합
+
+비용 기준 기능의 전체 fallback 검증에서 `manual capacity concurrent exact retries produce only one durable pair`가
+`.manual-assignment-events.jsonl.lock`의 exclusive open에서 Windows `EPERM`으로 실패했다. 수동 배정
+저장소는 기존 `EEXIST`와 Windows `EPERM` 획득 오류만 기존 timeout 내 재시도하도록 한다. Deadline은
+monotonic clock을 사용하고 영구 경합 시 마지막 오류를 cause로 남긴다. Wall clock 정지·역행으로
+대기가 무한정 늘어나지 않는다. OS 오류의 구체적인 발생 원인이나 빈도 감소는 측정하지 않았다.
+
+`EACCES`, token write/fsync, consumer와 release 오류는 재시도하지 않는다. 초기화 실패 시 현재
+경로의 소유권을 확정할 수 없으므로 descriptor만 닫고 실패 barrier를 명시적 복구용으로 보존한다.
+Abandoned/replaced token은 자동 삭제하지 않는다. `manualAssignmentLocks.test.ts`는 실제 40개
+concurrent read, 주입한 획득·초기화 실패, frozen Date, 영구 경합과 consumer/ownership 실패를 검증한다.
+기존 exact retry·capacity 테스트와 전체 검증 gate, default timeout은 변경하지 않는다.
+
+수동 배정 event/관측 형식·Risk·거래 정책 변경은 없고 데이터 변환 없이 코드 rollback할 수 있다.
+Rollback하면 Windows EPERM 즉시 실패 및 초기화 실패 시 lock 삭제 동작이 돌아온다. 보존된 실패
+lock은 진행 중인 writer와 원본 무결성을 확인한 별도 복구가 필요하다. 이 변경은 전체 테스트 자동
+재시도, 오류 무시 또는 stale lock 자동 복구가 아니다.
+
 ### 검증 프로필 호환성
 
 기존 `check`는 전체 검증이고 `check:changed`는 영향 검증이라는 의미를 유지한다. 새 runner는 기존
