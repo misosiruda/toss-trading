@@ -15,8 +15,9 @@ import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js"
 import { createPortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { PortfolioSizingSnapshotFileRepository, createPortfolioSizingSnapshotPaths } from "./portfolioSizingSnapshotFiles.js";
 import { MarketTechnicalEvidenceFileRepository, createMarketTechnicalEvidencePaths } from "./marketTechnicalEvidenceFiles.js";
-import { MarketTechnicalEvidenceFileSource, type MarketTechnicalEvidenceSourceInput } from "./marketTechnicalEvidenceSource.js";
+import { MarketTechnicalEvidenceFileSource, type MarketTechnicalEvidenceSourceBinding, type MarketTechnicalEvidenceSourceInput } from "./marketTechnicalEvidenceSource.js";
 import { MARKET_TECHNICAL_FEATURE_DEFINITIONS } from "./marketTechnicalCandidateFeatures.js";
+import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 
 const AT = "2026-09-04T00:00:00.000Z";
 const HASH = `sha256:${"a".repeat(64)}`;
@@ -151,13 +152,76 @@ test("candidate market technical resolver fails before consumer on corruption an
   await resolver.withResolvedFeatures(fixture.record.sizingInputRecordId, async (binding) => assert.ok(getCandidateMarketTechnicalFeatureSources(binding)));
 }));
 
-async function seed(dir: string, options: { persistEvidence?: boolean; patch?: (payload: Payload) => Payload; inputAsOf?: string; createdAt?: string } = {}) {
+test("candidate market technical resolver rejects input actually appended while the evidence marker is still unflushed", async (context) => temporary(async (dir) => {
+  const now = Date.parse("2026-09-10T00:00:00.000Z");
+  context.mock.timers.enable({ apis: ["Date"], now });
+  const path = createMarketTechnicalEvidencePaths(dir).recordsPath, originalOpen = fs.open;
+  let writes = 0;
+  let overlapping!: Awaited<ReturnType<typeof storeInput>>;
+  const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    const handle = await originalOpen(...args);
+    if (args[0] === path && args[1] === "a" && ++writes === 2) {
+      const sync = handle.sync.bind(handle);
+      context.mock.method(handle, "sync", async () => {
+        context.mock.timers.setTime(now + 500);
+        const entry = JSON.parse((await fs.readFile(path, "utf8")).split("\n")[0]!);
+        overlapping = await storeInput(dir, entry.binding, { createdAt: new Date(now + 500).toISOString() });
+        await sync();
+        context.mock.timers.setTime(now + 1000);
+      });
+    }
+    return handle;
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(seed(dir, { createdAt: new Date(now).toISOString() }), /collision/); // The overlapping input already owns the unique ID.
+    const evidence = (await new MarketTechnicalEvidenceFileRepository(dir).readAll())[0]!;
+    assert.ok(Date.parse(evidence.committedAt) < Date.parse(overlapping.inputOrigin.appendStartedAt));
+    assert.ok(Date.parse(overlapping.inputOrigin.committedAt) < Date.parse(evidence.completion!.observedAt));
+    await assert.rejects(new CandidateMarketTechnicalFeatureResolver(dir).withResolvedFeatures(overlapping.record.sizingInputRecordId, async () => {}), /predates committed/);
+  } finally { context.mock.timers.reset(); mock.mock.restore(); syncBuiltinESMExports(); }
+}));
+
+test("candidate market technical resolver rejects legacy evidence without adding completion retroactively", async () => temporary(async (dir) => {
+  const fixture = await seed(dir), path = createMarketTechnicalEvidencePaths(dir).recordsPath;
+  const lines = (await fs.readFile(path, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  const { entryHash: ignoredEntry, ...entry } = lines[0]; void ignoredEntry;
+  entry.schemaVersion = "market_technical_evidence_entry.v1";
+  const entryHash = hashCanonicalPayload(entry);
+  const { commitHash: ignoredCommit, ...marker } = lines[1]; void ignoredCommit;
+  marker.entryHash = entryHash;
+  const legacy = `${JSON.stringify({ ...entry, entryHash })}\n${JSON.stringify({ ...marker, commitHash: hashCanonicalPayload(marker) })}\n`;
+  await fs.writeFile(path, legacy);
+  assert.equal((await new MarketTechnicalEvidenceFileRepository(dir).capture(query())).completion, undefined);
+  await assert.rejects(new CandidateMarketTechnicalFeatureResolver(dir).withResolvedFeatures(fixture.record.sizingInputRecordId, async () => {}), /lacks durable completion proof/);
+  assert.equal(await fs.readFile(path, "utf8"), legacy);
+}));
+
+test("candidate market technical resolver rejects an equal completion timestamp as ambiguous", async (context) => temporary(async (dir) => {
+  const now = Date.parse("2026-09-10T00:00:00.000Z");
+  context.mock.timers.enable({ apis: ["Date"], now });
+  try {
+    const fixture = await seed(dir, { createdAt: new Date(now).toISOString() });
+    await assert.rejects(new CandidateMarketTechnicalFeatureResolver(dir).withResolvedFeatures(fixture.record.sizingInputRecordId, async () => {}), /ambiguous completion chronology/);
+  } finally { context.mock.timers.reset(); }
+}));
+
+type SeedOptions = { persistEvidence?: boolean; patch?: (payload: Payload) => Payload; inputAsOf?: string; createdAt?: string };
+async function seed(dir: string, options: SeedOptions = {}) {
   const sourcePath = join(dir, "historical-market-snapshots.jsonl");
   await new FileHistoricalMarketSnapshotStore(sourcePath).replaceAll([1, 3].map((day) => ({ snapshotId: `row-${day}`, market: "KR" as const, symbol: "SYNTH", interval: "1d" as const,
     observedAt: `2026-09-0${day}T00:00:00.000Z`, createdAt: "2026-09-05T00:00:00.000Z", lastPriceKrw: 100 * day, volume: 10, sourceRefs: ["synthetic"] })));
   const binding = options.persistEvidence === false
     ? await new MarketTechnicalEvidenceFileSource(sourcePath).withEvidence(query(), async (value) => value)
     : (await new MarketTechnicalEvidenceFileRepository(dir).capture(query())).binding;
+  // Millisecond equality cannot prove independent creation happened after the marker flush.
+  if (!options.createdAt && options.persistEvidence !== false) {
+    const origin = (await new MarketTechnicalEvidenceFileRepository(dir).readAll())[0]!;
+    while (Date.now() <= Date.parse(origin.completion!.observedAt)) await new Promise((done) => setTimeout(done, 1));
+  }
+  return storeInput(dir, binding, options);
+}
+async function storeInput(dir: string, binding: MarketTechnicalEvidenceSourceBinding, options: SeedOptions = {}) {
   const asOf = options.inputAsOf ?? AT;
   const snapshot = createPortfolioSizingSnapshot({ portfolioId: "paper-portfolio", portfolioVersion: "v1", policyHash: HASH, asOf,
     virtualPortfolio: { portfolioId: "paper-portfolio", cashKrw: 1000, positions: [], updatedAt: asOf }, valuationInputs: [], pendingActionInputs: [],

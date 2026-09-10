@@ -27,7 +27,7 @@ test("market technical evidence files preserve original captures across retry re
   assert.notEqual(first.binding.evidence.evidenceRef, second.binding.evidence.evidenceRef);
   assert.equal(second.binding.sourceObservation.recordCount, 3);
   assert.deepEqual(await new MarketTechnicalEvidenceFileRepository(dir).readAll(), [first, second]);
-  assert.equal((await fs.readFile(paths.recordsPath, "utf8")).trim().split("\n").length, 4);
+  assert.equal((await fs.readFile(paths.recordsPath, "utf8")).trim().split("\n").length, 6);
   frozen(first);
   await assert.rejects(repo.capture({ ...input(), sourceContractId: "another-contract" }), /reference collision/);
   assert.equal((await repo.readAll()).length, 2);
@@ -52,7 +52,7 @@ test("market technical evidence concurrent captures converge on one original com
   await source.replaceAll([snapshot(1), snapshot(3)]);
   const captures = await Promise.all(Array.from({ length: 8 }, () => new MarketTechnicalEvidenceFileRepository(dir).capture(input())));
   captures.forEach((capture) => assert.deepEqual(capture, captures[0]));
-  assert.equal((await fs.readFile(createMarketTechnicalEvidencePaths(dir).recordsPath, "utf8")).trim().split("\n").length, 2);
+  assert.equal((await fs.readFile(createMarketTechnicalEvidencePaths(dir).recordsPath, "utf8")).trim().split("\n").length, 3);
 }));
 
 test("market technical evidence reads validate the entire source and exact original prefix before returning or retrying", async () => temporary(async (dir, source) => {
@@ -81,16 +81,22 @@ test("market technical evidence rejects corrupt pairs hashes chronology and reha
   const path = createMarketTechnicalEvidencePaths(dir).recordsPath;
   const raw = await fs.readFile(path, "utf8");
   const [entry, marker] = pair(raw);
+  const completion = JSON.parse(raw.trim().split("\n")[2]!);
   const forged = structuredClone(entry);
   forged.binding = { ...forged.binding, evidence: createMarketTechnicalCandidateEvidenceRecord({ sourceContractId: forged.binding.evidence.sourceContractId,
     createdAt: forged.binding.evidence.createdAt, calculationInput: { ...forged.binding.evidence.calculationInput,
       snapshots: [{ ...snapshot(1), lastPriceKrw: 777 }, snapshot(3)] } }) };
   const variants = [raw.trimEnd(), JSON.stringify(entry) + "\n", raw + "\n", raw + "bad\n",
-    raw.replace(entry.entryHash, `sha256:${"f".repeat(64)}`), rewrite(forged, marker),
-    rewrite({ ...entry, previousCommitHash: marker.commitHash }, marker),
-    rewrite({ ...entry, appendStartedAt: "2099-01-01T00:00:00.000Z" }, marker),
-    rewrite(entry, { ...marker, committedAt: "2099-01-01T00:00:00.000Z" }),
-    raw + rewrite({ ...entry, previousCommitHash: marker.commitHash, appendStartedAt: marker.committedAt }, marker)];
+    raw.replace(entry.entryHash, `sha256:${"f".repeat(64)}`), rewrite(forged, marker, completion),
+    rewrite({ ...entry, previousCommitHash: marker.commitHash }, marker, completion),
+    rewrite({ ...entry, appendStartedAt: "2099-01-01T00:00:00.000Z" }, marker, completion),
+    rewrite(entry, { ...marker, committedAt: "2099-01-01T00:00:00.000Z" }, completion),
+    raw + rewrite({ ...entry, previousCommitHash: completion.completionHash, appendStartedAt: completion.observedAt }, marker, completion),
+    rewrite(entry, marker), // A v2 entry must include completion, even if the pair is otherwise valid.
+    rewrite(entry, marker, { ...completion, observedAt: "2026-09-01T00:00:00.000Z" }),
+    rewrite(entry, marker, { ...completion, observedAt: "2099-01-01T00:00:00.000Z" }),
+    raw.replace(completion.completionHash, `sha256:${"f".repeat(64)}`),
+    raw.replace('"schemaVersion":"market_technical_evidence_completion.v1"', '"extra":true,"schemaVersion":"market_technical_evidence_completion.v1"')];
   for (const corrupt of variants) {
     await fs.writeFile(path, corrupt);
     await assert.rejects(repo.readAll(), /torn|corrupt/);
@@ -100,7 +106,7 @@ test("market technical evidence rejects corrupt pairs hashes chronology and reha
 }));
 
 test("market technical evidence pending failures preserve barriers and never auto-recover partial commits", async (context) => {
-  for (const phase of ["pending_sync", "entry_write", "entry_sync", "marker_write", "marker_sync", "pending_remove"] as const) await temporary(async (dir, source) => {
+  for (const phase of ["pending_sync", "entry_write", "entry_sync", "marker_write", "marker_sync", "completion_write", "completion_sync", "pending_remove"] as const) await temporary(async (dir, source) => {
     await source.replaceAll([snapshot(1), snapshot(3)]);
     const paths = createMarketTechnicalEvidencePaths(dir), repo = new MarketTechnicalEvidenceFileRepository(dir);
     const originalOpen = fs.open, originalUnlink = fs.unlink;
@@ -111,8 +117,8 @@ test("market technical evidence pending failures preserve barriers and never aut
       if (args[0] === paths.pendingPath && args[1] === "wx" && phase === "pending_sync") context.mock.method(handle, "sync", async () => fail());
       if (args[0] === paths.recordsPath && args[1] === "a") {
         writes += 1;
-        if ((writes === 1 && phase === "entry_write") || (writes === 2 && phase === "marker_write")) context.mock.method(handle, "writeFile", async () => fail());
-        if ((writes === 1 && phase === "entry_sync") || (writes === 2 && phase === "marker_sync")) context.mock.method(handle, "sync", async () => fail());
+        if ((writes === 1 && phase === "entry_write") || (writes === 2 && phase === "marker_write") || (writes === 3 && phase === "completion_write")) context.mock.method(handle, "writeFile", async () => fail());
+        if ((writes === 1 && phase === "entry_sync") || (writes === 2 && phase === "marker_sync") || (writes === 3 && phase === "completion_sync")) context.mock.method(handle, "sync", async () => fail());
       }
       return handle;
     });
@@ -257,7 +263,7 @@ test("market technical evidence monotonic lock timeout preserves abandoned and i
 });
 
 test("market technical evidence commit and flush clock regressions leave pending barriers", async (context) => {
-  for (const afterWrite of [1, 2]) await temporary(async (dir, source) => {
+  for (const afterWrite of [1, 2, 3]) await temporary(async (dir, source) => {
     await source.replaceAll([snapshot(1), snapshot(3)]);
     const paths = createMarketTechnicalEvidencePaths(dir), repo = new MarketTechnicalEvidenceFileRepository(dir);
     const originalOpen = fs.open; let writes = 0;
@@ -279,14 +285,67 @@ test("market technical evidence commit and flush clock regressions leave pending
   });
 });
 
+test("market technical evidence keeps legacy pairs unchanged without retroactive completion and chains new v2 records", async () => temporary(async (dir, source) => {
+  await source.replaceAll([snapshot(1), snapshot(3)]);
+  const repo = new MarketTechnicalEvidenceFileRepository(dir), path = createMarketTechnicalEvidencePaths(dir).recordsPath;
+  await repo.capture(input());
+  const [entry, marker] = pair(await fs.readFile(path, "utf8"));
+  const legacy = rewrite({ ...entry, schemaVersion: "market_technical_evidence_entry.v1" }, marker);
+  await fs.writeFile(path, legacy);
+  const first = await repo.capture(input());
+  assert.equal("completion" in first, false);
+  assert.equal(await fs.readFile(path, "utf8"), legacy);
+  const receipt = await repo.withDurableVerifiedHistory(async (history) => getDurableMarketTechnicalEvidenceObservation(history));
+  await source.append(snapshot(5));
+  const second = await repo.capture(input(6));
+  assert.ok(second.completion);
+  assert.deepEqual(await new MarketTechnicalEvidenceFileRepository(dir).readAll(), [first, second]);
+  await repo.withDurableVerifiedHistory(async (history) => assert.deepEqual(resolveObservedMarketTechnicalEvidenceHistory(history, receipt), [first]));
+  const lines = (await fs.readFile(path, "utf8")).trim().split("\n");
+  assert.equal(lines.length, 5);
+  assert.equal(JSON.parse(lines[2]!).previousCommitHash, first.commitHash);
+}));
+
+test("market technical evidence completion is observed after marker fsync and binds the generation and receipt", async (context) => temporary(async (dir, source) => {
+  await source.replaceAll([snapshot(1), snapshot(3)]);
+  const now = Date.parse("2026-09-10T00:00:00.000Z");
+  context.mock.timers.enable({ apis: ["Date"], now });
+  const repo = new MarketTechnicalEvidenceFileRepository(dir), paths = createMarketTechnicalEvidencePaths(dir);
+  const originalOpen = fs.open;
+  let writes = 0;
+  const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    const handle = await originalOpen(...args);
+    if (args[0] === paths.recordsPath && args[1] === "a" && ++writes === 2) {
+      const sync = handle.sync.bind(handle);
+      context.mock.method(handle, "sync", async () => { await sync(); context.mock.timers.setTime(now + 1000); });
+    }
+    return handle;
+  });
+  syncBuiltinESMExports();
+  try {
+    const origin = await repo.capture(input());
+    assert.equal(origin.committedAt, new Date(now).toISOString());
+    assert.equal(origin.completion!.observedAt, new Date(now + 1000).toISOString());
+    await repo.withDurableVerifiedHistory(async (history) => {
+      assert.equal(history.generationHash, origin.completion!.completionHash);
+      const receipt = getDurableMarketTechnicalEvidenceObservation(history);
+      assert.throws(() => resolveObservedMarketTechnicalEvidenceHistory(history, { ...receipt, observedAt: origin.committedAt }), /committed prefix/);
+    });
+  } finally { context.mock.timers.reset(); mock.mock.restore(); syncBuiltinESMExports(); }
+}));
+
 type Entry = { schemaVersion: string; binding: MarketTechnicalEvidenceSourceBinding; appendStartedAt: string; previousCommitHash: string | null; entryHash: string };
 type Marker = { schemaVersion: string; entryHash: string; committedAt: string; commitHash: string };
 function pair(raw: string): [Entry, Marker] { const lines = raw.trim().split("\n"); return [JSON.parse(lines[0]!), JSON.parse(lines[1]!)]; }
-function rewrite(entry: Entry, marker: Marker) {
+function rewrite(entry: Entry, marker: Marker, completion?: { schemaVersion: string; entryHash: string; commitHash: string; observedAt: string; completionHash: string }) {
   const { entryHash: ignoredEntry, ...payload } = entry; void ignoredEntry;
   const entryHash = hashCanonicalPayload(payload);
   const { commitHash: ignoredMarker, ...markerPayload } = { ...marker, entryHash }; void ignoredMarker;
-  return `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash: hashCanonicalPayload(markerPayload) })}\n`;
+  const commitHash = hashCanonicalPayload(markerPayload);
+  const pair = `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...markerPayload, commitHash })}\n`;
+  if (!completion) return pair;
+  const { completionHash: ignoredCompletion, ...completionPayload } = { ...completion, entryHash, commitHash }; void ignoredCompletion;
+  return pair + `${JSON.stringify({ ...completionPayload, completionHash: hashCanonicalPayload(completionPayload) })}\n`;
 }
 function input(asOfDay = 4): MarketTechnicalEvidenceSourceInput {
   return { sourceContractId: "synthetic-local.v1", query: { market: "KR", symbol: "SYNTH", interval: "1d",

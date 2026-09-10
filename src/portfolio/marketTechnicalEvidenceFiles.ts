@@ -11,10 +11,12 @@ import { MarketTechnicalEvidenceFileSource, resolveMarketTechnicalEvidenceSource
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
 export const MARKET_TECHNICAL_EVIDENCE_RECORDS_FILE_NAME = "market-technical-evidence-records.jsonl";
-const entrySchema = z.object({ schemaVersion: z.literal("market_technical_evidence_entry.v1"), binding: z.unknown(),
+const entrySchema = z.object({ schemaVersion: z.enum(["market_technical_evidence_entry.v1", "market_technical_evidence_entry.v2"]), binding: z.unknown(),
   appendStartedAt: offsetQualifiedIsoDateTimeSchema, previousCommitHash: sha256HashSchema.nullable(), entryHash: sha256HashSchema }).strict();
 const markerSchema = z.object({ schemaVersion: z.literal("market_technical_evidence_commit.v1"), entryHash: sha256HashSchema,
   committedAt: offsetQualifiedIsoDateTimeSchema, commitHash: sha256HashSchema }).strict();
+const completionSchema = z.object({ schemaVersion: z.literal("market_technical_evidence_completion.v1"), entryHash: sha256HashSchema,
+  commitHash: sha256HashSchema, observedAt: offsetQualifiedIsoDateTimeSchema, completionHash: sha256HashSchema }).strict();
 export const marketTechnicalEvidenceObservationSchema = z.object({
   recordCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).refine((value) => !Object.is(value, -0)),
   entriesHash: sha256HashSchema, observedAt: offsetQualifiedIsoDateTimeSchema
@@ -26,6 +28,8 @@ export interface VerifiedMarketTechnicalEvidenceOrigin {
   readonly committedAt: string;
   readonly entryHash: string;
   readonly commitHash: string;
+  /** Proves the preceding entry/marker flush, not this completion line's own durable time. Absent on legacy v1. */
+  readonly completion?: Readonly<z.infer<typeof completionSchema>>;
 }
 export interface VerifiedMarketTechnicalEvidenceHistory {
   readonly origins: readonly VerifiedMarketTechnicalEvidenceOrigin[];
@@ -46,7 +50,7 @@ export function resolveObservedMarketTechnicalEvidenceHistory(history: VerifiedM
   }
   const origins = history.origins.slice(0, observation.recordCount);
   if (origins.length !== observation.recordCount || hashCanonicalPayload(origins) !== observation.entriesHash ||
-    origins.some((origin) => Date.parse(origin.committedAt) > Date.parse(observation.observedAt))) {
+    origins.some((origin) => Date.parse(origin.completion?.observedAt ?? origin.committedAt) > Date.parse(observation.observedAt))) {
     throw new Error("market technical evidence observation does not match committed prefix");
   }
   return Object.freeze(origins);
@@ -95,10 +99,10 @@ export class MarketTechnicalEvidenceFileRepository {
       }
       const appendStartedAt = new Date().toISOString();
       if (Date.parse(binding.evidence.createdAt) > Date.parse(appendStartedAt) ||
-        (history.origins.length && Date.parse(history.origins.at(-1)!.committedAt) > Date.parse(appendStartedAt))) {
+        (history.origins.length && Date.parse(history.origins.at(-1)!.completion?.observedAt ?? history.origins.at(-1)!.committedAt) > Date.parse(appendStartedAt))) {
         throw new Error("market technical evidence append clock moved backwards");
       }
-      const payload = { schemaVersion: "market_technical_evidence_entry.v1" as const, binding, appendStartedAt, previousCommitHash: history.generationHash };
+      const payload = { schemaVersion: "market_technical_evidence_entry.v2" as const, binding, appendStartedAt, previousCommitHash: history.generationHash };
       const entryHash = hashCanonicalPayload(payload);
       const pending = await open(this.paths.pendingPath, "wx");
       try { await pending.writeFile(`${JSON.stringify({ entryHash })}\n`); await pending.sync(); } finally { await pending.close(); }
@@ -109,10 +113,15 @@ export class MarketTechnicalEvidenceFileRepository {
       const marker = { schemaVersion: "market_technical_evidence_commit.v1" as const, entryHash, committedAt };
       const commitHash = hashCanonicalPayload(marker);
       await appendLine(this.paths.recordsPath, { ...marker, commitHash });
-      if (Date.now() < Date.parse(committedAt)) throw new Error("market technical evidence flush clock moved backwards");
+      const observedAt = new Date().toISOString();
+      if (Date.parse(observedAt) < Date.parse(committedAt)) throw new Error("market technical evidence flush clock moved backwards");
+      const completionPayload = { schemaVersion: "market_technical_evidence_completion.v1" as const, entryHash, commitHash, observedAt };
+      const completion = Object.freeze({ ...completionPayload, completionHash: hashCanonicalPayload(completionPayload) });
+      await appendLine(this.paths.recordsPath, completion);
+      if (Date.now() < Date.parse(observedAt)) throw new Error("market technical evidence completion flush clock moved backwards");
       await unlink(this.paths.pendingPath);
       await syncDirectory(dirname(this.paths.pendingPath));
-      return Object.freeze({ binding, appendStartedAt, committedAt, entryHash, commitHash });
+      return Object.freeze({ binding, appendStartedAt, committedAt, entryHash, commitHash, completion });
     }));
   }
   private async readUnderLock(source: VerifiedHistoricalMarketSnapshotHistory) {
@@ -124,7 +133,7 @@ export class MarketTechnicalEvidenceFileRepository {
     const origins: VerifiedMarketTechnicalEvidenceOrigin[] = [];
     const refs = new Set<string>();
     let generationHash: string | null = null;
-    for (let index = 0; index < lines.length; index += 2) {
+    for (let index = 0; index < lines.length;) {
       try {
         const value: unknown = JSON.parse(lines[index]!);
         const entry = entrySchema.parse(value);
@@ -139,11 +148,22 @@ export class MarketTechnicalEvidenceFileRepository {
         if (!isDeepStrictEqual(markerValue, marker) || marker.entryHash !== entryHash || commitHash !== hashCanonicalPayload(markerPayload) ||
           Date.parse(binding.evidence.createdAt) > Date.parse(entry.appendStartedAt) ||
           Date.parse(entry.appendStartedAt) > Date.parse(marker.committedAt) || Date.parse(marker.committedAt) > Date.parse(observedAt) ||
-          (origins.length && Date.parse(origins.at(-1)!.committedAt) > Date.parse(entry.appendStartedAt))) throw new Error("commit hash or chronology mismatch");
+          (origins.length && Date.parse(origins.at(-1)!.completion?.observedAt ?? origins.at(-1)!.committedAt) > Date.parse(entry.appendStartedAt))) throw new Error("commit hash or chronology mismatch");
+        let completion: z.infer<typeof completionSchema> | undefined;
+        if (entry.schemaVersion === "market_technical_evidence_entry.v2") {
+          const completionValue: unknown = JSON.parse(lines[index + 2] ?? "");
+          completion = completionSchema.parse(completionValue);
+          const { completionHash, ...completionPayload } = completion;
+          if (!isDeepStrictEqual(completionValue, completion) || completion.entryHash !== entryHash || completion.commitHash !== commitHash ||
+            completionHash !== hashCanonicalPayload(completionPayload) || Date.parse(completion.observedAt) < Date.parse(marker.committedAt) ||
+            Date.parse(completion.observedAt) > Date.parse(observedAt)) throw new Error("completion hash or chronology mismatch");
+        }
         if (refs.has(binding.evidence.evidenceRef)) throw new Error("duplicate evidence reference");
         refs.add(binding.evidence.evidenceRef);
-        origins.push(Object.freeze({ binding, appendStartedAt: entry.appendStartedAt, committedAt: marker.committedAt, entryHash, commitHash }));
-        generationHash = commitHash;
+        origins.push(Object.freeze({ binding, appendStartedAt: entry.appendStartedAt, committedAt: marker.committedAt, entryHash, commitHash,
+          ...(completion ? { completion: Object.freeze(completion) } : {}) }));
+        generationHash = completion?.completionHash ?? commitHash;
+        index += completion ? 3 : 2;
       } catch (cause) { throw new Error(`market technical evidence corrupt entry at line ${index + 1}`, { cause }); }
     }
     return { history: Object.freeze({ origins: Object.freeze(origins), generationHash }), observedAt };

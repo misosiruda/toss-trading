@@ -55,9 +55,10 @@ function resolveStoredFeatures(inputs: VerifiedCandidateSizingInputHistory, evid
   const evidenceOrigin = evidence.origins.find((origin) => origin.binding.evidence.evidenceRef === feature.evidenceRefs[0]);
   if (!evidenceOrigin) throw new Error("committed market technical evidence is missing");
   resolveMarketTechnicalCandidateSizingFeatures({ sizingInput: sizingInputOrigin.record, evidence: evidenceOrigin.binding.evidence });
-  if (Date.parse(evidenceOrigin.committedAt) > Date.parse(sizingInputOrigin.record.createdAt) ||
-    Date.parse(evidenceOrigin.committedAt) > Date.parse(sizingInputOrigin.appendStartedAt)) {
-    throw new Error("candidate sizing input predates committed market technical evidence");
+  if (!evidenceOrigin.completion) throw new Error("market technical evidence lacks durable completion proof");
+  if (Date.parse(evidenceOrigin.completion.observedAt) >= Date.parse(sizingInputOrigin.record.createdAt) ||
+    Date.parse(evidenceOrigin.completion.observedAt) >= Date.parse(sizingInputOrigin.appendStartedAt)) {
+    throw new Error("candidate sizing input predates committed market technical evidence or has ambiguous completion chronology");
   }
   return Object.freeze({ sizingInputOrigin, evidenceOrigin });
 }
