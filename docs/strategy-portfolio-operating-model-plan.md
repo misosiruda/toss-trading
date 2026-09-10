@@ -2321,6 +2321,32 @@ v2를 읽을 수 없으므로 writer보다 먼저 호환 reader를 배포해야 
 
 - `selectionScore`는 같은 bucket 안에서 candidate 우선순위를 정한다.
 - score는 target weight를 직접 결정하지 않는다.
+
+점수 계산의 첫 구현은 `candidateScoringModel.ts`의 `weighted_clamped_feature_score.v1`이다.
+모델에는 version과 createdAt, 모든 featureDefinitionRef별 양수 weight(최대 1), lowerBound,
+upperBound 및 higher/lower-is-better 방향을 명시한다. 임의의 bucket 기본 가중치·threshold를
+제공하지 않는다. Feature는 1~128개이며 모델과 입력의 definition 집합이 정확히 같아야 한다.
+숫자가 아닌 값, 누락/초과/중복 feature, 중복 evidenceRef, unknown field, non-finite·음의 0,
+역전/동일 정규화 구간과 절댓값이 Number.MAX_SAFE_INTEGER를 넘는 값·구간은 거절한다.
+
+계산은 canonical feature 순서로 `(value - lowerBound) / (upperBound - lowerBound)`를 0~1로
+제한하고 lower-is-better이면 `1 - normalizedValue`를 사용한다. Weight를 전체 양수 weight 합으로
+먼저 나눈 후 normalizedValue와 곱하고, 기여도 합을 최종 0~1 score로 제한한다. 이는 명시된
+JavaScript number/IEEE-754 계산 규칙이며 임의의 반올림 정밀도나 부동소수점 수학의 완전 정확성을
+주장하지 않는다. 극소 양수 weight는 정규화 전에 곱해 underflow시키지 않는다.
+
+모델 hash와 hash-derived ID는 createdAt을 포함한 complete parameter payload를 결속한다.
+Version 문자열은 단독 registry identity나 활성 정책의 모델 선택 증명이 아니다. Factory는 feature와
+evidenceRef 순서를 정렬하며 parser는 이미 canonical인 기록만 허용한다. 계산 결과에는 canonical
+모델/입력, inputHash, feature별 normalizedValue/normalizedWeight/weightedScore/evidenceRefs 및
+outputHash를 보존한다. `parseCandidateSelectionScore`는 모델과 계산을 다시 실행해 전체 결과를
+비교하므로 score/기여도/참조를 변조한 뒤 outputHash를 다시 계산한 기록도 거절한다.
+
+이 순수 모델은 source availability/PIT·provider trust, hard gate·eligibility, sizing·allocation,
+버킷별 ordering/top-N, active selection policy와 모델의 exact hash 결속을 대신하지 않는다.
+모델 repository/version 충돌 검증 및 실제 sizing input의 selectionScore 재검증은 후속 연결이다.
+API·artifact writer·기존 정책/거래 기본값 변경은 없으며 코드 rollback에 데이터 변환이 없다.
+
 - backend는 bucket gap, available slots, symbol cap, liquidity cap, concentration cap,
   cash reserve와 execution cost를 적용해 target range를 산정한다.
 - 동일 candidate evidence, feature input과 scoring model version은 동일한 정렬과
