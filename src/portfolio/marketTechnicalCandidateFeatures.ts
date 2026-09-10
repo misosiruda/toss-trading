@@ -15,18 +15,18 @@ export const MARKET_TECHNICAL_FEATURE_DEFINITIONS = Object.freeze({
 
 const identifier = z.string().min(1).max(240).refine((value) => value.trim() === value &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value));
-const inputSchema = z.object({
+export const marketTechnicalCandidateFeatureInputSchema = z.object({
   market: marketSchema, symbol: identifier, interval: z.enum(["1m", "5m", "15m", "1h", "1d"]),
   windowStart: offsetQualifiedIsoDateTimeSchema, asOf: offsetQualifiedIsoDateTimeSchema,
   minimumObservationCount: z.number().int().min(2).max(4096),
   maximumAgeSeconds: z.number().int().positive().max(2_147_483_647),
   snapshots: z.array(historicalMarketSnapshotSchema).min(2).max(4096)
 }).strict();
-export type MarketTechnicalCandidateFeatureInput = z.input<typeof inputSchema>;
+export type MarketTechnicalCandidateFeatureInput = z.input<typeof marketTechnicalCandidateFeatureInputSchema>;
 
-/** Pure calculation over supplied history. Does not authenticate a file/provider, grant eligibility, or calculate a ranking score. */
-export function calculateMarketTechnicalCandidateFeatures(value: MarketTechnicalCandidateFeatureInput) {
-  const input = inputSchema.parse(value);
+/** Validates and copies supplied history; canonical content is not source authentication. */
+export function normalizeMarketTechnicalCandidateFeatureInput(value: MarketTechnicalCandidateFeatureInput) {
+  const input = marketTechnicalCandidateFeatureInputSchema.parse(value);
   if (!isDeepStrictEqual(input, value)) throw new Error("market technical feature input must already be canonical");
   const start = Date.parse(input.windowStart), asOf = Date.parse(input.asOf);
   if (start > asOf) throw new Error("market technical feature window is reversed");
@@ -58,6 +58,13 @@ export function calculateMarketTechnicalCandidateFeatures(value: MarketTechnical
   if (asOf - Date.parse(snapshots.at(-1)!.observedAt) > input.maximumAgeSeconds * 1000) {
     throw new Error("market technical feature history is stale");
   }
+  return deepFreeze({ ...input, snapshots });
+}
+
+/** Pure calculation over supplied history. Does not authenticate a file/provider, grant eligibility, or calculate a ranking score. */
+export function calculateMarketTechnicalCandidateFeatures(value: MarketTechnicalCandidateFeatureInput) {
+  const input = normalizeMarketTechnicalCandidateFeatureInput(value);
+  const snapshots = input.snapshots;
   const prices = snapshots.map((snapshot) => snapshot.lastPriceKrw);
   const returns = prices.slice(1).map((price, index) => (price - prices[index]!) / prices[index]!);
   const mean = returns.reduce((sum, item) => sum + item, 0) / returns.length;

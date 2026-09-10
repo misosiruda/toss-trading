@@ -2162,6 +2162,28 @@ Daily/intraday interval은 scope와 hash에 보존한다. 누락 session/bar를 
 검증, feature evidence 저장/resolve, bucket policy의 required evidence·hard gate 및 scoring은 후속이다.
 현재 함수는 selectionScore/eligibility를 만들지 않고 candidate input writer·runner·Risk에 연결하지 않는다.
 
+`MarketTechnicalCandidateEvidenceRecord`는 이 계산의 전체 canonical input과 output을 함께 보존하는
+재생 가능한 content contract다. `market_technical_candidate_evidence.v1`은 선언된 sourceContractId,
+calculationInput, calculation, evidenceRef와 createdAt을 가진다. EvidenceHash는 자기 자신만 제외한
+전체 record(생성 시각 포함)를 결속하며 evidenceRef는 기존 계산 input identity를 유지한다. 같은 input의
+source contract 선언 또는 createdAt이 다르면 reference는 같아도 record hash는 다르므로 저장소의
+exact retry로 자동 취급할 수 없다. CreatedAt은 asOf 및 포함된 모든 snapshot materialization 시각
+이상이어야 한다. 과거 asOf 이후 생성된 이력을 포함할 수 있지만 point-in-time availability를 뜻하지 않는다.
+
+Factory는 기존 계산기의 공용 normalizer로 snapshot/sourceRef/riskTag 순서를 정규화하며 계산식과
+기존 v1 input/output hash 정의는 변경하지 않는다. Parser는 모든 지표를 재실행하고 canonical input,
+모든 output/source hash, definition/value/ref, model version과 record hash 전체를 비교한다. 공격자가
+틀린 지표의 output hash와 record hash를 함께 다시 계산해도 거절한다. 비정규 record 순서를 읽으면서
+조용히 정렬하지 않으며 unknown field와 미지원 계산 model도 거절한다. 반환 내용은 deep-freeze한다.
+
+`resolveMarketTechnicalCandidateSizingFeatures`는 sizing input과 evidence record를 독립 파싱·재생한 뒤
+market/symbol/asOf instant와 생성 순서를 대조하고 6개 feature의 value 및 evidenceRefs가 정확히 같은지
+확인한다. 그 외 feature나 score, 분류, exposure/liquidity cap, cost 및 sizing 값은 검증하지 않는다.
+SourceContractId는 선언이며 실제 provider/file provenance 검증이 아니다. 이 분할은 파일 저장이나
+원본 history의 complete read, required-evidence/hard-gate 정책, assignment/mandate 발급, Risk·runner
+연결을 추가하지 않는다. Parser 또는 feature binding 성공을 candidate eligibility로 사용하면 안 된다.
+기존 API·artifact 형식 변경은 없고 신규 content contract는 미연결 상태라 코드 rollback에 데이터 변환이 없다.
+
 - `selectionScore`는 같은 bucket 안에서 candidate 우선순위를 정한다.
 - score는 target weight를 직접 결정하지 않는다.
 - backend는 bucket gap, available slots, symbol cap, liquidity cap, concentration cap,
