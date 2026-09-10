@@ -2375,6 +2375,11 @@ Runtime bucket dependency identity resolution은 명시적 ref가 있을 때만 
 빈 scoringModels는 기존 loaded.records의 모양을 유지하도록 생략한다. 기존 loader의 read-only/content
 검증이며 새로운 durable lease/잠금·commit marker나 writer를 제공하지 않는다.
 
+바깥 `readConsistentRuntimePortfolioPolicyActivationSnapshot`의 정책·event 재조회 경로도 scoringModels를
+동일 generation 비교에 포함한다. 다른 policy/event collection이 append돼도 모델의 삭제·교체·재정렬이
+있으면 전체 재조회를 거절한다. Legacy의 생략된 모델 목록은 빈 배열로 비교하며 기존 prefix를 보존한
+신규 모델 append만 허용한다. 두 retry 경로 모두 모델 prefix 회귀와 정상 증가를 테스트한다.
+
 배포는 모델을 읽을 수 있는 reader를 먼저 배포하고 모델 record를 준비한 뒤 이를 참조한 새 selection
 policy를 활성화하는 순서다. 오래된 strict reader는 ref 포함 정책을 읽지 못한다. Rollback 시 신규 ref
 정책을 비활성화하고 호환 reader를 유지하며 기존 record를 수정·삭제하거나 model ref를 소급 제거하지

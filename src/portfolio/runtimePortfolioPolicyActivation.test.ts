@@ -4,6 +4,7 @@ import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { CANDIDATE_SCORING_ALGORITHM, createCandidateScoringModel } from "./candidateScoringModel.js";
 
 import { readDashboardPortfolioComplianceViewModel } from "../api/dashboardViewModels.js";
 import {
@@ -1318,6 +1319,58 @@ test("policy activation snapshot reloads an appended dependency generation", asy
   );
   assert.equal(snapshot.events[0], activation);
 });
+
+test("policy activation snapshot rejects replaced reordered and removed scoring models on either retry path", async () => {
+  const first = activationScoringModel("synthetic-score.v1"), second = activationScoringModel("synthetic-score.v2");
+  for (const phase of ["policy", "event"] as const) {
+    for (const next of [[second, first], [first], [first, activationScoringModel("synthetic-score.v3")], undefined]) {
+      let reads = 0, policyReads = 0, eventReads = 0;
+      const firstPolicy = runtimePolicy(), laterPolicy = runtimePolicy({ portfolioId: "paper-later" });
+      await assert.rejects(readConsistentRuntimePortfolioPolicyActivationSnapshot({
+        loadDependencies: async () => {
+          const models = ++reads === 1 ? [first, second] : next;
+          const records = { ...DEPENDENCY_FIXTURE.records, ...(models ? { scoringModels: models } : {}) };
+          return { records, repository: new ImmutablePolicyDependencyRepository(records) };
+        },
+        readPolicies: async () => {
+          policyReads += 1;
+          if (phase === "policy" && policyReads === 1) return invalidGeneration([firstPolicy], "policy refresh required");
+          return validGeneration(policyReads === 1 ? [firstPolicy] : [firstPolicy, laterPolicy]);
+        },
+        readEvents: async () => ++eventReads === 1 ? invalidGeneration([], "event refresh required") : validGeneration([])
+      }), /dependency generation must be an append-only extension/);
+      assert.equal(reads, 2);
+    }
+  }
+});
+
+test("policy activation snapshot accepts only append-only scoring model growth including an absent legacy collection", async () => {
+  const first = activationScoringModel("synthetic-score.v1"), second = activationScoringModel("synthetic-score.v2");
+  for (const initial of [undefined, [first]]) {
+    for (const phase of ["policy", "event"] as const) {
+      let reads = 0, policyReads = 0, eventReads = 0;
+      const activePolicy = runtimePolicy();
+      const snapshot = await readConsistentRuntimePortfolioPolicyActivationSnapshot({
+        loadDependencies: async () => {
+          const models = ++reads === 1 ? initial : [first, second];
+          const records = { ...DEPENDENCY_FIXTURE.records, ...(models ? { scoringModels: models } : {}) };
+          return { records, repository: new ImmutablePolicyDependencyRepository(records) };
+        },
+        readPolicies: async () => phase === "policy" && ++policyReads === 1
+          ? invalidGeneration([activePolicy], "policy refresh required") : validGeneration([activePolicy]),
+        readEvents: async () => phase === "event" && ++eventReads === 1
+          ? invalidGeneration([], "event refresh required") : validGeneration([])
+      });
+      assert.equal(reads, 2);
+      assert.deepEqual(snapshot.dependencies.records.scoringModels, [first, second]);
+    }
+  }
+});
+
+function activationScoringModel(version: string) {
+  return createCandidateScoringModel({ algorithm: CANDIDATE_SCORING_ALGORITHM, version, createdAt: "2026-08-28T00:00:00.000Z",
+    terms: [{ featureDefinitionRef: "synthetic.v1", weight: 1, lowerBound: -1, upperBound: 1, direction: "higher_is_better" }] });
+}
 
 test("policy activation snapshot rejects a replaced policy generation", async () => {
   const firstPolicy = runtimePolicy({ portfolioId: "paper-first" });
