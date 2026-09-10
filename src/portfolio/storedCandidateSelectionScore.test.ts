@@ -33,6 +33,8 @@ import { CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION } from "./candidateDailyLiquidi
 import { resolveStoredCandidateDailyLiquidity } from "./storedCandidateDailyLiquidity.js";
 import { CANDIDATE_DAILY_COST_BASIS_MODEL_VERSION } from "./candidateDailyCostBasis.js";
 import { resolveStoredCandidateDailyCostBasis } from "./storedCandidateDailyCostBasis.js";
+import { resolveStoredCandidateCashCapacity } from "./storedCandidateCashCapacity.js";
+import { pendingActionExposureTotals, type PendingPortfolioActionInput } from "./portfolioSizingInputs.js";
 
 const AT = "2026-09-04T00:00:00.000Z";
 const CREATED = "2026-09-01T00:00:00.000Z";
@@ -42,6 +44,7 @@ type Options = { patch?: (input: Payload) => Payload; market?: "KR" | "US"; port
   costEstimationModelVersion?: string | null;
   liquidityEstimationModelVersion?: string; interval?: "1d" | "1h";
   costBasisModelVersion?: string;
+  cashKrw?: number; pendingActions?: PendingPortfolioActionInput[]; krHeldNotionalKrw?: number;
   policyHash?: string; legacy?: boolean; extraModelFeature?: boolean; upperBound?: number;
   requiredEvidence?: Parameters<typeof createBucketSelectionPolicyRecord>[0]["requiredEvidence"];
   hardGateRules?: CandidateHardGateRule[];
@@ -614,6 +617,109 @@ test("stored daily cost basis refuses injected parameters and corrupted actual s
   assert.equal(await readFile(path, "utf8"), before);
 }));
 
+test("stored candidate cash capacity binds actual policy snapshot and replayed cost without granting execution", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, cashOptions(850));
+  const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+  const path = createPortfolioSizingSnapshotPaths(baseDir).recordsPath, before = await readFile(path, "utf8");
+  const result = await resolveStoredCandidateCashCapacity(input);
+  assert.equal(result.assessment.requiredCashReserveKrw, 150);
+  assert.equal(result.assessment.maximumNetCashDebitKrw, 850);
+  assert.equal(result.assessment.estimatedCostKrw, 4);
+  assert.equal(result.assessment.referenceNotionalKrw, 200);
+  assert.equal(result.assessment.cashConditionSatisfied, true);
+  assert.equal(result.assessment.cashAvailableMeaning, "after_reserve_and_pending_gross_before_candidate_cost");
+  assert.equal(result.assessment.pendingCostAndReservationAuthority, "not_verified");
+  assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
+  assert.equal(result.assessment.finalSizing, "not_performed");
+  assert.equal(result.assessment.evidenceAndHardGateConditionsSatisfied, result.costBasisReplay.assessment.evidenceAndHardGateConditionsSatisfied);
+  assert.equal(result.assessmentHash, hashCanonicalPayload(result.assessment));
+  assert.deepEqual(await resolveStoredCandidateCashCapacity(input), result);
+  assert.equal(await readFile(path, "utf8"), before);
+  frozen(result);
+}));
+
+test("stored candidate cash capacity includes own estimated costs at exact affordable boundaries", async () => {
+  for (const [cashKrw, cashAvailableKrw, expected] of [[304, 204, true], [303, 203, false], [300, 200, false]] as const) {
+    await temporary(async (baseDir) => {
+      const { record } = await seed(baseDir, { ...cashOptions(cashAvailableKrw), cashKrw });
+      const result = await resolveStoredCandidateCashCapacity({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+      assert.equal(result.assessment.requiredCashReserveKrw, 100);
+      assert.equal(result.assessment.cashConditionSatisfied, expected);
+    });
+  }
+});
+
+test("stored candidate cash capacity rejects declared cash even when all earlier cost checks pass", async () => {
+  for (const cashAvailableKrw of [0, 500, 849, 851]) await temporary(async (baseDir) => {
+    const { record } = await seed(baseDir, cashOptions(cashAvailableKrw));
+    const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+    await resolveStoredCandidateDailyCostBasis(input);
+    await assert.rejects(resolveStoredCandidateCashCapacity(input), /cash available differs/);
+  });
+});
+
+test("stored candidate cash capacity subtracts every pending BUY and never anticipates pending SELL proceeds", async () => {
+  for (const remainingNotionalKrw of [100, 900]) await temporary(async (baseDir) => {
+    const common = { planId: "synthetic-plan", planHash: hashCanonicalPayload("plan"), planEventId: "synthetic-event",
+      planEventHash: hashCanonicalPayload("event"), actionExecutionTargetHash: hashCanonicalPayload("target"),
+      market: "KR" as const, symbol: "HELD", asOf: AT };
+    const pendingActions: PendingPortfolioActionInput[] = [
+      { ...common, actionId: "buy", side: "BUY", remainingNotionalKrw,
+        openingCapacityReservationId: "synthetic-reservation", openingCapacityReservationHash: hashCanonicalPayload("reservation") },
+      { ...common, actionId: "sell", side: "SELL", remainingNotionalKrw: 400, remainingQuantity: 1, priceEvidenceRef: "synthetic-price" }];
+    const { record } = await seed(baseDir, { ...cashOptions(Math.max(0, 790 - remainingNotionalKrw)), pendingActions, krHeldNotionalKrw: 400 });
+    const result = await resolveStoredCandidateCashCapacity({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+    assert.equal(result.assessment.pendingBuyExposureKrw, remainingNotionalKrw);
+    assert.equal(result.assessment.requiredCashReserveKrw, 210);
+    assert.equal(result.assessment.maximumNetCashDebitKrw, Math.max(0, 790 - remainingNotionalKrw));
+    assert.equal(result.assessment.cashConditionSatisfied, remainingNotionalKrw === 100);
+    assert.equal(result.assessment.pendingCostAndReservationAuthority, "not_verified");
+  });
+});
+
+test("stored candidate cash capacity matches reserve rounding and saturates zero and safe-integer boundaries", async () => {
+  for (const cashKrw of [0, 99, 100, 1003, 1004, Number.MAX_SAFE_INTEGER]) await temporary(async (baseDir) => {
+    const reserve = Math.max(100, Math.round(cashKrw * 0.15)), available = Math.max(0, cashKrw - reserve);
+    const { record } = await seed(baseDir, { ...cashOptions(available), cashKrw });
+    const result = await resolveStoredCandidateCashCapacity({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+    assert.equal(result.assessment.maximumNetCashDebitKrw, available);
+    assert.equal(result.assessment.requiredCashReserveKrw, reserve);
+    assert.equal(Object.is(result.assessment.maximumNetCashDebitKrw, -0), false);
+    assert.equal(result.assessment.cashConditionSatisfied, available >= 204);
+  });
+});
+
+test("stored candidate cash capacity preserves original snapshot after a later valid append", async () => temporary(async (baseDir) => {
+  const { record, snapshot } = await seed(baseDir, cashOptions(850));
+  const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+  const original = await resolveStoredCandidateCashCapacity(input);
+  await new PortfolioSizingSnapshotFileRepository(baseDir).append(createPortfolioSizingSnapshot({ ...snapshot, portfolioVersion: "later" }));
+  assert.deepEqual(await resolveStoredCandidateCashCapacity(input), original);
+}));
+
+test("stored candidate cash capacity refuses SELL reinterpretation and caller override", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, cashOptions(850, { side: "SELL" }));
+  const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+  await resolveStoredCandidateDailyCostBasis(input);
+  await assert.rejects(resolveStoredCandidateCashCapacity(input), /requires a BUY reference/);
+  await assert.rejects(resolveStoredCandidateCashCapacity({ ...input, cashAvailableKrw: 850 } as never));
+}));
+
+test("stored candidate cash capacity refuses corrupt snapshot suffix without modifying evidence", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, cashOptions(850));
+  const path = createPortfolioSizingSnapshotPaths(baseDir).recordsPath;
+  await appendFile(path, '{"corrupt":true}\n');
+  const before = await readFile(path, "utf8");
+  await assert.rejects(resolveStoredCandidateCashCapacity({ baseDir, sizingInputRecordId: record.sizingInputRecordId }));
+  assert.equal(await readFile(path, "utf8"), before);
+}));
+
+function cashOptions(cashAvailableKrw: number, costPatch: Partial<Payload["executionCostInput"]> = {}): Options {
+  return { execution: executionOptions(), liquidityEstimationModelVersion: CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION,
+    costBasisModelVersion: CANDIDATE_DAILY_COST_BASIS_MODEL_VERSION,
+    patch: (input) => ({ ...dailyCostBasisCandidate(input, costPatch), exposureCapInputs: { ...input.exposureCapInputs, cashAvailableKrw } }) };
+}
+
 function dailyCostBasisCandidate(input: Payload, patch: Partial<Payload["executionCostInput"]> = {}): Payload {
   return costCandidate(liquidityCandidate(input), { referenceNotionalKrw: 200, participationRate: 0.1,
     evidenceRefs: [...input.featureInputs[0]!.evidenceRefs], ...patch });
@@ -673,11 +779,19 @@ async function seed(baseDir: string, options: Options = {}) {
   const evidence = await new MarketTechnicalEvidenceFileRepository(baseDir).capture({ sourceContractId: "synthetic-local.v1",
     query: { market, symbol: "SYNTH", interval: options.interval ?? "1d", windowStart: CREATED, asOf: AT, minimumObservationCount: 2, maximumAgeSeconds: 86400 } });
   const score = calculateCandidateSelectionScore({ model: model(), features: evidence.binding.evidence.calculation.featureInputs });
+  const cashKrw = options.cashKrw ?? 1000, pendingActionInputs = options.pendingActions ?? [];
+  const held = options.krHeldNotionalKrw ?? 0;
   const snapshot = createPortfolioSizingSnapshot({ portfolioId, portfolioVersion: "v1", policyHash: options.policyHash ?? policyHash, asOf: AT,
-    virtualPortfolio: { portfolioId, cashKrw: 1000, positions: [], updatedAt: AT }, valuationInputs: [], pendingActionInputs: [],
-    ...createPortfolioExposureSnapshot({ virtualNetWorthKrw: 1000, cashKrw: 1000,
-      bucketExposureKrw: { hedge: 0, intraday: 0, long_term: 0, short_term: 0, swing: 0 }, symbolExposureKrw: [],
-      marketExposureKrw: { KR: 0, US: 0 }, sectorExposureKrw: {}, countryExposureKrw: {}, currencyExposureKrw: {}, pendingBuyExposureKrw: 0, pendingSellExposureKrw: 0 }) });
+    virtualPortfolio: { portfolioId, cashKrw, positions: held === 0 ? [] : [{ market: "KR", symbol: "HELD", quantity: 1,
+      averagePriceKrw: held, strategyBucket: "swing", sector: "Synthetic", region: "KR", updatedAt: AT }], updatedAt: AT },
+    valuationInputs: held === 0 ? [] : [{ kind: "mark_price", market: "KR", symbol: "HELD", priceKrw: held,
+      evidenceRef: "synthetic-price", evidenceAsOf: AT }], pendingActionInputs,
+    ...createPortfolioExposureSnapshot({ virtualNetWorthKrw: cashKrw + held, cashKrw,
+      bucketExposureKrw: { hedge: 0, intraday: 0, long_term: 0, short_term: 0, swing: held },
+      symbolExposureKrw: held === 0 ? [] : [{ market: "KR", symbol: "HELD", exposureKrw: held }],
+      marketExposureKrw: { KR: held, US: 0 }, sectorExposureKrw: held === 0 ? {} : { Synthetic: held },
+      countryExposureKrw: held === 0 ? {} : { KR: held }, currencyExposureKrw: held === 0 ? {} : { KRW: held },
+      ...pendingActionExposureTotals(pendingActionInputs) }) });
   const request = createBucketSelectionRequest({ cycleId: "synthetic-cycle", triggerIdentity: "scheduled:boundary", triggerRef: "slot",
     portfolioId, portfolioSnapshotId: snapshot.portfolioSnapshotId, portfolioSnapshotHash: snapshot.portfolioSnapshotHash,
     policyHash: snapshot.policyHash, asOf: AT, bucket: "swing", gapBasis: "entry_floor", gapKrw: 1000, availableSlots: 2,
@@ -698,7 +812,7 @@ async function seed(baseDir: string, options: Options = {}) {
     createdAt: new Date().toISOString() };
   const record = createCandidateSizingInputRecord(options.patch ? options.patch(candidate) : candidate);
   await new CandidateSizingInputFileRepository(baseDir).append(record);
-  return { record, evidence, score, policy, selection, dependencies, activation };
+  return { record, evidence, score, policy, selection, dependencies, activation, snapshot };
 }
 function frozen(value: unknown) { if (value !== null && typeof value === "object") { assert.ok(Object.isFrozen(value)); Object.values(value).forEach(frozen); } }
 async function temporary(run: (baseDir: string) => Promise<void>) {

@@ -4239,6 +4239,28 @@ finalSizing은 not_performed로 남는다. 원본/정책/모델/참여율을 cal
 이전 strict reader로 rollback하려고 append-only 필드를 제거하지 않는다. 새 모델 사용을 중단하고
 호환 reader를 유지해야 한다. 실제 운영 정책 활성화나 데이터 변환은 실행하지 않는다.
 
+후보의 현금 입력은 `resolveStoredCandidateCashCapacity`에서 실제 as-of 정책과 원래 저장
+스냅샷에 결속한다. 앞선 일봉 비용 기준 재생 후, candidate 저장 시 관측한 snapshot prefix를
+새 durable lease에서 다시 검증하고 exact snapshot ID/hash·portfolio·policy·as-of를 대조한다.
+스냅샷의 mark/FX/exposure도 독립 재생하며 새 append 이후에도 원래 입력을 사용한다.
+
+`cashAvailableKrw`는 이 경로에서 reserve와 pending BUY gross를 차감한 뒤, 이번 후보 비용을
+차감하기 전의 현금 상한이다. Reserve는 기존 gap/Risk와 동일하게
+`max(minimumCashReserveKrw, round(virtualNetWorthKrw * targetCashRatio))`다. 차감마다 0에서
+포화시키고 pending SELL 대금을 가산하거나 caller ID로 pending BUY를 면제하지 않는다.
+선언된 cashAvailableKrw가 계산값과 다르면 거절한다. 실제 모델로 재생한 이번 후보 비용과
+참조금액이 이 현금 상한 안에 들어오는지는 overflow 없는 차감 비교로 평가한다. 부족하면
+`cashConditionSatisfied: false`이며 0 참조금액을 포함한 진단 결과가 거래 가능성을 뜻하지 않는다.
+SELL을 BUY cash capacity로 재해석하는 호출은 거절한다.
+
+범위는 `stored_snapshot_cash_upper_bound_only`다. Pending BUY의 추가 비용과 reservation/plan
+원본은 아직 재생하지 않으므로 `pendingCostAndReservationAuthority: not_verified`를 유지한다.
+따라서 이 값은 최종 사용 가능 현금이나 reservation 승인이 아니다. Evidence/hard gate 실패는
+그대로 전달하며 분류·다른 노출 cap·request capacity·최종 sizing과 현재 실행 권한은 후속이다.
+새 writer/API/정책 필드/저장 형식과 거래 기본값 변경이 없고 데이터 변환 없이 코드 rollback이
+가능하다. 과거 candidate가 임의 현금값을 가졌다면 새 검증이 거절할 수 있으며 append-only 원본을
+소급 수정하지 않는다. 실제 장치 장애·운영 배포·전체 운용 E2E는 이 분할의 검증 범위가 아니다.
+
 완료 조건:
 
 - 같은 입력은 같은 ordering과 reason code를 만든다.
