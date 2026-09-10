@@ -83,6 +83,7 @@ const bucketSelectionPolicyPayloadSchema = z
     hardGateRules: z.array(candidateHardGateRuleSchema).min(1).max(64).optional(),
     scoringModelVersion: versionSchema,
     scoringModelRef: candidateScoringModelRefSchema.optional(),
+    costEstimationModelVersion: versionSchema.optional(),
     featureDefinitionRefs: z.array(identifierSchema).min(1).max(128)
   })
   .strict();
