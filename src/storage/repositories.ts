@@ -1,4 +1,6 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { HistoricalMarketSnapshotFileSource, type HistoricalMarketSnapshotSourceOptions,
+  type VerifiedHistoricalMarketSnapshotHistory } from "./historicalMarketSnapshotSource.js";
 
 import {
   auditEventSchema,
@@ -255,17 +257,28 @@ export class FileMarketPacketStore {
 
 export class FileHistoricalMarketSnapshotStore {
   private readonly store: JsonlStore<HistoricalMarketSnapshot>;
+  private readonly source: HistoricalMarketSnapshotFileSource;
 
-  constructor(filePath: string) {
+  constructor(filePath: string, options: HistoricalMarketSnapshotSourceOptions = {}) {
+    const sourcePath = resolve(filePath);
+    this.source = new HistoricalMarketSnapshotFileSource(sourcePath, options);
     this.store = new JsonlStore(
-      filePath,
+      sourcePath,
       historicalMarketSnapshotSchema,
       "historicalMarketSnapshot"
     );
   }
 
   append(snapshot: HistoricalMarketSnapshot): Promise<void> {
-    return this.store.append(snapshot);
+    return this.source.append(snapshot);
+  }
+
+  replaceAll(snapshots: readonly HistoricalMarketSnapshot[]): Promise<void> {
+    return this.source.replaceAll(snapshots);
+  }
+
+  withDurableVerifiedHistory<T>(operation: (history: VerifiedHistoricalMarketSnapshotHistory) => Promise<T>): Promise<T> {
+    return this.source.withDurableVerifiedHistory(operation);
   }
 
   readAll(): Promise<JsonlReadResult<HistoricalMarketSnapshot>> {
