@@ -258,6 +258,7 @@ interface BucketSelectionPolicyRecord {
   hardGateRules?: CandidateHardGateRule[];
   costEstimationModelVersion?: string;
   liquidityEstimationModelVersion?: string;
+  costBasisModelVersion?: string;
   scoringModelVersion: string;
   scoringModelRef?: {
     scoringModelRecordId: string;
@@ -4208,6 +4209,35 @@ cap·sizing range, top-N/assignment, 현재 실행 권한이나 fill까지 검�
 함수는 변경하지 않는다. 새 정책 필드는 호환 reader를 먼저 배포한 뒤 새로운 정책 record로 도입한다.
 이전 strict reader가 새 필드를 거절하므로 rollback 시 호환 reader를 유지하고 새 모델 사용을
 중단해야 하며 append-only 기록을 소급 수정·삭제하지 않는다. 실제 운영 정책 활성화는 실행하지 않는다.
+
+비용 참여율의 원본 재생은 선택 정책이 `costBasisModelVersion`으로
+`candidate_daily_liquidity_cost_basis.v1`을 명시한 경우에 수행한다. 비용 모델과 유동성 모델을 각각
+선택했다는 이유만으로 둘 사이의 참여율 정의를 추론하지 않는다. `calculateCandidateDailyCostBasis`는
+complete daily liquidity 결과를 독립 재생하고 선언된 `referenceNotionalKrw`가 계산된 유동성 한도
+이하인지 검사한다. 참조금액의 선정 자체, 현금·분류별 노출 한도 또는 최종 sizing을 승인하지 않는다.
+
+참여율은 참조금액/정수 일봉 명목금액 평균으로 계산한다. 양수 참조금액은 양수 유동성을 요구하며
+0 참조금액의 참여율은 0이다. 기본 JS 나눗셈 결과의 canonical decimal 값이 정확한 유리수보다 작으면
+다음 큰 representable number로 한 단계 올린 뒤 BigInt 교차 곱으로 재검증한다. 예를 들어 1/3은
+0.33333333333333337이다. 임의 epsilon을 더하지 않으며 참여율 과소 계산으로 비용이 줄지 않게 한다.
+이 반올림은 일봉 proxy 비용 입력 전용이고 실제 체결 참여율이나 기존 simulator의 모델을 변경하지 않는다.
+
+`resolveStoredCandidateDailyCostBasis`는 실제 유동성 재생 결과의 동일 선택 정책과 immutable 자료를
+사용한다. 모델 선택과 참조금액 한도를 확인하고 candidate 비용 입력의 participationRate 및 전체
+evidenceRefs가 재계산한 값과 exact 일봉 evidenceRef 하나에 일치해야 한다. 비용 산술·정책 파라미터가
+맞더라도 다른 참여율 또는 ref는 거절한다. 전체 입력/결과 hash, 이전 liquidity assessment hash를
+보존하고 기존 evidence/hard gate 실패를 유지한다.
+
+결과 scope는 `stored_daily_liquidity_cost_basis_only`, costEvidenceBinding은 stored_daily_bar_proxy,
+referenceNotionalAuthority는 declared_within_liquidity_cap이다. SourceTrust는 not_evaluated,
+finalSizing은 not_performed로 남는다. 원본/정책/모델/참여율을 caller가 주입하지 못하며 기존 실제 파일
+검증의 corruption·generation·lineage 방어를 재사용한다. 새 source 조회·lock·artifact·writer·API 또는
+거래 기본값 변경은 없다. Runtime 기본 모델이나 투자금액을 합성하지 않는다.
+
+`costBasisModelVersion`은 optional이라 legacy bytes/hash를 유지하지만 새 함수는 누락을 거절한다.
+기존 비용·유동성 진단은 그대로 유지한다. 새 정책은 호환 reader 배포 후 새 record로 도입해야 하며,
+이전 strict reader로 rollback하려고 append-only 필드를 제거하지 않는다. 새 모델 사용을 중단하고
+호환 reader를 유지해야 한다. 실제 운영 정책 활성화나 데이터 변환은 실행하지 않는다.
 
 완료 조건:
 
