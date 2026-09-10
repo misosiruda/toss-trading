@@ -562,6 +562,7 @@ function dependencyGenerationRelation(
   right: ImmutablePolicyDependencyRecords
 ): GenerationRelation {
   const relations: GenerationRelation[] = [
+    appendOnlyGenerationRelation(left.scoringModels ?? [], right.scoringModels ?? []),
     appendOnlyGenerationRelation(
       left.selectionPolicies,
       right.selectionPolicies

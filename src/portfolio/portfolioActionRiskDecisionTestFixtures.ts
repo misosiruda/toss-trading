@@ -287,7 +287,8 @@ export async function withDecision(
 export async function storePolicyFixture(directory: string, fixture: ReturnType<typeof policyFixture>) {
   const paths = createImmutablePolicyDependencyPaths(directory);
   for (const key of Object.keys(paths) as Array<keyof typeof paths>) {
-    await writeFile(paths[key], `${fixture.records[key].map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
+    const records = fixture.records[key];
+    if (records !== undefined) await writeFile(paths[key], `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
   }
   await new RuntimePortfolioPolicyFileRepository(directory, fixture.dependencies).append(fixture.policy);
   await new RuntimePortfolioPolicyActivationFileRepository(directory, [fixture.policy], fixture.dependencies)

@@ -100,7 +100,7 @@ test("dependency loader backfills legacy lineage in memory without rewriting fil
       ...legacyBoundary,
       sessionCalendarLineageHash: undefined
     });
-    const filePaths = Object.values(paths);
+    const filePaths = Object.values(paths).filter((path) => path !== paths.scoringModels);
     const before = await Promise.all(
       filePaths.map((path) => readFile(path, "utf8"))
     );
