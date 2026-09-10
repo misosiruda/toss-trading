@@ -2197,8 +2197,12 @@ Recursive mkdir 이후에는 관측뿐 아니라 append/replace 작성 경로도
 
 새 관측 경로는 실제 전체 파일의 UTF-8 bytes와 strict snapshot schema, 정규 문자열·수치,
 qualified timestamp/생성 순서, duplicate snapshot ID 및 torn final line을 검증한다. Corrupt suffix를
-건너뛰거나 query/limit으로 숨기지 않는다. 원본 descriptor와 directory를 sync한 뒤 같은 descriptor의
-bytes 및 재개방한 path의 file identity/size/mtime/ctime를 대조한다. 파일이 없으면 directory sync 후
+건너뛰거나 query/limit으로 숨기지 않는다.
+검증 경로는 빈 줄·공백 줄도 record 오류로 거절하고 마지막 개행의 split sentinel만 제외한다.
+0바이트 dataset과 정상 CRLF record는 허용한다. 기존 조회는 빈 줄을 계속 무시하므로 과거 Yahoo의
+개행 한 줄짜리 빈 dataset도 조회 가능하지만 새 strict 관측에서는 거절하며 자동 정규화하지 않는다.
+원본 descriptor와 directory를 sync한 뒤 같은 descriptor의 bytes 및 재개방한 path의
+file identity/size/mtime/ctime를 대조한다. 파일이 없으면 directory sync 후
 부재를 재확인하며 dataset을 만들지 않는다. 관측된 모든 record createdAt은 observedAt 이하여야 한다.
 Volume 완전성·가격/volume safe integer·동일 instant 중복 등 feature별 조건은 계산기가 별도로 검증한다.
 

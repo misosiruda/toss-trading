@@ -166,7 +166,11 @@ async function readDurableSource(path: string): Promise<{ records: readonly Hist
 function parseStrictHistory(raw: string): readonly HistoricalMarketSnapshot[] {
   if (raw.length && !raw.endsWith("\n")) throw new Error("historical snapshot source has a torn final line");
   const ids = new Set<string>();
-  const records = raw.split(/\r?\n/).filter((line) => line.trim().length).map((line) => {
+  // Only the final split sentinel is framing. Every stored line must be JSON;
+  // inspection reads may skip blanks, but an authenticated history must not.
+  const lines = raw.length ? raw.split(/\r?\n/).slice(0, -1) : [];
+  const records = lines.map((line) => {
+    if (!line.trim().length) throw new Error("historical snapshot source contains a blank line");
     const value: unknown = JSON.parse(line);
     const record = historicalMarketSnapshotSchema.parse(value);
     if (!isDeepStrictEqual(value, record)) throw new Error("historical snapshot source record must already be canonical");

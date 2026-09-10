@@ -127,6 +127,25 @@ test("historical strict source rejects corrupt suffix torn line duplicate identi
   assert.deepEqual(selected.records, [snapshot("first")]);
 }));
 
+test("historical strict history rejects blank records while preserving empty datasets CRLF and inspection compatibility", async () => withDirectory(async (path) => {
+  const store = new FileHistoricalMarketSnapshotStore(path);
+  const first = JSON.stringify(snapshot("first"));
+  const second = JSON.stringify(snapshot("second"));
+  for (const raw of ["\n", "\r\n", " \t\n", `\n${first}\n`, `${first}\n\n`,
+    `${first}\n \t\n${second}\n`, `${first}\r\n\r\n${second}\r\n`]) {
+    await fs.writeFile(path, raw);
+    let invoked = false;
+    await assert.rejects(store.withDurableVerifiedHistory(async () => { invoked = true; }), /blank line/);
+    assert.equal(invoked, false);
+    assert.equal((await store.readAll()).corruptLineCount, 0);
+    await assert.rejects(fs.readFile(lockPath(path)), { code: "ENOENT" });
+  }
+  await fs.writeFile(path, "");
+  await store.withDurableVerifiedHistory(async (history) => assert.deepEqual(history.records, []));
+  await fs.writeFile(path, `${first}\r\n${second}\r\n`);
+  await store.withDurableVerifiedHistory(async (history) => assert.deepEqual(history.records, [snapshot("first"), snapshot("second")]));
+}));
+
 test("historical strict source rejects invalid UTF-8 rather than authenticating replacement characters", async () => withDirectory(async (path) => {
   const raw = JSON.stringify({ ...snapshot("first"), name: "BAD" }) + "\n";
   const bytes = Buffer.from(raw); bytes[raw.indexOf("BAD")] = 0xff;
