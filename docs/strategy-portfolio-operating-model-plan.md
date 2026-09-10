@@ -255,6 +255,7 @@ interface BucketSelectionPolicyRecord {
     dedupeKey: "packet_hash";
   };
   hardGateRuleIds: string[];
+  hardGateRules?: CandidateHardGateRule[];
   scoringModelVersion: string;
   scoringModelRef?: {
     scoringModelRecordId: string;
@@ -4058,6 +4059,44 @@ Assessment hash는 request/input/policy/selection/evidence identity, cutoff/age,
 기존 score replay 후 request를 다시 관측하는 역사적 진단이며 cross-artifact atomic transaction이나
 반환 후 live lease가 아니다. 기존 source lock/fsync 외에 운영 데이터·API·거래 기본값 변경은 없고
 코드 rollback에 schema/data migration이나 artifact 삭제가 필요 없다.
+
+Hard gate의 실행 파라미터는 optional `BucketSelectionPolicyRecord.hardGateRules`에 inline으로
+보존한다. 별도 version label lookup이나 caller-selected threshold 대신 기존 selection policy의
+version/hash/lineage가 전체 rule payload를 결속한다. 지원하는 strict variant는 다음과 같다.
+
+```ts
+type CandidateHardGateRule =
+  | { ruleId: string; algorithm: "numeric_feature_range.v1";
+      featureDefinitionRef: string; minimum?: number; maximum?: number }
+  | { ruleId: string; algorithm: "market_interval.v1";
+      allowedIntervals: Array<"1m" | "5m" | "15m" | "1h" | "1d"> };
+```
+
+Numeric rule은 적어도 한 경계가 있어야 하고 양쪽 경계가 있으면 minimum ≤ maximum이다.
+Finite·음의 0 제외·절댓값 Number.MAX_SAFE_INTEGER 이하를 적용하며 equality는 통과한다.
+Interval은 하나 이상을 명시하고 duplicate/미지원 값은 거절한다. Factory는 ruleId와 interval을
+canonical 정렬하고 parser는 정렬된 기록만 허용한다. Rule definition ID 집합은 hardGateRuleIds와
+정확히 같고 numeric feature는 selection policy의 featureDefinitionRefs에 포함되어야 한다.
+Unknown algorithm/field, missing/extra/duplicate definition과 임의 실행 expression은 거절한다.
+
+`assessStoredCandidateHardGates`는 실제 score/evidence condition 재생 이후 해소된 policy rule을
+그 원본 지표와 interval에 평가한다. 모든 rule에 observedValue, exact rule payload, evidenceRef,
+passed/blocked와 reasonCodes를 남긴다. 정의 없는 legacy rule은 missing_rule_definition으로
+blocked하고, 경계 위반은 below_minimum/above_maximum, interval 위반은 interval_not_allowed다.
+모든 hard gate가 통과해도 required evidence condition이 실패하면 contentChecksPassed는 false다.
+전체 evaluation hash는 원래 evidence assessment hash, selection policy hash, 모든 rule 결과와
+미검증 source 경계를 결속한다.
+
+이는 `stored_market_hard_gate_content_only` 범위이며 provider trust/과거 디스크 존재, lifecycle,
+분류·exposure·cost·sizing·현재 capacity/CAS·최종 eligibility/주문 승인은 포함하지 않는다.
+기존 historical schema에 없는 lifecycle 상태를 임의로 active로 간주하지 않는다. 모든 내용 조건이
+통과해도 sourceTrust=not_evaluated, historicalDiskAvailability=not_proven을 유지한다.
+
+Ref 없는 legacy 정책과 마찬가지로 hardGateRules 없는 정책의 기존 bytes/hash는 유지한다. 새 필드를
+누락했다고 이름만으로 기본 규칙을 합성하지 않는다. 배포는 새 reader 먼저, 명시적인 규칙을 담은
+새 policy record/활성화 순서다. Old strict reader는 새 필드를 읽지 못하므로 rollback 시 새 정책을
+비활성화하고 호환 reader를 유지해야 한다. 기존 record에서 field를 소급 제거하거나 artifact를
+삭제하지 않는다. 이 PR에서 운영 policy 활성화, 저장 형식 변환, API/runner/거래 기본값 변경은 없다.
 
 완료 조건:
 
