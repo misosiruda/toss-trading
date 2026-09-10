@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 
 import { collectYahooHistoricalDailySnapshots } from "../collectors/yahooHistoricalDailyCollector.js";
 import { parseHistoricalUniverseManifest } from "../replay/historicalUniverseCoverage.js";
-import { createStoragePaths } from "../storage/repositories.js";
+import { createStoragePaths, FileHistoricalMarketSnapshotStore } from "../storage/repositories.js";
 
 const args = process.argv.slice(2);
 const dataDir =
@@ -46,12 +46,7 @@ const report = {
   reportPath
 };
 
-await mkdir(dirname(outputPath), { recursive: true });
-await writeFile(
-  outputPath,
-  result.snapshots.map((snapshot) => JSON.stringify(snapshot)).join("\n") + "\n",
-  "utf8"
-);
+await new FileHistoricalMarketSnapshotStore(outputPath).replaceAll(result.snapshots);
 await mkdir(dirname(reportPath), { recursive: true });
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 

@@ -10,7 +10,7 @@ import {
 import { collectTossInvestDailyChartSnapshots } from "../collectors/tossInvestDailyChartCollector.js";
 import type { Market } from "../domain/schemas.js";
 import { parseHistoricalUniverseManifest } from "../replay/historicalUniverseCoverage.js";
-import { createStoragePaths } from "../storage/repositories.js";
+import { createStoragePaths, FileHistoricalMarketSnapshotStore } from "../storage/repositories.js";
 import { createTossInvestHistoricalChartSymbols } from "./tossInvestHistoricalChartIngestSymbols.js";
 
 const args = process.argv.slice(2);
@@ -98,13 +98,7 @@ const report = {
       : null
 };
 
-await mkdir(dirname(outputPath), { recursive: true });
-await writeFile(
-  outputPath,
-  result.snapshots.map((snapshot) => JSON.stringify(snapshot)).join("\n") +
-    (result.snapshots.length > 0 ? "\n" : ""),
-  "utf8"
-);
+await new FileHistoricalMarketSnapshotStore(outputPath).replaceAll(result.snapshots);
 await mkdir(dirname(reportPath), { recursive: true });
 await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 

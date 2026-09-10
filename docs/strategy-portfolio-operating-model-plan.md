@@ -2184,6 +2184,45 @@ SourceContractId는 선언이며 실제 provider/file provenance 검증이 아�
 연결을 추가하지 않는다. Parser 또는 feature binding 성공을 candidate eligibility로 사용하면 안 된다.
 기존 API·artifact 형식 변경은 없고 신규 content contract는 미연결 상태라 코드 rollback에 데이터 변환이 없다.
 
+Historical 원본 관측 분할은 `FileHistoricalMarketSnapshotStore.withDurableVerifiedHistory`다.
+저장소 append와 Yahoo/Toss historical ingest의 dataset 교체는 같은 per-file exclusive lock을 사용하고
+검증 consumer 완료까지 잠금을 유지한다. 기존 `readAll`/`readUpTo`의 non-locking 조회와
+corruptLineCount 계약은 유지한다. CLI의 dataset 교체 의미도 유지하되 완전히 쓴 임시 파일을 fsync한
+뒤 rename으로 게시한다. 게시 전 write/fsync/rename 실패는 이전 source를 유지하고 실패한 임시 파일은
+명시적 점검용으로 남긴다. Rename 이후 directory sync 실패는 새 dataset이 남을 수 있는 불확실한
+결과이며 성공으로 바꾸지 않는다. Source append 성공만으로 durable observation이 발급되지는 않는다.
+Recursive mkdir 이후에는 관측뿐 아니라 append/replace 작성 경로도 root부터 데이터 디렉터리까지
+상위 directory chain을 먼저 sync한다. 지원되는 sync에서 실패하면 lock 획득이나 source 게시 전에
+중단하므로 새 중첩 경로의 directory entry를 동기화하지 않고 dataset 성공을 반환하지 않는다.
+
+새 관측 경로는 실제 전체 파일의 UTF-8 bytes와 strict snapshot schema, 정규 문자열·수치,
+qualified timestamp/생성 순서, duplicate snapshot ID 및 torn final line을 검증한다. Corrupt suffix를
+건너뛰거나 query/limit으로 숨기지 않는다.
+검증 경로는 빈 줄·공백 줄도 record 오류로 거절하고 마지막 개행의 split sentinel만 제외한다.
+0바이트 dataset과 정상 CRLF record는 허용한다. 기존 조회는 빈 줄을 계속 무시하므로 과거 Yahoo의
+개행 한 줄짜리 빈 dataset도 조회 가능하지만 새 strict 관측에서는 거절하며 자동 정규화하지 않는다.
+원본 descriptor와 directory를 sync한 뒤 같은 descriptor의 bytes 및 재개방한 path의
+file identity/size/mtime/ctime를 대조한다. 파일이 없으면 directory sync 후
+부재를 재확인하며 dataset을 만들지 않는다. 관측된 모든 record createdAt은 observedAt 이하여야 한다.
+Volume 완전성·가격/volume safe integer·동일 instant 중복 등 feature별 조건은 계산기가 별도로 검증한다.
+
+Callback 동안만 유효한 private WeakMap lease와 `recordCount`, complete recordsHash(생성 시각 포함),
+observedAt을 반환한다. 저장된 관측값은 이후 append/restart에도 실제 prefix count/hash/시각을 재검증하며,
+prefix 교체·삭제·createdAt 변경과 미래 관측값을 거절한다. Clone이나 callback 종료 후 참조는 lease가
+아니다. Consumer 또는 lock release가 실패해도 lease는 만료한다. Lock은 monotonic timeout 안에서
+exclusive open의 EEXIST 및 Windows EPERM만 재시도하고 초기화 실패·abandoned/replaced token은
+자동 삭제하지 않는다. 재진입은 같은 lock과 경합하므로 consumer는 전달받은 history를 재사용해야 한다.
+
+이는 지정된 local source의 관측이며 provider 신뢰도, 과거 시점의 availability, calendar completeness,
+FX/adjustment provenance나 candidate eligibility를 증명하지 않는다. 잠금은 이 저장소와 연결한 ingest
+writer의 협력 규약이며 외부에서 직접 파일을 수정하는 것을 OS 권한으로 금지하지 않는다. 관측 전/중
+교체는 byte/identity 검증으로 거절하고 저장된 prefix는 후속 사용 시 다시 확인해야 한다. Windows의
+directory sync EPERM 제한은 기존 저장소와 같으며 실제 전원 장애 복구 보장은 검증하지 않았다.
+새 source 관측은 fsync와 lock을 쓰므로 조회 전용 MCP에 연결하지 않는다. Evidence 레코드의 실제
+source-window 결속·저장과 bucket policy/score/sizing 연결은 후속이다. 기존 JSONL 형식과 safe defaults는
+유지하며 rollback 시 구버전 writer를 새 관측 consumer와 섞지 않아야 한다. 실패 lock/임시 파일은
+writer 부재와 원본 일관성을 확인한 후 명시적으로 복구해야 하며 자동 stale lock 회수는 제공하지 않는다.
+
 - `selectionScore`는 같은 bucket 안에서 candidate 우선순위를 정한다.
 - score는 target weight를 직접 결정하지 않는다.
 - backend는 bucket gap, available slots, symbol cap, liquidity cap, concentration cap,
