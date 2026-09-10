@@ -23,12 +23,15 @@ import { createPortfolioPolicyActivatedEvent } from "./runtimePortfolioPolicyAct
 import { createRuntimePortfolioPolicyActivationPaths, RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
 import { createRuntimePortfolioPolicyPaths } from "./runtimePortfolioPolicyFiles.js";
 import { resolveStoredCandidateSelectionScore } from "./storedCandidateSelectionScore.js";
+import { assessStoredCandidateEvidenceRequirements } from "./storedCandidateEvidenceRequirements.js";
 
 const AT = "2026-09-04T00:00:00.000Z";
 const CREATED = "2026-09-01T00:00:00.000Z";
 type Payload = Parameters<typeof createCandidateSizingInputRecord>[0];
 type Options = { patch?: (input: Payload) => Payload; market?: "KR" | "US"; portfolioId?: string;
-  policyHash?: string; legacy?: boolean; extraModelFeature?: boolean; upperBound?: number };
+  policyHash?: string; legacy?: boolean; extraModelFeature?: boolean; upperBound?: number;
+  requiredEvidence?: Parameters<typeof createBucketSelectionPolicyRecord>[0]["requiredEvidence"];
+  evidenceCutoffAt?: string; sourceCreatedAt?: string };
 
 test("stored candidate score replays actual policy model and committed features without granting eligibility", async () => temporary(async (baseDir) => {
   const fixture = await seed(baseDir);
@@ -135,6 +138,121 @@ test("stored candidate score rejects corruption in every actual source instead o
   await resolveStoredCandidateSelectionScore({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
 }));
 
+test("candidate evidence requirements use actual policy request and source timestamps without granting eligibility", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir);
+  const paths = (await readdir(baseDir)).filter((name) => name.endsWith(".jsonl")).map((name) => join(baseDir, name));
+  const before = await Promise.all(paths.map((path) => readFile(path)));
+  const result = await assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+  assert.equal(result.assessment.conditionsSatisfied, true);
+  assert.equal(result.assessment.ageSeconds, 86400);
+  assert.equal(result.assessment.latestObservationAt, "2026-09-03T00:00:00.000Z");
+  assert.deepEqual(result.assessment.requirements[0]!.reasonCodes, []);
+  assert.deepEqual(result.assessment.unevaluatedHardGateRuleIds, ["not-yet-evaluated"]);
+  assert.equal(result.assessment.sourceTrust, "not_evaluated");
+  assert.equal(result.assessment.historicalDiskAvailability, "not_proven");
+  assert.equal("eligibility" in result.assessment, false);
+  assert.equal(result.assessmentHash, hashCanonicalPayload(result.assessment));
+  frozen(result);
+  assert.deepEqual(await assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId }), result);
+  assert.deepEqual(await Promise.all(paths.map((path) => readFile(path))), before);
+}));
+
+test("candidate evidence freshness uses last raw observation rather than recent calculation or capture time", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, { requiredEvidence: [{ evidenceClass: "market_technical", sourceContractId: "synthetic-local.v1", maximumAgeSeconds: 86399 }] });
+  const result = await assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+  assert.equal(result.assessment.conditionsSatisfied, false);
+  assert.deepEqual(result.assessment.requirements[0]!.reasonCodes, ["stale_observation"]);
+  assert.ok(Date.parse(result.scoreReplay.evidenceOrigin.binding.evidence.createdAt) > Date.parse(AT));
+}));
+
+test("candidate evidence minimum count comes from policy rather than the calculator query", async () => {
+  for (const minimumObservationCount of [2, 3]) await temporary(async (baseDir) => {
+    const { record } = await seed(baseDir, { requiredEvidence: [{ evidenceClass: "market_technical", sourceContractId: "synthetic-local.v1", maximumAgeSeconds: 86400, minimumObservationCount }] });
+    const result = await assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+    assert.equal(result.assessment.conditionsSatisfied, minimumObservationCount === 2);
+    assert.deepEqual(result.assessment.requirements[0]!.reasonCodes, minimumObservationCount === 2 ? [] : ["insufficient_observations"]);
+  });
+});
+
+test("candidate evidence cannot substitute market features for fundamental portfolio or execution evidence", async () => temporary(async (baseDir) => {
+  const requiredEvidence = ["market_technical", "fundamental_quality", "portfolio_fit", "execution_fit"].map((evidenceClass) => ({
+    evidenceClass: evidenceClass as "market_technical" | "fundamental_quality" | "portfolio_fit" | "execution_fit",
+    sourceContractId: "synthetic-local.v1", maximumAgeSeconds: 86400 }));
+  const { record } = await seed(baseDir, { requiredEvidence });
+  const { assessment } = await assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+  assert.equal(assessment.conditionsSatisfied, false);
+  for (const result of assessment.requirements) {
+    const present = result.requirement.evidenceClass === "market_technical";
+    assert.deepEqual(result.reasonCodes, present ? [] : ["required_evidence_missing"]);
+    assert.equal(result.evidenceRefs.length, present ? 1 : 0);
+  }
+}));
+
+test("candidate evidence source contracts match exactly and independent failures are all reported", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, { requiredEvidence: [{ evidenceClass: "market_technical", sourceContractId: "different-source.v1", maximumAgeSeconds: 1, minimumObservationCount: 3 }] });
+  const { assessment } = await assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+  assert.deepEqual(assessment.requirements[0]!.reasonCodes, ["insufficient_observations", "source_contract_mismatch", "stale_observation"]);
+  assert.equal(assessment.conditionsSatisfied, false);
+}));
+
+test("candidate evidence rejects observations beyond request cutoff even when fresh at asOf", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, { evidenceCutoffAt: "2026-09-02T00:00:00.000Z" });
+  const { assessment } = await assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+  assert.deepEqual(assessment.requirements[0]!.reasonCodes, ["observation_after_cutoff", "source_materialized_after_cutoff"]);
+  assert.equal(assessment.conditionsSatisfied, false);
+}));
+
+test("candidate evidence checks source materialization cutoff by instant including equality and offsets", async () => {
+  for (const sourceCreatedAt of [AT, "2026-09-04T09:00:00.000+09:00", "2026-09-04T00:00:00.001Z"]) await temporary(async (baseDir) => {
+    const { record } = await seed(baseDir, { sourceCreatedAt });
+    const { assessment } = await assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+    const allowed = Date.parse(sourceCreatedAt) === Date.parse(AT);
+    assert.equal(assessment.conditionsSatisfied, allowed);
+    assert.deepEqual(assessment.requirements[0]!.reasonCodes, allowed ? [] : ["source_materialized_after_cutoff"]);
+  });
+});
+
+test("candidate evidence assessment rechecks the exact original request prefix after score replay", async (context) => {
+  for (const change of ["append", "replace"] as const) await temporary(async (baseDir) => {
+    const { record } = await seed(baseDir);
+    const prototype = BucketSelectionRequestFileRepository.prototype, original = prototype.withDurableVerifiedHistory;
+    const path = createBucketSelectionRequestPaths(baseDir).recordsPath;
+    let reads = 0;
+    const mock = context.mock.method(prototype, "withDurableVerifiedHistory", async function<T>(this: BucketSelectionRequestFileRepository,
+      operation: Parameters<typeof original<T>>[0]) {
+      if (++reads === 2) {
+        const request = JSON.parse((await readFile(path, "utf8")).trim());
+        if (change === "replace") await writeFile(path, `${JSON.stringify({ ...request, createdAt: "2026-09-04T00:00:00.001Z" })}\n`);
+        else {
+          const { requestId: ignoredId, requestHash: ignoredHash, ...payload } = request; void ignoredId; void ignoredHash;
+          await appendFile(path, `${JSON.stringify(createBucketSelectionRequest({ ...payload, cycleId: "another-cycle" }))}\n`);
+        }
+      }
+      return original.call(this, operation);
+    });
+    try {
+      const promise = assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+      if (change === "replace") await assert.rejects(promise, /does not match durable source prefix/);
+      else assert.equal((await promise).assessment.conditionsSatisfied, true);
+      assert.equal(reads, 2);
+    } finally { mock.mock.restore(); }
+  });
+});
+
+test("candidate evidence assessment refuses corrupt original request prefixes and mismatched scores", async () => {
+  await temporary(async (baseDir) => {
+    const { record } = await seed(baseDir);
+    const path = createBucketSelectionRequestPaths(baseDir).recordsPath;
+    await appendFile(path, "corrupt\n");
+    await assert.rejects(assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId }));
+    assert.equal((await readdir(baseDir)).some((name) => name.endsWith(".lock")), false);
+  });
+  await temporary(async (baseDir) => {
+    const { record } = await seed(baseDir, { patch: (input) => ({ ...input, selectionScore: 999 }) });
+    await assert.rejects(assessStoredCandidateEvidenceRequirements({ baseDir, sizingInputRecordId: record.sizingInputRecordId }), /independent calculation/);
+  });
+});
+
 function model(version = "synthetic-score.v1", upperBound = 10000, extra = false) {
   return createCandidateScoringModel({ algorithm: CANDIDATE_SCORING_ALGORITHM, version, createdAt: CREATED,
     terms: [...Object.values(MARKET_TECHNICAL_FEATURE_DEFINITIONS), ...(extra ? ["extra.v1"] : [])].map((featureDefinitionRef) =>
@@ -143,7 +261,7 @@ function model(version = "synthetic-score.v1", upperBound = 10000, extra = false
 async function seed(baseDir: string, options: Options = {}) {
   const original = policyFixture(), scoringModel = model("synthetic-score.v1", options.upperBound, options.extraModelFeature);
   const selection = createBucketSelectionPolicyRecord({ bucket: "swing", version: "scored.v1", createdAt: CREATED,
-    requiredEvidence: [{ evidenceClass: "market_technical", sourceContractId: "synthetic-local.v1", maximumAgeSeconds: 86400 }],
+    requiredEvidence: options.requiredEvidence ?? [{ evidenceClass: "market_technical", sourceContractId: "synthetic-local.v1", maximumAgeSeconds: 86400 }],
     hardGateRuleIds: ["not-yet-evaluated"], scoringModelVersion: scoringModel.version,
     ...(options.legacy ? {} : { scoringModelRef: candidateScoringModelRefFor(scoringModel) }),
     featureDefinitionRefs: scoringModel.terms.map((term) => term.featureDefinitionRef) });
@@ -162,7 +280,7 @@ async function seed(baseDir: string, options: Options = {}) {
   const market = options.market ?? "KR", portfolioId = options.portfolioId ?? policy.portfolioId;
   await new FileHistoricalMarketSnapshotStore(join(baseDir, "historical-market-snapshots.jsonl")).replaceAll([1, 3].map((day) => ({
     snapshotId: `synthetic-${day}`, market, symbol: "SYNTH", interval: "1d" as const, observedAt: `2026-09-0${day}T00:00:00.000Z`,
-    createdAt: AT, lastPriceKrw: 100 * day, volume: 10, sourceRefs: ["synthetic"] })));
+    createdAt: options.sourceCreatedAt ?? AT, lastPriceKrw: 100 * day, volume: 10, sourceRefs: ["synthetic"] })));
   const evidence = await new MarketTechnicalEvidenceFileRepository(baseDir).capture({ sourceContractId: "synthetic-local.v1",
     query: { market, symbol: "SYNTH", interval: "1d", windowStart: CREATED, asOf: AT, minimumObservationCount: 2, maximumAgeSeconds: 86400 } });
   const score = calculateCandidateSelectionScore({ model: model(), features: evidence.binding.evidence.calculation.featureInputs });
@@ -174,7 +292,7 @@ async function seed(baseDir: string, options: Options = {}) {
   const request = createBucketSelectionRequest({ cycleId: "synthetic-cycle", triggerIdentity: "scheduled:boundary", triggerRef: "slot",
     portfolioId, portfolioSnapshotId: snapshot.portfolioSnapshotId, portfolioSnapshotHash: snapshot.portfolioSnapshotHash,
     policyHash: snapshot.policyHash, asOf: AT, bucket: "swing", gapBasis: "entry_floor", gapKrw: 1000, availableSlots: 2,
-    maximumAdditionalExposureKrw: 1000, evidenceCutoffAt: AT, createdAt: AT });
+    maximumAdditionalExposureKrw: 1000, evidenceCutoffAt: options.evidenceCutoffAt ?? AT, createdAt: AT });
   await new BucketSelectionRequestFileRepository(baseDir).append(request);
   await new PortfolioSizingSnapshotFileRepository(baseDir).append(snapshot);
   while (Date.now() <= Date.parse(evidence.completion!.observedAt)) await new Promise((done) => setTimeout(done, 1));
