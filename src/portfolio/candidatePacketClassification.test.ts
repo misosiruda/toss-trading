@@ -36,6 +36,20 @@ test("packet classification rejects missing ambiguous noncanonical and unsafe me
   assert.throws(() => deriveCandidatePacketClassification({ ...input(), extra: true }));
 });
 
+test("packet classification preserves the upstream candidate symbol contract for projection reference and replay", () => {
+  for (const length of [1, 160, 161, 240]) {
+    const symbol = "S".repeat(length);
+    const result = deriveCandidatePacketClassification({ ...input(), symbol, packet: classificationPacket("KR", { symbol }) });
+    assert.equal(result.input.symbol, symbol);
+    assert.equal(result.evidenceRef, candidatePacketClassificationRef(result.packetHash, "KR", symbol));
+    assert.deepEqual(parseCandidatePacketClassification(JSON.parse(JSON.stringify(result))), result);
+  }
+  for (const symbol of ["", " S", "S ", "bad\ud800", "S".repeat(241)]) {
+    assert.throws(() => deriveCandidatePacketClassification({ ...input(), symbol, packet: classificationPacket("KR", { symbol }) }));
+    assert.throws(() => candidatePacketClassificationRef(hashCanonicalPayload("packet"), "KR", symbol));
+  }
+});
+
 test("packet classification refuses invalid source chronology including exact expiry boundaries", () => {
   for (const patch of [{ collectedAt: "2026-09-04T00:00:00.000Z" }, { staleAfter: "2026-09-03T12:00:00.000Z" }]) {
     assert.throws(() => deriveCandidatePacketClassification({ ...input(), packet: classificationPacket("KR", patch) }), /chronology/);

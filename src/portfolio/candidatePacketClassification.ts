@@ -2,20 +2,22 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { marketSchema, sha256HashSchema } from "../domain/schemas.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
+import { candidateSizingInputPayloadSchema } from "./candidateSizingInput.js";
 import { parseCanonicalMarketPacketHistoryText } from "./everyTickPortfolioCycleTriggerResolver.js";
 import { hashCanonicalPayload, hashDerivedId, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
 export const CANDIDATE_PACKET_CLASSIFICATION_MODEL_VERSION = "candidate_packet_classification.v1";
 const identifier = z.string().min(1).max(160).refine((value) => value.trim() === value &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value));
+const symbolSchema = candidateSizingInputPayloadSchema.shape.symbol;
 const inputSchema = z.object({ modelVersion: z.literal(CANDIDATE_PACKET_CLASSIFICATION_MODEL_VERSION),
-  packet: z.unknown(), market: marketSchema, symbol: identifier }).strict();
+  packet: z.unknown(), market: marketSchema, symbol: symbolSchema }).strict();
 
 /** A content address, never proof that the packet exists or its metadata is authoritative. */
 export function candidatePacketClassificationRef(packetHash: string, market: z.infer<typeof marketSchema>, symbol: string) {
   return hashDerivedId("candidate_packet_classification", hashCanonicalPayload({
     modelVersion: CANDIDATE_PACKET_CLASSIFICATION_MODEL_VERSION, packetHash: sha256HashSchema.parse(packetHash),
-    market: marketSchema.parse(market), symbol: identifier.parse(symbol) }));
+    market: marketSchema.parse(market), symbol: symbolSchema.parse(symbol) }));
 }
 
 /** Declared sector/region and market settlement currency, not issuer domicile or look-through FX exposure. */

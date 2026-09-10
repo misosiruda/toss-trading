@@ -44,7 +44,7 @@ import { resolveStoredCandidateClassification } from "./storedCandidateClassific
 const AT = "2026-09-04T00:00:00.000Z";
 const CREATED = "2026-09-01T00:00:00.000Z";
 type Payload = Parameters<typeof createCandidateSizingInputRecord>[0];
-type Options = { patch?: (input: Payload) => Payload; market?: "KR" | "US"; portfolioId?: string;
+type Options = { patch?: (input: Payload) => Payload; market?: "KR" | "US"; symbol?: string; portfolioId?: string;
   execution?: ExecutionFixtureOptions;
   costEstimationModelVersion?: string | null;
   liquidityEstimationModelVersion?: string; interval?: "1d" | "1h";
@@ -741,6 +741,17 @@ test("stored classification binds exact packet metadata without using observed b
   });
 });
 
+test("stored classification replays valid long symbols through actual historical and packet sources", async () => {
+  for (const length of [161, 240]) await temporary(async (baseDir) => {
+    const symbol = "S".repeat(length);
+    const { record } = await seed(baseDir, classificationOptions(classificationPacket("KR", { symbol })));
+    assert.equal(record.symbol, symbol);
+    const result = await resolveStoredCandidateClassification({ baseDir, sizingInputRecordId: record.sizingInputRecordId });
+    assert.equal(result.classification.input.symbol, symbol);
+    assert.deepEqual(result.classification.exposureKeys, record.exposureKeys);
+  });
+});
+
 test("stored classification rejects forged sector region currency and evidence references", async () => {
   for (const patch of [{ sector: "Other" }, { country: "US" }, { currency: "USD" }, { classificationEvidenceRef: "unverified" }]) {
     await temporary(async (baseDir) => {
@@ -812,7 +823,7 @@ function classificationOptions(packet = classificationPacket()): Options {
   const source = structuredClone(packet); source.virtualPortfolio.portfolioId = policyFixture().policy.portfolioId;
   const cash = cashOptions(850), market = source.candidates[0]!.market;
   const execution = { schemaVersion: "portfolio_execution_rule.v1", markets: { [market]: executionParameters().markets.KR } };
-  return { ...cash, market, enableUsMarket: market === "US", execution: { bucket: execution, legacy: execution },
+  return { ...cash, market, symbol: source.candidates[0]!.symbol, enableUsMarket: market === "US", execution: { bucket: execution, legacy: execution },
     classificationModelVersion: CANDIDATE_PACKET_CLASSIFICATION_MODEL_VERSION, classificationPacket: source,
     patch: (input) => ({ ...cash.patch!(input), exposureKeys: deriveCandidatePacketClassification({
       modelVersion: CANDIDATE_PACKET_CLASSIFICATION_MODEL_VERSION, packet: source, market, symbol: input.symbol }).exposureKeys }) };
@@ -889,12 +900,12 @@ async function seed(baseDir: string, options: Options = {}) {
   const activation = createPortfolioPolicyActivatedEvent({ policy, activationSequence: 1, createdAt: CREATED });
   await storePolicyFixture(baseDir, { ...original, records, dependencies, policy, activation });
   if (options.classificationPacket) await new FileMarketPacketStore(createStoragePaths(baseDir).marketPacketsPath).append(options.classificationPacket);
-  const market = options.market ?? "KR", portfolioId = options.portfolioId ?? policy.portfolioId;
+  const market = options.market ?? "KR", symbol = options.symbol ?? "SYNTH", portfolioId = options.portfolioId ?? policy.portfolioId;
   await new FileHistoricalMarketSnapshotStore(join(baseDir, "historical-market-snapshots.jsonl")).replaceAll([1, 3].map((day) => ({
-    snapshotId: `synthetic-${day}`, market, symbol: "SYNTH", interval: options.interval ?? "1d", observedAt: `2026-09-0${day}T00:00:00.000Z`,
+    snapshotId: `synthetic-${day}`, market, symbol, interval: options.interval ?? "1d", observedAt: `2026-09-0${day}T00:00:00.000Z`,
     createdAt: options.sourceCreatedAt ?? AT, lastPriceKrw: 100 * day, volume: 10, sourceRefs: ["synthetic"] })));
   const evidence = await new MarketTechnicalEvidenceFileRepository(baseDir).capture({ sourceContractId: "synthetic-local.v1",
-    query: { market, symbol: "SYNTH", interval: options.interval ?? "1d", windowStart: CREATED, asOf: AT, minimumObservationCount: 2, maximumAgeSeconds: 86400 } });
+    query: { market, symbol, interval: options.interval ?? "1d", windowStart: CREATED, asOf: AT, minimumObservationCount: 2, maximumAgeSeconds: 86400 } });
   const score = calculateCandidateSelectionScore({ model: model(), features: evidence.binding.evidence.calculation.featureInputs });
   const cashKrw = options.cashKrw ?? 1000, pendingActionInputs = options.pendingActions ?? [];
   const held = options.krHeldNotionalKrw ?? 0;
@@ -917,7 +928,7 @@ async function seed(baseDir: string, options: Options = {}) {
   await new PortfolioSizingSnapshotFileRepository(baseDir).append(snapshot);
   while (Date.now() <= Date.parse(evidence.completion!.observedAt)) await new Promise((done) => setTimeout(done, 1));
   const candidate: Payload = { requestId: request.requestId, portfolioId, portfolioSnapshotId: snapshot.portfolioSnapshotId,
-    portfolioSnapshotHash: snapshot.portfolioSnapshotHash, policyHash: snapshot.policyHash, asOf: AT, market, symbol: "SYNTH", bucket: "swing",
+    portfolioSnapshotHash: snapshot.portfolioSnapshotHash, policyHash: snapshot.policyHash, asOf: AT, market, symbol, bucket: "swing",
     scoringModelVersion: scoringModel.version, sizingAlgorithmVersion: "unverified-sizing.v1", selectionScore: score.selectionScore,
     exposureKeys: { sector: "Synthetic", country: "KR", currency: "KRW", classificationEvidenceRef: "unverified-classification" },
     featureInputs: evidence.binding.evidence.calculation.featureInputs,

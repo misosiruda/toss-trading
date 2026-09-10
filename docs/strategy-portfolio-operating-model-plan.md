@@ -4290,6 +4290,11 @@ record count는 바뀐다. Corrupt/torn/비canonical suffix 또는 중복 원본
 새 모델 사용을 중단한다. Append-only 정책 필드를 소급 제거하지 않는다. 실제 외부 source 호출,
 운영 정책 활성화, 노출 cap·최종 sizing·배정·전체 운용 E2E는 후속이다.
 
+분류 projection과 content ref의 symbol은 `candidateSizingInputPayloadSchema.shape.symbol`을
+재사용해 기존 후보의 1~240자 canonical 식별자 계약을 유지한다. 업종·source ref의 160자
+제한을 종목 식별자에 적용하지 않는다. 161자·240자 후보는 실제 historical 원본과 packet을
+저장한 통합 재생으로 검증하며 241자·공백 정규화·잘못된 Unicode는 거절한다.
+
 완료 조건:
 
 - 같은 입력은 같은 ordering과 reason code를 만든다.
