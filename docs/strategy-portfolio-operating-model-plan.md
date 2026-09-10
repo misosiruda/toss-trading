@@ -2281,6 +2281,29 @@ runner는 변경하지 않고 새 artifact만 opt-in으로 작성한다. Rollbac
 코드로 되돌리며 artifact를 자동 삭제하지 않는다. 실제 sizing input의 evidence origin 연결과
 정책·hard gate·score·배분/주문 실행은 후속이며 저장 성공을 후보 승인이나 source 신뢰 승격으로 쓰지 않는다.
 
+저장된 sizing 입력의 시장 지표 연결은 `CandidateMarketTechnicalFeatureResolver.withResolvedFeatures`다.
+Record ID로 실제 candidate sizing input을 읽고, 6개 versioned market feature의 evidenceRef를 실제
+market technical evidence log의 unique committed origin에 연결한다. 기존 순수 feature resolver로
+market/symbol/asOf instant, 각 definition/value/ref 전체를 재검증한다. 누락·복수·mixed ref나 다른
+값은 input 자체를 다시 hash하고 정상 저장했더라도 거절한다. Evidence의 생성 시각뿐 아니라 실제
+commit 시각이 sizing input createdAt 및 appendStartedAt 이하여야 한다. 메모리에서 만든 evidence나
+파일에 commit되지 않은 reference는 통과하지 않는다.
+
+Lock 순서는 request → portfolio sizing snapshot → candidate input → historical source → market
+technical evidence다. 기존 저장소의 실제 source/원본·hash/시각 재검증을 모두 사용하고 consumer
+완료까지 잠금을 유지한다. 현재 evidence capture는 candidate input 저장소에 재진입하지 않으므로
+이 순서와 역방향 의존성을 만들지 않는다. Consumer는 같은 source 저장소에 재진입하지 않아야 한다.
+선택된 두 origin은 immutable binding으로 반환하며 `getCandidateMarketTechnicalFeatureSources`는
+callback 동안만 실제 두 history의 durable 관측을 조회한다. Clone이나 callback 종료/실패 후의
+binding은 lease가 아니며 별도 transaction/저장 성공을 인증하지 않는다.
+
+이 연결은 저장된 시장 지표 6개에 한정한다. 나머지 feature, selectionScore/scoring model 지원,
+classification·exposure/liquidity cap·execution cost·sizing 계산, 정책의 required evidence/선택 구간,
+cutoff/PIT·provider 신뢰 및 eligibility를 평가하지 않는다. Request/portfolio snapshot 원본 검증은
+기존 저장소를 사용하지만 active policy/trigger/gap/capacity 재계산을 대신하지 않는다. Runner/Risk나
+주문 surface를 자동 연결하지 않으며 기존 input/evidence 파일 형식·writer API·거래 기본값 변경과
+신규 artifact는 없다. 신규 opt-in resolver만 제거하는 rollback에는 데이터 변환이나 삭제가 없다.
+
 - `selectionScore`는 같은 bucket 안에서 candidate 우선순위를 정한다.
 - score는 target weight를 직접 결정하지 않는다.
 - backend는 bucket gap, available slots, symbol cap, liquidity cap, concentration cap,
