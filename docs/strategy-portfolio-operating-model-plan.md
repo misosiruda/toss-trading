@@ -257,6 +257,7 @@ interface BucketSelectionPolicyRecord {
   hardGateRuleIds: string[];
   hardGateRules?: CandidateHardGateRule[];
   costEstimationModelVersion?: string;
+  liquidityEstimationModelVersion?: string;
   scoringModelVersion: string;
   scoringModelRef?: {
     scoringModelRecordId: string;
@@ -4175,6 +4176,38 @@ not_verified에서 as_of_selection_policy_bound로 변경한다.
 새 policy record로 활성화한다. Old strict reader가 새 필드를 거절하므로 rollback 시 새 정책 사용을
 중단하고 호환 reader를 유지하며 append-only 기록에서 필드를 소급 삭제하지 않는다. 운영 정책 활성화와
 데이터 변환은 실행하지 않았다.
+
+일봉 기반 유동성 재생은 `candidate_daily_bar_liquidity.v1`을 선택 정책의 optional
+`liquidityEstimationModelVersion`으로 명시한 경우에만 수행한다. `calculateCandidateDailyLiquidity`는
+complete market evidence를 독립 재생하고 `interval=1d`를 요구한다. 분봉을 일봉으로 외삽하지 않는다.
+각 일봉의 `lastPriceKrw × volume` 합을 관측 수로 나눈 뒤 원 단위로 내린 값을
+`averageDailyNotionalKrw`에 저장한다. 이는 관측 일봉의 마지막 가격 기준 명목금액 proxy이며 실제
+체결 거래대금, 거래일별 완전성, 휴장·누락 자료 또는 공식 provider의 신뢰성을 증명하지 않는다.
+별도의 시장 통계로 승격하지 않으며 새로운 운용 기본 모델을 합성하지 않는다.
+
+`maximumLiquidityNotionalKrw`는 위 정수 평균과 명시적 참여율을 곱해 다시 내린다. 합과 나눗셈은
+BigInt, 참여율은 저장된 숫자의 canonical decimal units를 사용하여 중간 합 overflow와 이진 소수의
+경계 오차를 피한다. 0 거래량/0 참여율은 0 한도이고 최소 금액으로 올려주지 않는다. 가격·거래량과
+각 봉의 명목금액은 기존 evidence 계산기의 safe-integer 검증을 통과해야 한다. 결과의 inputHash와
+outputHash는 complete evidence/모델/참여율 및 전체 계산 결과를 결속하고 parser는 독립 재계산한다.
+
+`resolveStoredCandidateDailyLiquidity`는 실제 저장 정책 기반 비용 재생 결과를 사용한다. 동일
+as-of selection policy의 유동성 모델을 확인하고 실제 `paper_execution` 파라미터의
+`maxVolumeParticipationRate`를 참여율로 사용한다. Candidate에 기록된 전체 liquidityInput은
+재계산한 평균·참여율·한도·exact evidenceRef와 정확히 같아야 한다. 호출자는 모델·원본·참여율을
+덮어쓰지 못한다. 실제 후보 source chain에서 관측한 immutable evidence를 그대로 재생하므로
+별도의 source 읽기를 섞거나 새로운 lock을 추가하지 않는다.
+
+결과는 `stored_daily_bar_liquidity_only`이며 비용 재생 assessment hash와 유동성 output hash를
+보존한다. 이전 evidence/hard gate 실패를 유지하고 sourceTrust는 not_evaluated,
+historicalDiskAvailability는 not_proven이다. 실제 비용 참여율/reference notional, 분류·exposure
+cap·sizing range, top-N/assignment, 현재 실행 권한이나 fill까지 검증하는 결과가 아니다.
+
+새 파일 artifact, writer, HTTP/MCP/runner 및 거래 기본값은 변경하지 않는다. Legacy 정책의 필드
+누락과 기존 bytes/hash는 유지되지만 새로운 유동성 함수는 모델 미선택으로 거절한다. 기존 비용 진단
+함수는 변경하지 않는다. 새 정책 필드는 호환 reader를 먼저 배포한 뒤 새로운 정책 record로 도입한다.
+이전 strict reader가 새 필드를 거절하므로 rollback 시 호환 reader를 유지하고 새 모델 사용을
+중단해야 하며 append-only 기록을 소급 수정·삭제하지 않는다. 실제 운영 정책 활성화는 실행하지 않는다.
 
 완료 조건:
 
