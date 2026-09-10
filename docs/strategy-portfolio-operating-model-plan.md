@@ -4000,6 +4000,33 @@ classification/evidence source 검증, active policy/trigger/gap의 재계산, e
 권한으로 사용하지 않는다. 기존 runner/Risk/writer의 자동 연결이나 거래 기본값 변경은 없고 새 opt-in
 artifact만 추가한다. 코드 rollback으로 기존 경로를 유지할 수 있으며 신규 artifact를 자동 삭제하지 않는다.
 
+실제 점수 재생 연결은 `resolveStoredCandidateSelectionScore`가 수행한다. 호출자는 storage root와
+`sizingInputRecordId`만 지정하며 모델·정책·후보 payload·history prefix를 넘기지 않는다. 실제 전체
+dependency/policy/activation snapshot을 읽고 candidate의 `asOf`에 활성인 정책을 해소한다.
+후보의 policy hash, bucket과 enabled market을 검사한 뒤 bucket의 exact selection policy가 참조한
+모델을 사용한다. 모델 없는 legacy 정책, 다른 version 또는 누락된 모델은 거절한다.
+
+후보의 request → snapshot → input → historical source → evidence lock chain 안에서 시장 지표를
+재생하고, 후보의 전체 feature 집합이 검증된 6개 market feature와 같을 때만 점수를 계산한다.
+추가 선언 feature는 모델에 들어 있어도 검증된 feature로 승격하지 않는다. 실제 모델의 정규화 경계·
+방향·가중치로 재계산한 score와 저장된 selectionScore가 정확히 일치해야 한다. 올바른 hash로
+재생성한 잘못된 점수, 다른 모델 version, 변경된 지표도 실패한다.
+
+결과의 `verificationScope: stored_score_replay_only`는 역사적 진단 범위다. 실제 input/evidence origin,
+as-of active policy, bucket/selection policy, 독립 계산 결과와 읽은 전체 policy snapshot hash를
+반환한다. Policy snapshot은 후보 source lock보다 먼저 읽고 policy lock을 잡은 채 source lock을
+역순 획득하지 않는다. 여러 파일을 동시에 잠근 transaction이나 반환 후 유효한 live lease가 아니며,
+snapshot hash도 인증 서명 또는 과거 디스크 존재 시각 증명이 아니다. 이후 retirement가 있어도
+as-of에 활성인 정책의 과거 score를 재생할 수 있다. 현재 실행에 사용하려면 coordinator가 현재
+policy/trigger/capacity와 모든 source를 다시 잠그고 검증해야 한다.
+
+이 경로는 evidence source trust/PIT/cutoff/requiredEvidence/hard gate, 분류·노출·유동성·비용·sizing,
+top-N/assignment 또는 Risk 승인을 계산하지 않는다. 성공한 score를 eligibility나 주문 권한으로
+사용하지 않는다. Source reader의 기존 fsync/잠금은 수행하지만 candidate/정책/score artifact는
+새로 쓰거나 수정하지 않는다. HTTP/MCP/runner 자동 연결과 거래 기본값 변경도 없다. 데이터 형식
+변경이 없어 코드 rollback만 가능하며 기존 ref/model reader의 호환성 요구는 그대로 유지한다.
+통합 테스트의 모델 가중치·경계는 synthetic 값이며 운용 기본값으로 도입하지 않는다.
+
 완료 조건:
 
 - 같은 입력은 같은 ordering과 reason code를 만든다.
