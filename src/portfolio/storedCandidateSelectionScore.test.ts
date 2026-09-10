@@ -29,6 +29,8 @@ import type { CandidateHardGateRule } from "./candidateHardGateRules.js";
 import { calculateCandidateExecutionCost, CANDIDATE_EXECUTION_COST_MODEL_VERSION } from "./candidateExecutionCost.js";
 import { resolveStoredCandidateExecutionCost } from "./storedCandidateExecutionCost.js";
 import { resolveStoredPolicyCandidateExecutionCost } from "./storedPolicyCandidateExecutionCost.js";
+import { CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION } from "./candidateDailyLiquidity.js";
+import { resolveStoredCandidateDailyLiquidity } from "./storedCandidateDailyLiquidity.js";
 
 const AT = "2026-09-04T00:00:00.000Z";
 const CREATED = "2026-09-01T00:00:00.000Z";
@@ -36,6 +38,7 @@ type Payload = Parameters<typeof createCandidateSizingInputRecord>[0];
 type Options = { patch?: (input: Payload) => Payload; market?: "KR" | "US"; portfolioId?: string;
   execution?: ExecutionFixtureOptions;
   costEstimationModelVersion?: string | null;
+  liquidityEstimationModelVersion?: string; interval?: "1d" | "1h";
   policyHash?: string; legacy?: boolean; extraModelFeature?: boolean; upperBound?: number;
   requiredEvidence?: Parameters<typeof createBucketSelectionPolicyRecord>[0]["requiredEvidence"];
   hardGateRules?: CandidateHardGateRule[];
@@ -470,7 +473,81 @@ test("stored cost policy rejects caller policy overrides and corrupt or missing 
   }
 }));
 
-function executionParameters(patch: { feeBps?: number } = {}) {
+test("stored daily liquidity replays actual evidence and policy participation without granting eligibility", async () => {
+  for (const gatesPass of [false, true]) await temporary(async (baseDir) => {
+    const { record, evidence } = await seed(baseDir, { execution: executionOptions(),
+      liquidityEstimationModelVersion: CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION, patch: liquidityCandidate,
+      ...(gatesPass ? { hardGateRules: [{ ruleId: "daily", algorithm: "market_interval.v1" as const, allowedIntervals: ["1d" as const] }] } : {}) });
+    const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+    const result = await resolveStoredCandidateDailyLiquidity(input);
+    assert.equal(result.calculation.liquidityInput.averageDailyNotionalKrw, 2000);
+    assert.equal(result.calculation.liquidityInput.maximumLiquidityNotionalKrw, 200);
+    assert.deepEqual(result.calculation.liquidityInput.evidenceRefs, [evidence.binding.evidence.evidenceRef]);
+    assert.equal(result.assessment.evidenceAndHardGateConditionsSatisfied, gatesPass);
+    assert.equal(result.assessment.sourceTrust, "not_evaluated");
+    assert.equal(result.assessment.historicalDiskAvailability, "not_proven");
+    assert.equal(result.assessment.liquidityParameterAuthority, "as_of_policy_bound");
+    assert.equal(result.assessment.liquidityModelSelection, "as_of_selection_policy_bound");
+    assert.equal("eligibility" in result, false); assert.equal("sizingRange" in result, false);
+    assert.equal(result.assessmentHash, hashCanonicalPayload(result.assessment));
+    frozen(result);
+    assert.deepEqual(await resolveStoredCandidateDailyLiquidity(input), result);
+  });
+});
+
+test("stored daily liquidity rejects every rehashed declared input mismatch including evidence substitutions", async () => {
+  for (const patch of [{ averageDailyNotionalKrw: 2001 }, { maximumLiquidityNotionalKrw: 201 },
+    { maximumParticipationRatio: 0.2 }, { evidenceRefs: ["unverified"] }, { evidenceRefs: ["extra", "unverified"] }]) {
+    await temporary(async (baseDir) => {
+      const { record } = await seed(baseDir, { execution: executionOptions(),
+        liquidityEstimationModelVersion: CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION,
+        patch: (input) => { const candidate = liquidityCandidate(input); return { ...candidate, liquidityInput: { ...candidate.liquidityInput, ...patch } }; } });
+      const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+      await resolveStoredPolicyCandidateExecutionCost(input); // Correct costs do not authenticate liquidity declarations.
+      await assert.rejects(resolveStoredCandidateDailyLiquidity(input), /liquidity differs/);
+    });
+  }
+});
+
+test("stored daily liquidity refuses absent or unsupported model choices and intraday evidence", async () => {
+  for (const liquidityEstimationModelVersion of [undefined, "unknown.v1", CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION]) {
+    await temporary(async (baseDir) => {
+      const interval = liquidityEstimationModelVersion === CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION ? "1h" : "1d";
+      const { record } = await seed(baseDir, { execution: executionOptions(), interval, patch: liquidityCandidate,
+        ...(liquidityEstimationModelVersion === undefined ? {} : { liquidityEstimationModelVersion }) });
+      await assert.rejects(resolveStoredCandidateDailyLiquidity({ baseDir, sizingInputRecordId: record.sizingInputRecordId }),
+        interval === "1h" ? /requires daily bars/ : /model is not selected/);
+    });
+  }
+});
+
+test("stored daily liquidity derives participation from actual policy instead of a self-consistent candidate cap", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, { execution: { bucket: executionParameters({ maxVolumeParticipationRate: 0.2 }), legacy: executionParameters() },
+    liquidityEstimationModelVersion: CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION,
+    patch: (input) => costCandidate(liquidityCandidate(input), { maxVolumeParticipationRate: 0.2 }) });
+  const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+  await resolveStoredPolicyCandidateExecutionCost(input);
+  await assert.rejects(resolveStoredCandidateDailyLiquidity(input), /liquidity differs/);
+}));
+
+test("stored daily liquidity refuses caller overrides and corrupted actual evidence without repairing bytes", async () => temporary(async (baseDir) => {
+  const { record } = await seed(baseDir, { execution: executionOptions(),
+    liquidityEstimationModelVersion: CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION, patch: liquidityCandidate });
+  const input = { baseDir, sizingInputRecordId: record.sizingInputRecordId };
+  await assert.rejects(resolveStoredCandidateDailyLiquidity({ ...input, maximumParticipationRatio: 0.1 } as never));
+  const path = createMarketTechnicalEvidencePaths(baseDir).recordsPath;
+  await appendFile(path, '{"corrupt":true}\n');
+  const before = await readFile(path, "utf8");
+  await assert.rejects(resolveStoredCandidateDailyLiquidity(input));
+  assert.equal(await readFile(path, "utf8"), before);
+}));
+
+function liquidityCandidate(input: Payload): Payload {
+  return costCandidate({ ...input, liquidityInput: { averageDailyNotionalKrw: 2000, maximumParticipationRatio: 0.1,
+    maximumLiquidityNotionalKrw: 200, evidenceRefs: [...input.featureInputs[0]!.evidenceRefs] } });
+}
+
+function executionParameters(patch: { feeBps?: number; maxVolumeParticipationRate?: number } = {}) {
   return { schemaVersion: "portfolio_execution_rule.v1", markets: { KR: { executionPolicy: {
     modelVersion: "execution_simulator.v4", fillPriceRule: "current_candidate_last_price", feeBps: 1, taxBps: 2,
     halfSpreadBps: 3, slippageBps: 4, fillRatio: 1, allowFractionalShares: true, maxVolumeParticipationRate: 0.1,
@@ -497,6 +574,7 @@ async function seed(baseDir: string, options: Options = {}) {
     ...(options.legacy ? {} : { scoringModelRef: candidateScoringModelRefFor(scoringModel) }),
     ...(options.costEstimationModelVersion === null ? {} : {
       costEstimationModelVersion: options.costEstimationModelVersion ?? CANDIDATE_EXECUTION_COST_MODEL_VERSION }),
+    ...(options.liquidityEstimationModelVersion === undefined ? {} : { liquidityEstimationModelVersion: options.liquidityEstimationModelVersion }),
     featureDefinitionRefs: scoringModel.terms.map((term) => term.featureDefinitionRef) });
   const records = { ...original.records, scoringModels: [scoringModel],
     selectionPolicies: original.records.selectionPolicies.map((item) => item.bucket === "swing" ? selection : item) };
@@ -512,10 +590,10 @@ async function seed(baseDir: string, options: Options = {}) {
   await storePolicyFixture(baseDir, { ...original, records, dependencies, policy, activation });
   const market = options.market ?? "KR", portfolioId = options.portfolioId ?? policy.portfolioId;
   await new FileHistoricalMarketSnapshotStore(join(baseDir, "historical-market-snapshots.jsonl")).replaceAll([1, 3].map((day) => ({
-    snapshotId: `synthetic-${day}`, market, symbol: "SYNTH", interval: "1d" as const, observedAt: `2026-09-0${day}T00:00:00.000Z`,
+    snapshotId: `synthetic-${day}`, market, symbol: "SYNTH", interval: options.interval ?? "1d", observedAt: `2026-09-0${day}T00:00:00.000Z`,
     createdAt: options.sourceCreatedAt ?? AT, lastPriceKrw: 100 * day, volume: 10, sourceRefs: ["synthetic"] })));
   const evidence = await new MarketTechnicalEvidenceFileRepository(baseDir).capture({ sourceContractId: "synthetic-local.v1",
-    query: { market, symbol: "SYNTH", interval: "1d", windowStart: CREATED, asOf: AT, minimumObservationCount: 2, maximumAgeSeconds: 86400 } });
+    query: { market, symbol: "SYNTH", interval: options.interval ?? "1d", windowStart: CREATED, asOf: AT, minimumObservationCount: 2, maximumAgeSeconds: 86400 } });
   const score = calculateCandidateSelectionScore({ model: model(), features: evidence.binding.evidence.calculation.featureInputs });
   const snapshot = createPortfolioSizingSnapshot({ portfolioId, portfolioVersion: "v1", policyHash: options.policyHash ?? policyHash, asOf: AT,
     virtualPortfolio: { portfolioId, cashKrw: 1000, positions: [], updatedAt: AT }, valuationInputs: [], pendingActionInputs: [],

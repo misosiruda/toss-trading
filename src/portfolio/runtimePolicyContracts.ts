@@ -84,6 +84,7 @@ const bucketSelectionPolicyPayloadSchema = z
     scoringModelVersion: versionSchema,
     scoringModelRef: candidateScoringModelRefSchema.optional(),
     costEstimationModelVersion: versionSchema.optional(),
+    liquidityEstimationModelVersion: versionSchema.optional(),
     featureDefinitionRefs: z.array(identifierSchema).min(1).max(128)
   })
   .strict();
