@@ -77,7 +77,6 @@ export class HistoricalMarketSnapshotFileSource {
 
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedHistoricalMarketSnapshotHistory) => Promise<T>): Promise<T> {
     return this.withLock(async () => {
-      await syncAncestors(dirname(this.path));
       const { records, observedAt } = await readDurableSource(this.path);
       const history = Object.freeze({ records });
       observations.set(history, Object.freeze({ recordCount: records.length, recordsHash: hashCanonicalPayload(records), observedAt }));
@@ -88,6 +87,9 @@ export class HistoricalMarketSnapshotFileSource {
 
   private async withLock<T>(operation: () => Promise<T>): Promise<T> {
     await mkdir(dirname(this.path), { recursive: true });
+    // Recursive mkdir can create multiple directory entries. Flush their
+    // ancestor chain before any writer can publish a dataset or append a row.
+    await syncAncestors(dirname(this.path));
     const deadline = performance.now() + this.timeoutMs;
     let lastContention: unknown;
     let handle: Awaited<ReturnType<typeof open>>;

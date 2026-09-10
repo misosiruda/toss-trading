@@ -2191,6 +2191,9 @@ corruptLineCount 계약은 유지한다. CLI의 dataset 교체 의미도 유지�
 뒤 rename으로 게시한다. 게시 전 write/fsync/rename 실패는 이전 source를 유지하고 실패한 임시 파일은
 명시적 점검용으로 남긴다. Rename 이후 directory sync 실패는 새 dataset이 남을 수 있는 불확실한
 결과이며 성공으로 바꾸지 않는다. Source append 성공만으로 durable observation이 발급되지는 않는다.
+Recursive mkdir 이후에는 관측뿐 아니라 append/replace 작성 경로도 root부터 데이터 디렉터리까지
+상위 directory chain을 먼저 sync한다. 지원되는 sync에서 실패하면 lock 획득이나 source 게시 전에
+중단하므로 새 중첩 경로의 directory entry를 동기화하지 않고 dataset 성공을 반환하지 않는다.
 
 새 관측 경로는 실제 전체 파일의 UTF-8 bytes와 strict snapshot schema, 정규 문자열·수치,
 qualified timestamp/생성 순서, duplicate snapshot ID 및 torn final line을 검증한다. Corrupt suffix를

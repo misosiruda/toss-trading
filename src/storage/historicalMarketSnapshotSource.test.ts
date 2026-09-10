@@ -241,6 +241,51 @@ test("historical source preserves abandoned locks with a monotonic timeout", asy
   assert.equal(await fs.readFile(lockPath(path), "utf8"), "abandoned\n");
 }));
 
+test("historical writers flush new directory ancestors before publication and fail closed on ancestor sync errors", async (context) => {
+  for (const operation of ["append", "replace"] as const) for (const fail of [false, true]) await withDirectory(async (path) => {
+    const root = await fs.realpath(dirname(path));
+    const parent = join(root, "new-parent");
+    const directory = join(parent, "new-child");
+    const target = join(directory, basename(path));
+    const visited: string[] = [];
+    const expected = [root, parent, directory];
+    let published = false;
+    const originalOpen = fs.open;
+    const failure = Object.assign(new Error("ancestor sync failed"), { code: "EIO" });
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      const name = String(args[0]);
+      if (args[1] === "r" && expected.includes(name)) {
+        // Windows cannot open directories for fsync on some filesystems.
+        // Inject the supported-directory contract to verify ordering and errors.
+        return { sync: async () => {
+          visited.push(name);
+          if (fail && name === parent) throw failure;
+        }, close: async () => {} } as Awaited<ReturnType<typeof fs.open>>;
+      }
+      if ((name === target && args[1] === "a") || (name.endsWith(".tmp") && args[1] === "wx")) {
+        published = true;
+        assert.deepEqual(visited.slice(0, 3), expected);
+      }
+      return originalOpen(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      const store = new FileHistoricalMarketSnapshotStore(target);
+      const pending = operation === "append" ? store.append(snapshot("first")) : store.replaceAll([snapshot("first")]);
+      if (fail) {
+        await assert.rejects(pending, (error) => error === failure);
+        assert.equal(published, false);
+        assert.deepEqual(await fs.readdir(directory), []);
+        await assert.rejects(fs.readFile(target), { code: "ENOENT" });
+      } else {
+        await pending;
+        assert.equal(published, true);
+        assert.deepEqual((await store.readAll()).records, [snapshot("first")]);
+      }
+    } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+  });
+});
+
 test("historical ingest entry points route dataset replacement through the shared snapshot store", async () => {
   for (const filename of ["historicalYahooDailyIngest", "tossInvestHistoricalChartIngest"]) {
     const source = await fs.readFile(join(process.cwd(), "src", "cli", `${filename}.ts`), "utf8");
