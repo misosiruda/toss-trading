@@ -2349,7 +2349,8 @@ outputHash를 보존한다. `parseCandidateSelectionScore`는 모델과 계산�
 
 이 순수 모델은 source availability/PIT·provider trust, hard gate·eligibility, sizing·allocation,
 버킷별 ordering/top-N, active selection policy와 모델의 exact hash 결속을 대신하지 않는다.
-모델 exact reference/repository 연결은 아래 분할이 담당하며 실제 sizing input의 selectionScore 재검증은 후속이다.
+모델 exact reference/repository 연결은 아래 분할이 담당하며 실제 sizing input의 selectionScore 재검증은
+PR 5의 `resolveStoredCandidateSelectionScore`가 연결한다.
 API·artifact writer·기존 정책/거래 기본값 변경은 없으며 코드 rollback에 데이터 변환이 없다.
 
 선택 정책의 모델 연결은 optional `scoringModelRef`의 exact record ID/version/hash다. Ref version은
@@ -4026,6 +4027,37 @@ top-N/assignment 또는 Risk 승인을 계산하지 않는다. 성공한 score�
 새로 쓰거나 수정하지 않는다. HTTP/MCP/runner 자동 연결과 거래 기본값 변경도 없다. 데이터 형식
 변경이 없어 코드 rollback만 가능하며 기존 ref/model reader의 호환성 요구는 그대로 유지한다.
 통합 테스트의 모델 가중치·경계는 synthetic 값이며 운용 기본값으로 도입하지 않는다.
+
+`assessStoredCandidateEvidenceRequirements`는 위 실제 score 재생과 정책 해소를 거친 뒤 candidate
+origin이 보존한 complete request prefix를 실제 durable request history에서 다시 검증한다. Cutoff는
+caller가 입력하지 않고 해당 원본 request에서 읽는다. 이후 정상 append는 허용하지만 prefix 교체와
+createdAt 변조는 거절한다. 새로운 함수는 기존 score 진단의 동작이나 반환 형식을 바꾸지 않는다.
+
+각 requiredEvidence의 class/sourceContractId, maximumAgeSeconds와 optional minimumObservationCount를
+실제 선택 정책에서 읽는다. 현재 연결된 class는 market_technical뿐이며 fundamental_quality,
+portfolio_fit, execution_fit은 market 지표나 score로 대신하지 않고 required_evidence_missing으로
+blocked한다. Source contract ID는 exact 비교하며 선언된 ID 일치가 외부 provider 신뢰의 증명은 아니다.
+최소 관측 수는 계산 query의 최소값이 아니라 정책 최소값에 다시 대조한다.
+
+Freshness는 request.asOf에서 마지막 원본 observedAt을 뺀 초 단위 값으로 계산한다. 최근 계산·capture
+시각 또는 더 오래된 cutoff를 기준으로 age를 줄이지 않는다. 원본 행의 observedAt 또는 createdAt이
+evidenceCutoffAt보다 늦으면 각각 observation_after_cutoff/source_materialized_after_cutoff 사유를
+남긴다. 모든 원본 행을 검사하며 cutoff/freshness의 정확한 경계는 포함하고 timezone offset은 instant로
+비교한다. Stale/count/source mismatch 등 여러 실패 사유는 모두 canonical order로 반환한다.
+
+반환 assessment의 `verificationScope: stored_evidence_content_requirements_only`와 conditionsSatisfied는
+이 내용 조건만 평가한 결과다. `sourceTrust: not_evaluated`, `historicalDiskAvailability: not_proven` 및
+실행하지 않은 unevaluatedHardGateRuleIds를 함께 보존한다. 기록된 createdAt 비교는 과거 cutoff에 실제
+파일이 존재했다는 별도 관측 증거가 아니다. Evidence 계산 자체가 나중에 실행될 수 있으므로 계산
+createdAt/commit 시각을 원본 관측 freshness로 대체하지 않는다. 모든 내용 조건이 satisfied여도
+eligible·mandate·주문 권한으로 승격하지 않는다. Source trust/PIT, 실제 hard gate, 분류·cap·cost·sizing과
+현재 상태/CAS는 별도 실행 경계에서 여전히 필요하다.
+
+Assessment hash는 request/input/policy/selection/evidence identity, cutoff/age, 요구 조건별 결과와
+미검증 경계를 포함한 전체 assessment payload를 결속한다. 저장 artifact나 writer는 추가하지 않는다.
+기존 score replay 후 request를 다시 관측하는 역사적 진단이며 cross-artifact atomic transaction이나
+반환 후 live lease가 아니다. 기존 source lock/fsync 외에 운영 데이터·API·거래 기본값 변경은 없고
+코드 rollback에 schema/data migration이나 artifact 삭제가 필요 없다.
 
 완료 조건:
 
