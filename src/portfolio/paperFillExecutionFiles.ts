@@ -31,6 +31,7 @@ const verifiedPaperFillExecutionHistories =
 const persistedPaperFillExecutionHistories =
   new WeakSet<VerifiedPaperFillExecutionHistory>();
 const persistedPaperFillMetadata = new WeakMap<VerifiedPaperFillExecutionHistory, {
+  recordsById: ReadonlyMap<string, PaperFillExecutionRecord>;
   appendedAtById: ReadonlyMap<string, string>;
   riskOriginById: ReadonlyMap<string, PersistedRiskOrigin>;
   completionById: ReadonlyMap<string, FillCompletion>;
@@ -288,7 +289,8 @@ export class PaperFillExecutionFileRepository {
     const { history, appendedAtById, riskOriginById, completionById, lastEntryHash } = parsePaperFillExecutionLog(raw);
     if (completionById.size > 0) await syncDurableJsonFile(this.recordsPath);
     persistedPaperFillExecutionHistories.add(history);
-    persistedPaperFillMetadata.set(history, { appendedAtById, riskOriginById, completionById, lastEntryHash });
+    persistedPaperFillMetadata.set(history, { appendedAtById, riskOriginById, completionById, lastEntryHash,
+      recordsById: new Map(history.records.map((record) => [record.paperFillRecordId, record])) });
     return history;
   }
 
@@ -450,9 +452,9 @@ export function resolvePersistedPaperFillExecutionOrigin(
   history: VerifiedPaperFillExecutionHistory,
   paperFillRecordId: string
 ): Readonly<{ record: PaperFillExecutionRecord; appendedAt: string; riskOrigin: PersistedRiskOrigin | null; completion: FillCompletion | null }> {
-  const matches = getPersistedPaperFillExecutionRecords(history)
-    .filter((record) => record.paperFillRecordId === paperFillRecordId);
-  if (matches.length !== 1) {
+  getPersistedPaperFillExecutionRecords(history);
+  const record = persistedPaperFillMetadata.get(history)!.recordsById.get(paperFillRecordId);
+  if (record === undefined) {
     throw new Error("paper fill execution does not resolve exactly once");
   }
   const appendedAt = persistedPaperFillMetadata.get(history)?.appendedAtById.get(paperFillRecordId);
@@ -461,7 +463,7 @@ export function resolvePersistedPaperFillExecutionOrigin(
   }
   const riskOrigin = persistedPaperFillMetadata.get(history)!.riskOriginById.get(paperFillRecordId) ?? null;
   const completion = persistedPaperFillMetadata.get(history)!.completionById.get(paperFillRecordId) ?? null;
-  return Object.freeze({ record: matches[0]!, appendedAt, riskOrigin, completion });
+  return Object.freeze({ record, appendedAt, riskOrigin, completion });
 }
 
 function sameSemanticRecord(

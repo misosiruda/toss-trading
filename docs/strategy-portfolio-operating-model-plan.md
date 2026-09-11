@@ -4405,6 +4405,10 @@ pending이 사라지는 것을 허용하지 않는다. 같은 portfolio의 fill/
 Plan prefix 전체를 한 번 재생하면서 각 체결 직전 다음 action과 실행 state만 캡처한다.
 `replayRebalancePlanExecutionContexts`는 기존 replay와 같은 검증을 사용하며, 매 체결마다
 늘어나는 prefix를 복사·재파싱하지 않는다. 기존 replay 호출에는 context를 수집하지 않는다.
+Risk/fill/price 원본 resolver는 전체 history 검증·중복 거절 뒤 private WeakMap metadata에
+ID/ref 인덱스를 보관한다. 체결마다 records.filter를 반복하지 않으며 외부 입력이나 cloned
+history에 인덱스/원본 권한을 부여하지 않는다. 새 조회는 새 인덱스를 발급하므로 과거 history가
+후속 append를 암묵적으로 포함하지 않는다. Legacy durable origin 거절은 그대로 유지한다.
 Risk 결정의 exact target hash, 다음 action,
 pre-state, prior cumulative, 잔여 action cap/target을 대조하며 직전 event commit이 결정 시각보다
 엄격히 앞서야 한다. Risk에 plan receipt가 있으면 실제 plan/predecessor의 ID/hash/commit 및

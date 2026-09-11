@@ -66,6 +66,7 @@ export interface VerifiedSourcePriceEvidenceOrigin {
 }
 
 interface VerifiedHistoryMetadata {
+  recordsByRef: ReadonlyMap<string, SourcePriceEvidenceRecord>;
   entries: readonly ParsedSourcePriceEvidenceEntry[];
   appendedAtByRef: ReadonlyMap<string, string>;
   lastEntryHash: string | null;
@@ -359,18 +360,18 @@ export function resolveVerifiedSourcePriceEvidenceOrigin(
   history: VerifiedSourcePriceEvidenceHistory,
   evidenceRef: string
 ): VerifiedSourcePriceEvidenceOrigin {
-  const records = getVerifiedSourcePriceEvidenceRecords(history);
-  const matches = records.filter((record) => record.evidenceRef === evidenceRef);
-  if (matches.length !== 1) {
+  getVerifiedSourcePriceEvidenceRecords(history);
+  const metadata = getVerifiedHistoryMetadata(history);
+  const record = metadata.recordsByRef.get(evidenceRef);
+  if (record === undefined) {
     throw new Error("source price evidence does not resolve exactly once");
   }
-  const metadata = getVerifiedHistoryMetadata(history);
   const appendedAt = metadata.appendedAtByRef.get(evidenceRef);
   if (appendedAt === undefined) {
     throw new Error("source price evidence durable origin is unavailable; legacy record requires review");
   }
   return deepFreeze({
-    record: matches[0] as SourcePriceEvidenceRecord,
+    record,
     appendedAt
   });
 }
@@ -382,6 +383,7 @@ function createVerifiedSourcePriceEvidenceHistory(
   const history = Object.freeze({ records: Object.freeze([...records]) });
   verifiedSourcePriceEvidenceHistories.add(history);
   verifiedSourcePriceEvidenceMetadata.set(history, {
+    recordsByRef: new Map(records.map((record) => [record.evidenceRef, record])),
     entries: Object.freeze(entries.map((entry) => Object.freeze({ ...entry }))),
     appendedAtByRef: new Map(
       entries.filter((entry) => entry.committedAt !== null)

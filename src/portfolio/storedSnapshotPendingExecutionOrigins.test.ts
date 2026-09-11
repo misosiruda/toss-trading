@@ -6,9 +6,9 @@ import test, { type TestContext } from "node:test";
 import { PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
 import { buildPaperFill } from "../paper/executionModel.js";
 import { createPaperFillExecutionRecord } from "./paperFillExecution.js";
-import { PaperFillExecutionFileRepository, createPaperFillExecutionPaths } from "./paperFillExecutionFiles.js";
+import { PaperFillExecutionFileRepository, createPaperFillExecutionPaths, parseVerifiedPaperFillExecutionHistory, resolvePersistedPaperFillExecutionOrigin } from "./paperFillExecutionFiles.js";
 import { createPortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
-import { PortfolioActionRiskDecisionFileRepository, createPortfolioActionRiskDecisionPaths } from "./portfolioActionRiskDecisionFiles.js";
+import { PortfolioActionRiskDecisionFileRepository, createPortfolioActionRiskDecisionPaths, resolveVerifiedPortfolioActionRiskDecisionOrigin } from "./portfolioActionRiskDecisionFiles.js";
 import { decisionInput, policyFixture, storePolicyFixture } from "./portfolioActionRiskDecisionTestFixtures.js";
 import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
 import { createPortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
@@ -20,7 +20,7 @@ import { RebalancePlanFileRepository } from "./rebalancePlanFiles.js";
 import { RebalancePlanEventFileRepository } from "./rebalancePlanEventFiles.js";
 import { replayRebalancePlanEvents, replayRebalancePlanExecutionContexts } from "./rebalancePlanEventReplay.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
-import { SourcePriceEvidenceFileRepository, createSourcePriceEvidencePaths } from "./sourcePriceEvidenceFiles.js";
+import { SourcePriceEvidenceFileRepository, createSourcePriceEvidencePaths, resolveVerifiedSourcePriceEvidenceOrigin } from "./sourcePriceEvidenceFiles.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { resolveStoredSnapshotPendingActions } from "./storedSnapshotPendingActions.js";
 import { resolveStoredSnapshotPendingExecutionOrigins } from "./storedSnapshotPendingExecutionOrigins.js";
@@ -193,6 +193,47 @@ test("execution contexts visit a long partial-fill history once and retain immut
   }
   // A bad late transition must reject the whole result, not return already captured contexts.
   assert.throws(() => replayRebalancePlanExecutionContexts({ plan, events: [...events, events[0]!] }), /duplicate/);
+});
+
+test("verified origin indexes avoid repeated record scans and do not grant provenance to clones or parsed fill logs", async (context) => {
+  await fixture(context, {}, async (state) => {
+    const riskHistory = await new PortfolioActionRiskDecisionFileRepository(state.baseDir).readVerifiedHistory();
+    const fillHistory = await new PaperFillExecutionFileRepository(state.baseDir).readVerifiedHistory();
+    const priceHistory = await new SourcePriceEvidenceFileRepository(state.baseDir).readVerifiedHistory();
+    const riskId = riskHistory.records[0]!.riskDecisionId, fillId = fillHistory.records[0]!.paperFillRecordId, ref = priceHistory.records[0]!.evidenceRef;
+    const originalFilter = Array.prototype.filter;
+    const arrays = new Set<unknown>([riskHistory.records, fillHistory.records, priceHistory.records]);
+    let scans = 0;
+    // node:test mock.method rejects Array.prototype (an Array); scope this synchronous spy with finally instead.
+    Array.prototype.filter = (function (this: unknown[], ...args: Parameters<typeof originalFilter>) {
+      if (arrays.has(this)) scans++;
+      return Reflect.apply(originalFilter, this, args);
+    }) as typeof originalFilter;
+    try {
+      for (let n = 0; n < 1000; n++) {
+        assert.equal(resolveVerifiedPortfolioActionRiskDecisionOrigin(riskHistory, riskId).record, riskHistory.records[0]);
+        assert.equal(resolvePersistedPaperFillExecutionOrigin(fillHistory, fillId).record, fillHistory.records[0]);
+        assert.equal(resolveVerifiedSourcePriceEvidenceOrigin(priceHistory, ref).record, priceHistory.records[0]);
+      }
+      assert.equal(scans, 0);
+    } finally { Array.prototype.filter = originalFilter; }
+    assert.throws(() => resolveVerifiedPortfolioActionRiskDecisionOrigin({ ...riskHistory }, riskId), /not verified/);
+    assert.throws(() => resolvePersistedPaperFillExecutionOrigin({ ...fillHistory }, fillId), /not repository verified/);
+    assert.throws(() => resolveVerifiedSourcePriceEvidenceOrigin({ ...priceHistory }, ref), /not verified/);
+    const parsed = parseVerifiedPaperFillExecutionHistory(await readFile(sourcePath(state.baseDir, "fill"), "utf8"));
+    assert.throws(() => resolvePersistedPaperFillExecutionOrigin(parsed, fillId), /not repository verified/);
+    for (const missing of ["missing", "__proto__", "constructor"]) {
+      assert.throws(() => resolveVerifiedPortfolioActionRiskDecisionOrigin(riskHistory, missing), /exactly once/);
+      assert.throws(() => resolvePersistedPaperFillExecutionOrigin(fillHistory, missing), /exactly once/);
+      assert.throws(() => resolveVerifiedSourcePriceEvidenceOrigin(priceHistory, missing), /exactly once/);
+    }
+    context.mock.timers.setTime(T + 90);
+    const { riskDecisionId: _id, riskDecisionHash: _hash, riskInputHash: _input, ...risk } = riskHistory.records[0]!;
+    const repository = new PortfolioActionRiskDecisionFileRepository(state.baseDir);
+    const later = await repository.append(createPortfolioActionRiskDecision({ ...risk, decidedAt: at(85) }));
+    assert.throws(() => resolveVerifiedPortfolioActionRiskDecisionOrigin(riskHistory, later.riskDecisionId), /exactly once/);
+    assert.equal(resolveVerifiedPortfolioActionRiskDecisionOrigin(await repository.readVerifiedHistory(), later.riskDecisionId).record.riskDecisionHash, later.riskDecisionHash);
+  });
 });
 
 async function seed(baseDir: string, context: TestContext, options: Options) {
