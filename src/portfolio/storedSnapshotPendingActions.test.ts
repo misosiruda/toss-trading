@@ -111,6 +111,30 @@ test("stored snapshot pending BUY requires exact target price and a price commit
   }
 });
 
+test("stored snapshot pending rejects chronology-inverted price artifacts through existing source gates", async (context) => {
+  for (const kind of ["fractional_sell", "whole_sell", "whole_buy"] as const) {
+    for (const times of [{ createdAt: at(51) }, { observedAt: at(13), createdAt: at(13) }]) await fixture(context, kind, async (state) => {
+      const { evidenceRef: _ref, evidenceHash: _hash, ...original } = (await state.prices.readAll())[0]!;
+      const forged = createSourcePriceEvidenceRecord({ ...original, ...times });
+      context.mock.timers.setTime(T + 10);
+      const isolated = new SourcePriceEvidenceFileRepository(join(state.baseDir, "rejected-price"));
+      await assert.rejects(isolated.append(forged), /cannot be appended before creation/);
+      context.mock.timers.setTime(T + 80);
+      const path = createSourcePriceEvidencePaths(state.baseDir).recordsPath;
+      const lines = (await readFile(path, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+      const { entryHash: _entryHash, ...entry } = lines[0];
+      const payload = { ...entry, record: forged };
+      const entryHash = hashCanonicalPayload(payload);
+      const { commitHash: _commitHash, ...marker } = lines[1];
+      const updatedMarker = { ...marker, entryHash };
+      const corrupt = `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...updatedMarker, commitHash: hashCanonicalPayload(updatedMarker) })}\n`;
+      await writeFile(path, corrupt);
+      await assert.rejects(run(state), /source price evidence file contains corrupt/);
+      assert.equal(await readFile(path, "utf8"), corrupt);
+    });
+  }
+});
+
 test("stored snapshot pending requires input time after event commit and rejects terminal omissions correctly", async (context) => {
   await fixture(context, "fractional_buy", async (state) => {
     const snapshot = await state.snapshots.append(snapshotWith([{ ...state.pending, asOf: at(40) }]));

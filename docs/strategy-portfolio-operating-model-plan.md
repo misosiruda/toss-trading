@@ -4381,6 +4381,9 @@ priceEvidenceRef가 가리키는 실제 durable 가격과 referencePriceKrw 및 
 gross를 같은 방식으로 평가한다. 따라서 SELL은 계획 시점 가격과 다른 명시적 가격으로 재평가할 수 있다.
 0원·overflow·불일치 gross를 거절하며 금액 cap이나 원래 목표액을 잔여 평가금액으로 대신하지 않는다.
 가격과 금액 cap의 비교는 현재 실행 승인이 아니라 후속 Risk 재평가의 책임이다.
+기존 가격 parser/저장소는 observedAt ≤ createdAt ≤ appendStartedAt ≤ committedAt을 강제한다.
+따라서 commit이 pending/BUY plan cutoff보다 엄격히 앞서는 검증은 생성·관측 시각도 함께 제한한다.
+시각 역전 record의 append와 전체 entry/marker를 재해시한 위조 이력의 조회도 기존 원본 검증에서 거절한다.
 
 각 저장소 잠금은 다음 저장소를 읽기 전에 해제한다. Snapshot observation, 실제 plan assessment,
 가격의 잠금 내부 observation, action별 origin/계산값과 결과 hash를 보존하지만 multi-file lease나
