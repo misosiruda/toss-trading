@@ -34,7 +34,7 @@ import { resolveStoredCandidateExecutionCost } from "./storedCandidateExecutionC
 import { resolveStoredPolicyCandidateExecutionCost } from "./storedPolicyCandidateExecutionCost.js";
 import { calculateCandidateDailyLiquidity, CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION } from "./candidateDailyLiquidity.js";
 import { resolveStoredCandidateDailyLiquidity } from "./storedCandidateDailyLiquidity.js";
-import { CANDIDATE_DAILY_COST_BASIS_MODEL_VERSION } from "./candidateDailyCostBasis.js";
+import { calculateCandidateDailyCostBasis, CANDIDATE_DAILY_COST_BASIS_MODEL_VERSION } from "./candidateDailyCostBasis.js";
 import { resolveStoredCandidateDailyCostBasis } from "./storedCandidateDailyCostBasis.js";
 import { resolveStoredCandidateCashCapacity } from "./storedCandidateCashCapacity.js";
 import { pendingActionExposureTotals, type PendingPortfolioActionInput } from "./portfolioSizingInputs.js";
@@ -49,6 +49,8 @@ import { calculateCandidateBoundedNotional } from "./candidateBoundedNotional.js
 import { CANDIDATE_BOUNDED_NOTIONAL_MODEL_VERSION, type CandidateNotionalSizingPolicy } from "./candidateNotionalSizingPolicy.js";
 import { calculateCandidateInitialExecutionCost, parseCandidateInitialExecutionCost } from "./candidateInitialExecutionCost.js";
 import { resolveStoredCandidateInitialExecutionCost } from "./storedCandidateInitialExecutionCost.js";
+import { calculateCandidateCashAffordableNotional, parseCandidateCashAffordableNotional } from "./candidateCashAffordableNotional.js";
+import { resolveStoredCandidateCashAffordableNotional } from "./storedCandidateCashAffordableNotional.js";
 
 const AT = "2026-09-04T00:00:00.000Z";
 const CREATED = "2026-09-01T00:00:00.000Z";
@@ -1076,6 +1078,85 @@ test("initial cost repricing refuses invalid prior cost declarations before repl
     assert.throws(() => calculateCandidateInitialExecutionCost({ ...result.calculation.input, boundedNotional }), error);
   }
 }));
+
+test("cash affordable notional preserves actual source assessments and read-only replay", async () => temporary(async (baseDir) => {
+  const fixture = await seed(baseDir, initialCostOptions());
+  const paths = (await readdir(baseDir)).filter((name) => name.endsWith(".jsonl")).map((name) => join(baseDir, name));
+  const before = await Promise.all(paths.map((path) => readFile(path)));
+  const result = await resolveStoredCandidateCashAffordableNotional({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId });
+  assert.equal(result.calculation.maximumNotionalKrw, 100);
+  assert.equal(result.calculation.pricing.requiredCashKrw, "104");
+  assert.equal(result.calculation.nextRequiredCashKrw, null);
+  assert.equal(result.calculation.reasonCode, "initial_notional_affordable");
+  assert.equal(result.assessment.evidenceAndHardGateConditionsSatisfied, false);
+  assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
+  assert.equal(result.assessment.pendingCostAndReservationAuthority, "not_verified");
+  assert.equal(result.assessment.finalSizing, "not_performed");
+  frozen(result);
+  assert.deepEqual(parseCandidateCashAffordableNotional(JSON.parse(JSON.stringify(result.calculation))), result.calculation);
+  assert.deepEqual(await resolveStoredCandidateCashAffordableNotional({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId }), result);
+  assert.deepEqual(await Promise.all(paths.map((path) => readFile(path))), before);
+}));
+
+test("cash affordable notional integer search matches exhaustive small-budget costs including zero and one KRW", async () => temporary(async (baseDir) => {
+  const fixture = await seed(baseDir, initialCostOptions(1));
+  const stored = await resolveStoredCandidateInitialExecutionCost({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId });
+  for (const cash of [0, 1, 4, 5, 50, 100, 104, 850]) {
+    const costRepricing = repriceDeclaredCash(stored.calculation, cash);
+    const result = calculateCandidateCashAffordableNotional({ costRepricing });
+    let exhaustiveMaximum = 0;
+    for (let amount = 0; amount <= costRepricing.input.boundedNotional.initialMaximumNotionalKrw; amount++) {
+      const basis = calculateCandidateDailyCostBasis({ modelVersion: CANDIDATE_DAILY_COST_BASIS_MODEL_VERSION,
+        liquidity: costRepricing.input.dailyLiquidity, referenceNotionalKrw: amount });
+      const cost = calculateCandidateExecutionCost({ ...costRepricing.cost.input, ...basis.costBasis });
+      if (amount + cost.estimatedCostKrw <= cash) exhaustiveMaximum = amount;
+    }
+    assert.equal(result.affordableBeforeMinimumKrw, exhaustiveMaximum, `cash ${cash}`);
+    assert.equal(result.maximumNotionalKrw, exhaustiveMaximum);
+    assert.ok(BigInt(result.pricing.requiredCashKrw) <= BigInt(cash));
+    assert.ok(result.searchIterations <= 53);
+    if (result.nextRequiredCashKrw !== null) assert.ok(BigInt(result.nextRequiredCashKrw) > BigInt(cash));
+    if (cash === 100) { assert.equal(result.maximumNotionalKrw, 96); assert.equal(result.reasonCode, "cash_adjusted"); }
+  }
+}));
+
+test("cash affordable notional reapplies minimum order after cost adjustment", async () => {
+  for (const minimum of [96, 97, 101]) await temporary(async (baseDir) => {
+    const fixture = await seed(baseDir, initialCostOptions(minimum));
+    const stored = await resolveStoredCandidateInitialExecutionCost({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId });
+    const result = calculateCandidateCashAffordableNotional({ costRepricing: repriceDeclaredCash(stored.calculation, 100) });
+    assert.equal(result.maximumNotionalKrw, minimum === 96 ? 96 : 0);
+    assert.equal(result.reasonCode, minimum === 96 ? "cash_adjusted" : minimum === 97 ? "cash_budget_below_minimum_notional" : "initial_notional_zero");
+    if (minimum !== 96) {
+      assert.equal(result.pricing.cost.input.referenceNotionalKrw, 0);
+      assert.equal(result.pricing.cost.estimatedCostKrw, 0);
+    }
+  });
+});
+
+test("cash affordable notional rejects rehashed search pricing and authority tampering and corrupt origins", async () => temporary(async (baseDir) => {
+  const fixture = await seed(baseDir, initialCostOptions());
+  const stored = await resolveStoredCandidateInitialExecutionCost({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId });
+  const costRepricing = repriceDeclaredCash(stored.calculation, 100);
+  const result = calculateCandidateCashAffordableNotional({ costRepricing });
+  for (const patch of [{ maximumNotionalKrw: 97 }, { affordableBeforeMinimumKrw: 95 }, { cashBudgetKrw: 101 },
+    { nextRequiredCashKrw: "100" }, { searchIterations: 0 }, { finalSizing: "performed" },
+    { pricing: { ...result.pricing, requiredCashKrw: "96" } }]) {
+    const { calculationHash: _hash, ...payload } = { ...result, ...patch };
+    assert.throws(() => parseCandidateCashAffordableNotional({ ...payload, calculationHash: hashCanonicalPayload(payload) }), /complete replay/);
+  }
+  assert.throws(() => calculateCandidateCashAffordableNotional({ costRepricing, cashBudgetKrw: 1000 }));
+  assert.throws(() => calculateCandidateCashAffordableNotional({ costRepricing: { ...costRepricing, fitsDeclaredCash: true } }));
+  await appendFile(createCandidateSizingInputPaths(baseDir).recordsPath, "{corrupt}\n");
+  await assert.rejects(resolveStoredCandidateCashAffordableNotional({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId }), /corrupt/);
+}));
+
+function repriceDeclaredCash(pricing: ReturnType<typeof calculateCandidateInitialExecutionCost>, cash: number) {
+  const { sizingInputRecordId: _id, sizingInputHash: _hash, ...payload } = pricing.input.boundedNotional.input.sizingInput;
+  const sizingInput = createCandidateSizingInputRecord({ ...payload, exposureCapInputs: { ...payload.exposureCapInputs, cashAvailableKrw: cash } });
+  const boundedNotional = calculateCandidateBoundedNotional({ ...pricing.input.boundedNotional.input, sizingInput });
+  return calculateCandidateInitialExecutionCost({ ...pricing.input, boundedNotional });
+}
 
 function initialCostOptions(minimumOrderNotionalKrw = 10): Options {
   const options = exposureBoundsOptions(), original = options.patch!;
