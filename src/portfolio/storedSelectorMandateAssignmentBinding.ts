@@ -21,7 +21,11 @@ export async function resolveStoredSelectorMandateAssignmentBinding(value: z.inp
   const source = await new InvestmentMandateFileRepository(baseDir, lockOptions).withDurableVerifiedHistory(async (history) => {
     const mandate = history.records.find((record) => record.mandateId === input.mandateId);
     if (!mandate || mandate.assignmentSource !== "deterministic_selector") throw new Error("stored selector mandate source is missing or not selector");
-    return Object.freeze({ mandate, observation: getDurableInvestmentMandateObservation(history) });
+    const observation = getDurableInvestmentMandateObservation(history);
+    if (Date.parse(mandate.createdAt) > Date.parse(observation.observedAt)) {
+      throw new Error("stored selector mandate creation is after its durable observation");
+    }
+    return Object.freeze({ mandate, observation });
   });
   return new CandidateAssignmentFileRepository(baseDir, lockOptions).withDurableVerifiedHistory(async (history, inputs, requests) => {
     const observedAt = getDurableCandidateAssignmentObservation(history);

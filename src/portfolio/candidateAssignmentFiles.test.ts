@@ -317,10 +317,11 @@ test("stored selector mandate resolves actual sealed sources without modifying b
 }));
 
 test("stored selector mandate rejects foreign source refs rationale and creation before seal commit", async () => {
-  for (const failure of ["hash", "reason", "early"]) await temporary(async (dir) => {
+  for (const failure of ["hash", "reason", "early", "future"]) await temporary(async (dir) => {
     const fixture = await seedStoredSelectorMandate(dir, failure);
     await assert.rejects(resolveStoredSelectorMandateAssignmentBinding({ baseDir: dir, mandateId: fixture.mandate.mandateId }),
-      failure === "early" ? /predates assignment set commit/ : failure === "reason" ? /reason or evidence/ : /exact selected/);
+      failure === "future" ? /creation is after its durable observation/ : failure === "early" ? /predates assignment set commit/ :
+        failure === "reason" ? /reason or evidence/ : /exact selected/);
   });
 });
 
@@ -354,7 +355,8 @@ async function seedStoredSelectorMandate(dir: string, failure = "none") {
     candidateAssignmentSetHash: failure === "hash" ? OTHER : sealed.record.candidateAssignmentSetHash, selectedRank: selected.selectedRank,
     openingCapacityReservationId: "synthetic-reservation", openingCapacityReservationHash: HASH, reservedSlotOrdinal: 19,
     reservedMaximumNotionalKrw: selected.reservedMaximumNotionalKrw, scoringModelVersion: candidate.scoringModelVersion, selectionScore: candidate.selectionScore,
-    createdAt: failure === "early" ? new Date(Date.parse(sealed.committedAt) - 1).toISOString() : new Date().toISOString() });
+    createdAt: failure === "early" ? new Date(Date.parse(sealed.committedAt) - 1).toISOString() :
+      new Date(Date.now() + (failure === "future" ? 86_400_000 : 0)).toISOString() });
   await new InvestmentMandateFileRepository(dir).appendRecord(mandate);
   return { candidate, sealed, mandate };
 }
