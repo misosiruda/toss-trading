@@ -4393,6 +4393,28 @@ gross를 같은 방식으로 평가한다. 따라서 SELL은 계획 시점 가�
 candidate/Risk의 미검증 플래그를 해제하지 않는다. 새 저장 형식·API·runner·거래 기본값 변경이
 없으므로 신규 consumer를 중단하고 코드만 rollback하며 append-only 원본을 수정하지 않는다.
 
+#### Snapshot pending 계산에 사용된 체결·Risk 원본 연결
+
+`resolveStoredSnapshotPendingExecutionOrigins`는 실제 snapshot pending 대조 결과에 포함된 모든
+plan prefix의 execution_applied를 실제 저장 Risk 결정·paper fill·source price에 연결한다.
+미완료 action뿐 아니라 rejected/applied 등 terminal plan의 체결도 검증해 잘못된 완료 이력으로
+pending이 사라지는 것을 허용하지 않는다. 같은 portfolio의 fill/Risk identity 재사용을 거절한다.
+원본 파일 전체를 검사하며 참조되지 않은 손상 suffix도 보존한 채 실패한다.
+
+기존 fill/Risk validator의 identity·금액·누계·cash cap·가격 원본·commit 순서 검증에 더해,
+각 체결 직전 plan prefix를 독립 재생한다. Risk 결정의 exact target hash, 다음 action,
+pre-state, prior cumulative, 잔여 action cap/target을 대조하며 직전 event commit이 결정 시각보다
+엄격히 앞서야 한다. Risk에 plan receipt가 있으면 실제 plan/predecessor의 ID/hash/commit 및
+관측 시각과 대조한다. Receipt가 없는 기존 record는 소급 source-before-creation 증명을 얻지 않는다.
+
+반환 결과는 snapshot 대조 assessment hash, 체결별 event/Risk/fill/price origin, 실제 Risk/fill
+record 집합 hash와 가격 durable observation을 보존한다. 범위는
+stored_snapshot_pending_execution_origins_only이며 정책·required Risk rule의 독립 평가,
+mandate/turnover 권한, resulting state·회계 원본, opening reservation, 가격 freshness/trust,
+현재 generation/CAS 및 최종 sizing은 완료하지 않는다. 잠금은 순차 해제하며 과거 source 조회를
+현재 실행 권한으로 사용하지 않는다. 기존 조회/API/runner·저장 형식·안전 기본값은 그대로이며
+신규 consumer 중단과 코드 rollback에 append-only 데이터 변환·삭제는 필요 없다.
+
 ### PR 6. Rebalance preview planner
 
 - sell-first deterministic plan
