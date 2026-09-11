@@ -1686,6 +1686,31 @@ activation의 원자적 승인 또는 current ledger transaction이 아니다. C
 reservation/slot 권한 및 currentExecutionAuthority는 여전히 부여하지 않는다. 저장 형식, writer 또는
 운영 activation 변경은 없으며 코드 rollback에 기존 원본 데이터 변환/삭제가 없다.
 
+`resolveStoredSelectorOpeningCapacityMandateOrigins`는 portfolio의 실제 capacity event journal을
+전체 재생한 뒤 selector root에 이어진 `bound_to_mandate`의 mandate ID를 모아 한 번에 stored source
+대조를 실행한다. Root의 portfolio/policy/bucket, reservation ID/hash, 전역 slot, 금액과 set/assignment 참조를
+mandate와 정확히 비교한다. Request-local rank는 slot으로 사용하지 않는다. Set commit은 root asOf
+이하여야 하고 root commit은 mandate 생성 이하여야 하며 mandate 생성은 bound event asOf 이하여야 한다.
+각 source 관측 후 journal을 다시 잠가 generation 불변과 관측 시각 순서를 검사하므로 중간 append는
+전체 재조회 대상으로 거절한다. Event 잠금을 source 잠금과 중첩하지 않는다.
+
+반환값은 root/bound event storage origin, 실제 mandate/candidate sources, 관측 hash와 미검증 event ID를
+보존한다. Unbound selector root, manual event 및 fill/release successor를 통과 처리하지 않는다.
+이 검사는 역사적 source-content binding이며 root reservation hash의 발급 권한, 공용 slot/budget CAS,
+활성화 및 eligibility/최종 sizing은 검증하지 않는다. `rootAllocationAuthority=not_verified`,
+`currentExecutionAuthority=not_granted`, `sourceBeforeCreationReceipt=not_recorded`를 유지한다.
+관측 시각/hash는 재조회마다 달라질 수 있다. Schema, writer 및 기본값 변경 없이 소비 경로를 제거하는
+코드 rollback이 가능하고 기존 journal 변환/삭제는 필요 없다.
+
+`resolveStoredSelectorMandateAssignmentBindings`는 중복 없는 mandate ID 목록을 받아 mandate와
+request/snapshot/sizing/assignment 원본을 각각 한 번 관측하고 ID 및 request별 index를 만든다.
+단일 ID 함수는 같은 batch 경로를 사용한다. `createSelectorMandateAssignmentBindingResolver`는 실제
+선택 집합별 전체 배분을 한 번 재생한 뒤 독립 파싱·동결한 원본과 private index만 캡처한다. 각 mandate의
+정확한 내용·sizing 대조는 생략하지 않는다. 호출자 원본 변경이나 caller 제공 검증 표시는 재사용 근거가 아니다.
+최종 bindingsHash는 각 root/event commitHash와 source assessmentHash의 ordered 목록을 hash하여
+동일 set 전체를 binding마다 다시 직렬화하지 않는다. 이 변경은 관측/재생 호출 중복을 줄이며 저장소 내부
+전체 replay 자체를 생략하거나 총 시간의 선형 증가를 보장하지 않는다. 실제 대규모 시간 측정은 별도다.
+
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
 ```ts

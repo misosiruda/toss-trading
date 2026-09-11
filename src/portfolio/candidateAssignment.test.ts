@@ -6,7 +6,7 @@ import { createCandidateAssignment, parseCandidateAssignment, resolveCandidateAs
 import { createCandidateAssignmentSetRecord, parseCandidateAssignmentSetRecord, resolveCandidateAssignmentSetBinding } from "./candidateAssignmentSet.js";
 import { hashCanonicalPayload, hashDerivedId } from "./runtimePolicyContracts.js";
 import { createInvestmentMandateRecord, parseInvestmentMandateRecord } from "./investmentMandate.js";
-import { resolveSelectorMandateAssignmentBinding } from "./selectorMandateAssignmentBinding.js";
+import { createSelectorMandateAssignmentBindingResolver, resolveSelectorMandateAssignmentBinding } from "./selectorMandateAssignmentBinding.js";
 
 const HASH = `sha256:${"a".repeat(64)}`, OTHER = `sha256:${"b".repeat(64)}`;
 const AT = "2026-09-01T00:00:00.000Z", LATER = "2026-09-01T00:00:01.000Z";
@@ -205,6 +205,14 @@ test("selector mandate binding matches actual supplied selected rank range and r
   assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
   assert.deepEqual(resolveSelectorMandateAssignmentBinding({ ...input, assignments: [...input.assignments].reverse() }), result);
   assertFrozen(result);
+  const mutableSources = structuredClone({ request: { ...input.request }, set: input.set, assignments: input.assignments });
+  const resolve = createSelectorMandateAssignmentBindingResolver(mutableSources);
+  mutableSources.assignments.length = 0;
+  mutableSources.set.selectedAssignments.length = 0;
+  mutableSources.request.gapKrw = 0;
+  assert.deepEqual(resolve({ mandate: input.mandate, sizingInput: input.sizingInput }), result);
+  assert.throws(() => createSelectorMandateAssignmentBindingResolver(mutableSources));
+  assert.throws(() => resolve({ mandate: input.mandate, sizingInput: input.sizingInput, trusted: true } as never));
   // Content binding does not infer a shared slot ordinal from the request-local rank.
   assert.equal(resolveSelectorMandateAssignmentBinding({ ...input, mandate: rebuildSelectorMandate(input.mandate, { reservedSlotOrdinal: 2 }) })
     .assessment.capacityReservationAuthority, "not_verified");
