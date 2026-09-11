@@ -3404,6 +3404,28 @@ Verified history의 private storage-origin 인덱스는 실제 reader에서만 �
 중단하고 코드 rollback할 수 있으며 이력·복구 barrier를 삭제하지 않는다. 최종 예약 원장 수용 기준은
 실제 원본과 allocator 연결 및 통합 검증 후에만 완료할 수 있다.
 
+수동 reserved root의 실제 원본 연결은 `resolveStoredManualOpeningCapacityEventOrigins`에서
+portfolio의 모든 정책/bucket에 걸친 manual root를 actual event journal, manual reservation journal,
+manual assignment 및 예약이 참조한 snapshot 이력과 대조한다. 각 저장소는 필터 전에 전체 이력을
+재검증하며 terminal reservation의 root도 검사한다. 실제 reservation repository는 자신이 저장한
+manual/snapshot prefix receipt를 현재 source lock 아래 재검증한다. Resolver는 해당 record와 실제
+manual event를 기존 pure binding에 전달해 ID/hash, portfolio/policy/bucket, version, 초기 notional,
+new/increase slot flag 및 생성 순서를 검사한다. Reservation commit은 event.asOf보다 엄격히 앞서야
+하며 같은 millisecond는 선행 저장을 증명하지 못하므로 거절한다.
+
+반환 bindings는 actual event origin, reservation origin 및 manual event를 보존하고 assessment에는
+각 관측/generation hash와 binding hash를 기록한다. Input/options는 await 전에 복사하고 manual,
+reservation, event 관측의 역행을 거절한다. Manual source는 먼저 관측 후 lock을 해제하며 reservation
+reader의 manual -> snapshot -> reservation 잠금에 재진입하지 않는다. 마지막 event observation도
+callback 종료 후 만료된다. 따라서 이는 순차적인 historical observation이지 다중 파일의 현재 lease가 아니다.
+
+범위는 stored_manual_reserved_event_origins_only다. Selector root와 모든 successor의 ID를 각각
+unverified 목록으로 반환하며 이들을 검증된 manual root 수에 포함하지 않는다. 정책/evidence/sizing,
+전역 slot·budget allocator, successor의 mandate/fill/해제 원본, current execution 및 최종 sizing은
+완료하지 않는다. 과거 event 작성 시 source-before-creation receipt를 저장하지 않았으므로 이를
+소급 발급하지 않으며 historical disk availability도 증명하지 않는다. 기존 writer·API·안전 기본값과
+저장 형식 변경은 없고 데이터 변환 없이 신규 consumer 중단과 코드 rollback이 가능하다.
+
 수동 예약의 실제 원본 조회 선행 분할은 `ManualAssignmentFileRepository.withDurableVerifiedHistory`로
 manual assignment의 전체 이력을 독립 검증·동기화하고 consumer가 끝날 때까지 기존 source lock을
 유지한다. 일반 `readAll`과 동일한 strict JSONL parser를 사용해 torn/blank/corrupt/duplicate 이력을
