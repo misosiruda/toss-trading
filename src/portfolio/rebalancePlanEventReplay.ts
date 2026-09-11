@@ -25,6 +25,23 @@ export interface ActionProgress {
  * an authentic fill/Risk origin, or permission to execute a portfolio mutation.
  */
 export function replayRebalancePlanEvents(input: { plan: unknown; events: readonly unknown[] }) {
+  return replayEvents(input, false).state;
+}
+
+/** One validated pass captures only the next action and execution state, not a copy of each growing prefix. */
+export function replayRebalancePlanExecutionContexts(input: { plan: unknown; events: readonly unknown[] }) {
+  return replayEvents(input, true);
+}
+
+export interface RebalanceExecutionPriorState {
+  plan: ReturnType<typeof createRebalancePlanEventRecordBinding>["plan"];
+  status: RebalancePlanEvent["eventType"];
+  actions: readonly Readonly<ActionProgress>[];
+  executionPortfolioVersion: string;
+  executionPortfolioSnapshotHash: string;
+}
+
+function replayEvents(input: { plan: unknown; events: readonly unknown[] }, captureExecutionContexts: boolean) {
   const parsed = inputSchema.parse(input);
   const binding = createRebalancePlanEventRecordBinding(parsed.plan);
   const plan = binding.plan;
@@ -43,6 +60,9 @@ export function replayRebalancePlanEvents(input: { plan: unknown; events: readon
   let executionPortfolioSnapshotHash = plan.portfolioSnapshotHash;
   let nextActionSequence = 0;
   let previous: RebalancePlanEvent | undefined;
+  const executionContexts: Readonly<{ event: Extract<RebalancePlanEvent, { eventType: "execution_applied" }>;
+    eventIndex: number; priorState: Readonly<RebalanceExecutionPriorState> }>[] = [];
+  let eventIndex = 0;
   for (const event of events) {
     if (eventIds.has(event.planEventId)) throw new Error("rebalance event replay contains a duplicate event ID");
     eventIds.add(event.planEventId);
@@ -73,6 +93,10 @@ export function replayRebalancePlanEvents(input: { plan: unknown; events: readon
         throw new Error("rebalance execution reuses an earlier portfolio version");
       }
       assertProgress(plan.actions[event.actionSequence]!, nextAction, event);
+      if (captureExecutionContexts) executionContexts.push(Object.freeze({ event, eventIndex, priorState: Object.freeze({
+        plan, status: previous!.eventType, executionPortfolioVersion, executionPortfolioSnapshotHash,
+        actions: Object.freeze([Object.freeze({ ...nextAction })])
+      }) }));
       nextAction.fillCount += 1;
       nextAction.cumulativeFilledNotionalKrw = event.cumulativeFilledNotionalKrw;
       nextAction.cumulativeFilledQuantity = event.cumulativeFilledQuantity;
@@ -94,13 +118,15 @@ export function replayRebalancePlanEvents(input: { plan: unknown; events: readon
       }
     }
     previous = event;
+    eventIndex += 1;
   }
-  return Object.freeze({
+  const state = Object.freeze({
     plan, events: Object.freeze(events), status: previous!.eventType, lastEvent: previous!,
     executionPortfolioVersion, executionPortfolioSnapshotHash,
     executionEventIds: Object.freeze(executionEventIds),
     actions: Object.freeze(actions.map((action) => Object.freeze(action)))
   });
+  return Object.freeze({ state, executionContexts: Object.freeze(executionContexts) });
 }
 
 function assertProgress(action: RebalanceAction, prior: ActionProgress, event: Extract<RebalancePlanEvent, { eventType: "execution_applied" }>): void {

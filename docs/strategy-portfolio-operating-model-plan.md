@@ -4402,7 +4402,10 @@ pending이 사라지는 것을 허용하지 않는다. 같은 portfolio의 fill/
 원본 파일 전체를 검사하며 참조되지 않은 손상 suffix도 보존한 채 실패한다.
 
 기존 fill/Risk validator의 identity·금액·누계·cash cap·가격 원본·commit 순서 검증에 더해,
-각 체결 직전 plan prefix를 독립 재생한다. Risk 결정의 exact target hash, 다음 action,
+Plan prefix 전체를 한 번 재생하면서 각 체결 직전 다음 action과 실행 state만 캡처한다.
+`replayRebalancePlanExecutionContexts`는 기존 replay와 같은 검증을 사용하며, 매 체결마다
+늘어나는 prefix를 복사·재파싱하지 않는다. 기존 replay 호출에는 context를 수집하지 않는다.
+Risk 결정의 exact target hash, 다음 action,
 pre-state, prior cumulative, 잔여 action cap/target을 대조하며 직전 event commit이 결정 시각보다
 엄격히 앞서야 한다. Risk에 plan receipt가 있으면 실제 plan/predecessor의 ID/hash/commit 및
 관측 시각과 대조한다. Receipt가 없는 기존 record는 소급 source-before-creation 증명을 얻지 않는다.

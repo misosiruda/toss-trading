@@ -18,6 +18,7 @@ import { createRebalancePlanRecord, hashRebalanceExecutionTarget, type Rebalance
 import { createRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { RebalancePlanFileRepository } from "./rebalancePlanFiles.js";
 import { RebalancePlanEventFileRepository } from "./rebalancePlanEventFiles.js";
+import { replayRebalancePlanEvents, replayRebalancePlanExecutionContexts } from "./rebalancePlanEventReplay.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
 import { SourcePriceEvidenceFileRepository, createSourcePriceEvidencePaths } from "./sourcePriceEvidenceFiles.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
@@ -153,6 +154,45 @@ test("snapshot pending execution retains historical bindings after a later termi
     assert.deepEqual(after.pending.bindings, before.pending.bindings);
     assert.notEqual(after.assessmentHash, before.assessmentHash);
   });
+});
+
+test("execution contexts visit a long partial-fill history once and retain immutable next-action pre-states", () => {
+  const plan = createRebalancePlanRecord({ cycleId: "long-cycle", portfolioId: "paper-long", portfolioVersion: "v0", portfolioSnapshotHash: H("v0"),
+    policyHash: H("policy"), evidenceCutoffAt: at(10), createdAt: at(15), triggerRef: "synthetic", phase: "buy",
+    actions: [0, 1].map((n) => ({ actionId: `action-${n}`, actionSequence: n, market: "KR", symbol: `SYNTH-${n}`, side: "BUY", lineageKind: "mandate",
+      mandateId: `mandate-${n}`, maximumNotionalKrw: 500, executionTarget: { targetKind: "fractional_buy_notional", targetNotionalKrw: 500 }, reasonCodes: ["synthetic"] })) });
+  const common = { planId: plan.planId, planHash: plan.planHash, cycleId: plan.cycleId, portfolioId: plan.portfolioId,
+    portfolioVersion: plan.portfolioVersion, portfolioSnapshotHash: plan.portfolioSnapshotHash, policyHash: plan.policyHash };
+  const events: RebalancePlanEvent[] = [createRebalancePlanEvent({ ...common, eventType: "previewed", asOf: at(20) })];
+  events.push(createRebalancePlanEvent({ ...common, eventType: "approved", asOf: at(30), previousPlanEventId: events[0]!.planEventId, reasonCodes: ["synthetic"] }));
+  for (let n = 0; n < 1000; n++) events.push(createRebalancePlanEvent({ ...common, eventType: "execution_applied", asOf: at(40),
+    previousPlanEventId: events.at(-1)!.planEventId, actionId: `action-${Math.floor(n / 500)}`, actionSequence: Math.floor(n / 500), fillSequence: n % 500,
+    fillId: `fill-${n}`, paperFillRecordId: `paper-fill-${n}`, paperFillHash: H(`fill-${n}`), riskDecisionId: `risk-${n}`,
+    requestedNotionalKrw: 1, requestedQuantity: 1, filledNotionalKrw: 1, filledQuantity: 1,
+    cumulativeFilledNotionalKrw: n % 500 + 1, cumulativeFilledQuantity: n % 500 + 1, expectedPrePortfolioVersion: `v${n}`,
+    expectedPrePortfolioSnapshotHash: H(`v${n}`), resultingPortfolioVersion: `v${n + 1}`, resultingPortfolioSnapshotHash: H(`v${n + 1}`) }));
+  let identityReads = 0;
+  const counted = events.map((event) => new Proxy(event, { get(target, key, receiver) {
+    if (key === "planEventId") identityReads++;
+    return Reflect.get(target, key, receiver);
+  } }));
+  const result = replayRebalancePlanExecutionContexts({ plan, events: counted });
+  assert.ok(identityReads <= events.length * 20, `event identities were repeatedly reparsed: ${identityReads}`);
+  assert.equal(result.executionContexts.length, 1000);
+  assert.deepEqual(result.state, replayRebalancePlanEvents({ plan, events }));
+  for (const index of [0, 499, 500, 999]) {
+    const context = result.executionContexts[index]!;
+    assert.equal(context.eventIndex, index + 2);
+    assert.equal(context.priorState.executionPortfolioVersion, `v${index}`);
+    assert.equal(context.priorState.actions.length, 1);
+    assert.equal(context.priorState.actions[0]!.actionSequence, Math.floor(index / 500));
+    assert.equal(context.priorState.actions[0]!.cumulativeFilledNotionalKrw, index % 500);
+    assert.ok(Object.isFrozen(context.priorState.actions[0]));
+    assert.equal(context.priorState.plan, result.state.plan);
+    assert.equal("events" in context.priorState, false);
+  }
+  // A bad late transition must reject the whole result, not return already captured contexts.
+  assert.throws(() => replayRebalancePlanExecutionContexts({ plan, events: [...events, events[0]!] }), /duplicate/);
 });
 
 async function seed(baseDir: string, context: TestContext, options: Options) {

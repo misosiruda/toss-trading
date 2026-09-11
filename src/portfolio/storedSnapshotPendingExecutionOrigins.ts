@@ -6,7 +6,7 @@ import { PortfolioActionRiskDecisionFileRepository, resolveVerifiedPortfolioActi
 import { validateRiskDecisionPlanState } from "./portfolioActionRiskDecisionPlanContext.js";
 import { portfolioSizingSnapshotSchema } from "./portfolioSizingSnapshot.js";
 import { type PortfolioSizingSnapshotFileRepositoryOptions } from "./portfolioSizingSnapshotFiles.js";
-import { replayRebalancePlanEvents } from "./rebalancePlanEventReplay.js";
+import { replayRebalancePlanExecutionContexts } from "./rebalancePlanEventReplay.js";
 import { validateRebalancePlanExecutionFillRiskBinding } from "./rebalancePlanExecutionFillRiskBinding.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { getDurableSourcePriceEvidenceObservation, resolveVerifiedSourcePriceEvidenceOrigin, SourcePriceEvidenceFileRepository } from "./sourcePriceEvidenceFiles.js";
@@ -33,14 +33,12 @@ export async function resolveStoredSnapshotPendingExecutionOrigins(value: z.inpu
     const executionBindings = pending.planReplay.projection.planReplays.flatMap((planReplay) => {
       const { plan, events } = planReplay.calculation.input;
       // Terminal plans also contribute: a fabricated completion must not silently remove pending exposure.
-      return events.flatMap((event, index) => {
-        if (event.eventType !== "execution_applied") return [];
+      return replayRebalancePlanExecutionContexts({ plan, events }).executionContexts.map(({ event, eventIndex: index, priorState }) => {
         const binding = validateRebalancePlanExecutionFillRiskBinding({ event, riskDecisionHistory, paperFillHistory, sourcePriceEvidenceHistory });
         if (usedFills.has(binding.paperFill.fillId) || usedRisk.has(binding.riskDecision.riskDecisionId)) {
           throw new Error("snapshot pending execution reuses a portfolio fill or Risk decision");
         }
         usedFills.add(binding.paperFill.fillId); usedRisk.add(binding.riskDecision.riskDecisionId);
-        const priorState = replayRebalancePlanEvents({ plan, events: events.slice(0, index) });
         validateRiskDecisionPlanState(binding.riskDecision, priorState);
         const predecessor = planReplay.eventOrigins[index - 1]!;
         const riskOrigin = resolveVerifiedPortfolioActionRiskDecisionOrigin(riskDecisionHistory, event.riskDecisionId);
@@ -57,9 +55,9 @@ export async function resolveStoredSnapshotPendingExecutionOrigins(value: z.inpu
           if (!isDeepStrictEqual(receipt, expected) || Date.parse(observedAt) < Date.parse(predecessor.appendedAt) ||
             Date.parse(observedAt) > Date.parse(binding.riskDecision.decidedAt)) throw new Error("snapshot pending Risk plan receipt mismatch");
         }
-        return [Object.freeze({ ...binding, eventOrigin: planReplay.eventOrigins[index]!, riskOrigin,
+        return Object.freeze({ ...binding, eventOrigin: planReplay.eventOrigins[index]!, riskOrigin,
           fillOrigin: resolvePersistedPaperFillExecutionOrigin(paperFillHistory, event.paperFillRecordId),
-          priceOrigin: resolveVerifiedSourcePriceEvidenceOrigin(sourcePriceEvidenceHistory, binding.sourcePriceEvidence.evidenceRef) })];
+          priceOrigin: resolveVerifiedSourcePriceEvidenceOrigin(sourcePriceEvidenceHistory, binding.sourcePriceEvidence.evidenceRef) });
       });
     });
     const assessment = Object.freeze({ verificationScope: "stored_snapshot_pending_execution_origins_only" as const,
