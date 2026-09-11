@@ -62,12 +62,12 @@ export class CandidateSizingInputFileRepository {
     return this.withDurableVerifiedHistory(async (history) => history.origins);
   }
 
-  /** Request -> snapshot -> sizing input. Consumers must not re-enter the source or input stores. */
-  async withDurableVerifiedHistory<T>(operation: (history: VerifiedCandidateSizingInputHistory) => Promise<T>): Promise<T> {
+  /** Request -> snapshot -> sizing input. The second argument shares the existing request lease, without re-entering its lock. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory) => Promise<T>): Promise<T> {
     return this.withSources((requests, snapshots) => this.withLock(async () => {
       const { history, observedAt } = await this.readUnderLock(requests, snapshots);
       observations.set(history, observedAt);
-      try { return await operation(history); }
+      try { return await operation(history, requests); }
       finally { observations.delete(history); }
     }));
   }

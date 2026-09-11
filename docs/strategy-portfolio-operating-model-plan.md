@@ -4497,6 +4497,41 @@ supplied input을 실제 저장된 원본이나 current capacity 승인으로 �
 artifact reader와 거래 기본값 변경이 없으며, 신규 contract 사용 중단과 코드 rollback에 기존 데이터
 변환·삭제가 필요하지 않다.
 
+#### 후보 결과의 실제 원본 저장과 요청별 단일 확정
+
+`CandidateAssignmentFileRepository`는 assignment와 set을 같은
+`candidate-assignment-records.jsonl`의 entry/commit pair로 저장한다. `appendAssignment`는 실제
+request/snapshot/sizing input 이력을 잠근 상태에서 입력 ID/hash, scope, score/model 및 생성 시점을
+대조한다. `sealRequest(requestId)`는 외부 후보 목록이나 배분 결과를 받지 않고 같은 journal에 앞서
+저장된 해당 request의 전체 assignment로 순위·top-N·예산을 독립 재계산한다. Empty request도 실제
+request가 존재할 때만 빈 set으로 확정할 수 있다. 이는 후보 탐색이 완료됐다는 증거는 아니다.
+
+잠금 순서는 request → snapshot → sizing input → assignment다. Sizing input reader의 callback은
+이미 보유한 request history lease를 두 번째 인자로 제공해 request lock 재진입 없이 원본을 재사용한다.
+기존 단일 인자 callback과 파일 형식은 유지한다. Assignment와 set은 같은 writer lock을 공유하므로
+확정과 추가가 경쟁해도 추가가 먼저 저장돼 set에 포함되거나, 확정 후 추가가 거절되는 결과만 허용한다.
+확정 후 같은 assignment의 exact retry와 같은 request seal retry는 원래 record를 반환하고 쓰지 않는다.
+다른 payload/createdAt의 같은 assignment ID, 두 번째 set 및 확정 후 신규 assignment는 거절한다.
+
+Entry는 kind, complete record, 실제 request prefix observation과 sizing input prefix count/generation,
+관측·append 시각 및 previous commit hash를 결속한다. Record fsync 후 채집한 committedAt과 entry hash는
+별도 marker hash로 결속한다. Reader는 전체 journal과 원본 이력을 먼저 검증하고, 저장된 prefix를 현재
+잠긴 source에 대조한 뒤 assignment/set을 순서대로 재생한다. Set의 후보 누락이나 개별 배분 변조는
+hash를 다시 계산했어도 앞선 실제 assignment 전체와 달라 거절한다. 원본 commit이 결과 createdAt보다
+늦은 경우도 거절하지만 이 비교만으로 marker 자체의 flush가 과거 createdAt 전에 완료됐다고 증명하지 않는다.
+
+쓰기 시작 전 pending barrier를 sync하고 entry/marker 저장과 sync가 끝난 뒤 제거한다. Interrupted pair,
+pending barrier, torn line, invalid UTF-8, 원본/이력 변조 또는 관측 도중 교체는 자동 수리 없이 fail-closed한다.
+잠금 획득의 EEXIST/Windows EPERM만 monotonic timeout 내 재시도한다. 초기화 실패·소유권 변경·abandoned
+lock은 자동 삭제하지 않는다. Callback lease는 종료/예외 시 폐기하며 clone이나 만료된 history는 사용할 수 없다.
+
+이 기능이 보장하는 completeness는 **현재 남아 있는 journal에서 해당 seal보다 앞선 assignment 전체**다.
+Universe 탐색 완료, 파일 전체 또는 완전한 suffix 삭제 탐지에는 별도의 외부 checkpoint/선택 완료 증거가
+필요하다. Eligibility/required evidence/최종 sizing 재평가, 현재 shared capacity CAS, 실제 mandate 발급과
+paper orchestrator 연결은 후속이다. 저장 성공을 실행 승인으로 사용하지 않는다. 기존 artifact/API/default는
+변경하지 않으며 rollback은 신규 저장소 사용 중단과 코드 복구로 가능하다. 불완전 barrier는 원본과 실행 중인
+writer 유무를 확인하는 별도 복구가 필요하고 자동으로 지우지 않는다.
+
 #### 대기 action의 실제 계획 진행 이력 연결
 
 `pending_plan_action_progress.v1`은 full plan/event chain을 독립 재생해 approved 또는
