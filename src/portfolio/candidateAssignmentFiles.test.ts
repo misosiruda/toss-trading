@@ -16,7 +16,7 @@ import { createCandidateSizingInputRecord } from "./candidateSizingInput.js";
 import { CandidateSizingInputFileRepository, createCandidateSizingInputPaths, getDurableCandidateSizingInputObservation } from "./candidateSizingInputFiles.js";
 import { createInvestmentMandateRecord } from "./investmentMandate.js";
 import { InvestmentMandateFileRepository, createInvestmentMandatePaths } from "./investmentMandateFiles.js";
-import { resolveStoredSelectorMandateAssignmentBinding } from "./storedSelectorMandateAssignmentBinding.js";
+import { resolveStoredSelectorMandateAssignmentBinding, resolveStoredSelectorMandateAssignmentBindings } from "./storedSelectorMandateAssignmentBinding.js";
 import { resolveStoredSelectorOpeningCapacityMandateOrigins } from "./storedSelectorOpeningCapacityMandateOrigins.js";
 import { createOpeningCapacityReservationEvent, type OpeningCapacityReservationEvent } from "./openingCapacityReservationEvent.js";
 import { OpeningCapacityReservationEventFileRepository, createOpeningCapacityReservationEventPaths } from "./openingCapacityReservationEventFiles.js";
@@ -379,6 +379,48 @@ test("stored selector capacity bindings reject independently hashed root lineage
       mode === "early" ? /chronology mismatch/ : mode === "missing" ? /source is missing/ : mode === "corrupt" ? () => true : /exact root reservation lineage/);
   });
 });
+
+test("stored selector capacity reads each source once and shares validated set context across multiple bindings", async (context) => temporary(async (dir) => {
+  const data = await seedSelectorCapacity(dir);
+  const assignments = await new CandidateAssignmentFileRepository(dir).withDurableVerifiedHistory(async (history) => history);
+  const a = assignments.origins.find((origin) => origin.kind === "assignment" && origin.record.symbol === "A");
+  if (!a || a.kind !== "assignment") throw new Error("missing fixture assignment");
+  const now = new Date().toISOString(), events = new OpeningCapacityReservationEventFileRepository(dir);
+  const root = createOpeningCapacityReservationEvent({ eventType: "reserved", portfolioId: a.record.portfolioId, policyHash: a.record.policyHash,
+    bucket: a.record.bucket, reservationId: "second-reservation", reservationHash: OTHER, remainingReservedNotionalKrw: 70,
+    occupiesNewPositionSlot: true, capacityLedgerVersion: 3, asOf: now, createdAt: now,
+    reservationSource: { sourceKind: "selector", candidateAssignmentSetId: data.sealed.record.candidateAssignmentSetId,
+      candidateAssignmentSetHash: data.sealed.record.candidateAssignmentSetHash, candidateAssignmentId: a.record.assignmentId, reservedSlotOrdinal: 20 } });
+  await events.append(root);
+  if (data.mandate.assignmentSource !== "deterministic_selector") throw new Error("missing selector fixture");
+  const { mandateId: _id, mandateHash: _hash, ...payload } = data.mandate;
+  const mandate = createInvestmentMandateRecord({ ...payload, symbol: a.record.symbol, candidateAssignmentId: a.record.assignmentId,
+    selectedRank: 1, selectionScore: a.record.selectionScore, maximumOpeningNotionalKrw: 70, reservedMaximumNotionalKrw: 70,
+    openingCapacityReservationId: root.reservationId, openingCapacityReservationHash: root.reservationHash, reservedSlotOrdinal: 20,
+    createdAt: new Date().toISOString() });
+  await new InvestmentMandateFileRepository(dir).appendRecord(mandate);
+  const later = new Date().toISOString();
+  await events.append(createOpeningCapacityReservationEvent({ eventType: "bound_to_mandate", portfolioId: root.portfolioId,
+    policyHash: root.policyHash, bucket: root.bucket, reservationId: root.reservationId, reservationHash: root.reservationHash,
+    previousCapacityReservationEventId: root.capacityReservationEventId, mandateId: mandate.mandateId, mandateHash: mandate.mandateHash,
+    remainingReservedNotionalKrw: 70, occupiesNewPositionSlot: true, capacityLedgerVersion: 4, asOf: later, createdAt: later }));
+  await assert.rejects(resolveStoredSelectorMandateAssignmentBindings({ baseDir: dir, mandateIds: [mandate.mandateId, mandate.mandateId] }), /unique IDs/);
+  await assert.rejects(resolveStoredSelectorMandateAssignmentBindings({ baseDir: dir, mandateIds: ["missing"] }), /source is missing/);
+  const spies = [InvestmentMandateFileRepository, CandidateAssignmentFileRepository, CandidateSizingInputFileRepository,
+    BucketSelectionRequestFileRepository, PortfolioSizingSnapshotFileRepository].map((repository) =>
+    context.mock.method(repository.prototype, "withDurableVerifiedHistory"));
+  const eventSpy = context.mock.method(OpeningCapacityReservationEventFileRepository.prototype, "withDurableVerifiedHistory");
+  try {
+    const result = await resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId });
+    assert.equal(result.bindings.length, 2);
+    assert.deepEqual(result.assessment.unverifiedEventIds, []);
+    for (const spy of spies) assert.equal(spy.mock.callCount(), 1);
+    assert.equal(eventSpy.mock.callCount(), 2);
+    assert.equal(result.bindings[0]!.source.binding.set, result.bindings[1]!.source.binding.set);
+    assert.equal(result.bindings[0]!.source.assignmentOrigins, result.bindings[1]!.source.assignmentOrigins);
+    assert.equal(result.bindings[0]!.source.assessment.mandateObservation, result.bindings[1]!.source.assessment.mandateObservation);
+  } finally { context.mock.restoreAll(); }
+}));
 
 test("stored selector capacity bindings list unbound roots and reject event generation changes during source reads", async (context) => {
   await temporary(async (dir) => {

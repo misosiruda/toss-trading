@@ -5,7 +5,7 @@ import { openingCapacityReservationEventPayloadSchema, type OpeningCapacityReser
 import { OpeningCapacityReservationEventFileRepository, getDurableOpeningCapacityEventObservedAt,
   resolveStoredOpeningCapacityEventOrigin, type VerifiedOpeningCapacityEventOrigin } from "./openingCapacityReservationEventFiles.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
-import { resolveStoredSelectorMandateAssignmentBinding } from "./storedSelectorMandateAssignmentBinding.js";
+import { resolveStoredSelectorMandateAssignmentBindings } from "./storedSelectorMandateAssignmentBinding.js";
 
 const inputSchema = z.object({ baseDir: z.string().min(1),
   portfolioId: openingCapacityReservationEventPayloadSchema.options[0].shape.portfolioId }).strict();
@@ -25,20 +25,28 @@ export async function resolveStoredSelectorOpeningCapacityMandateOrigins(value: 
   const selected = initial.history.events.filter((event) => event.portfolioId === input.portfolioId);
   const roots = new Map(selected.filter((event) => event.eventType === "reserved" && event.reservationSource.sourceKind === "selector")
     .map((event) => [scope(event), event]));
+  const targets = selected.filter((event): event is Extract<OpeningCapacityReservationEvent, { eventType: "bound_to_mandate" }> =>
+    event.eventType === "bound_to_mandate" && roots.has(scope(event)));
+  const sources = targets.length ? await resolveStoredSelectorMandateAssignmentBindings({ baseDir,
+    mandateIds: [...new Set(targets.map((event) => event.mandateId))] }, lockOptions) : [];
+  const byMandate = new Map(sources.map((source) => [source.binding.mandate.mandateId, source]));
+  if (sources.length) {
+    if (Date.parse(sources[0]!.assessment.mandateObservation.observedAt) < Date.parse(lastObservedAt)) {
+      throw new Error("selector capacity mandate observation clock moved backwards");
+    }
+    lastObservedAt = sources[0]!.assessment.assignmentObservedAt;
+  }
   const bindings: Readonly<{ root: OpeningCapacityReservationEvent; rootOrigin: VerifiedOpeningCapacityEventOrigin;
     event: OpeningCapacityReservationEvent; eventOrigin: VerifiedOpeningCapacityEventOrigin;
-    source: Awaited<ReturnType<typeof resolveStoredSelectorMandateAssignmentBinding>> }>[] = [];
+    source: Awaited<ReturnType<typeof resolveStoredSelectorMandateAssignmentBindings>>[number] }>[] = [];
   const verifiedIds = new Set<string>();
   for (const event of selected) {
     if (event.eventType !== "bound_to_mandate") continue;
     const root = roots.get(scope(event));
     if (!root || root.eventType !== "reserved" || root.reservationSource.sourceKind !== "selector") continue;
-    const source = await resolveStoredSelectorMandateAssignmentBinding({ baseDir, mandateId: event.mandateId }, lockOptions);
+    const source = byMandate.get(event.mandateId);
+    if (!source) throw new Error("selector capacity bound mandate source is missing");
     const mandate = source.binding.mandate, reference = root.reservationSource;
-    if (Date.parse(source.assessment.mandateObservation.observedAt) < Date.parse(lastObservedAt)) {
-      throw new Error("selector capacity mandate observation clock moved backwards");
-    }
-    lastObservedAt = source.assessment.assignmentObservedAt;
     if (mandate.mandateHash !== event.mandateHash || mandate.portfolioId !== root.portfolioId ||
       mandate.policyHash !== root.policyHash || mandate.bucket !== root.bucket ||
       mandate.openingCapacityReservationId !== root.reservationId || mandate.openingCapacityReservationHash !== root.reservationHash ||
@@ -64,7 +72,9 @@ export async function resolveStoredSelectorOpeningCapacityMandateOrigins(value: 
       throw new Error("selector capacity mandate observation clock moved backwards");
     }
     const assessment = Object.freeze({ verificationScope: "stored_selector_capacity_mandate_bindings_only" as const,
-      portfolioId: input.portfolioId, bindingsHash: hashCanonicalPayload(bindings), verifiedBoundMandateCount: bindings.length,
+      portfolioId: input.portfolioId, bindingsHash: hashCanonicalPayload(bindings.map((binding) => ({
+        rootCommitHash: binding.rootOrigin.commitHash, eventCommitHash: binding.eventOrigin.commitHash,
+        sourceAssessmentHash: binding.source.assessmentHash }))), verifiedBoundMandateCount: bindings.length,
       eventGenerationHash: history.generationHash, initialEventObservedAt: initial.observedAt, eventObservedAt: observedAt,
       unverifiedEventIds: Object.freeze(selected.filter((event) => !verifiedIds.has(event.capacityReservationEventId)).map((event) => event.capacityReservationEventId)),
       rootAllocationAuthority: "not_verified" as const, mandateActivationAuthority: "not_verified" as const,
