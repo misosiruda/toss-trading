@@ -4,7 +4,7 @@ import { z } from "zod";
 import { calculatePendingPlanActionProgress, PENDING_PLAN_ACTION_PROGRESS_MODEL_VERSION } from "./pendingPlanActionProgress.js";
 import { rebalancePlanRecordSchema } from "./rebalancePlan.js";
 import { type RebalancePlanEvent } from "./rebalancePlanEvent.js";
-import { RebalancePlanEventFileRepository, resolveDurableRebalancePlanEventObservation,
+import { RebalancePlanEventFileRepository, resolveDurableRebalancePlanEventObservation, resolveDurableRebalancePlanEventObservedAt,
   resolveVerifiedRebalancePlanEventOrigin } from "./rebalancePlanEventFiles.js";
 import { RebalancePlanFileRepository, type RebalancePlanFileRepositoryOptions } from "./rebalancePlanFiles.js";
 import { compareText, hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
@@ -30,8 +30,10 @@ export async function resolveStoredPendingPlanActionProgress(value: z.input<type
   const repository = new RebalancePlanEventFileRepository(baseDir, plans, lockOptions);
   // The repository validates complete histories, including foreign and post-cutoff suffixes, before filtering.
   const history = await repository.readDurableVerifiedHistory();
-  const observedAt = new Date().toISOString();
-  if (Date.parse(observedAt) < readStartedAt) throw new Error("pending plan observation clock moved backwards");
+  const observedAt = resolveDurableRebalancePlanEventObservedAt(history);
+  if (Date.parse(observedAt) < readStartedAt || Date.now() < Date.parse(observedAt)) {
+    throw new Error("pending plan observation clock moved backwards");
+  }
   const groups = new Map<string, RebalancePlanEvent[]>();
   for (const event of history.events) {
     const origin = resolveVerifiedRebalancePlanEventOrigin(history, event.planEventId);

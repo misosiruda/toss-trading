@@ -7,7 +7,7 @@ import { calculatePendingPlanActionProgress, parsePendingPlanActionProgress, PEN
 import { createRebalancePlanRecord, hashRebalanceExecutionTarget, type RebalancePlanRecord, type RebalanceExecutionTarget } from "./rebalancePlan.js";
 import { createRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { RebalancePlanFileRepository, createRebalancePlanPaths } from "./rebalancePlanFiles.js";
-import { RebalancePlanEventFileRepository, createRebalancePlanEventPaths } from "./rebalancePlanEventFiles.js";
+import { RebalancePlanEventFileRepository, createRebalancePlanEventPaths, resolveDurableRebalancePlanEventObservedAt } from "./rebalancePlanEventFiles.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { resolveStoredPendingPlanActionProgress } from "./storedPendingPlanActionProgress.js";
 
@@ -166,6 +166,37 @@ test("stored pending progress validates complete foreign and future histories an
     await writeFile(planPath, `${planRaw}{\n`);
     await assert.rejects(stored(baseDir));
     assert.equal(await readFile(planPath, "utf8"), `${planRaw}{\n`);
+  });
+});
+
+test("stored pending observation remains lock-bound when a writer appends before the read promise returns", async (context) => {
+  for (const populated of [false, true]) await withStore(context, async (baseDir, plans, repository) => {
+    const plan = await plans.append(makePlan());
+    const events = history(plan);
+    if (populated) for (const [index, item] of events.entries()) {
+      context.mock.timers.setTime(T + 20 + index * 10); await repository.append(item);
+    }
+    const ordinary = await repository.readVerifiedHistory();
+    assert.throws(() => resolveDurableRebalancePlanEventObservedAt(ordinary), /no durable observation/);
+    context.mock.timers.setTime(T + 100);
+    const durable = await repository.readDurableVerifiedHistory();
+    assert.equal(resolveDurableRebalancePlanEventObservedAt(durable), at(100));
+    assert.throws(() => resolveDurableRebalancePlanEventObservedAt({ ...durable }), /no durable observation/);
+    const original = RebalancePlanEventFileRepository.prototype.readDurableVerifiedHistory;
+    const hook = context.mock.method(RebalancePlanEventFileRepository.prototype, "readDurableVerifiedHistory", async function (this: RebalancePlanEventFileRepository) {
+      const history = await original.call(this);
+      context.mock.timers.setTime(T + 110);
+      await repository.append(populated ? event(plan, "rejected", events[2], 110) : event(plan, "previewed", undefined, 110));
+      context.mock.timers.setTime(T + 120);
+      return history;
+    });
+    try {
+      const result = await stored(baseDir);
+      assert.equal(result.assessment.observedAt, at(100));
+      assert.equal(result.assessment.sourceEventCount, populated ? 3 : 0);
+      assert.equal(result.assessment.sourceGenerationHash, durable.generationHash);
+      assert.equal((await repository.readAll()).length, populated ? 4 : 1);
+    } finally { hook.mock.restore(); }
   });
 });
 

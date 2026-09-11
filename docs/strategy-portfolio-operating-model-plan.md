@@ -4356,7 +4356,9 @@ foreign portfolio 및 cutoff 이후 suffix의 손상을 무시하지 않는다. 
 Cutoff는 조회 시작보다 미래일 수 없다. 평가 시점 이후의 정상 append는 기존 projectionHash를
 바꾸지 않지만 source generation/count와 관측 assessmentHash는 변경될 수 있다.
 Plan commit origin, 포함한 event의 commit origin, full plan/event content와 execution target hash를
-결과에 보존한다. 새 artifact·API·runner·거래 활성화 또는 저장 형식 변경은 없다.
+결과에 보존한다. Assessment observedAt은 빈 history를 포함해 저장소 잠금 안의 durable 관측 시각이다.
+잠금 해제 후 새 writer가 append해도 이전 generation의 시각을 조회 반환 시각으로 늦추지 않는다.
+새 artifact·API·runner·거래 활성화 또는 저장 형식 변경은 없다.
 
 이 단계는 stored_pending_plan_action_progress_only이다. Commit 시각은 당시 disk availability의
 증명이 아니며 full history도 현재 generation lease 또는 진짜 fill/Risk 원본 검증이 아니다.
