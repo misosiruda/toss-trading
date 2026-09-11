@@ -44,6 +44,8 @@ import { resolveStoredCandidateClassification } from "./storedCandidateClassific
 import { calculateCandidatePositionExposureBounds, CANDIDATE_POSITION_EXPOSURE_BOUNDS_MODEL_VERSION,
   parseCandidatePositionExposureBounds } from "./candidatePositionExposureBounds.js";
 import { resolveStoredCandidatePositionExposureBounds } from "./storedCandidatePositionExposureBounds.js";
+import { resolveStoredCandidateBoundedNotional } from "./storedCandidateBoundedNotional.js";
+import { CANDIDATE_BOUNDED_NOTIONAL_MODEL_VERSION, type CandidateNotionalSizingPolicy } from "./candidateNotionalSizingPolicy.js";
 
 const AT = "2026-09-04T00:00:00.000Z";
 const CREATED = "2026-09-01T00:00:00.000Z";
@@ -56,6 +58,7 @@ type Options = { patch?: (input: Payload) => Payload; market?: "KR" | "US"; symb
   cashKrw?: number; pendingActions?: PendingPortfolioActionInput[]; krHeldNotionalKrw?: number; heldBucket?: "swing" | "long_term";
   classificationModelVersion?: string; classificationPacket?: MarketPacket; enableUsMarket?: boolean;
   exposureLimitPolicy?: { modelVersion: string; maximumSectorExposureRatio: number };
+  notionalSizingPolicy?: CandidateNotionalSizingPolicy;
   policyHash?: string; legacy?: boolean; extraModelFeature?: boolean; upperBound?: number;
   requiredEvidence?: Parameters<typeof createBucketSelectionPolicyRecord>[0]["requiredEvidence"];
   hardGateRules?: CandidateHardGateRule[];
@@ -962,6 +965,35 @@ test("position bounds reject independently valid sources with different scope or
   }
 }));
 
+test("stored bounded notional uses actual policy score and capped input without granting final sizing", async () => temporary(async (baseDir) => {
+  const options = exposureBoundsOptions(), original = options.patch!;
+  const fixture = await seed(baseDir, { ...options, notionalSizingPolicy: { modelVersion: CANDIDATE_BOUNDED_NOTIONAL_MODEL_VERSION,
+    minimumScoreMultiplier: 0.5, maximumScoreMultiplier: 1.5, minimumOrderNotionalKrw: 10 },
+    patch: (input) => ({ ...original(input), sizingAlgorithmVersion: CANDIDATE_BOUNDED_NOTIONAL_MODEL_VERSION }) });
+  const result = await resolveStoredCandidateBoundedNotional({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId });
+  assert.equal(result.calculation.baseNotionalKrw, 500);
+  assert.equal(result.calculation.initialMaximumNotionalKrw, 100);
+  assert.equal(result.calculation.input.selectionPolicy.hash, fixture.selection.hash);
+  assert.equal(result.assessment.finalSizing, "not_performed");
+  assert.equal(result.assessment.exactCandidateCaps, "not_verified");
+  assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
+  frozen(result);
+}));
+
+test("stored bounded notional refuses absent models overstated caps and corrupt actual source histories", async () => {
+  for (const failure of ["legacy", "model", "caps", "source"]) await temporary(async (baseDir) => {
+    const options = exposureBoundsOptions(), original = options.patch!;
+    const fixture = await seed(baseDir, { ...options, ...(failure === "legacy" ? {} : { notionalSizingPolicy: {
+      modelVersion: failure === "model" ? "unsupported.v1" : CANDIDATE_BOUNDED_NOTIONAL_MODEL_VERSION,
+      minimumScoreMultiplier: 0.5, maximumScoreMultiplier: 1.5, minimumOrderNotionalKrw: 10 } }),
+      patch: (input) => { const value = original(input); return { ...value, sizingAlgorithmVersion: CANDIDATE_BOUNDED_NOTIONAL_MODEL_VERSION,
+        exposureCapInputs: { ...value.exposureCapInputs, symbolRemainingKrw: failure === "caps" ? 201 : 100 } }; } });
+    if (failure === "source") await appendFile(createCandidateSizingInputPaths(baseDir).recordsPath, "{corrupt}\n");
+    await assert.rejects(resolveStoredCandidateBoundedNotional({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId }),
+      failure === "caps" ? /exceed actual position bounds/ : failure === "source" ? /corrupt/ : /policy-selected model/);
+  });
+});
+
 function exposureBoundsOptions(packet = classificationPacket(), cashAvailableKrw = 850): Options {
   const options = classificationOptions(packet), original = options.patch!;
   return { ...options, exposureLimitPolicy: { modelVersion: CANDIDATE_POSITION_EXPOSURE_BOUNDS_MODEL_VERSION, maximumSectorExposureRatio: 0.3 },
@@ -1026,6 +1058,7 @@ async function seed(baseDir: string, options: Options = {}) {
     ...(options.costBasisModelVersion === undefined ? {} : { costBasisModelVersion: options.costBasisModelVersion }),
     ...(options.classificationModelVersion === undefined ? {} : { classificationModelVersion: options.classificationModelVersion }),
     ...(options.exposureLimitPolicy === undefined ? {} : { exposureLimitPolicy: options.exposureLimitPolicy }),
+    ...(options.notionalSizingPolicy === undefined ? {} : { notionalSizingPolicy: options.notionalSizingPolicy }),
     featureDefinitionRefs: scoringModel.terms.map((term) => term.featureDefinitionRef) });
   const usCalendar = options.enableUsMarket ? createSessionCalendarRecord({ market: "US", version: "synthetic.v1", timeZone: "America/New_York",
     validFromExchangeDate: "2026-09-01", validThroughExchangeDate: "2026-09-01",
