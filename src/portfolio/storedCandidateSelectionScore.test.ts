@@ -32,7 +32,7 @@ import type { CandidateHardGateRule } from "./candidateHardGateRules.js";
 import { calculateCandidateExecutionCost, CANDIDATE_EXECUTION_COST_MODEL_VERSION } from "./candidateExecutionCost.js";
 import { resolveStoredCandidateExecutionCost } from "./storedCandidateExecutionCost.js";
 import { resolveStoredPolicyCandidateExecutionCost } from "./storedPolicyCandidateExecutionCost.js";
-import { CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION } from "./candidateDailyLiquidity.js";
+import { calculateCandidateDailyLiquidity, CANDIDATE_DAILY_LIQUIDITY_MODEL_VERSION } from "./candidateDailyLiquidity.js";
 import { resolveStoredCandidateDailyLiquidity } from "./storedCandidateDailyLiquidity.js";
 import { CANDIDATE_DAILY_COST_BASIS_MODEL_VERSION } from "./candidateDailyCostBasis.js";
 import { resolveStoredCandidateDailyCostBasis } from "./storedCandidateDailyCostBasis.js";
@@ -45,7 +45,10 @@ import { calculateCandidatePositionExposureBounds, CANDIDATE_POSITION_EXPOSURE_B
   parseCandidatePositionExposureBounds } from "./candidatePositionExposureBounds.js";
 import { resolveStoredCandidatePositionExposureBounds } from "./storedCandidatePositionExposureBounds.js";
 import { resolveStoredCandidateBoundedNotional } from "./storedCandidateBoundedNotional.js";
+import { calculateCandidateBoundedNotional } from "./candidateBoundedNotional.js";
 import { CANDIDATE_BOUNDED_NOTIONAL_MODEL_VERSION, type CandidateNotionalSizingPolicy } from "./candidateNotionalSizingPolicy.js";
+import { calculateCandidateInitialExecutionCost, parseCandidateInitialExecutionCost } from "./candidateInitialExecutionCost.js";
+import { resolveStoredCandidateInitialExecutionCost } from "./storedCandidateInitialExecutionCost.js";
 
 const AT = "2026-09-04T00:00:00.000Z";
 const CREATED = "2026-09-01T00:00:00.000Z";
@@ -993,6 +996,93 @@ test("stored bounded notional refuses absent models overstated caps and corrupt 
       failure === "caps" ? /exceed actual position bounds/ : failure === "source" ? /corrupt/ : /policy-selected model/);
   });
 });
+
+test("initial cost repricing binds actual sources and recomputes participation and fee for the new amount", async () => temporary(async (baseDir) => {
+  const options = initialCostOptions(), original = options.patch!;
+  const fixture = await seed(baseDir, { ...options, execution: { bucket: executionParameters({ feeBps: 100 }), legacy: executionParameters({ feeBps: 100 }) },
+    patch: (input) => costCandidate(original(input), { feeBps: 100 }) });
+  const paths = (await readdir(baseDir)).filter((name) => name.endsWith(".jsonl")).map((name) => join(baseDir, name));
+  const before = await Promise.all(paths.map((path) => readFile(path)));
+  const result = await resolveStoredCandidateInitialExecutionCost({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId });
+  assert.equal(fixture.record.executionCostInput.referenceNotionalKrw, 200);
+  assert.equal(fixture.record.executionCostInput.participationRate, 0.1);
+  assert.equal(fixture.record.executionCostInput.estimatedCostKrw, 5);
+  assert.equal(result.calculation.cost.input.referenceNotionalKrw, 100);
+  assert.equal(result.calculation.cost.input.participationRate, 0.05);
+  assert.equal(result.calculation.cost.feeKrw, 1);
+  assert.equal(result.calculation.cost.estimatedCostKrw, 4);
+  assert.equal(result.calculation.requiredCashKrw, "104");
+  assert.equal(result.assessment.evidenceAndHardGateConditionsSatisfied, false);
+  assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
+  assert.equal(result.assessment.finalSizing, "not_performed");
+  assert.deepEqual(parseCandidateInitialExecutionCost(JSON.parse(JSON.stringify(result.calculation))), result.calculation);
+  frozen(result);
+  assert.deepEqual(await Promise.all(paths.map((path) => readFile(path))), before);
+}));
+
+test("initial cost repricing includes costs in cash comparison and leaves zero amounts at zero", async () => {
+  for (const [minimum, cash, amount, requiredCash, fits] of [[10, 100, 100, "104", false], [10, 104, 100, "104", true],
+    [101, 100, 0, "0", true]] as const) await temporary(async (baseDir) => {
+    const fixture = await seed(baseDir, initialCostOptions(minimum));
+    const result = await resolveStoredCandidateInitialExecutionCost({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId });
+    // Pure arithmetic over a changed declaration; it is not an actual stored cash-capacity receipt.
+    const { sizingInputRecordId: _id, sizingInputHash: _hash, ...payload } = fixture.record;
+    const sizingInput = createCandidateSizingInputRecord({ ...payload, exposureCapInputs: { ...payload.exposureCapInputs, cashAvailableKrw: cash } });
+    const boundedNotional = calculateCandidateBoundedNotional({ ...result.calculation.input.boundedNotional.input, sizingInput });
+    const calculation = calculateCandidateInitialExecutionCost({ ...result.calculation.input, boundedNotional });
+    assert.equal(calculation.cost.input.referenceNotionalKrw, amount);
+    assert.equal(calculation.requiredCashKrw, requiredCash);
+    assert.equal(calculation.fitsDeclaredCash, fits);
+    assert.equal(calculation.amountAdjustment, "not_performed");
+    if (amount === 0) {
+      assert.equal(calculation.cost.input.participationRate, 0);
+      assert.equal(calculation.cost.estimatedCostKrw, 0);
+    }
+  });
+});
+
+test("initial cost repricing rejects rehashed derived tampering foreign liquidity and corrupt stored history", async () => temporary(async (baseDir) => {
+  const fixture = await seed(baseDir, initialCostOptions());
+  const result = await resolveStoredCandidateInitialExecutionCost({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId });
+  const calculation = result.calculation;
+  for (const patch of [{ requiredCashKrw: "100" }, { fitsDeclaredCash: false }, { priorCostOutputHash: "forged" },
+    { finalSizing: "performed" }, { cost: { ...calculation.cost, estimatedCostKrw: 0 } },
+    { costBasis: { ...calculation.costBasis, costBasis: { ...calculation.costBasis.costBasis, participationRate: 0.1 } } }]) {
+    const { calculationHash: _hash, ...payload } = { ...calculation, ...patch };
+    assert.throws(() => parseCandidateInitialExecutionCost({ ...payload, calculationHash: hashCanonicalPayload(payload) }), /complete replay/);
+  }
+  const foreignLiquidity = calculateCandidateDailyLiquidity({ ...calculation.input.dailyLiquidity.input, maximumParticipationRatio: 0.05 });
+  assert.throws(() => calculateCandidateInitialExecutionCost({ ...calculation.input, dailyLiquidity: foreignLiquidity }), /liquidity input/);
+  assert.throws(() => calculateCandidateInitialExecutionCost({ ...calculation.input, overrideNotionalKrw: 1 }));
+  await appendFile(createCandidateSizingInputPaths(baseDir).recordsPath, "{corrupt}\n");
+  await assert.rejects(resolveStoredCandidateInitialExecutionCost({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId }), /corrupt/);
+}));
+
+test("initial cost repricing refuses invalid prior cost declarations before replacing their amount", async () => temporary(async (baseDir) => {
+  const fixture = await seed(baseDir, initialCostOptions());
+  const result = await resolveStoredCandidateInitialExecutionCost({ baseDir, sizingInputRecordId: fixture.record.sizingInputRecordId });
+  const { sizingInputRecordId: _id, sizingInputHash: _hash, ...payload } = fixture.record;
+  const cases: Array<[Partial<Payload["executionCostInput"]>, RegExp]> = [
+    [{ estimatedCostKrw: 0 }, /estimated cost/],
+    [{ participationRate: 0.09 }, /prior basis/],
+    [{ evidenceRefs: ["foreign"] }, /prior basis/],
+    [{ maxVolumeParticipationRate: 0.2 }, /participation cap/]
+  ];
+  for (const [patch, error] of cases) {
+    const candidate = patch.estimatedCostKrw === 0 ? { ...payload, executionCostInput: { ...payload.executionCostInput, ...patch } }
+      : costCandidate(payload, patch);
+    const sizingInput = createCandidateSizingInputRecord(candidate);
+    const boundedNotional = calculateCandidateBoundedNotional({ ...result.calculation.input.boundedNotional.input, sizingInput });
+    assert.throws(() => calculateCandidateInitialExecutionCost({ ...result.calculation.input, boundedNotional }), error);
+  }
+}));
+
+function initialCostOptions(minimumOrderNotionalKrw = 10): Options {
+  const options = exposureBoundsOptions(), original = options.patch!;
+  return { ...options, notionalSizingPolicy: { modelVersion: CANDIDATE_BOUNDED_NOTIONAL_MODEL_VERSION,
+    minimumScoreMultiplier: 0.5, maximumScoreMultiplier: 1.5, minimumOrderNotionalKrw },
+    patch: (input) => ({ ...original(input), sizingAlgorithmVersion: CANDIDATE_BOUNDED_NOTIONAL_MODEL_VERSION }) };
+}
 
 function exposureBoundsOptions(packet = classificationPacket(), cashAvailableKrw = 850): Options {
   const options = classificationOptions(packet), original = options.patch!;
