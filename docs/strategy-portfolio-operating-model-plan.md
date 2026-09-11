@@ -2455,6 +2455,30 @@ weight band와 rank별 최종 reserve 연결은 후속이다. `initial_notional_
 읽지 못한다. Rollback 시 새 field를 사용하는 정책의 소비를 중단하고 호환 reader를 유지하며 기존
 immutable record를 수정·삭제하지 않는다. 운영 정책 활성화, 기존 기본값 변경과 실제 주문은 없다.
 
+#### 초기 금액 기준 실행 비용 재계산
+
+`calculateCandidateInitialExecutionCost`는 초기 notional 결과와 daily liquidity 결과를 각각 전체
+재생한다. 실제 후보 feature/evidence scope, liquidity 입력 전체와 participation cap을 대조하고
+선택 정책의 liquidity/cost-basis/cost estimation version을 확인한다. 기존 reference 금액의 비용과
+참여율도 먼저 재생해 잘못된 원본 선언을 통과시키지 않는다. 이후 초기 배정 금액으로 daily proxy
+참여율과 fee/tax/spread/slippage/impact 비용을 다시 계산한다. 금액과 참여율만 바꾸고 이전
+estimatedCostKrw를 재사용하는 경로는 없다. 참여율은 기존 보수적 canonical decimal 반올림,
+각 비용 항목은 기존 원 단위 올림 규칙을 유지한다. 초기 금액 0은 참여율/비용도 0이다.
+
+`requiredCashKrw`는 초기 금액과 새 총비용의 BigInt 합을 문자열로 보존한다. `fitsDeclaredCash`는
+이 합이 선언된 cashAvailableKrw 이하인지 비교한다. 예를 들어 초기 100원에 비용 4원이면 cash
+100원에는 false, 104원에는 true다. False여도 여기서 금액을 임의 축소하거나 주문을 만들지 않는다.
+개별 비용 또는 총비용이 기존 계산기의 safe KRW 범위를 초과하면 계산 오류를 전파한다.
+`parseCandidateInitialExecutionCost`는 전체 입력과 새 비용 계산을 다시 실행하므로 재해시한
+금액·비용·참여율·cash flag·authority 변조도 거절한다.
+
+`resolveStoredCandidateInitialExecutionCost`는 `resolveStoredCandidateBoundedNotional`의 동일 원본
+조회 결과에서 liquidity를 꺼내 사용한다. 별도 조회 결과를 섞거나 외부 cost/금액 override를 받지
+않는다. 원래 evidence/hard gate 실패는 assessment에 그대로 남는다. 현재 cap의 정확성, 비용 대비
+편익 threshold, 금액 재조정, 최소 수량/lot, band, 실제 fill 및 final sizing은 아직 부여하지 않는다.
+이는 다음 최종 배정 단계에서 사용할 비용 재계산이며 새로운 정책 field/활성화, writer, API와
+저장 형식 변경은 없다. 코드 rollback만으로 새 소비 경로를 제거할 수 있고 기존 원본은 변경하지 않는다.
+
 ## 8. Portfolio gap과 리밸런싱
 
 ### 8.1 Gap 계산
