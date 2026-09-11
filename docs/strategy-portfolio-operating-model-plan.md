@@ -4338,6 +4338,34 @@ allDeclaredCapsWithinPositionBounds를 eligibility 또는 execution 권한으로
 - 같은 snapshot의 selector와 manual 요청이 경합해도 unique slot과 opening budget을 초과하지 않는다.
 - mandate만 활성화되고 fill이 늦어져도 unused opening capacity가 해제되지 않는다.
 
+#### 대기 action의 실제 계획 진행 이력 연결
+
+`pending_plan_action_progress.v1`은 full plan/event chain을 독립 재생해 approved 또는
+execution_applied 상태의 모든 미완료 action을 계산한다. 다음 실행 action만 선택하지 않으며
+previewed/rejected/stale/applied 및 목표가 완료된 action은 제외한다. `remainingNotionalCapKrw`는
+action maximum에서 cumulative filled notional을 뺀 값이다. Fractional BUY의
+`remainingTargetNotionalKrw`와 quantity target의 canonical decimal `remainingQuantity`는 별도로
+보존한다. Quantity target의 reference notional에서 실제 fill 금액을 뺀 값을 잔여 평가금액으로
+사용하지 않는다. 수량이 남고 금액 cap이 0인 action도 누락하지 않으며 실행 가능으로 승격하지 않는다.
+전체 입력·결과 hash와 independent parser는 잔여값을 바꾼 뒤 재해시한 결과도 거절한다.
+
+`resolveStoredPendingPlanActionProgress`는 실제 plan/event repository의 durable full-history
+검증 뒤 portfolio 전체의 commit-cutoff prefix를 재생한다. 이전 policyHash의 대기 계획도 포함하고
+foreign portfolio 및 cutoff 이후 suffix의 손상을 무시하지 않는다. Event의 주장 asOf가 아니라
+저장 commit 시각이 cutoff보다 엄격히 앞선 event만 포함하며 동일 밀리초 경계는 모호하므로 거절한다.
+Cutoff는 조회 시작보다 미래일 수 없다. 평가 시점 이후의 정상 append는 기존 projectionHash를
+바꾸지 않지만 source generation/count와 관측 assessmentHash는 변경될 수 있다.
+Plan commit origin, 포함한 event의 commit origin, full plan/event content와 execution target hash를
+결과에 보존한다. Assessment observedAt은 빈 history를 포함해 저장소 잠금 안의 durable 관측 시각이다.
+잠금 해제 후 새 writer가 append해도 이전 generation의 시각을 조회 반환 시각으로 늦추지 않는다.
+새 artifact·API·runner·거래 활성화 또는 저장 형식 변경은 없다.
+
+이 단계는 stored_pending_plan_action_progress_only이다. Commit 시각은 당시 disk availability의
+증명이 아니며 full history도 현재 generation lease 또는 진짜 fill/Risk 원본 검증이 아니다.
+BUY opening reservation, SELL의 실제 가격 원본, snapshot pending 입력과의 exact 대조 및 최종
+분류별 exposure 차감은 후속 연결이다. 기존 snapshot과 Risk 경로의 not_verified를 해제하지 않는다.
+Rollback은 신규 조회 consumer를 중단하고 코드만 되돌리며 기존 append-only 파일을 변환하지 않는다.
+
 ### PR 6. Rebalance preview planner
 
 - sell-first deterministic plan

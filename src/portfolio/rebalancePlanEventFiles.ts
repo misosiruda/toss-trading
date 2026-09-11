@@ -179,6 +179,13 @@ export function replayVerifiedRebalancePlanEventHistory(history: VerifiedRebalan
   return state;
 }
 
+/** Timestamp of this locked, synced read, including an empty history; not an active lease. */
+export function resolveDurableRebalancePlanEventObservedAt(history: VerifiedRebalancePlanEventHistory): string {
+  const metadata = histories.get(history);
+  if (metadata === undefined || metadata.observedAt === null) throw new Error("rebalance event history has no durable observation");
+  return metadata.observedAt;
+}
+
 /** Plan origin and observation time belong to the same locked, synced event read. */
 export function resolveDurableRebalancePlanEventObservation(history: VerifiedRebalancePlanEventHistory, planId: string) {
   const metadata = histories.get(history);
