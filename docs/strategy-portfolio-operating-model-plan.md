@@ -4461,6 +4461,42 @@ allDeclaredCapsWithinPositionBounds를 eligibility 또는 execution 권한으로
 - 같은 snapshot의 selector와 manual 요청이 경합해도 unique slot과 opening budget을 초과하지 않는다.
 - mandate만 활성화되고 fill이 늦어져도 unused opening capacity가 해제되지 않는다.
 
+#### 후보 assignment와 요청 단위 budget 결과 계약
+
+`candidateAssignment.ts`는 CandidateAssignment의 strict content contract와 supplied request/sizing
+binding을 구현한다. Factory는 reason/evidence ref를 canonical sort하고 duplicate를 거절한다.
+Assignment ID는 request/market/symbol에서 파생하며 assignmentHash는 ID/hash/createdAt을 제외한
+전체 payload를 결속한다. SizingOutputHash는 min/target/max weight와 maximumNotionalKrw를 별도로
+결속한다. Parser는 range 순서, finite ratio·음의 0 제외·safe integer 금액, 생성 시각, ref 순서와 두
+hash를 독립 검증한다. 생성 시각은 identity에서 제외되지만 미래 저장소의 exact retry는 전체
+record를 비교해야 한다.
+
+`resolveCandidateAssignmentSizingBinding`은 supplied request 및 sizing input을 각각 독립 파싱한 뒤
+request/portfolio/policy/snapshot/bucket/asOf, sizing input ID/hash, instrument, scoring model/score와
+생성 순서를 대조한다. 이는 declared score/eligibility, cap 또는 target range의 독립 계산을 의미하지
+않는다. Scope는 supplied_assignment_content_binding_only이고 eligibilityAndExactSizing은
+not_verified, currentExecutionAuthority는 not_granted다.
+
+`candidateAssignmentSet.ts`는 supplied assignment 전체의 request-local ordering과 budget 예약 결과를
+계산한다. Eligible을 먼저 두고 같은 eligibility 우선순위에서는 score 내림차순, market/symbol
+canonical 순으로 정렬한다. Watch와 blocked 사이에 별도 우선순위는 넣지 않는다. Request budget은
+min(gapKrw, maximumAdditionalExposureKrw)이며 앞의 min(availableSlots, eligibleCount)개에 대해
+individual maximum과 남은 budget의 최솟값을 BigInt 정수로 순차 예약한다. 0원은 selected 목록에서
+제외하지만 N 밖 후보로 보충하지 않는다. selectedRank는 기존 selector mandate와 같은 1-based 순위라서
+0원 candidate가 있으면 빈 rank가 남을 수 있다. 이는 전역 reservedSlotOrdinal이 아니다.
+
+Set parser는 full hash/ID, 후보 identity·중복·정렬, selected identity/rank, positive reservation과
+budget 합계를 검사한다. Ordered rows에 individual maximum이 없으므로 구조 parser만으로 정확한
+개별 예약액이나 누락된 selection을 증명하지 않는다. `resolveCandidateAssignmentSetBinding`은
+실제 전달된 request/assignment 전체로 factory를 다시 실행하고 full record가 같은지 검사한다.
+같은 값들의 입력 순서만 바뀌면 같은 set이 나온다. Scope는 supplied_assignment_set_allocation_only다.
+
+이 분할은 assignment/set 저장소, request당 단일 seal, actual source completeness, eligibility 및
+최종 sizing 재계산, 공용 ledger slot/notional CAS와 mandate 발급을 완료하지 않는다. Hash가 맞는
+supplied input을 실제 저장된 원본이나 current capacity 승인으로 승격하지 않는다. 기존 API/writer/
+artifact reader와 거래 기본값 변경이 없으며, 신규 contract 사용 중단과 코드 rollback에 기존 데이터
+변환·삭제가 필요하지 않다.
+
 #### 대기 action의 실제 계획 진행 이력 연결
 
 `pending_plan_action_progress.v1`은 full plan/event chain을 독립 재생해 approved 또는
