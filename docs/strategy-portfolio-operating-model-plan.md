@@ -1647,6 +1647,27 @@ canonical order로 정규화한다. sizing algorithm version이 다르면 같은
   compare-and-swap한다. set seal과 mandate activation 사이에 manual 또는 다른 selector가 용량을
   먼저 차지했으면 transaction을 rollback하고 stale request로 재평가한다.
 
+#### Selector mandate와 supplied assignment/set 연결
+
+`resolveSelectorMandateAssignmentBinding`은 supplied mandate/request/sizing input과 assignment 전체/set을
+독립 파싱한다. 전체 assignment로 set의 ordering/top-N/금액 배분을 다시 계산하고, mandate가 가리키는
+assignment가 `eligible`이면서 같은 exact set ID/hash, assignment ID/hash와 selectedRank로 선택됐는지
+확인한다. 대상 assignment의 exact sizing input ID/hash·score와 request scope도 기존 resolver로 검사한다.
+Opening mandate는 BUY sizing input만 허용한다.
+
+Mandate의 portfolio/policy/bucket/market/symbol, scoring model/score와 min/target/max weight는 해당
+assignment와 같아야 한다. Canonical reasonCodes/evidenceRefs 배열도 전체가 같아야 하며 다른 근거나
+사유의 교체·추가를 허용하지 않는다. maximumOpeningNotionalKrw와 reservedMaximumNotionalKrw는 individual cap과
+set의 selected reservation 중 작은 금액과 정확히 같아야 한다. Mandate asOf는 request asOf보다
+과거일 수 없고 evidenceAsOf는 assignment asOf와 같으며 생성은 set 생성 이후여야 한다.
+
+이는 supplied content binding이다. 원본 저장소의 completeness, 실제 required evidence/hard gate와
+최종 sizing 재계산, current capacity reservation ID/hash 및 global slot ordinal은 아직 증명하지 않는다.
+Request-local selectedRank를 global reservedSlotOrdinal로 추정하지 않으며, slot 값이 content로 유효해도
+capacityReservationAuthority는 not_verified다. Writer/activation/Risk 경로를 자동 연결하지 않고 실제
+source resolver와 공용 ledger transaction에서 이 검사를 소비하는 단계는 후속이다. 기존 contract,
+artifact, API와 기본값 변경 없이 새 소비 경로를 제거하는 코드 rollback이 가능하다.
+
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
 ```ts

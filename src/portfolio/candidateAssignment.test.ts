@@ -6,6 +6,7 @@ import { createCandidateAssignment, parseCandidateAssignment, resolveCandidateAs
 import { createCandidateAssignmentSetRecord, parseCandidateAssignmentSetRecord, resolveCandidateAssignmentSetBinding } from "./candidateAssignmentSet.js";
 import { hashCanonicalPayload, hashDerivedId } from "./runtimePolicyContracts.js";
 import { createInvestmentMandateRecord, parseInvestmentMandateRecord } from "./investmentMandate.js";
+import { resolveSelectorMandateAssignmentBinding } from "./selectorMandateAssignmentBinding.js";
 
 const HASH = `sha256:${"a".repeat(64)}`, OTHER = `sha256:${"b".repeat(64)}`;
 const AT = "2026-09-01T00:00:00.000Z", LATER = "2026-09-01T00:00:01.000Z";
@@ -193,6 +194,75 @@ function rehashSet(value: ReturnType<typeof createCandidateAssignmentSetRecord>)
   const hash = hashCanonicalPayload(payload);
   return { ...payload, createdAt, candidateAssignmentSetHash: hash, candidateAssignmentSetId: hashDerivedId("candidate_assignment_set", hash) };
 }
+test("selector mandate binding matches actual supplied selected rank range and remaining request allocation", () => {
+  const input = selectorBindingFixture(), result = resolveSelectorMandateAssignmentBinding(input);
+  assert.equal(result.assignment.maximumNotionalKrw, 70);
+  assert.equal(result.assessment.maximumOpeningNotionalKrw, 30);
+  assert.equal(result.assessment.selectedRank, 2);
+  assert.equal(result.mandate.reservedSlotOrdinal, 19);
+  assert.equal(result.assessment.capacityReservationAuthority, "not_verified");
+  assert.equal(result.assessment.candidateEligibilityAndSizing, "not_verified");
+  assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
+  assert.deepEqual(resolveSelectorMandateAssignmentBinding({ ...input, assignments: [...input.assignments].reverse() }), result);
+  assertFrozen(result);
+  // Content binding does not infer a shared slot ordinal from the request-local rank.
+  assert.equal(resolveSelectorMandateAssignmentBinding({ ...input, mandate: rebuildSelectorMandate(input.mandate, { reservedSlotOrdinal: 2 }) })
+    .assessment.capacityReservationAuthority, "not_verified");
+});
+
+test("selector mandate binding rejects independently rehashed scope rank score range and amount mismatches", () => {
+  const input = selectorBindingFixture();
+  for (const patch of [{ portfolioId: "other" }, { policyHash: OTHER }, { market: "US" }, { symbol: "other" },
+    { selectionRequestId: "other" }, { candidateAssignmentId: input.assignments[0]!.assignmentId },
+    { candidateAssignmentSetId: "other" }, { candidateAssignmentSetHash: OTHER }, { selectedRank: 1 },
+    { scoringModelVersion: "other" }, { selectionScore: 0.7 }, { minWeightRatio: 0.02 }, { targetWeightRatio: 0.06 },
+    { reasonCodes: ["fabricated"] }, { evidenceRefs: ["fabricated"] },
+    { reasonCodes: ["extra", "synthetic"] }, { evidenceRefs: ["evidence", "extra"] },
+    { maxWeightRatio: 0.11 }, { maximumOpeningNotionalKrw: 29, reservedMaximumNotionalKrw: 29 },
+    { maximumOpeningNotionalKrw: 31, reservedMaximumNotionalKrw: 31 }, { createdAt: AT }]) {
+    const mandate = rebuildSelectorMandate(input.mandate, patch);
+    assert.throws(() => resolveSelectorMandateAssignmentBinding({ ...input, mandate }));
+  }
+  assert.throws(() => resolveSelectorMandateAssignmentBinding({ ...input, extra: true }));
+});
+
+test("selector mandate binding requires full supplied set replay and the exact sizing source", () => {
+  const input = selectorBindingFixture();
+  assert.throws(() => resolveSelectorMandateAssignmentBinding({ ...input, assignments: input.assignments.slice(1) }), /complete supplied/);
+  const set = rehashSet({ ...input.set, selectedAssignments: input.set.selectedAssignments.map((row) => ({ ...row, reservedMaximumNotionalKrw: 50 })) });
+  assert.ok(parseCandidateAssignmentSetRecord(set));
+  assert.throws(() => resolveSelectorMandateAssignmentBinding({ ...input, set,
+    mandate: rebuildSelectorMandate(input.mandate, { candidateAssignmentSetId: set.candidateAssignmentSetId, candidateAssignmentSetHash: set.candidateAssignmentSetHash }) }), /complete supplied/);
+  assert.throws(() => resolveSelectorMandateAssignmentBinding({ ...input, sizingInput: sizing(input.request, "KR", "B", 0.7) }), /sizing input binding/);
+  assert.throws(() => resolveSelectorMandateAssignmentBinding({ ...input, sizingInput: { ...input.sizingInput, createdAt: LATER } }), /sizing input binding/);
+  assert.throws(() => resolveSelectorMandateAssignmentBinding(selectorBindingFixture(true)), /BUY sizing/);
+});
+
+function selectorBindingFixture(sell = false) {
+  const request = selectionRequest(2, 100), source = sizing(request, "KR", "B", 0.8);
+  const { sizingInputRecordId: _id, sizingInputHash: _hash, ...payload } = source;
+  const sizingInput = createCandidateSizingInputRecord({ ...payload, executionCostInput: { ...payload.executionCostInput, side: sell ? "SELL" : "BUY" } });
+  const candidate = createCandidateAssignment(assignmentInput(request, sizingInput));
+  const assignments = [assignment(request, "KR", "A", 0.9), candidate];
+  const set = createCandidateAssignmentSetRecord({ request, assignments, createdAt: LATER });
+  const selected = set.selectedAssignments[1]!;
+  const mandate = createInvestmentMandateRecord({ portfolioId: candidate.portfolioId, market: candidate.market, symbol: candidate.symbol,
+    bucket: candidate.bucket, policyHash: candidate.policyHash, asOf: AT, minWeightRatio: candidate.minWeightRatio,
+    targetWeightRatio: candidate.targetWeightRatio, maxWeightRatio: candidate.maxWeightRatio, maximumOpeningNotionalKrw: selected.reservedMaximumNotionalKrw,
+    reasonCodes: candidate.reasonCodes, evidenceRefs: candidate.evidenceRefs, evidenceAsOf: AT, reviewCadence: { mode: "every_tick" }, validFrom: AT,
+    assignmentSource: "deterministic_selector", selectionRequestId: request.requestId, candidateAssignmentId: candidate.assignmentId,
+    candidateAssignmentSetId: set.candidateAssignmentSetId, candidateAssignmentSetHash: set.candidateAssignmentSetHash, selectedRank: selected.selectedRank,
+    openingCapacityReservationId: "synthetic-reservation", openingCapacityReservationHash: HASH, reservedSlotOrdinal: 19,
+    reservedMaximumNotionalKrw: selected.reservedMaximumNotionalKrw, scoringModelVersion: candidate.scoringModelVersion,
+    selectionScore: candidate.selectionScore, createdAt: LATER });
+  if (mandate.assignmentSource !== "deterministic_selector") throw new Error("unexpected fixture mandate");
+  return { request, sizingInput, assignments, set, mandate };
+}
+function rebuildSelectorMandate(record: ReturnType<typeof selectorBindingFixture>["mandate"], patch: Record<string, unknown>) {
+  const { mandateId: _id, mandateHash: _hash, ...payload } = record;
+  return createInvestmentMandateRecord({ ...payload, ...patch } as Parameters<typeof createInvestmentMandateRecord>[0]);
+}
+
 function assertFrozen(value: unknown) {
   if (value !== null && typeof value === "object") { assert.ok(Object.isFrozen(value)); Object.values(value).forEach(assertFrozen); }
 }
