@@ -1668,6 +1668,24 @@ capacityReservationAuthority는 not_verified다. Writer/activation/Risk 경로�
 source resolver와 공용 ledger transaction에서 이 검사를 소비하는 단계는 후속이다. 기존 contract,
 artifact, API와 기본값 변경 없이 새 소비 경로를 제거하는 코드 rollback이 가능하다.
 
+`resolveStoredSelectorMandateAssignmentBinding`은 baseDir/mandateId만 받아 실제 mandate repository의
+durable history에서 selector record를 찾고 해당 잠금을 해제한다. 이어 assignment repository가
+이미 유지하는 request → snapshot → sizing → assignment 잠금 안에서 exact set, 같은 request의
+assignment 전체, request 및 대상 sizing 원본을 찾는다. 별도 supplied source 목록이나 override를
+받지 않는다. Assignment repository의 callback은 기존 history와 함께 이미 잠근 inputs/requests를
+전달하며 각 원본의 observation lease는 callback 종료 후 만료된다. 기존 한 인자 consumer는 유지된다.
+
+Mandate 생성 시각이 mandate의 durable observation보다 미래이거나 실제 set commit이 mandate 생성보다
+늦거나, set/assignment/request/sizing 원본이 없거나, 전체 이력이
+손상되면 거절한다. Set 배분, mandate scope/rank/score/range/금액/사유/근거는 위 content binding을
+재사용해 검사한다. 결과에는 실제 set/assignment/sizing origin, 두 단계 observation과 generation 및
+binding assessment hash를 보존한다. 재조회 시 immutable binding은 같지만 관측 시각과 observation
+hash는 새로 계산된다. Mandate 잠금과 candidate source 잠금을 중첩하지 않으므로 이 결과는 현재
+activation의 원자적 승인 또는 current ledger transaction이 아니다. Commit timestamp는 marker flush
+완료의 생성 전 영수증이 아니므로 sourceBeforeCreationReceipt는 not_recorded다. Eligibility/final sizing,
+reservation/slot 권한 및 currentExecutionAuthority는 여전히 부여하지 않는다. 저장 형식, writer 또는
+운영 activation 변경은 없으며 코드 rollback에 기존 원본 데이터 변환/삭제가 없다.
+
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
 ```ts

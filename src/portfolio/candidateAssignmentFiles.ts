@@ -56,11 +56,12 @@ export class CandidateAssignmentFileRepository {
     return this.withDurableVerifiedHistory(async (history) => history.origins);
   }
   /** Holds request -> snapshot -> sizing input -> assignment locks. Consumers must not re-enter any of these repositories. */
-  async withDurableVerifiedHistory<T>(operation: (history: VerifiedCandidateAssignmentHistory) => Promise<T>): Promise<T> {
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedCandidateAssignmentHistory,
+    inputs: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory) => Promise<T>): Promise<T> {
     return this.withSources((inputs, requests) => this.withLock(async () => {
       const { history, observedAt } = await this.readUnderLock(inputs, requests);
       observations.set(history, observedAt);
-      try { return await operation(history); } finally { observations.delete(history); }
+      try { return await operation(history, inputs, requests); } finally { observations.delete(history); }
     }));
   }
   async appendAssignment(value: unknown): Promise<VerifiedCandidateAssignmentOrigin & { kind: "assignment" }> {
