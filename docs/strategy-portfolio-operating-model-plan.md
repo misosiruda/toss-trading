@@ -264,6 +264,12 @@ interface BucketSelectionPolicyRecord {
     modelVersion: string;
     maximumSectorExposureRatio: number;
   };
+  notionalSizingPolicy?: {
+    modelVersion: string;
+    minimumScoreMultiplier: number;
+    maximumScoreMultiplier: number;
+    minimumOrderNotionalKrw: number;
+  };
   scoringModelVersion: string;
   scoringModelRef?: {
     scoringModelRecordId: string;
@@ -2416,6 +2422,39 @@ paper-only/mock/Risk 기본값은 유지한다.
 5. 최소 주문 단위보다 작거나 비용 대비 편익 threshold를 넘지 못하면 거래하지 않는다.
 6. exact target을 추적하지 않고 min/max rebalance band 안에서는 유지한다.
 
+#### 초기 notional의 버전 정책과 원본 재생
+
+`candidate_gap_score_notional.v1`은 위 단계의 기본 금액·점수 배수·개별 cap·최소 KRW 금액을
+계산한다. Selection policy의 optional `notionalSizingPolicy`에 minimum/maximum score multiplier와
+minimumOrderNotionalKrw를 모두 명시한다. 배수는 0 이상의 finite safe-range 값이고 maximum은 양수,
+minimum ≤ maximum이어야 한다. 최소 주문 금액은 양의 safe integer다. 필드가 없는 기존 정책의
+payload/hash/ID/lineage는 유지하며 모델이나 parameter를 추정해 보충하지 않는다. 새 parameter 전체는
+selection policy identity에 포함된다. 기록 가능한 모델 version과 실행 가능한 version은 구분하며
+calculator는 v1 외 version과 sizing input의 불일치를 거절한다.
+
+`calculateCandidateBoundedNotional`은 supplied runtime/selection policy, request와 sizing input을
+독립 파싱하고 exact selection ref, portfolio/policy/bucket/market/시각 및 scoring/sizing version을
+대조한다. BUY와 0~1 normalized score만 받는다. 기본 금액은 `floor(gapKrw / availableSlots)`, 배수는
+`minimum + (maximum - minimum) * score`다. Canonical decimal을 BigInt로 변환해 보간한 뒤 기본 금액에
+곱하고 원 단위로 내림한다. 중간 금액이 Number safe range를 넘어도 문자열로 보존하며, 최종 cap 적용
+뒤에만 safe integer로 변환한다. Gap/additional exposure와 bucket/symbol/sector/country/currency/cash/
+liquidity 중 작은 상한을 적용하고 명시된 최소 금액 미만이면 초기 금액은 0이다. Subnormal 배수와
+큰 중간 곱에도 binary underflow/overflow나 상향 반올림을 허용하지 않는다.
+
+`parseCandidateBoundedNotional`은 input부터 전체 계산을 다시 수행해 payload/hash와 비교한다.
+`resolveStoredCandidateBoundedNotional`은 실제 policy·score·evidence·비용·유동성·cash·분류·position
+상한 원본 조회를 연결하며, 선언된 cap이 실제 position 상한보다 크면 계산을 거절한다. 그러나 작은
+cap이 정확한 pending/reservation-adjusted 값이라는 증명은 아니다. Required evidence/hard gate의
+실패를 초기 금액으로 덮어쓰지 않으며 기존 assessment를 그대로 보존한다.
+
+이는 initial notional 계산이며 최종 assignment/mandate 발급은 아니다. 요청 gap/slot의 현재 권한,
+정확한 공용 ledger cap, 금액 변경 후 비용 재계산·비용 대비 편익 threshold, broker 최소 수량/lot,
+weight band와 rank별 최종 reserve 연결은 후속이다. `initial_notional_available`은 eligibility 또는
+주문 승인이 아니다. 반환된 finalSizing/currentExecutionAuthority는 각각 not_performed/not_granted다.
+새 정책 field를 읽는 reader를 먼저 배포해야 하고 이전 strict reader는 해당 field가 있는 정책을
+읽지 못한다. Rollback 시 새 field를 사용하는 정책의 소비를 중단하고 호환 reader를 유지하며 기존
+immutable record를 수정·삭제하지 않는다. 운영 정책 활성화, 기존 기본값 변경과 실제 주문은 없다.
+
 ## 8. Portfolio gap과 리밸런싱
 
 ### 8.1 Gap 계산
@@ -2766,8 +2805,7 @@ daily data만 있는 실행에서 `intraday`를 활성화하지 않는다. caden
 | `portfolio-trigger-claim-events.jsonl` | 신규 append-only | claim 평가 시작과 plan/no-action terminal 결과 |
 | `portfolio-gap-snapshots.jsonl` | 신규 append-only | policy 대비 현재 gap |
 | `bucket-selection-requests.jsonl` | 신규 append-only | full digest와 재계산 가능한 bucket selection 요청 |
-| `candidate-assignments.jsonl` | 신규 append-only | request별 eligibility, score, sizing 입력·결과와 전체 digest |
-| `candidate-assignment-sets.jsonl` | 신규 append-only | request별 sealed ordering, top-N과 slot selection |
+| `candidate-assignment-records.jsonl` | 신규 append-only | assignment와 request별 sealed set을 같은 잠금/entry·commit 이력에 저장 |
 | `rebalance-plan-records.jsonl` | 신규 append-only | immutable plan scope, action과 canonical hash |
 | `portfolio-action-risk-decisions.jsonl` | 신규 append-only | plan/action/pre-state별 Risk Engine 최종 판단 |
 | `rebalance-plan-events.jsonl` | 신규 append-only | preview, approval, fill execution, rejection, stale, applied transition chain |

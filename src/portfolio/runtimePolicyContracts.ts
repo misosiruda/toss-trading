@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import type { CandidateScoringModel } from "./candidateScoringModel.js";
 import { candidateHardGateRuleSchema, type CandidateHardGateRule } from "./candidateHardGateRules.js";
+import { candidateNotionalSizingPolicySchema } from "./candidateNotionalSizingPolicy.js";
 
 import {
   isoDateTimeSchema,
@@ -89,6 +90,7 @@ const bucketSelectionPolicyPayloadSchema = z
     classificationModelVersion: versionSchema.optional(),
     exposureLimitPolicy: z.object({ modelVersion: versionSchema,
       maximumSectorExposureRatio: ratioSchema.positive() }).strict().optional(),
+    notionalSizingPolicy: candidateNotionalSizingPolicySchema.optional(),
     featureDefinitionRefs: z.array(identifierSchema).min(1).max(128)
   })
   .strict();
