@@ -4366,6 +4366,30 @@ BUY opening reservation, SELL의 실제 가격 원본, snapshot pending 입력�
 분류별 exposure 차감은 후속 연결이다. 기존 snapshot과 Risk 경로의 not_verified를 해제하지 않는다.
 Rollback은 신규 조회 consumer를 중단하고 코드만 되돌리며 기존 append-only 파일을 변환하지 않는다.
 
+#### Snapshot pending 목록과 계획·잔여 gross 금액 대조
+
+`resolveStoredSnapshotPendingActions`는 caller의 pending array 대신 실제 immutable snapshot을
+읽고 보유 valuation/exposure를 독립 재생한 뒤, 같은 asOf의 실제 대기 계획 진행 조회와 대조한다.
+이전 policyHash의 계획도 포함하며 pending action의 누락·추가·대체, plan/event ID/hash,
+execution target hash, market/symbol/side 불일치를 거절한다. Pending 입력 시각은 해당 plan의
+마지막 포함 event commit보다 엄격히 뒤여야 한다. BUY 예약 ref 자체는 아직 실제 예약에 대조하지 않는다.
+
+Fractional BUY gross는 잔여 금액 목표와 정확히 같아야 한다. Whole-share BUY는 plan target의
+priceEvidenceRef가 가리키는 실제 durable 가격과 referencePriceKrw 및 plan cutoff 이전 가용성을
+검증한 뒤 잔여 수량×가격을 원 단위 반올림한다. SELL은 pending 입력이 직접 보존한 가격 ref를
+실제 durable 원본에 해소해 market/symbol·pending 시각 이전 가용성을 검증하고 exact 잔여 수량의
+gross를 같은 방식으로 평가한다. 따라서 SELL은 계획 시점 가격과 다른 명시적 가격으로 재평가할 수 있다.
+0원·overflow·불일치 gross를 거절하며 금액 cap이나 원래 목표액을 잔여 평가금액으로 대신하지 않는다.
+가격과 금액 cap의 비교는 현재 실행 승인이 아니라 후속 Risk 재평가의 책임이다.
+
+각 저장소 잠금은 다음 저장소를 읽기 전에 해제한다. Snapshot observation, 실제 plan assessment,
+가격의 잠금 내부 observation, action별 origin/계산값과 결과 hash를 보존하지만 multi-file lease나
+현재 generation을 주장하지 않는다. 가격 파일은 quantity target이 있을 때만 조회하며 사용되는
+파일의 손상 suffix는 자동 보정하지 않는다. 실제 가격의 정책상 허용 source/freshness/trust,
+진짜 fill/Risk 원본, opening reservation과 최종 sizing은 여전히 미검증이다. 이 연결만으로 기존
+candidate/Risk의 미검증 플래그를 해제하지 않는다. 새 저장 형식·API·runner·거래 기본값 변경이
+없으므로 신규 consumer를 중단하고 코드만 rollback하며 append-only 원본을 수정하지 않는다.
+
 ### PR 6. Rebalance preview planner
 
 - sell-first deterministic plan
