@@ -3448,6 +3448,36 @@ activation/current mandate 상태, 실제 slot/budget 할당, selector/fill/rele
 권한을 부여하지 않는다. 순차적인 source 관측은 multi-file current lease가 아니다. 기존 writer/API와
 artifact 형식 변경 없이 신규 consumer를 중단하고 코드 rollback할 수 있으며 원본을 삭제하지 않는다.
 
+수동 예약 소비 원본 연결은 `resolveStoredManualOpeningCapacityFillOrigins`에서 actual manual root/
+mandate binding과 실제 plan/event, Risk, paper fill 및 source price 이력을 조합한다. Plan 전체 prefix를
+한 번씩 replay해 체결 직전 상태를 만들고 actual execution_applied event를 paperFillRecordId로
+조회한다. 같은 portfolio의 여러 plan execution이 하나의 paper fill을 참조하면 실패한다.
+
+기존 fill/Risk validator로 persisted Risk receipt, 실제 price projection, identity/금액/누계/cash cap과
+commit 순서를 대조하고 Risk의 다음 action/target/pre-state를 재생한다. 실제 plan action은 연결된
+manual mandate의 BUY여야 하며 fill의 portfolio/market/symbol, Risk의 policy/bucket도 capacity event와
+일치해야 한다. 직전 capacity event 잔액과 현재 잔액의 차이는 실제 filledNotionalKrw와 같아야 하며,
+수수료 등을 포함한 netAmountKrw를 차감 기준으로 대신 쓰지 않는다. Plan predecessor와 capacity
+predecessor는 Risk 결정보다 먼저 commit돼야 하고 actual execution event도 소비 event.asOf보다
+먼저 commit돼야 한다. Risk에 plan receipt가 있으면 actual plan/predecessor commit과 정확히 대조한다.
+실제 mandate event 이력을 Risk 결정 시점으로 재생해 active open-or-increase 상태를 요구한다.
+Risk에 mandate receipt가 있으면 실제 저장 prefix와 mandate/event identity도 다시 대조한다.
+Receipt 없는 Risk는 저장된 event의 asOf/createdAt 기준 상태만 확인하며 당시 실제 저장 가용성을
+증명하지 않는다. 이후 retire된 mandate의 정상 과거 체결은 당시 상태로 검사한다. Source lock은
+price → mandate → capacity 순서이며 새 current execution 권한을 발급하지 않는다.
+
+Portfolio 내 fill/Risk의 소비 재사용을 거절하며 terminal 예약의 과거 소비도 검사한다. Source 조회 후
+capacity journal을 다시 관측하고 mandate binding 때의 generation과 다르면 실패한다. Manual root/
+bound/fill 중 이번 composition이 검증한 event만 제외하고 selector/release 등 나머지 ID는 unverified
+목록에 남긴다. 원본 payload, 각 storage origin 및 전체 source generation/observation hash를 반환한다.
+
+범위는 stored_manual_capacity_fill_origins_only다. 실제 Risk 정책/required rule 재평가, current active
+mandate, source freshness/trust, accounting과 resultingPositionRef의 실제 position/mark-state 연결,
+공용 slot/budget allocator, 다중 artifact transaction과 최종 sizing/실행은 완료하지 않는다. 기존 실행
+경로·API·writer와 artifact schema를 변경하지 않으며 신규 consumer 중단과 코드 rollback에 데이터
+변환/삭제가 필요하지 않다. 저장된 claim의 원본 연결을 실제 자금 예약 또는 position 생성 승인으로
+취급하지 않는다.
+
 수동 예약의 실제 원본 조회 선행 분할은 `ManualAssignmentFileRepository.withDurableVerifiedHistory`로
 manual assignment의 전체 이력을 독립 검증·동기화하고 consumer가 끝날 때까지 기존 source lock을
 유지한다. 일반 `readAll`과 동일한 strict JSONL parser를 사용해 torn/blank/corrupt/duplicate 이력을
