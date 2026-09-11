@@ -3378,6 +3378,32 @@ active position과 gap/budget, policy migration 및 persistence/atomic commit은
 성공할 수 있으므로 이 결과만으로 최신 상태나 실행 권한을 발급하지 않는다. Artifact·기존 writer·Risk
 동작과 live surface는 변경하지 않으며 데이터 migration 없이 코드 rollback이 가능하다.
 
+예약 이벤트 저장 분할은 `OpeningCapacityReservationEventFileRepository`에서
+`opening-capacity-reservation-events.jsonl`에 complete event와 appendStartedAt, 전역 previousCommitHash를
+포함한 entry 및 별도 committedAt/commitHash marker를 append한다. Scope별 capacityLedgerVersion은
+portfolio/policy/bucket 전체의 연속 version이고 reservation predecessor는 해당 예약의 head다.
+모든 scope의 전체 이력을 독립 rehash하고 scope당 한 번 replay한 뒤에만 reader/consumer를 호출한다.
+동일 complete event 재시도는 원래 origin을 반환하고 createdAt만 다른 ID 충돌, stale version,
+분기·중복·terminal 후속·미래 시각과 직전 scope commit보다 이른 asOf는 쓰기 전에 거절한다.
+
+Writer는 단일 파일 lock 안에서 검증·append를 직렬화한다. Pending barrier를 먼저 fsync하고 entry와
+marker를 각각 fsync한 뒤 barrier를 제거한다. 중간 실패의 barrier·부분 bytes는 자동 정리하지 않으며
+후속 read/append는 명시적 복구가 필요하다고 실패한다. Lock 초기화 실패도 barrier를 보존하고,
+획득 EEXIST 및 Windows EPERM만 monotonic timeout 안에서 재시도한다. 현재/교체된 다른 소유자의
+lock을 지우지 않는다. Reader는 regular file, strict UTF-8, descriptor/path identity 및 fsync 전후
+bytes/stat을 대조한다. Absent 파일은 디렉터리 동기화 후 부재를 재확인하고 artifact를 만들지 않는다.
+Windows directory fsync의 기존 EPERM 제한을 유지하며 그 밖의 오류를 성공으로 처리하지 않는다.
+
+Verified history의 private storage-origin 인덱스는 실제 reader에서만 발급하고 clone/임의 객체를
+거절한다. Callback 안의 durable observation lease는 lock을 유지하며 정상/예외 종료 모두 만료된다.
+반환값의 범위는 stored_opening_capacity_event_history_only다. 저장된 manual/selector/mandate/fill
+참조는 아직 source claim이며 실제 원본의 실존/금액, 전역 slot ordinal, current snapshot·active policy,
+공용 budget/CAS allocator, mandate/fill과의 원자 transaction 및 최종 sizing 권한은 증명하지 않는다.
+재시작 재검증은 보관된 파일 전체 기준이며 외부에서 완전한 suffix를 삭제한 사실을 독립적으로 증명하는
+외부 checkpoint는 없다. 새 writer는 기존 실행/API/MCP에 연결하지 않는다. 데이터 변환 없이 consumer를
+중단하고 코드 rollback할 수 있으며 이력·복구 barrier를 삭제하지 않는다. 최종 예약 원장 수용 기준은
+실제 원본과 allocator 연결 및 통합 검증 후에만 완료할 수 있다.
+
 수동 예약의 실제 원본 조회 선행 분할은 `ManualAssignmentFileRepository.withDurableVerifiedHistory`로
 manual assignment의 전체 이력을 독립 검증·동기화하고 consumer가 끝날 때까지 기존 source lock을
 유지한다. 일반 `readAll`과 동일한 strict JSONL parser를 사용해 torn/blank/corrupt/duplicate 이력을
