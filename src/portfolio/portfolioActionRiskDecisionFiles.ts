@@ -68,6 +68,7 @@ export interface VerifiedPortfolioActionRiskDecisionOrigin {
 }
 
 interface VerifiedHistoryMetadata {
+  recordsById: ReadonlyMap<string, PortfolioActionRiskDecision>;
   appendedAtById: ReadonlyMap<string, string>;
   commitHashById: ReadonlyMap<string, string>;
   policyOriginById: ReadonlyMap<string, PersistedPolicyOrigin>;
@@ -776,18 +777,18 @@ export function resolveVerifiedPortfolioActionRiskDecisionOrigin(
   history: VerifiedPortfolioActionRiskDecisionHistory,
   riskDecisionId: string
 ): VerifiedPortfolioActionRiskDecisionOrigin {
-  const records = getVerifiedPortfolioActionRiskDecisions(history);
-  const matches = records.filter((record) => record.riskDecisionId === riskDecisionId);
-  if (matches.length !== 1) {
+  getVerifiedPortfolioActionRiskDecisions(history);
+  const metadata = getVerifiedHistoryMetadata(history);
+  const record = metadata.recordsById.get(riskDecisionId);
+  if (record === undefined) {
     throw new Error("portfolio action risk decision does not resolve exactly once");
   }
-  const metadata = getVerifiedHistoryMetadata(history);
   const appendedAt = metadata.appendedAtById.get(riskDecisionId);
   if (appendedAt === undefined) {
     throw new Error("portfolio action risk decision durable origin is unavailable; legacy record requires review");
   }
   return deepFreeze({
-    record: matches[0] as PortfolioActionRiskDecision,
+    record,
     appendedAt,
     commitHash: metadata.commitHashById.get(riskDecisionId)!,
     policyOrigin: metadata.policyOriginById.get(riskDecisionId) ?? null,
@@ -807,6 +808,7 @@ function createVerifiedPortfolioActionRiskDecisionHistory(
   const history = Object.freeze({ records: Object.freeze([...records]) });
   verifiedPortfolioActionRiskDecisionHistories.add(history);
   verifiedPortfolioActionRiskDecisionMetadata.set(history, {
+    recordsById: new Map(records.map((record) => [record.riskDecisionId, record])),
     appendedAtById: new Map(
       entries.filter((entry) => entry.committedAt !== null)
         .map((entry) => [entry.record.riskDecisionId, entry.committedAt!])

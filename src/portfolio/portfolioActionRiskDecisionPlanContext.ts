@@ -4,7 +4,7 @@ import { offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import { hashRebalanceExecutionTarget } from "./rebalancePlan.js";
 import { RebalancePlanFileRepository } from "./rebalancePlanFiles.js";
 import { RebalancePlanEventFileRepository, replayVerifiedRebalancePlanEventHistory, resolveVerifiedRebalancePlanEventOrigin, resolveDurableRebalancePlanEventObservation } from "./rebalancePlanEventFiles.js";
-import { replayRebalancePlanEvents } from "./rebalancePlanEventReplay.js";
+import { replayRebalancePlanEvents, type RebalanceExecutionPriorState } from "./rebalancePlanEventReplay.js";
 import { parsePortfolioActionRiskDecision } from "./portfolioActionRiskDecision.js";
 import { canonicalQuantityUnits } from "./canonicalQuantity.js";
 
@@ -45,7 +45,7 @@ export async function readStoredRiskDecisionPlanContext(input: { baseDir: string
 }
 
 /** Content/state checks; mandate source, rule calculations and execution transaction are separate. */
-export function validateRiskDecisionPlanState(value: unknown, state: ReturnType<typeof replayRebalancePlanEvents>) {
+export function validateRiskDecisionPlanState(value: unknown, state: Readonly<RebalanceExecutionPriorState>) {
   const decision = parsePortfolioActionRiskDecision(value);
   const plan = state.plan;
   if (state.status !== "approved" && state.status !== "execution_applied") throw new Error("risk decision requires approved unfinished plan history");
