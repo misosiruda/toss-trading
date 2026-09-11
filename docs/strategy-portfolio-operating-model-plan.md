@@ -2479,6 +2479,26 @@ estimatedCostKrw를 재사용하는 경로는 없다. 참여율은 기존 보수
 이는 다음 최종 배정 단계에서 사용할 비용 재계산이며 새로운 정책 field/활성화, writer, API와
 저장 형식 변경은 없다. 코드 rollback만으로 새 소비 경로를 제거할 수 있고 기존 원본은 변경하지 않는다.
 
+#### 비용 포함 현금 상한에 맞춘 초기 금액 축소
+
+`calculateCandidateCashAffordableNotional`은 위 비용 재계산 결과를 전체 재생한 뒤 초기 금액 이하의
+정수 KRW 구간에서 `notional + estimatedCost(notional) <= cashAvailableKrw`를 만족하는 최대 금액을
+찾는다. 선택된 v1 비용 모델의 nonnegative rate와 보수적 참여율/올림 비용은 단조 증가하므로
+BigInt 상향 midpoint 이진 탐색을 사용한다. 구간이 safe integer라 탐색은 최대 53회이며, 각 후보
+금액에서 참여율과 비용을 다시 계산한다. 기존 비용을 고정한 채 단순 차감하지 않는다.
+
+탐색 결과가 명시된 최소 주문 금액보다 작으면 최종 반환 초기 금액은 0이며 비용도 0으로 재계산한다.
+최소 금액 적용 전 최대값, 탐색 횟수, 선택 금액의 비용, 다음 1원의 필요 현금(초기 상한 도달 시 null)을
+보존한다. 예를 들어 cash 100원/초기 100원/새 비용 4원인 fixture는 96원으로 축소되며, minimum 97원이면
+0원이 된다. Parser는 전체 탐색과 비용을 다시 실행해 재해시한 비최대 결과나 잘못된 비용·현금 flag를
+거절한다. 입력 비용 모델의 safe range 오류는 전파하며 무효한 원본을 탐색으로 숨기지 않는다.
+
+`resolveStoredCandidateCashAffordableNotional`은 같은 실제 원본 비용 resolver에 연결하고 evidence/
+hard gate 실패를 보존한다. 저장 snapshot의 reserve/pending gross 반영 현금 상한을 사용하는 것이며
+현재 pending 비용·공용 reservation 권한까지 증명하지 않는다. Shared ledger reserve, benefit threshold,
+최소 수량/lot, weight band, mandate/실행 및 final sizing은 후속이다. 추가 정책 parameter/default,
+writer, API, artifact 변경은 없고 새 소비 경로 제거와 코드 rollback에 데이터 변환은 없다.
+
 ## 8. Portfolio gap과 리밸런싱
 
 ### 8.1 Gap 계산
