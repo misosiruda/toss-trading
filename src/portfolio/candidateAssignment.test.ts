@@ -5,6 +5,7 @@ import { createCandidateSizingInputRecord } from "./candidateSizingInput.js";
 import { createCandidateAssignment, parseCandidateAssignment, resolveCandidateAssignmentSizingBinding } from "./candidateAssignment.js";
 import { createCandidateAssignmentSetRecord, parseCandidateAssignmentSetRecord, resolveCandidateAssignmentSetBinding } from "./candidateAssignmentSet.js";
 import { hashCanonicalPayload, hashDerivedId } from "./runtimePolicyContracts.js";
+import { createInvestmentMandateRecord, parseInvestmentMandateRecord } from "./investmentMandate.js";
 
 const HASH = `sha256:${"a".repeat(64)}`, OTHER = `sha256:${"b".repeat(64)}`;
 const AT = "2026-09-01T00:00:00.000Z", LATER = "2026-09-01T00:00:01.000Z";
@@ -70,7 +71,7 @@ test("assignment sets order eligibility then score and canonical instrument and 
     assignment(request, "KR", "B", 0.8), assignment(request, "KR", "A", 0.8), assignment(request, "US", "Z", 1, "blocked")];
   const set = createCandidateAssignmentSetRecord({ request, assignments: values, createdAt: LATER });
   assert.deepEqual(set.orderedAssignments.map((row) => [row.market, row.symbol]), [["KR", "A"], ["KR", "B"], ["US", "A"], ["US", "Z"], ["KR", "Z"]]);
-  assert.deepEqual(set.selectedAssignments.map((row) => [row.selectedRank, row.reservedMaximumNotionalKrw]), [[0, 70], [1, 30]]);
+  assert.deepEqual(set.selectedAssignments.map((row) => [row.selectedRank, row.reservedMaximumNotionalKrw]), [[1, 70], [2, 30]]);
   assert.equal(set.requestAllocationBudgetKrw, 100);
   assert.equal(set.totalReservedMaximumNotionalKrw, 100);
   assert.deepEqual(createCandidateAssignmentSetRecord({ request, assignments: [...values].reverse(), createdAt: LATER }), set);
@@ -83,12 +84,45 @@ test("assignment sets omit zero reservations without backfilling beyond top N an
   const request = selectionRequest(2, 100), zero = assignment(request, "KR", "A", 0.9, "eligible", 0);
   const values = [zero, assignment(request, "KR", "B", 0.8), assignment(request, "KR", "C", 0.7)];
   const set = createCandidateAssignmentSetRecord({ request, assignments: values, createdAt: LATER });
-  assert.deepEqual(set.selectedAssignments.map((row) => [row.selectedRank, row.reservedMaximumNotionalKrw]), [[1, 70]]);
+  assert.deepEqual(set.selectedAssignments.map((row) => [row.selectedRank, row.reservedMaximumNotionalKrw]), [[2, 70]]);
   assert.equal(set.totalReservedMaximumNotionalKrw, 70);
   for (const assignments of [[], [assignment(request, "KR", "A", 1, "watch")], [assignment(request, "KR", "A", 1, "blocked")], [zero]]) {
     const empty = createCandidateAssignmentSetRecord({ request, assignments, createdAt: LATER });
     assert.deepEqual(empty.selectedAssignments, []);
     assert.equal(empty.totalReservedMaximumNotionalKrw, 0);
+  }
+});
+
+test("selected ranks preserve the existing selector mandate contract including a sole candidate and rank gaps", () => {
+  for (const zeroFirst of [false, true]) {
+    const request = selectionRequest(zeroFirst ? 2 : 1), candidate = assignment(request, "KR", "B", 0.8);
+    const assignments = zeroFirst ? [assignment(request, "KR", "A", 1, "eligible", 0), candidate] : [candidate];
+    const set = createCandidateAssignmentSetRecord({ request, assignments, createdAt: LATER });
+    assert.equal(set.selectedAssignments.length, 1);
+    const selected = set.selectedAssignments[0]!;
+    assert.equal(selected.selectedRank, zeroFirst ? 2 : 1);
+    const mandate = createInvestmentMandateRecord({
+      portfolioId: candidate.portfolioId, market: candidate.market, symbol: candidate.symbol, bucket: candidate.bucket,
+      policyHash: candidate.policyHash, asOf: candidate.asOf, minWeightRatio: candidate.minWeightRatio,
+      targetWeightRatio: candidate.targetWeightRatio, maxWeightRatio: candidate.maxWeightRatio,
+      maximumOpeningNotionalKrw: selected.reservedMaximumNotionalKrw, reasonCodes: candidate.reasonCodes,
+      evidenceRefs: candidate.evidenceRefs, evidenceAsOf: AT, reviewCadence: { mode: "every_tick" }, validFrom: AT,
+      assignmentSource: "deterministic_selector", selectionRequestId: request.requestId,
+      candidateAssignmentId: candidate.assignmentId, candidateAssignmentSetId: set.candidateAssignmentSetId,
+      candidateAssignmentSetHash: set.candidateAssignmentSetHash, selectedRank: selected.selectedRank,
+      openingCapacityReservationId: "synthetic-reservation", openingCapacityReservationHash: HASH,
+      reservedSlotOrdinal: 0, reservedMaximumNotionalKrw: selected.reservedMaximumNotionalKrw,
+      scoringModelVersion: candidate.scoringModelVersion, selectionScore: candidate.selectionScore, createdAt: LATER
+    });
+    const parsed = parseInvestmentMandateRecord(mandate);
+    assert.equal(parsed.assignmentSource, "deterministic_selector");
+    if (parsed.assignmentSource !== "deterministic_selector") throw new Error("unexpected mandate variant");
+    assert.equal(parsed.selectedRank, selected.selectedRank);
+    assert.equal(parsed.reservedSlotOrdinal, 0); // A rank is not a shared-ledger slot ordinal.
+    for (const selectedRank of [0, -0, -1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      assert.throws(() => parseCandidateAssignmentSetRecord(rehashSet({ ...set,
+        selectedAssignments: [{ ...selected, selectedRank }] })));
+    }
   }
 });
 

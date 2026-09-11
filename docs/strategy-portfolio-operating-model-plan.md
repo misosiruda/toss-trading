@@ -4482,7 +4482,7 @@ not_verified, currentExecutionAuthority는 not_granted다.
 canonical 순으로 정렬한다. Watch와 blocked 사이에 별도 우선순위는 넣지 않는다. Request budget은
 min(gapKrw, maximumAdditionalExposureKrw)이며 앞의 min(availableSlots, eligibleCount)개에 대해
 individual maximum과 남은 budget의 최솟값을 BigInt 정수로 순차 예약한다. 0원은 selected 목록에서
-제외하지만 N 밖 후보로 보충하지 않는다. selectedRank는 제외 전 상위 후보의 0-based 순위라서
+제외하지만 N 밖 후보로 보충하지 않는다. selectedRank는 기존 selector mandate와 같은 1-based 순위라서
 0원 candidate가 있으면 빈 rank가 남을 수 있다. 이는 전역 reservedSlotOrdinal이 아니다.
 
 Set parser는 full hash/ID, 후보 identity·중복·정렬, selected identity/rank, positive reservation과

@@ -8,7 +8,7 @@ import { compareText, hashCanonicalPayload, hashDerivedId, offsetQualifiedIsoDat
 const count = z.number().int().nonnegative().safe().refine((value) => !Object.is(value, -0));
 const identifier = candidateAssignmentSchema.shape.assignmentId;
 const orderedSchema = candidateAssignmentSchema.pick({ assignmentId: true, assignmentHash: true, eligibility: true, selectionScore: true, market: true, symbol: true });
-const selectedSchema = z.object({ assignmentId: identifier, assignmentHash: sha256HashSchema, selectedRank: count,
+const selectedSchema = z.object({ assignmentId: identifier, assignmentHash: sha256HashSchema, selectedRank: count.refine((value) => value > 0),
   reservedMaximumNotionalKrw: count.refine((value) => value > 0) }).strict();
 const payloadSchema = z.object({ requestId: identifier, requestHash: sha256HashSchema, availableSlots: count.refine((value) => value > 0),
   requestAllocationBudgetKrw: count.refine((value) => value > 0), orderedAssignments: z.array(orderedSchema).max(100_000),
@@ -30,10 +30,10 @@ export function createCandidateAssignmentSetRecord(input: { request: unknown; as
   const budget = Math.min(request.gapKrw, request.maximumAdditionalExposureKrw);
   let remaining = BigInt(budget);
   const selectedAssignments = assignments.filter((assignment) => assignment.eligibility === "eligible").slice(0, request.availableSlots)
-    .flatMap((assignment, selectedRank) => {
+    .flatMap((assignment, index) => {
       const maximum = BigInt(assignment.maximumNotionalKrw), reserved = maximum < remaining ? maximum : remaining;
       remaining -= reserved;
-      return reserved === 0n ? [] : [{ assignmentId: assignment.assignmentId, assignmentHash: assignment.assignmentHash, selectedRank,
+      return reserved === 0n ? [] : [{ assignmentId: assignment.assignmentId, assignmentHash: assignment.assignmentHash, selectedRank: index + 1,
         reservedMaximumNotionalKrw: Number(reserved) }];
     });
   const payload = { requestId: request.requestId, requestHash: request.requestHash, availableSlots: request.availableSlots,
@@ -55,9 +55,9 @@ export function parseCandidateAssignmentSetRecord(value: unknown): CandidateAssi
     hashCanonicalPayload({ requestId: record.requestId, market: row.market, symbol: row.symbol })))) throw new Error("candidate assignment set candidate identity mismatch");
   if (!isDeepStrictEqual(record.orderedAssignments, [...record.orderedAssignments].sort(compareAssignment))) throw new Error("candidate assignment set order mismatch");
   const eligible = record.orderedAssignments.filter((row) => row.eligibility === "eligible").slice(0, record.availableSlots);
-  let total = 0n, previousRank = -1;
+  let total = 0n, previousRank = 0;
   for (const selected of record.selectedAssignments) {
-    const assignment = eligible[selected.selectedRank];
+    const assignment = eligible[selected.selectedRank - 1];
     if (!assignment || selected.selectedRank <= previousRank || assignment.assignmentId !== selected.assignmentId || assignment.assignmentHash !== selected.assignmentHash) {
       throw new Error("candidate assignment set selected identity or rank mismatch");
     }
