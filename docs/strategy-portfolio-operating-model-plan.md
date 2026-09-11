@@ -3426,6 +3426,28 @@ unverified 목록으로 반환하며 이들을 검증된 manual root 수에 포�
 소급 발급하지 않으며 historical disk availability도 증명하지 않는다. 기존 writer·API·안전 기본값과
 저장 형식 변경은 없고 데이터 변환 없이 신규 consumer 중단과 코드 rollback이 가능하다.
 
+수동 bound-to-mandate 원본 연결은 `resolveStoredManualOpeningCapacityMandateOrigins`에서 이미
+검증된 manual root와 실제 `InvestmentMandateFileRepository`의 전체 record/event 이력을 조합한다.
+모든 source 조회 후 event journal을 다시 관측하며 manual root를 확인했을 때와 generationHash가
+다르면 부분 결과를 재사용하지 않고 실패한다. Mandate와 event 관측 시각 역행도 거절한다.
+
+Root와 bound의 연결 키는 portfolio/policy/bucket/reservation ID 전체다. 다른 scope의 selector가 같은
+reservation ID를 사용하는 경우 수동 root로 합치지 않는다. Manual root에 속한 모든 bound_to_mandate
+이벤트는 실제 mandate ID/hash를 조회하고 기존
+`resolveManualOpeningCapacityMandateBinding`으로 scope/evidence/range, manual authorization,
+예약 ID/hash/notional 및 new/increase slot/position lineage를 대조한다. Mandate createdAt이 bound
+event.asOf보다 늦으면 거절한다. 이미 해제/소진된 예약과 이전 policy의 binding도 검사에서 제외하지
+않는다. Verified bound event와 연결된 root, actual mandate payload, event storage origin 및 mandate
+전체 관측 hash를 보존한다. Selector와 fill/release 등 아직 검증하지 않은 이벤트는 unverified ID
+목록으로 반환하며 root assessment hash를 함께 보존한다.
+
+범위는 stored_manual_capacity_mandate_bindings_only다. Mandate 저장소는 record별 append commit
+시각을 갖지 않으므로 `mandateAvailabilityAtBinding: not_proven`과
+`sourceBeforeCreationReceipt: not_recorded`를 명시한다. Proposed mandate도 content binding의 대상이며
+activation/current mandate 상태, 실제 slot/budget 할당, selector/fill/release 원본 및 최종 실행/sizing
+권한을 부여하지 않는다. 순차적인 source 관측은 multi-file current lease가 아니다. 기존 writer/API와
+artifact 형식 변경 없이 신규 consumer를 중단하고 코드 rollback할 수 있으며 원본을 삭제하지 않는다.
+
 수동 예약의 실제 원본 조회 선행 분할은 `ManualAssignmentFileRepository.withDurableVerifiedHistory`로
 manual assignment의 전체 이력을 독립 검증·동기화하고 consumer가 끝날 때까지 기존 source lock을
 유지한다. 일반 `readAll`과 동일한 strict JSONL parser를 사용해 torn/blank/corrupt/duplicate 이력을
