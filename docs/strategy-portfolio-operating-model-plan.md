@@ -3478,6 +3478,29 @@ mandate, source freshness/trust, accounting과 resultingPositionRef의 실제 po
 변환/삭제가 필요하지 않다. 저장된 claim의 원본 연결을 실제 자금 예약 또는 position 생성 승인으로
 취급하지 않는다.
 
+수동 예약의 retirement 해제 원본은 `resolveStoredManualOpeningCapacityTerminalOrigins`에서
+선행 root/mandate/fill composition을 먼저 수행한 뒤 실제 mandate 전체 이력과 capacity journal을
+다시 관측한다. Portfolio/policy/bucket/reservation 전체 키로 수동 bound 예약만 선택하며
+mandate_terminal release의 exact mandate/event ID/hash를 실제 retired 상태 및 마지막 retirement
+event와 대조한다. Active/review_required event, 없는 event, 다른 hash와 다른 실제 mandate payload는
+거절한다. Terminal event의 asOf/createdAt은 release.asOf 이하여야 하며 capacity predecessor commit은
+release.asOf보다 엄격히 앞서야 한다. 해제액은 이미 실제 fill과 대조한 직전 예약의 잔여 gross다.
+
+선행 fill 관측 이후 capacity generation이 바뀌면 실패하고, 다시 전체 resolver를 실행해야 한다.
+신규 source lock은 mandate → capacity 순서이며 선행 fill resolver의 lock은 모두 반환된 뒤 획득한다.
+저장된 retirement가 실제로 release 전에 disk에 존재했다는 receipt는 기존 event 형식에 없으므로
+retirementAvailabilityBeforeRelease는 not_proven, sourceBeforeCreationReceipt는 not_recorded다.
+Scope는 stored_manual_capacity_retirement_origins_only이며 request_cancelled와 selector origin은
+unverified 목록에 유지한다. 자유 형식 releaseReasonCode는 retirement의 원본 증명을 대체하지 않는다.
+Target 충족에 따른 별도 해제 origin 계약, 실제 unbound 취소 authorization, accounting/position,
+공용 allocator와 atomic writer는 후속이다. 전체 journal/suffix 소실은 외부 checkpoint 없이 과거
+존재 여부를 증명하지 못하므로 빈 조회를 current capacity나 복구 완료로 간주하지 않는다.
+
+체결·해제 composition 테스트는 동일한 실제 임시 저장소 fixture를
+storedManualOpeningCapacityTestFixtures.ts에서 공유한다. 기존 체결 테스트 8개의 본문/assertion을
+유지하며 fixture import는 테스트를 등록하지 않는다. 기존 API/writer/artifact schema 변경 없이
+consumer 중단과 코드 rollback이 가능하고 원본 변환·삭제는 수행하지 않는다.
+
 수동 예약의 실제 원본 조회 선행 분할은 `ManualAssignmentFileRepository.withDurableVerifiedHistory`로
 manual assignment의 전체 이력을 독립 검증·동기화하고 consumer가 끝날 때까지 기존 source lock을
 유지한다. 일반 `readAll`과 동일한 strict JSONL parser를 사용해 torn/blank/corrupt/duplicate 이력을
