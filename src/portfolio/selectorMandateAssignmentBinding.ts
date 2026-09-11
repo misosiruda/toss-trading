@@ -29,6 +29,9 @@ export function resolveSelectorMandateAssignmentBinding(value: unknown) {
     "minWeightRatio", "targetWeightRatio", "maxWeightRatio"] as const) {
     if (mandate[key] !== assignment[key]) throw new Error(`selector mandate assignment ${key} mismatch`);
   }
+  if (!isDeepStrictEqual(mandate.reasonCodes, assignment.reasonCodes) || !isDeepStrictEqual(mandate.evidenceRefs, assignment.evidenceRefs)) {
+    throw new Error("selector mandate assignment reason or evidence references mismatch");
+  }
   const maximumOpeningNotionalKrw = Math.min(assignment.maximumNotionalKrw, selected.reservedMaximumNotionalKrw);
   if (mandate.maximumOpeningNotionalKrw !== maximumOpeningNotionalKrw || mandate.reservedMaximumNotionalKrw !== maximumOpeningNotionalKrw) {
     throw new Error("selector mandate opening amount differs from selected request allocation");

@@ -216,6 +216,8 @@ test("selector mandate binding rejects independently rehashed scope rank score r
     { selectionRequestId: "other" }, { candidateAssignmentId: input.assignments[0]!.assignmentId },
     { candidateAssignmentSetId: "other" }, { candidateAssignmentSetHash: OTHER }, { selectedRank: 1 },
     { scoringModelVersion: "other" }, { selectionScore: 0.7 }, { minWeightRatio: 0.02 }, { targetWeightRatio: 0.06 },
+    { reasonCodes: ["fabricated"] }, { evidenceRefs: ["fabricated"] },
+    { reasonCodes: ["extra", "synthetic"] }, { evidenceRefs: ["evidence", "extra"] },
     { maxWeightRatio: 0.11 }, { maximumOpeningNotionalKrw: 29, reservedMaximumNotionalKrw: 29 },
     { maximumOpeningNotionalKrw: 31, reservedMaximumNotionalKrw: 31 }, { createdAt: AT }]) {
     const mandate = rebuildSelectorMandate(input.mandate, patch);

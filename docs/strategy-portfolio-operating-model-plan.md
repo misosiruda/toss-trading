@@ -1656,7 +1656,8 @@ assignment가 `eligible`이면서 같은 exact set ID/hash, assignment ID/hash�
 Opening mandate는 BUY sizing input만 허용한다.
 
 Mandate의 portfolio/policy/bucket/market/symbol, scoring model/score와 min/target/max weight는 해당
-assignment와 같아야 한다. maximumOpeningNotionalKrw와 reservedMaximumNotionalKrw는 individual cap과
+assignment와 같아야 한다. Canonical reasonCodes/evidenceRefs 배열도 전체가 같아야 하며 다른 근거나
+사유의 교체·추가를 허용하지 않는다. maximumOpeningNotionalKrw와 reservedMaximumNotionalKrw는 individual cap과
 set의 selected reservation 중 작은 금액과 정확히 같아야 한다. Mandate asOf는 request asOf보다
 과거일 수 없고 evidenceAsOf는 assignment asOf와 같으며 생성은 set 생성 이후여야 한다.
 
