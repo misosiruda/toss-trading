@@ -13,7 +13,10 @@ import { CandidateAssignmentFileRepository, createCandidateAssignmentPaths, getD
   type VerifiedCandidateAssignmentHistory } from "./candidateAssignmentFiles.js";
 import { createCandidateAssignmentSetRecord } from "./candidateAssignmentSet.js";
 import { createCandidateSizingInputRecord } from "./candidateSizingInput.js";
-import { CandidateSizingInputFileRepository, createCandidateSizingInputPaths } from "./candidateSizingInputFiles.js";
+import { CandidateSizingInputFileRepository, createCandidateSizingInputPaths, getDurableCandidateSizingInputObservation } from "./candidateSizingInputFiles.js";
+import { createInvestmentMandateRecord } from "./investmentMandate.js";
+import { InvestmentMandateFileRepository, createInvestmentMandatePaths } from "./investmentMandateFiles.js";
+import { resolveStoredSelectorMandateAssignmentBinding } from "./storedSelectorMandateAssignmentBinding.js";
 import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
 import { createPortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { PortfolioSizingSnapshotFileRepository, createPortfolioSizingSnapshotPaths } from "./portfolioSizingSnapshotFiles.js";
@@ -156,14 +159,23 @@ test("assignment live observation holds all source locks and expires both assign
     await repo.appendAssignment(a);
     const short = { lockTimeoutMs: 30, lockRetryDelayMs: 5 };
     let captured: VerifiedCandidateAssignmentHistory | undefined;
-    await assert.rejects(repo.withDurableVerifiedHistory(async (history) => {
+    let heldInputs: Parameters<typeof getDurableCandidateSizingInputObservation>[0] | undefined;
+    let heldRequests: Parameters<typeof getDurableBucketSelectionRequestObservation>[0] | undefined;
+    await assert.rejects(repo.withDurableVerifiedHistory(async (history, inputs, requests) => {
       captured = history; assert.ok(getDurableCandidateAssignmentObservation(history));
+      heldInputs = inputs; heldRequests = requests;
+      assert.ok(getDurableCandidateSizingInputObservation(inputs));
+      assert.equal(getDurableBucketSelectionRequestObservation(requests).requestCount, 1);
+      assert.throws(() => getDurableCandidateSizingInputObservation({ ...inputs }), /lease/);
+      assert.throws(() => getDurableBucketSelectionRequestObservation({ ...requests }), /lease/);
       assert.throws(() => getDurableCandidateAssignmentObservation({ ...history }), /lease/);
       for (const store of [new BucketSelectionRequestFileRepository(dir, short), new PortfolioSizingSnapshotFileRepository(dir, short),
         new CandidateSizingInputFileRepository(dir, short), new CandidateAssignmentFileRepository(dir, short)]) await assert.rejects(store.readAll(), /lock is unavailable/);
       throw new Error("consumer failure");
     }), /consumer failure/);
     assert.throws(() => getDurableCandidateAssignmentObservation(captured!), /lease/);
+    assert.throws(() => getDurableCandidateSizingInputObservation(heldInputs!), /lease/);
+    assert.throws(() => getDurableBucketSelectionRequestObservation(heldRequests!), /lease/);
     let requestHistory: Parameters<typeof getDurableBucketSelectionRequestObservation>[0] | undefined;
     await new CandidateSizingInputFileRepository(dir).withDurableVerifiedHistory(async (_inputs, requests) => {
       requestHistory = requests; assert.equal(getDurableBucketSelectionRequestObservation(requests).requestCount, 1);
@@ -280,6 +292,73 @@ async function seed(dir: string, symbol = "A", score = 0.8) {
     minWeightRatio: 0.01, targetWeightRatio: 0.05, maxWeightRatio: 0.1, maximumNotionalKrw: 70,
     eligibility: "eligible", reasonCodes: ["synthetic"], evidenceRefs: ["evidence"], createdAt: new Date().toISOString() });
 }
+test("stored selector mandate resolves actual sealed sources without modifying bytes or granting activation", async () => temporary(async (dir) => {
+  const fixture = await seedStoredSelectorMandate(dir);
+  const paths = [createCandidateAssignmentPaths(dir).recordsPath, createCandidateSizingInputPaths(dir).recordsPath,
+    createBucketSelectionRequestPaths(dir).recordsPath, createInvestmentMandatePaths(dir).recordsPath];
+  const before = await Promise.all(paths.map((path) => readFile(path)));
+  const result = await resolveStoredSelectorMandateAssignmentBinding({ baseDir: dir, mandateId: fixture.mandate.mandateId });
+  assert.equal(result.binding.assignment.assignmentId, fixture.candidate.assignmentId);
+  assert.equal(result.binding.mandate.mandateId, fixture.mandate.mandateId);
+  assert.equal(result.binding.assessment.maximumOpeningNotionalKrw, 30);
+  assert.equal(result.setOrigin.commitHash, fixture.sealed.commitHash);
+  assert.equal(result.assignmentOrigins.length, 2);
+  assert.equal(result.assessment.mandateActivationAuthority, "not_verified");
+  assert.equal(result.assessment.capacityReservationAuthority, "not_verified");
+  assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
+  assert.equal(result.assessment.sourceBeforeCreationReceipt, "not_recorded");
+  assert.ok(Object.isFrozen(result.binding.assignment));
+  assert.ok(Object.isFrozen(result.assignmentOrigins));
+  const restarted = await resolveStoredSelectorMandateAssignmentBinding({ baseDir: dir, mandateId: fixture.mandate.mandateId });
+  assert.deepEqual(restarted.binding, result.binding);
+  assert.deepEqual(restarted.setOrigin, result.setOrigin);
+  assert.equal(restarted.assessmentHash, hashCanonicalPayload(restarted.assessment));
+  assert.deepEqual(await Promise.all(paths.map((path) => readFile(path))), before);
+}));
+
+test("stored selector mandate rejects foreign source refs rationale and creation before seal commit", async () => {
+  for (const failure of ["hash", "reason", "early"]) await temporary(async (dir) => {
+    const fixture = await seedStoredSelectorMandate(dir, failure);
+    await assert.rejects(resolveStoredSelectorMandateAssignmentBinding({ baseDir: dir, mandateId: fixture.mandate.mandateId }),
+      failure === "early" ? /predates assignment set commit/ : failure === "reason" ? /reason or evidence/ : /exact selected/);
+  });
+});
+
+test("stored selector mandate fails on missing sets corrupt source histories and external source overrides", async () => temporary(async (dir) => {
+  const fixture = await seedStoredSelectorMandate(dir), query = { baseDir: dir, mandateId: fixture.mandate.mandateId };
+  await assert.rejects(resolveStoredSelectorMandateAssignmentBinding({ ...query, mandateId: "missing" }), /source is missing/);
+  const override = { ...query, assignments: [] };
+  await assert.rejects(resolveStoredSelectorMandateAssignmentBinding(override));
+  for (const path of [createInvestmentMandatePaths(dir).recordsPath, createCandidateAssignmentPaths(dir).recordsPath,
+    createCandidateSizingInputPaths(dir).recordsPath, createBucketSelectionRequestPaths(dir).recordsPath]) {
+    const original = await readFile(path, "utf8");
+    await writeFile(path, `${original}{corrupt}\n`);
+    await assert.rejects(resolveStoredSelectorMandateAssignmentBinding(query));
+    await writeFile(path, original);
+  }
+  const path = createCandidateAssignmentPaths(dir).recordsPath, original = await readFile(path, "utf8");
+  await writeFile(path, original.trimEnd().split("\n").slice(0, -2).join("\n") + "\n");
+  await assert.rejects(resolveStoredSelectorMandateAssignmentBinding(query), /set source is missing/);
+}));
+
+async function seedStoredSelectorMandate(dir: string, failure = "none") {
+  const a = await seed(dir, "A", 0.9), candidate = await seed(dir, "B", 0.8), repo = new CandidateAssignmentFileRepository(dir);
+  await repo.appendAssignment(a); await repo.appendAssignment(candidate);
+  const sealed = await repo.sealRequest(candidate.requestId), selected = sealed.record.selectedAssignments[1]!;
+  const mandate = createInvestmentMandateRecord({ portfolioId: candidate.portfolioId, market: candidate.market, symbol: candidate.symbol,
+    bucket: candidate.bucket, policyHash: candidate.policyHash, asOf: AT, minWeightRatio: candidate.minWeightRatio,
+    targetWeightRatio: candidate.targetWeightRatio, maxWeightRatio: candidate.maxWeightRatio, maximumOpeningNotionalKrw: selected.reservedMaximumNotionalKrw,
+    reasonCodes: failure === "reason" ? ["fabricated"] : candidate.reasonCodes, evidenceRefs: candidate.evidenceRefs, evidenceAsOf: AT,
+    reviewCadence: { mode: "every_tick" }, validFrom: AT, assignmentSource: "deterministic_selector", selectionRequestId: candidate.requestId,
+    candidateAssignmentId: candidate.assignmentId, candidateAssignmentSetId: sealed.record.candidateAssignmentSetId,
+    candidateAssignmentSetHash: failure === "hash" ? OTHER : sealed.record.candidateAssignmentSetHash, selectedRank: selected.selectedRank,
+    openingCapacityReservationId: "synthetic-reservation", openingCapacityReservationHash: HASH, reservedSlotOrdinal: 19,
+    reservedMaximumNotionalKrw: selected.reservedMaximumNotionalKrw, scoringModelVersion: candidate.scoringModelVersion, selectionScore: candidate.selectionScore,
+    createdAt: failure === "early" ? new Date(Date.parse(sealed.committedAt) - 1).toISOString() : new Date().toISOString() });
+  await new InvestmentMandateFileRepository(dir).appendRecord(mandate);
+  return { candidate, sealed, mandate };
+}
+
 function rebuild(value: CandidateAssignment, patch: Record<string, unknown>) {
   const { assignmentId: _id, assignmentHash: _hash, sizingOutputHash: _output, ...payload } = value;
   return createCandidateAssignment({ ...payload, ...patch } as Parameters<typeof createCandidateAssignment>[0]);
