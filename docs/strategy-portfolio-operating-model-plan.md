@@ -948,8 +948,15 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   모든 저장 projection을 원본에서 다시 계산해 전체 payload와 대조하므로 독립적으로 rehash한 위조 상태,
   누락·손상 원본, 중복 portfolio, 비정렬 문서, invalid UTF-8와 torn/비정규 JSON을 fail-closed한다.
   Outer state lock은 문서 reader/writer를 직렬화하고 temporary file write/fsync/rename으로 전체 bucket을
-  함께 교체한다. 획득 EEXIST/Windows EPERM만 monotonic timeout 안에서 재시도하고 token 초기화 실패와
-  abandoned/replaced lock은 자동 삭제하지 않는다. Rename 후 directory sync 실패는 성공으로 보고하지 않으며
+  함께 교체한다. `.bucket-opening-capacity-state.json.lock/<generation>/owner`에 UUID 소유권을 쓰고
+  `<UUID>.released` 표식이 정확히 일치하고 sync된 경우에만 다음 연속 generation을 exclusive mkdir로
+  획득한다. 해제 시 owner/generation 경로를 삭제·rename하지 않으므로 최종 소유권 확인 직후 교체된
+  다른 token을 해제하지 않는다. 획득 EEXIST/Windows EPERM만 monotonic timeout 안에서 재시도한다.
+  초기화 실패, 불완전한 release, generation 누락 및 abandoned/replaced lock은 자동 복구하지 않는다.
+  세대별 디렉터리와 표식은 read/refresh마다 누적되며 online GC는 제공하지 않는다. 보존량 모니터링과
+  실행 writer가 없는 상태에서의 명시적 보관/복구가 필요하다. 기존 file 형태 barrier도 덮어쓰지 않는다.
+  중첩 projection/state의 객체 key 순서도 실제 재계산 문서의 직렬화 bytes와 대조한다.
+  Rename 후 directory sync 실패는 성공으로 보고하지 않으며
   동일 입력 재시도로 저장된 결과의 durability를 다시 확인한다. Windows directory fsync EPERM은 기존 저장소와
   같은 제한으로 처리한다. 프로세스 재시도/CAS 경합, 실제 manual/selector 부분 fill 원본 및 I/O fault를 검증한다.
   이 저장소는 역사적 snapshot projection 저장/CAS이며 **현재 portfolio 원장의 최신성이나 신규 할당 권한이

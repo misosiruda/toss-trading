@@ -35,7 +35,7 @@ test("opening capacity file persists all buckets and replays their sources after
     assert.deepEqual(await fs.readFile(createBucketOpeningCapacityStatePaths(dir).statePath), bytes);
     assert.ok(Object.isFrozen(result)); assert.ok(Object.isFrozen(result.projections));
     assert.ok(result.projections.every((item) => Object.isFrozen(item) && Object.isFrozen(item.states) && item.states.every(Object.isFrozen)));
-    await assert.rejects(fs.readFile(createBucketOpeningCapacityStatePaths(dir).lockPath), { code: "ENOENT" });
+    assert.equal((await fs.stat(createBucketOpeningCapacityStatePaths(dir).lockPath)).isDirectory(), true);
   });
 });
 

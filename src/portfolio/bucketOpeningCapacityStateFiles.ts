@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, realpath, rename, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -100,13 +100,19 @@ export class BucketOpeningCapacityStateFileRepository {
   // Do not call this repository while already holding one of the source repository locks.
   private async withLock<T>(operation: (assertOwned: () => Promise<void>) => Promise<T>): Promise<T> {
     await mkdir(this.baseDir, { recursive: true });
-    await syncAncestors(this.baseDir);
+    try { await mkdir(this.paths.lockPath, { recursive: true }); }
+    catch (error) { throw new Error("opening capacity state lock is unavailable", { cause: error }); }
+    await syncAncestors(this.paths.lockPath);
     const deadline = performance.now() + this.options.lockTimeoutMs;
     let lastContention: unknown;
     while (true) {
       if (performance.now() >= deadline) throw new Error("opening capacity state lock is unavailable", { cause: lastContention });
-      let handle: Awaited<ReturnType<typeof open>>;
-      try { handle = await open(this.paths.lockPath, "wx"); }
+      const generation = await nextLockGeneration(this.paths.lockPath);
+      const generationPath = generation === null ? null : join(this.paths.lockPath, String(generation));
+      try {
+        if (generationPath === null) throw Object.assign(new Error("opening capacity owner has not released its generation"), { code: "EEXIST" });
+        await mkdir(generationPath);
+      }
       catch (error) {
         if (!isNodeError(error) || !(error.code === "EEXIST" || (process.platform === "win32" && error.code === "EPERM"))) throw error;
         lastContention = error;
@@ -114,19 +120,56 @@ export class BucketOpeningCapacityStateFileRepository {
         continue;
       }
       const token = `${randomUUID()}\n`;
-      try { await handle.writeFile(token, "utf8"); await handle.sync(); }
-      catch (error) { await handle.close(); throw error; } // Preserve failed initialization barriers for explicit recovery.
+      const ownerPath = join(generationPath!, "owner");
+      // Failed initialization leaves this generation as a barrier; no automatic recovery or generation deletion.
+      const handle = await open(ownerPath, "wx");
+      try { await handle.writeFile(token, "utf8"); await handle.sync(); } finally { await handle.close(); }
+      await syncDirectory(generationPath!);
+      await syncDirectory(this.paths.lockPath);
       const assertOwned = async () => {
-        if (await readFile(this.paths.lockPath, "utf8") !== token) throw new Error("opening capacity state lock ownership changed");
+        if (await readFile(ownerPath, "utf8") !== token) throw new Error("opening capacity state lock ownership changed");
       };
       try { await assertOwned(); return await operation(assertOwned); }
       finally {
-        try { await assertOwned(); } finally { await handle.close(); }
-        await unlink(this.paths.lockPath);
-        await syncDirectory(this.baseDir);
+        await assertOwned();
+        // A replacement owner has a different token. This marker cannot release it, even if replacement
+        // happens immediately after the ownership read. Never unlink/rename any generation or owner path.
+        const release = await open(join(generationPath!, `${token.trim()}.released`), "wx");
+        try { await release.writeFile(token, "utf8"); await release.sync(); } finally { await release.close(); }
+        await syncDirectory(generationPath!);
+        await assertOwned();
       }
     }
   }
+}
+
+/** Append-only lock generations avoid a check-then-unlink race on a reusable ownership path. */
+async function nextLockGeneration(root: string): Promise<number | null> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const numbers = entries.map((entry) => {
+    const number = Number(entry.name);
+    if (!entry.isDirectory() || !/^[1-9]\d*$/.test(entry.name) || !Number.isSafeInteger(number)) {
+      throw new Error("opening capacity lock generation is invalid");
+    }
+    return number;
+  }).sort((a, b) => a - b);
+  if (numbers.some((number, index) => number !== index + 1)) throw new Error("opening capacity lock generation chain has a gap");
+  const last = numbers.at(-1);
+  if (last === undefined) return 1;
+  const path = join(root, String(last)), ownerPath = join(path, "owner");
+  let token: string;
+  try { token = await readFile(ownerPath, "utf8"); }
+  catch (error) { if (isNodeError(error) && error.code === "ENOENT") return null; throw error; }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\n$/.test(token)) return null;
+  const releasePath = join(path, `${token.trim()}.released`);
+  let released: string;
+  try { released = await readFile(releasePath, "utf8"); }
+  catch (error) { if (isNodeError(error) && error.code === "ENOENT") return null; throw error; }
+  if (released !== token) return null; // An incomplete marker is never an implicit unlock.
+  await syncFile(releasePath);
+  if (await readFile(ownerPath, "utf8") !== token) throw new Error("opening capacity state lock ownership changed");
+  if (!Number.isSafeInteger(last + 1)) throw new Error("opening capacity lock generation overflow");
+  return last + 1;
 }
 
 function makeDocument(projections: readonly Projection[]): StoredBucketOpeningCapacityDocument {
