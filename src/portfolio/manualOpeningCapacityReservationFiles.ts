@@ -224,7 +224,9 @@ async function readDurableRaw(path: string): Promise<{ raw: string; observedAt: 
       after.dev !== named.dev || after.ino !== named.ino || after.size !== named.size || after.mtimeNs !== named.mtimeNs || after.ctimeNs !== named.ctimeNs) {
       throw new Error("manual capacity source changed during observation");
     }
-    return { raw: bytes.toString("utf8"), observedAt };
+    const raw = bytes.toString("utf8");
+    if (!Buffer.from(raw, "utf8").equals(bytes)) throw new Error("manual capacity source contains invalid UTF-8");
+    return { raw, observedAt };
   } finally { await handle.close(); }
 }
 

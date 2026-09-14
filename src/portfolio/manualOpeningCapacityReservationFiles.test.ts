@@ -116,6 +116,64 @@ test("manual capacity reads revalidate original source prefixes and do not hide 
   });
 });
 
+for (const target of ["manual", "snapshot", "reservation"] as const) {
+  test(`manual capacity ${target} source rejects malformed UTF-8 without changing decoded hashes`, async () => {
+    await temporary(async (dir) => {
+      const manualRepo = new ManualAssignmentFileRepository(dir);
+      const snapshotRepo = new PortfolioSizingSnapshotFileRepository(dir);
+      const repo = new ManualOpeningCapacityReservationFileRepository(dir);
+      const event = manual("\ufffd");
+      const current = snapshot("\ufffd");
+      await manualRepo.append(event);
+      await snapshotRepo.append(current);
+      const record = rebuild(reservation("\ufffd"), { currentPortfolioSnapshotId: current.portfolioSnapshotId,
+        currentPortfolioSnapshotHash: current.portfolioSnapshotHash });
+      const origin = await repo.append(record);
+      const paths = [createManualAssignmentPaths(dir).eventsPath, createPortfolioSizingSnapshotPaths(dir).recordsPath,
+        createManualOpeningCapacityReservationPaths(dir).recordsPath];
+      const originals = await Promise.all(paths.map((path) => readFile(path)));
+      const index = target === "manual" ? 0 : target === "snapshot" ? 1 : 2;
+      const path = paths[index]!;
+      const valid = originals[index]!;
+      const replacement = Buffer.from("\ufffd", "utf8");
+      const offset = valid.indexOf(replacement);
+      assert.ok(offset >= 0, "fixture must contain correctly encoded U+FFFD");
+      for (const malformed of [0xff, 0x80, 0xc2]) {
+        const corrupt = Buffer.concat([valid.subarray(0, offset), Buffer.from([malformed]), valid.subarray(offset + replacement.length)]);
+        assert.notDeepEqual(corrupt, valid);
+        assert.equal(corrupt.toString("utf8"), valid.toString("utf8"));
+        await writeFile(path, corrupt);
+        let called = false;
+        if (target === "manual") {
+          await assert.rejects(manualRepo.readAll(), /invalid UTF-8/);
+          await assert.rejects(manualRepo.resolveById(event.manualAssignmentEventId), /invalid UTF-8/);
+          await assert.rejects(manualRepo.append(event), /invalid UTF-8/);
+          await assert.rejects(manualRepo.append(manual("later")), /invalid UTF-8/);
+          await assert.rejects(manualRepo.withDurableVerifiedHistory(async () => { called = true; }), /invalid UTF-8/);
+        } else if (target === "snapshot") {
+          await assert.rejects(snapshotRepo.readAll(), /invalid UTF-8/);
+          await assert.rejects(snapshotRepo.resolveById(current.portfolioSnapshotId), /invalid UTF-8/);
+          await assert.rejects(snapshotRepo.append(current), /invalid UTF-8/);
+          await assert.rejects(snapshotRepo.append(snapshot("later")), /invalid UTF-8/);
+          await assert.rejects(snapshotRepo.withDurableVerifiedHistory(async () => { called = true; }), /invalid UTF-8/);
+        }
+        await assert.rejects(repo.readAll(), /invalid UTF-8/);
+        await assert.rejects(repo.append(record), /invalid UTF-8/);
+        await assert.rejects(repo.withDurableVerifiedHistory(async () => { called = true; }), /invalid UTF-8/);
+        assert.equal(called, false);
+        for (const [fileIndex, file] of paths.entries()) {
+          assert.deepEqual(await readFile(file), fileIndex === index ? corrupt : originals[fileIndex]);
+        }
+      }
+      await writeFile(path, valid);
+      assert.deepEqual(await new ManualOpeningCapacityReservationFileRepository(dir).readAll(), [origin]);
+      assert.deepEqual(await repo.append(record), origin);
+      assert.deepEqual(await manualRepo.resolveById(event.manualAssignmentEventId), event);
+      assert.deepEqual(await snapshotRepo.resolveById(current.portfolioSnapshotId), current);
+    });
+  });
+}
+
 test("manual capacity concurrent exact retries produce only one durable pair", async () => {
   await temporary(async (dir) => {
     const record = await seed(dir);
