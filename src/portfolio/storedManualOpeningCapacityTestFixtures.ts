@@ -40,7 +40,7 @@ export interface Options { increase?: boolean; count?: number; unbound?: boolean
   mandateState?: "proposed" | "review_required" | "retired" | "late_activation";
   receipt?: "valid" | "wrong_mandate" | "wrong_event" | "wrong_prefix" | "wrong_plan" }
 
-function snapshot(policyHash = HASH) {
+export function snapshot(policyHash = HASH) {
   return createPortfolioSizingSnapshot({ portfolioId: PORTFOLIO, portfolioVersion: "v1", policyHash, asOf: AT,
     virtualPortfolio: { portfolioId: PORTFOLIO, cashKrw: 1000, positions: [], updatedAt: AT }, valuationInputs: [], pendingActionInputs: [],
     ...createPortfolioExposureSnapshot({ virtualNetWorthKrw: 1000, cashKrw: 1000,
@@ -122,6 +122,14 @@ async function seedManual(dir: string, move: (ms: number) => void, increase = fa
 async function seed(dir: string, context: TestContext, options: Options) {
   const move = (ms: number) => context.mock.timers.setTime(START + ms);
   const manual = await seedManual(dir, move, options.increase ?? false);
+  return seedCapacityExecutionHistory(dir, context, options, manual);
+}
+
+/** Shared actual plan/Risk/price/fill journal fixture; opening source is created by each source-specific fixture. */
+export async function seedCapacityExecutionHistory<T extends { mandate: Parameters<typeof mandateEvent>[0]; bound: OpeningCapacityReservationEvent }>(
+  dir: string, context: TestContext, options: Options, manual: T
+) {
+  const move = (ms: number) => context.mock.timers.setTime(START + ms);
   if (options.mandateState !== "proposed") {
     const ms = options.mandateState === "late_activation" ? 84 : 41;
     move(ms);
@@ -241,7 +249,8 @@ async function seed(dir: string, context: TestContext, options: Options) {
   return { dir, manual, plan, capacity };
 }
 export type State = Awaited<ReturnType<typeof seed>>;
-export function mandateEvent(mandate: ReturnType<typeof openingMandate>, eventType: "activated" | "retired" | "review_required", ms: number, previousMandateEventId?: string) {
+export function mandateEvent(mandate: Pick<ReturnType<typeof createInvestmentMandateRecord>, "mandateId" | "mandateHash" | "portfolioId" | "policyHash" | "bucket" | "market" | "symbol">,
+  eventType: "activated" | "retired" | "review_required", ms: number, previousMandateEventId?: string) {
   return createInvestmentMandateEvent({ mandateId: mandate.mandateId, mandateHash: mandate.mandateHash, portfolioId: mandate.portfolioId,
     policyHash: mandate.policyHash, bucket: mandate.bucket, market: mandate.market, symbol: mandate.symbol, eventType,
     asOf: at(ms), createdAt: at(ms), reasonCodes: ["synthetic"], ...(previousMandateEventId ? { previousMandateEventId } : {}) } as Parameters<typeof createInvestmentMandateEvent>[0]);
