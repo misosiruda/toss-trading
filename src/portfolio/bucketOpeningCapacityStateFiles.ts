@@ -92,6 +92,7 @@ export class BucketOpeningCapacityStateFileRepository {
     }
     const expected = makeDocument(projections);
     if (!isDeepStrictEqual(value, expected)) throw new Error("opening capacity document differs from canonical source replay");
+    if (raw !== `${JSON.stringify(expected)}\n`) throw new Error("opening capacity document nested bytes are noncanonical");
     return expected;
   }
 

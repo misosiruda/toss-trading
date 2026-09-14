@@ -121,6 +121,24 @@ test("opening capacity file rejects torn invalid UTF-8 duplicate keys and unknow
   });
 });
 
+test("opening capacity file rejects reordered nested projection and state keys without rewriting bytes", async (context) => {
+  await fixture(context, async (dir) => {
+    const source = await storeSource(dir), repository = new BucketOpeningCapacityStateFileRepository(dir);
+    const request = { portfolioSnapshotId: source.portfolioSnapshotId, expectedDocumentHash: null };
+    const stored = await repository.refresh(request), path = createBucketOpeningCapacityStatePaths(dir).statePath;
+    for (const level of ["projection", "state"]) {
+      const value = JSON.parse(JSON.stringify(stored));
+      if (level === "projection") value.projections[0] = Object.fromEntries(Object.entries(value.projections[0]).reverse());
+      else value.projections[0].states[0] = Object.fromEntries(Object.entries(value.projections[0].states[0]).reverse());
+      const corrupt = `${JSON.stringify(value)}\n`;
+      await fs.writeFile(path, corrupt);
+      await assert.rejects(repository.readVerifiedSnapshot(), /noncanonical/);
+      await assert.rejects(repository.refresh(request), /noncanonical/);
+      assert.equal(await fs.readFile(path, "utf8"), corrupt);
+    }
+  });
+});
+
 test("opening capacity refresh captures its request and options before waiting and rejects caller states", async (context) => {
   await fixture(context, async (dir) => {
     const source = await storeSource(dir), options = { lockTimeoutMs: 5000 };
