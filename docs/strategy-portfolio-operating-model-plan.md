@@ -938,6 +938,19 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   실제 보유 수량이 fill/이체/매도까지 포함한 원장 결과와 같은지, source가 과거 시점 디스크에 있었는지와
   여러 파일의 원자적 최신성은 별도 검증 대상이다. 이 결과로 current allocation/activation gate를
   대체하지 않는다. 저장 artifact나 기존 API 변경은 없고 읽기 모듈 코드 rollback에 데이터 삭제가 필요 없다.
+- 후속 `resolveStoredSnapshotOpeningBudget`는 위 실제 저장 occupancy 결과를 받아 snapshot의 공용 현금과
+  bucket max band의 미예약 상한을 계산한다. 현금 reserve는 기존 gap 계산과 같은
+  `max(minimumCashReserveKrw, round(NAV * targetCashRatio))`이며 전체 bucket/과거 정책의 잔여 예약을
+  한 번 차감한다. Pending BUY는 해당 예약에 이미 포함되므로 다시 빼지 않고, 아직 제출되지 않은
+  예약도 차감한다. Pending SELL의 예상 대금이나 caller의 예약 면제 ID로 현금을 늘리지 않는다.
+  Bucket별 max band에서는 양수 보유 노출과 해당 bucket의 잔여 gross 예약을 차감하고, 공용 현금 상한과
+  작은 값을 반환한다. 모든 bucket의 상한은 같은 공용 현금을 공유하므로 합산 가능한 독립 예산이 아니다.
+  초과 점유는 예약을 삭제하지 않고 상한 0 및 overcommitted로 표시하며 safe integer 경계를 검사한다.
+  이는 비용을 포함한 추가 현금 debit과 max band의 보수적인 역사적 상한이지 selection trigger/min/entry
+  gap, 최종 수량/비용, 기존 position 증가 자격이나 current CAS 승인 자체가 아니다. Available slot은
+  별도로 반환하므로 0 slot에서 양수 금액 상한이 있어도 신규 종목을 허용하지 않는다. 실제 결과 회계,
+  원자 할당 및 Risk Engine gate는 여전히 후속이다. 기존 candidate cash input 계약, API, 저장 artifact는
+  바꾸지 않으며 새 읽기 모듈 rollback에 데이터 삭제나 migration은 없다.
 - capacity reservation event hash는 event ID/hash/createdAt을 제외한 complete strict variant
   payload에서 계산하고 ID는 hash에서 파생한다. resolver는 source assignment/manual reservation,
   mandate/event와 paper fill origin을 exact ID/hash로 resolve한 뒤 독립 rehash한다. 첫 `reserved`
