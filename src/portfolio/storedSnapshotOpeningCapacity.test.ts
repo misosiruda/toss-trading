@@ -25,6 +25,7 @@ import { resolveStoredSnapshotOpeningCapacity } from "./storedSnapshotOpeningCap
 import { resolveStoredSnapshotOpeningBudget } from "./storedSnapshotOpeningBudget.js";
 import { resolveStoredBucketOpeningCapacityStates } from "./storedBucketOpeningCapacityStates.js";
 import { parseBucketOpeningCapacityState, resolveBucketOpeningCapacityStatePolicy } from "./bucketOpeningCapacityState.js";
+import { BucketOpeningCapacityStateFileRepository } from "./bucketOpeningCapacityStateFiles.js";
 
 type State = ManualState | SelectorCapacityState;
 const run = (state: State, stored: Awaited<ReturnType<typeof storeSnapshot>>) =>
@@ -474,6 +475,19 @@ test("stored capacity states normalize offset snapshot instants without changing
     await writeFile(eventsPath, corrupt);
     await assert.rejects(resolveStoredBucketOpeningCapacityStates({ baseDir: state.dir, portfolioSnapshotId: stored.portfolioSnapshotId }), /torn final line/);
     assert.deepEqual(await readFile(eventsPath), corrupt);
+  });
+});
+
+test("capacity state persistence replays actual manual and selector reservation fills after restart", async (context) => {
+  for (const source of ["manual", "selector"] as const) await fixture(context, source, { count: 1, feeBps: 250 }, async (state) => {
+    const policy = await storePolicy(state.dir);
+    const stored = await storeSnapshot(state, context, policy.policy.policyHash, 170, [position("005930", "intraday", 4)]);
+    const repository = new BucketOpeningCapacityStateFileRepository(state.dir);
+    const document = await repository.refresh({ portfolioSnapshotId: stored.portfolioSnapshotId, expectedDocumentHash: null });
+    const day = document.projections[0]!.states.find((item) => item.bucket === "intraday")!;
+    assert.equal(day.activePositionCount, 1); assert.equal(day.pendingReservationCount, 0);
+    assert.equal(day.reservedOpeningNotionalKrw, 60); assert.equal(day.availableSlots, 3);
+    assert.deepEqual(await new BucketOpeningCapacityStateFileRepository(state.dir).readVerifiedSnapshot(), document);
   });
 });
 
