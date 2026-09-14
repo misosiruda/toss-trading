@@ -1,5 +1,6 @@
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { resolveStoredSnapshotOpeningCapacity } from "./storedSnapshotOpeningCapacity.js";
+import { canonicalQuantityUnits } from "./canonicalQuantity.js";
 
 /** Reservation-adjusted historical cash/band bounds, not trigger eligibility, sizing or a current allocation approval. */
 export async function resolveStoredSnapshotOpeningBudget(
@@ -30,7 +31,8 @@ export async function resolveStoredSnapshotOpeningBudget(
   const budgets = Object.freeze(occupancy.capacities.map((capacity) => {
     const bucketPolicy = policy.strategyBuckets.find((item) => item.bucket === capacity.bucket)!;
     const positionExposureKrw = snapshot.exposureSnapshot.bucketExposureKrw[capacity.bucket];
-    const maximumExposureKrw = Math.round(virtualNetWorthKrw * bucketPolicy.maxWeightRatio);
+    // Match the exact canonical-decimal hard cap used by candidatePositionExposureBounds; never round a maximum upward.
+    const maximumExposureKrw = Number(BigInt(virtualNetWorthKrw) * canonicalQuantityUnits(bucketPolicy.maxWeightRatio) / canonicalQuantityUnits(1));
     if (!Number.isSafeInteger(maximumExposureKrw) || maximumExposureKrw < 0) throw new Error("snapshot opening budget band is unsafe");
     // Reserving gross cash against the band is a conservative bound, not a prediction of resulting marked exposure.
     const remainingMaxBandNotionalKrw = remaining(maximumExposureKrw, positionExposureKrw, capacity.reservedOpeningNotionalKrw);
@@ -45,6 +47,7 @@ export async function resolveStoredSnapshotOpeningBudget(
     policyHash: snapshot.policyHash, asOf: snapshot.asOf, occupancyAssessmentHash: occupancy.assessmentHash,
     cashHash: hashCanonicalPayload(cash), budgetsHash: hashCanonicalPayload(budgets),
     budgetMeaning: "shared_cash_and_gross_reserved_max_band_upper_bound" as const,
+    maxBandRounding: "canonical_decimal_floor_krw" as const,
     selectionTriggerAndSizing: "not_evaluated" as const, currentLedgerAndCasAuthority: "not_verified" as const,
     accountingAndResultingStateAuthority: "not_verified" as const, currentExecutionAuthority: "not_granted" as const });
   return Object.freeze({ occupancy, cash, budgets, assessment, assessmentHash: hashCanonicalPayload(assessment) });

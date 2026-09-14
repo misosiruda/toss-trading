@@ -354,11 +354,28 @@ test("stored opening budget preserves strict captured lookup and rejects corrupt
   });
 });
 
-function capacityPolicy(legacy = false, version = "opening.v1", maximumPositionCount = 4, minimumCashReserveKrw = 100) {
+test("stored opening budget floors exact canonical decimal max weight ceilings", async (context) => {
+  for (const [cashKrw, ratio, expected] of [[1, 0.5, 0], [1001, 0.5, 500], [100, 0.29, 29],
+    [Number.MAX_SAFE_INTEGER, 0.5, 4503599627370495]] as const) {
+    await manualFixture(context, { count: 0 }, async (state) => {
+      const policy = capacityPolicy(false, "floor-boundary", 4, 100, ratio);
+      await storePolicyFixture(state.dir, policy);
+      const stored = await storeSnapshot(state, context, policy.policy.policyHash, 45, [], cashKrw);
+      const result = await resolveStoredSnapshotOpeningBudget({ baseDir: state.dir, portfolioSnapshotId: stored.portfolioSnapshotId });
+      const day = result.budgets.find((item) => item.bucket === "intraday")!;
+      assert.equal(day.maximumExposureKrw, expected);
+      assert.equal(day.remainingMaxBandNotionalKrw, Math.max(0, expected - 100));
+      assert.equal(day.maximumAdditionalNetCashDebitKrw, Math.min(result.cash.maximumAdditionalNetCashDebitKrw, Math.max(0, expected - 100)));
+    });
+  }
+});
+
+function capacityPolicy(legacy = false, version = "opening.v1", maximumPositionCount = 4, minimumCashReserveKrw = 100, intradayMaxWeightRatio = 0.5) {
   const fixture = policyFixture();
   const { runtimePolicyRecordId: _id, policyHash: _hash, lineageHash: _lineage, createdAt, ...base } = fixture.policy;
   const payload = { ...base, portfolioId: PORTFOLIO, version, cashPolicy: { ...base.cashPolicy, minimumCashReserveKrw },
-    strategyBuckets: base.strategyBuckets.map((bucket) => ({ ...bucket, ...(legacy ? {} : {
+    strategyBuckets: base.strategyBuckets.map((bucket) => ({ ...bucket,
+      maxWeightRatio: bucket.bucket === "intraday" ? intradayMaxWeightRatio : bucket.maxWeightRatio, ...(legacy ? {} : {
       openingCapacityPolicy: { modelVersion: "bucket_opening_capacity_policy.v1" as const, maximumPositionCount }
     }) })) };
   const policyHash = hashCanonicalPayload(payload), runtimePolicyRecordId = hashDerivedId("runtime_portfolio_policy", policyHash);

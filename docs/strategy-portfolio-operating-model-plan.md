@@ -943,7 +943,9 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   `max(minimumCashReserveKrw, round(NAV * targetCashRatio))`이며 전체 bucket/과거 정책의 잔여 예약을
   한 번 차감한다. Pending BUY는 해당 예약에 이미 포함되므로 다시 빼지 않고, 아직 제출되지 않은
   예약도 차감한다. Pending SELL의 예상 대금이나 caller의 예약 면제 ID로 현금을 늘리지 않는다.
-  Bucket별 max band에서는 양수 보유 노출과 해당 bucket의 잔여 gross 예약을 차감하고, 공용 현금 상한과
+  Bucket별 max band는 `candidatePositionExposureBounds`와 같은 정규 십진수 BigInt 곱셈 후 내림으로
+  계산한다. 상한을 반올림으로 높이거나 부동소수점 곱셈 오차로 줄이지 않는다. 해당 band에서 양수 보유
+  노출과 해당 bucket의 잔여 gross 예약을 차감하고, 공용 현금 상한과
   작은 값을 반환한다. 모든 bucket의 상한은 같은 공용 현금을 공유하므로 합산 가능한 독립 예산이 아니다.
   초과 점유는 예약을 삭제하지 않고 상한 0 및 overcommitted로 표시하며 safe integer 경계를 검사한다.
   이는 비용을 포함한 추가 현금 debit과 max band의 보수적인 역사적 상한이지 selection trigger/min/entry
