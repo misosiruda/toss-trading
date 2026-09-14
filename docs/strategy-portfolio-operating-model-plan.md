@@ -3662,6 +3662,23 @@ Target 충족에 따른 별도 해제 origin 계약, 실제 unbound 취소 autho
 공용 allocator와 atomic writer는 후속이다. 전체 journal/suffix 소실은 외부 checkpoint 없이 과거
 존재 여부를 증명하지 못하므로 빈 조회를 current capacity나 복구 완료로 간주하지 않는다.
 
+Selector retirement 해제는 `resolveStoredSelectorOpeningCapacityTerminalOrigins`에서 실제
+Selector assignment/root/mandate/fill 원본 연결을 선행한 뒤 같은 retirement 검증을 적용한다.
+`storedOpeningCapacityTerminalOrigins.ts`의 private 공통 함수는 source-specific entrypoint가
+직접 조회한 원본만 받으며 외부에서 검증 완료 객체나 resolver를 주입하는 API는 없다.
+기존 수동 함수 import와 반환 타입의 root 정보는 유지하며 Selector 반환값에는 assignment/set
+원본과 global slot ordinal이 보존된다. 양쪽 경로 모두 exact retired mandate/event ID/hash,
+최종 retired 상태, asOf/createdAt 및 capacity predecessor commit 순서와 generation을 대조한다.
+
+Scope는 stored_selector_capacity_retirement_origins_only다. 해제액은 체결 원본과 대조한 직전
+예약의 remainingReservedNotionalKrw이며 수수료 포함 cash와 혼동하지 않는다. 미체결·부분체결 후
+해제, 재시작, 손상·누락 원본 및 source 관측 중 generation 변경을 검증한다. Unbound selector
+root와 request_cancelled, 다른 manual 예약은 unverified 목록에 남긴다. Retirement의 실제 저장
+가용성 receipt, root allocator/CAS, current capacity·취소·target 충족 권한과 accounting/position은
+이 조회로 승인하지 않는다. 소비가 끝났다는 이유만으로 해제 이벤트를 만들어 반환하지 않는다.
+기존 writer·API·artifact schema·운영 기본값은 그대로이며 신규 consumer와 공통/legacy entrypoint를
+함께 rollback할 수 있다. 데이터 변환·삭제는 필요 없다.
+
 체결·해제 composition 테스트는 동일한 실제 임시 저장소 fixture를
 storedManualOpeningCapacityTestFixtures.ts에서 공유한다. 기존 체결 테스트 8개의 본문/assertion을
 유지하며 fixture import는 테스트를 등록하지 않는다. 기존 API/writer/artifact schema 변경 없이

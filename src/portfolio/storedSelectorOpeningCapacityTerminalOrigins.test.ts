@@ -4,32 +4,37 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { createInvestmentMandateEvent, type InvestmentMandateEvent } from "./investmentMandate.js";
 import { InvestmentMandateFileRepository, createInvestmentMandatePaths } from "./investmentMandateFiles.js";
+import { createCandidateAssignmentPaths } from "./candidateAssignmentFiles.js";
 import { createOpeningCapacityReservationEvent } from "./openingCapacityReservationEvent.js";
 import { OpeningCapacityReservationEventFileRepository, createOpeningCapacityReservationEventPaths } from "./openingCapacityReservationEventFiles.js";
 import { createPaperFillExecutionPaths } from "./paperFillExecutionFiles.js";
-import { resolveStoredManualOpeningCapacityTerminalOrigins } from "./storedManualOpeningCapacityTerminalOrigins.js";
-import { HASH, OTHER, PORTFOLIO, START, at, fixture, mandateEvent, type State } from "./storedManualOpeningCapacityTestFixtures.js";
+import { resolveStoredSelectorOpeningCapacityTerminalOrigins } from "./storedSelectorOpeningCapacityTerminalOrigins.js";
+import { HASH, OTHER, PORTFOLIO, START, at, mandateEvent } from "./storedManualOpeningCapacityTestFixtures.js";
+import { fixture, type SelectorCapacityState as State } from "./storedSelectorOpeningCapacityTestFixtures.js";
 
-test("manual retirement origins release only actual remaining gross after zero or partial fills and restart", async (context) => {
-  for (const increase of [false, true]) for (const count of [0, 1, 2]) await fixture(context, { increase, count }, async (state) => {
+test("selector retirement origins release actual remaining gross after zero or partial fills and preserve selected sources", async (context) => {
+  for (const count of [0, 1, 2]) await fixture(context, { count, feeBps: 250 }, async (state) => {
     const terminal = await retire(state, context, 170);
     const event = await release(state, context, terminal, 180);
     const result = await run(state);
     assert.equal(result.bindings.length, 1);
     assert.deepEqual(result.bindings[0]!.terminalEvent, terminal);
     assert.deepEqual(result.bindings[0]!.event, event);
-    assert.equal(result.bindings[0]!.mandateBinding.root.event.reservationId, state.manual.root.reservationId);
     assert.equal(result.bindings[0]!.releasedNotionalKrw, count === 0 ? 100 : count === 1 ? 60 : 30);
     assert.equal(result.fills.bindings.length, count);
+    assert.equal(result.bindings[0]!.mandateBinding.source.binding.assignment.assignmentId, state.manual.assignment.assignmentId);
+    assert.equal(result.bindings[0]!.mandateBinding.mandate.reservedSlotOrdinal, 19);
     assert.deepEqual(result.assessment.unverifiedEventIds, []);
+    assert.equal(result.assessment.verificationScope, "stored_selector_capacity_retirement_origins_only");
     assert.equal(result.assessment.retirementAvailabilityBeforeRelease, "not_proven");
     assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
+    assert.equal(result.assessment.slotAndBudgetAllocationAuthority, "not_verified");
     assert.deepEqual(await run(state), result);
     for (const item of [result, result.bindings, result.bindings[0], result.assessment, result.assessment.mandateObservation]) assert.ok(Object.isFrozen(item));
   });
 });
 
-test("manual retirement origins reject missing changed or nonterminal mandate events", async (context) => {
+test("selector retirement origins reject missing changed or nonterminal mandate events", async (context) => {
   for (const mode of ["missing", "hash", "active", "review_required"] as const) await fixture(context, { count: 0 }, async (state) => {
     const repository = new InvestmentMandateFileRepository(state.dir);
     const activated = (await repository.readSnapshot()).events[0]!;
@@ -45,7 +50,7 @@ test("manual retirement origins reject missing changed or nonterminal mandate ev
   });
 });
 
-test("manual retirement origins reject effective or creation times after release and same-time capacity predecessor", async (context) => {
+test("selector retirement origins reject future effective creation or same-time predecessor sources", async (context) => {
   for (const mode of ["effective", "created", "predecessor"] as const) await fixture(context, { count: mode === "predecessor" ? 1 : 0 }, async (state) => {
     const repository = new InvestmentMandateFileRepository(state.dir);
     const activated = (await repository.readSnapshot()).events[0]!;
@@ -59,41 +64,40 @@ test("manual retirement origins reject effective or creation times after release
   });
 });
 
-test("manual retirement origins fail closed if the capacity generation advances during final source observation", async (context) => {
+test("selector retirement origins reject capacity generation changes during final source observation", async (context) => {
   await fixture(context, {}, async (state) => {
     await release(state, context, await retire(state, context, 100), 110);
     const original = OpeningCapacityReservationEventFileRepository.prototype.withDurableVerifiedHistory;
     let observations = 0;
-    const mock = context.mock.method(OpeningCapacityReservationEventFileRepository.prototype, "withDurableVerifiedHistory",
+    const mocked = context.mock.method(OpeningCapacityReservationEventFileRepository.prototype, "withDurableVerifiedHistory",
       async function(this: OpeningCapacityReservationEventFileRepository, operation: Parameters<typeof original>[0]) {
         if (++observations === 4) {
           context.mock.timers.setTime(START + 120);
           await new OpeningCapacityReservationEventFileRepository(state.dir).append(createOpeningCapacityReservationEvent({
-            eventType: "reserved", portfolioId: PORTFOLIO, policyHash: OTHER, bucket: "intraday", reservationId: "concurrent", reservationHash: HASH,
+            eventType: "reserved", portfolioId: PORTFOLIO, policyHash: OTHER, bucket: "intraday", reservationId: "concurrent-manual", reservationHash: HASH,
             capacityLedgerVersion: 1, remainingReservedNotionalKrw: 20, occupiesNewPositionSlot: true, asOf: at(120), createdAt: at(120),
-            reservationSource: { sourceKind: "selector", candidateAssignmentSetId: "set", candidateAssignmentSetHash: HASH,
-              candidateAssignmentId: "concurrent", reservedSlotOrdinal: 0 }
+            reservationSource: { sourceKind: "manual", manualCapacityReservationId: "concurrent-manual", manualCapacityReservationHash: HASH }
           }));
         }
         return original.call(this, operation);
       } as typeof original);
     try { await assert.rejects(run(state), /generation changed during terminal resolution/); assert.equal(observations, 4); }
-    finally { mock.mock.restore(); }
+    finally { mocked.mock.restore(); }
     const retry = await run(state);
     assert.equal(retry.bindings.length, 1);
     assert.equal(retry.assessment.unverifiedEventIds.length, 1);
   });
 });
 
-test("manual retirement origins recheck actual consumed history and preserve corrupted terminal sources", async (context) => {
+test("selector retirement origins recheck selected and consumed histories and preserve corrupt source bytes", async (context) => {
   await fixture(context, {}, async (state) => {
     await release(state, context, await retire(state, context, 100), 110);
     assert.equal((await run(state)).bindings.length, 1);
-    for (const path of [createInvestmentMandatePaths(state.dir).recordsPath, createInvestmentMandatePaths(state.dir).eventsPath,
-      createPaperFillExecutionPaths(state.dir).recordsPath, createOpeningCapacityReservationEventPaths(state.dir).eventsPath]) {
+    for (const path of [createCandidateAssignmentPaths(state.dir).recordsPath, createInvestmentMandatePaths(state.dir).recordsPath,
+      createInvestmentMandatePaths(state.dir).eventsPath, createPaperFillExecutionPaths(state.dir).recordsPath,
+      createOpeningCapacityReservationEventPaths(state.dir).eventsPath]) {
       const valid = await readFile(path, "utf8");
       await unlink(path);
-      // Removing the capacity journal removes the evidence itself; absence cannot prove that a historical suffix existed.
       if (path !== createOpeningCapacityReservationEventPaths(state.dir).eventsPath) await assert.rejects(run(state));
       else assert.equal((await run(state)).bindings.length, 0);
       await writeFile(path, valid + "{broken}\n");
@@ -105,7 +109,7 @@ test("manual retirement origins recheck actual consumed history and preserve cor
   });
 });
 
-test("manual retirement origins never authenticate an unbound cancellation or another policy selector chain", async (context) => {
+test("selector retirement origins leave unbound cancellation and another policy manual roots unverified", async (context) => {
   await fixture(context, { count: 0 }, async (state) => {
     const path = createOpeningCapacityReservationEventPaths(state.dir).eventsPath;
     const rows = (await readFile(path, "utf8")).trimEnd().split("\n");
@@ -115,33 +119,32 @@ test("manual retirement origins never authenticate an unbound cancellation or an
     const cancelled = createOpeningCapacityReservationEvent({ eventType: "released", portfolioId: PORTFOLIO, policyHash: HASH, bucket: "intraday",
       reservationId: root.reservationId, reservationHash: root.reservationHash, previousCapacityReservationEventId: root.capacityReservationEventId,
       capacityLedgerVersion: 2, remainingReservedNotionalKrw: 0, occupiesNewPositionSlot: false, asOf: at(110), createdAt: at(110),
-      releaseReasonCode: "cancelled", releaseOrigin: { originKind: "request_cancelled", requestOrManualEventId: state.manual.source.manualAssignmentEventId } });
+      releaseReasonCode: "cancelled", releaseOrigin: { originKind: "request_cancelled", requestOrManualEventId: state.manual.assignment.requestId } });
     const journal = new OpeningCapacityReservationEventFileRepository(state.dir);
     await journal.append(cancelled);
     context.mock.timers.setTime(START + 120);
-    const foreignRoot = createOpeningCapacityReservationEvent({ eventType: "reserved", portfolioId: PORTFOLIO, policyHash: OTHER, bucket: "intraday",
-      reservationId: root.reservationId, reservationHash: root.reservationHash, capacityLedgerVersion: 1,
-      remainingReservedNotionalKrw: 20, occupiesNewPositionSlot: true, asOf: at(120), createdAt: at(120),
-      reservationSource: { sourceKind: "selector", candidateAssignmentSetId: "selector", candidateAssignmentSetHash: HASH,
-        candidateAssignmentId: "assignment", reservedSlotOrdinal: 0 } });
-    await journal.append(foreignRoot);
+    const foreign = createOpeningCapacityReservationEvent({ eventType: "reserved", portfolioId: PORTFOLIO, policyHash: OTHER, bucket: "intraday",
+      reservationId: root.reservationId, reservationHash: root.reservationHash, capacityLedgerVersion: 1, remainingReservedNotionalKrw: 20,
+      occupiesNewPositionSlot: true, asOf: at(120), createdAt: at(120), reservationSource: { sourceKind: "manual",
+        manualCapacityReservationId: root.reservationId, manualCapacityReservationHash: root.reservationHash } });
+    await journal.append(foreign);
     const result = await run(state);
     assert.equal(result.bindings.length, 0);
-    assert.deepEqual(result.assessment.unverifiedEventIds, [cancelled.capacityReservationEventId, foreignRoot.capacityReservationEventId]);
+    assert.deepEqual(result.assessment.unverifiedEventIds, [root.capacityReservationEventId, cancelled.capacityReservationEventId, foreign.capacityReservationEventId]);
     assert.equal(result.assessment.requestCancellationAuthority, "not_verified");
     assert.equal(result.assessment.targetCompletionAuthority, "not_verified");
   });
 });
 
-test("manual retirement origins capture strict input and do not fabricate releases for active or exhausted reservations", async (context) => {
+test("selector retirement origins capture strict input and do not fabricate releases for active or exhausted reservations", async (context) => {
   for (const count of [0, 3]) await fixture(context, { count }, async (state) => {
     const input = { baseDir: state.dir, portfolioId: PORTFOLIO };
-    const promise = resolveStoredManualOpeningCapacityTerminalOrigins(input);
+    const pending = resolveStoredSelectorOpeningCapacityTerminalOrigins(input);
     input.baseDir = join(state.dir, "missing"); input.portfolioId = "foreign";
-    const result = await promise;
+    const result = await pending;
     assert.equal(result.bindings.length, 0);
     assert.equal(result.fills.bindings.length, count);
-    await assert.rejects(resolveStoredManualOpeningCapacityTerminalOrigins({ baseDir: state.dir, portfolioId: PORTFOLIO, extra: true } as typeof input));
+    await assert.rejects(resolveStoredSelectorOpeningCapacityTerminalOrigins({ baseDir: state.dir, portfolioId: PORTFOLIO, extra: true } as typeof input));
   });
 });
 
@@ -166,4 +169,4 @@ async function release(state: State, context: TestContext, terminal: InvestmentM
   await new OpeningCapacityReservationEventFileRepository(state.dir).append(event);
   return event;
 }
-function run(state: State) { return resolveStoredManualOpeningCapacityTerminalOrigins({ baseDir: state.dir, portfolioId: PORTFOLIO }); }
+function run(state: State) { return resolveStoredSelectorOpeningCapacityTerminalOrigins({ baseDir: state.dir, portfolioId: PORTFOLIO }); }
