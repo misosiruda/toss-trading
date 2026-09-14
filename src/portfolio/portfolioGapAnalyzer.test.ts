@@ -222,6 +222,34 @@ test("analyzer rejects negative-zero opening capacity counts", () => {
   }
 });
 
+test("analyzer enforces policy-bound position limits for every bucket without overriding occupied slots", () => {
+  const value = input();
+  const policy = runtimePolicy(4);
+  const bound = { ...value, policy, exposure: { ...value.exposure, policyHash: policy.policyHash } };
+  for (const [index, bucket] of BUCKETS.entries()) {
+    const exposure = { ...bound.exposure, bucketOpeningCapacities: bound.exposure.bucketOpeningCapacities.map((capacity, ordinal) =>
+      ordinal === index ? { ...capacity, activePositionCount: 1, pendingReservationCount: 1, mandateBoundUnusedSlotCount: 1 } : capacity) };
+    assert.equal(gap(analyzePortfolioGaps({ ...bound, exposure }), bucket).availableSlots, 1);
+    for (const maximumPositionCount of [3, 5]) {
+      assert.throws(() => analyzePortfolioGaps({ ...bound, exposure: { ...exposure,
+        bucketOpeningCapacities: exposure.bucketOpeningCapacities.map((capacity, ordinal) => ordinal === index ? { ...capacity, maximumPositionCount } : capacity)
+      } }), /maximum position count differs from runtime policy/);
+    }
+    const full = { ...exposure, bucketOpeningCapacities: exposure.bucketOpeningCapacities.map((capacity, ordinal) =>
+      ordinal === index ? { ...capacity, activePositionCount: 2 } : capacity) };
+    assert.equal(gap(analyzePortfolioGaps({ ...bound, exposure: full }), bucket).availableSlots, 0);
+  }
+});
+
+test("analyzer preserves legacy capacity input without manufacturing a runtime position limit", () => {
+  const value = input({ longTermCapacity: { maximumPositionCount: 3, activePositionCount: 1,
+    pendingReservationCount: 0, mandateBoundUnusedSlotCount: 0 } });
+  const before = JSON.stringify(value.policy);
+  assert.equal(gap(analyzePortfolioGaps(value), "long_term").availableSlots, 2);
+  assert.equal(JSON.stringify(value.policy), before);
+  assert.equal(value.policy.strategyBuckets.every((bucket) => !Object.hasOwn(bucket, "openingCapacityPolicy")), true);
+});
+
 function input(
   overrides: {
     cashKrw?: number;
@@ -279,7 +307,7 @@ function gap(
   return analysis.bucketGaps.find((item) => item.bucket === bucket)!;
 }
 
-function runtimePolicy(): RuntimePortfolioPolicyRecord {
+function runtimePolicy(maximumPositionCount?: number): RuntimePortfolioPolicyRecord {
   const payload = {
     mode: "paper_only" as const,
     recordType: "runtime_portfolio_policy_record" as const,
@@ -290,7 +318,9 @@ function runtimePolicy(): RuntimePortfolioPolicyRecord {
     policyId: "balanced-paper",
     version: "v1",
     name: "Balanced paper policy",
-    strategyBuckets: BUCKETS.map(bucketPolicy),
+    strategyBuckets: BUCKETS.map((bucket) => ({ ...bucketPolicy(bucket), ...(maximumPositionCount === undefined ? {} : {
+      openingCapacityPolicy: { modelVersion: "bucket_opening_capacity_policy.v1" as const, maximumPositionCount }
+    }) })),
     cashPolicy: {
       targetCashRatio: 0.15,
       minimumCashReserveKrw: 100_000,

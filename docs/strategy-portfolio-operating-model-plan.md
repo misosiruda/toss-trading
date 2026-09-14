@@ -447,6 +447,10 @@ interface StrategyBucketPolicy {
     "regime_change" | "thesis_evidence_change"
   >;
   selectionTrigger: BucketSelectionTrigger;
+  openingCapacityPolicy?: {
+    modelVersion: "bucket_opening_capacity_policy.v1";
+    maximumPositionCount: number;
+  };
   minimumHoldingSeconds?: number;
   maximumHoldingSeconds?: number;
   exitPolicy: StrategyBucketExitPolicy;
@@ -458,6 +462,20 @@ interface StrategyBucketPolicy {
 ```
 
 - `holdingPeriodHint`를 실제 cadence와 holding boundary로 구체화한다.
+- `openingCapacityPolicy`는 bucket별 최대 보유 종목 수를 runtime policy의 complete payload에
+  고정한다. `maximumPositionCount`는 양의 safe integer이고 model version과 함께 policy hash,
+  record ID와 lineage hash에 반영된다. Normalizer, parser와 append-only policy 저장소가 이 값을
+  보존하며 독립 재해시에서 값 변조를 거절한다. 추가 필드와 잘못된 model/count는 허용하지 않는다.
+- 기존 runtime policy와 해시를 유지하기 위해 이 필드는 optional이고 기본값을 소급 삽입하지 않는다.
+  명시된 policy를 사용하는 gap analyzer는 외부 capacity의 `maximumPositionCount`가 더 크거나
+  더 작아도 거절한다. Active position, pending reservation 및 mandate-bound unused slot은 기존처럼
+  모두 차감한다. 필드 없는 과거 policy의 gap 계산은 기존 입력 계약을 유지하지만, 그것을 실제
+  current capacity 할당 권한의 증거로 사용하지 않는다. 후속 공용 원장/CAS의 신규 할당 경로에는
+  명시적인 한도 정책과 실제 점유 원본 검증이 필요하다. 이 변경만으로 그 경로가 구현된 것은 아니다.
+- 새 필드가 있는 record는 이전 strict parser에서 거절된다. Reader를 먼저 배포하고 새 runtime
+  policy를 발급해야 한다. Rollback 시 새 record가 있는 저장소를 이전 reader로 읽는 것은 호환되지
+  않으므로 지원 reader를 유지해야 하며 record 삭제나 필드 제거/재해시로 원본을 바꾸지 않는다.
+  기존 record의 migration은 없고 한도 값은 운영자가 명시해야 한다. 테스트 값은 운용 기본값이 아니다.
 - `entry_floor_on_due_cycle`은 min 값과 무관하게 `entryWeightRatio`를 필수로 가지며
   `minWeightRatio <= entryWeightRatio <= targetWeightRatio`와 양수 조건을 검증한다.
 - target이 양수이고 min이 0인 bucket에 `below_min`을 지정하면 empty portfolio에서

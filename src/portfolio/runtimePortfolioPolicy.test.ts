@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { policyRecordIdFor } from "../api/paperPolicyRecords.js";
@@ -22,6 +25,7 @@ import {
   type StrategyBucket
 } from "./runtimePolicyContracts.js";
 import { ImmutablePolicyDependencyRepository } from "./runtimePolicyDependencyResolver.js";
+import { createRuntimePortfolioPolicyPaths, RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
 import {
   normalizeRuntimePortfolioPolicy,
   parseRuntimePortfolioPolicyRecord,
@@ -73,6 +77,75 @@ test("normalizer produces canonical immutable runtime policy with full hash", ()
   assert.match(record.lineageHash, /^sha256:[a-f0-9]{64}$/);
   assert.equal(Object.isFrozen(record.strategyBuckets[0]), true);
   assert.deepEqual(parseRuntimePortfolioPolicyRecord(record), record);
+});
+
+test("runtime opening capacity policy binds explicit per-bucket limits into immutable identity", () => {
+  const fixture = dependencyFixture(), input = normalizationInput(policyCandidate(), fixture);
+  const legacy = normalizeRuntimePortfolioPolicy(input, fixture.repository);
+  assert.equal(legacy.strategyBuckets.every((bucket) => !Object.hasOwn(bucket, "openingCapacityPolicy")), true);
+  assert.deepEqual(parseRuntimePortfolioPolicyRecord(JSON.parse(JSON.stringify(legacy))), legacy);
+  for (const [index, bucket] of input.bucketInputs.entries()) {
+    bucket.configuration.openingCapacityPolicy = { modelVersion: "bucket_opening_capacity_policy.v1", maximumPositionCount: index + 1 };
+  }
+  const record = normalizeRuntimePortfolioPolicy(input, fixture.repository);
+  assert.deepEqual(record.strategyBuckets.map((bucket) => bucket.openingCapacityPolicy!.maximumPositionCount), [1, 2, 3, 4, 5]);
+  assert.notEqual(record.policyHash, legacy.policyHash);
+  assert.notEqual(record.runtimePolicyRecordId, legacy.runtimePolicyRecordId);
+  assert.notEqual(record.lineageHash, legacy.lineageHash);
+  assert.equal(record.sourcePolicyHash, legacy.sourcePolicyHash);
+  assert.equal(Object.isFrozen(record.strategyBuckets[0]!.openingCapacityPolicy), true);
+  assert.deepEqual(parseRuntimePortfolioPolicyRecord(JSON.parse(JSON.stringify(record))), record);
+  for (const index of [0, 4]) {
+    const changed = JSON.parse(JSON.stringify(record));
+    changed.strategyBuckets[index].openingCapacityPolicy.maximumPositionCount += 1;
+    assert.throws(() => parseRuntimePortfolioPolicyRecord(changed));
+  }
+  input.bucketInputs[0]!.configuration.openingCapacityPolicy!.maximumPositionCount = 6;
+  const changed = normalizeRuntimePortfolioPolicy(input, fixture.repository);
+  assert.notEqual(changed.policyHash, record.policyHash);
+  assert.notEqual(changed.lineageHash, record.lineageHash);
+});
+
+test("runtime opening capacity policy rejects unsupported models malformed shapes and unsafe counts", () => {
+  const fixture = dependencyFixture();
+  for (const openingCapacityPolicy of [null, {}, { modelVersion: "other", maximumPositionCount: 1 },
+    { modelVersion: " bucket_opening_capacity_policy.v1", maximumPositionCount: 1 },
+    { modelVersion: "bucket_opening_capacity_policy.v1", maximumPositionCount: 1, trusted: true },
+    ...[0, -0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN, "1"].map((maximumPositionCount) =>
+      ({ modelVersion: "bucket_opening_capacity_policy.v1", maximumPositionCount }))]) {
+    const input = normalizationInput(policyCandidate(), fixture);
+    Object.assign(input.bucketInputs[0]!.configuration, { openingCapacityPolicy });
+    assert.throws(() => normalizeRuntimePortfolioPolicy(input, fixture.repository));
+  }
+});
+
+test("runtime opening capacity policy survives durable restart and rejects stored limit tampering", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "toss-runtime-opening-policy-"));
+  try {
+    const fixture = dependencyFixture(), input = normalizationInput(policyCandidate(), fixture);
+    const legacy = normalizeRuntimePortfolioPolicy(input, fixture.repository);
+    input.bucketInputs[0]!.configuration.openingCapacityPolicy = {
+      modelVersion: "bucket_opening_capacity_policy.v1", maximumPositionCount: Number.MAX_SAFE_INTEGER
+    };
+    const record = normalizeRuntimePortfolioPolicy(input, fixture.repository);
+    const repository = new RuntimePortfolioPolicyFileRepository(directory, fixture.repository);
+    await repository.append(legacy);
+    await repository.append(record);
+    const { recordsPath } = createRuntimePortfolioPolicyPaths(directory);
+    const before = await readFile(recordsPath);
+    const restarted = new RuntimePortfolioPolicyFileRepository(directory, fixture.repository);
+    assert.deepEqual(await restarted.readAll(), [legacy, record]);
+    assert.deepEqual(await restarted.append(record), record);
+    assert.deepEqual(await readFile(recordsPath), before);
+    const tampered = JSON.parse(JSON.stringify(record));
+    tampered.strategyBuckets[0].openingCapacityPolicy.maximumPositionCount -= 1;
+    const corrupt = `${JSON.stringify(legacy)}\n${JSON.stringify(tampered)}\n`;
+    await writeFile(recordsPath, corrupt);
+    await assert.rejects(restarted.readAll(), /corrupt line 2/);
+    await assert.rejects(restarted.append(record), /corrupt line 2/);
+    assert.equal((await restarted.readGeneration()).status, "invalid");
+    assert.equal(await readFile(recordsPath, "utf8"), corrupt);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("normalizer canonicalizes the legacy risk ref before dependency resolution", () => {
