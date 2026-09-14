@@ -153,6 +153,10 @@ export function analyzePortfolioGaps(
       bucketOpeningCapacities,
       bucketPolicy.bucket
     );
+    if (bucketPolicy.openingCapacityPolicy !== undefined &&
+      capacity.maximumPositionCount !== bucketPolicy.openingCapacityPolicy.maximumPositionCount) {
+      throw new Error("bucket opening capacity maximum position count differs from runtime policy");
+    }
     const currentExposureKrw = exposure.exposureKrw;
     const targetWeightKrw = weightedAmount(
       parsed.exposure.virtualNetWorthKrw,

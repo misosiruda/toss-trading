@@ -414,6 +414,11 @@ const bucketSelectionTriggerSchema = z.discriminatedUnion("mode", [
     .strict()
 ]);
 
+export const bucketOpeningCapacityPolicySchema = z.object({
+  modelVersion: z.literal("bucket_opening_capacity_policy.v1"),
+  maximumPositionCount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
+}).strict();
+
 export const strategyBucketRuntimePolicySchema = z
   .object({
     bucket: strategyBucketSchema,
@@ -436,6 +441,7 @@ export const strategyBucketRuntimePolicySchema = z
       .array(z.enum(["regime_change", "thesis_evidence_change"]))
       .max(2),
     selectionTrigger: bucketSelectionTriggerSchema,
+    openingCapacityPolicy: bucketOpeningCapacityPolicySchema.optional(),
     minimumHoldingSeconds: nonNegativeIntegerSchema.optional(),
     maximumHoldingSeconds: positiveIntegerSchema.optional(),
     exitPolicy: z
