@@ -1711,6 +1711,26 @@ request/snapshot/sizing/assignment 원본을 각각 한 번 관측하고 ID 및 
 동일 set 전체를 binding마다 다시 직렬화하지 않는다. 이 변경은 관측/재생 호출 중복을 줄이며 저장소 내부
 전체 replay 자체를 생략하거나 총 시간의 선형 증가를 보장하지 않는다. 실제 대규모 시간 측정은 별도다.
 
+`resolveStoredSelectorOpeningCapacityFillOrigins`는 selector root/mandate/assignment 원본 대조 후
+각 `partially_consumed`/`consumed_by_position`의 paper fill ID를 실제 plan execution event에 연결한다.
+`storedOpeningCapacityFillOrigins.ts`의 private 공통 처리에서 수동 예약과 같은 Risk/plan/가격/체결
+원본 검증을 수행한다. 기존 수동 함수 import와 반환 형태는 re-export로 유지하고 호출자가 검증된
+source 객체나 source resolver를 주입하는 API는 추가하지 않는다.
+
+감소한 예약 원금은 actual fill의 filledNotionalKrw와 정확히 같아야 하며 수수료를 포함한 net cash와
+혼동하지 않는다. BUY, portfolio/policy/bucket/market/symbol/mandate, execution target, Risk 원본 및
+판단 당시 active mandate 상태를 검증한다. 실제 plan/mandate receipt가 있으면 source prefix와
+정확히 대조하고, receipt가 없는 Risk의 생성 전 가용성을 소급 증명하지 않는다. Plan predecessor와
+capacity predecessor는 Risk 판단보다 먼저, execution event는 capacity 소비 평가보다 먼저 기록돼야 한다.
+한 portfolio 내 중복 fill/Risk 사용을 거절하고 source 조회 후 capacity generation이 변하면 실패한다.
+
+반환값에는 actual execution/fill/Risk/plan/가격 origin과 당시 mandate 상태를 남긴다. Manual 또는
+아직 검증하지 않은 successor는 미검증 event 목록에 남기며 terminal 이후에도 과거 체결을 재검증한다.
+이 경로는 root 발급·slot/budget CAS, 실제 정산 및 resulting position, Risk policy/rule 원본, 가격 freshness/trust와
+현재 실행 권한을 승인하지 않는다. Risk/체결 writer·운영 기본값·저장 형식 변경은 없으며
+`currentExecutionAuthority=not_granted`, `finalSizing=not_performed`를 유지한다. 기존 수동 entrypoint와
+공통 구현을 함께 되돌릴 수 있고 기존 artifact 변환/삭제가 필요 없다.
+
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
 ```ts

@@ -24,6 +24,7 @@ test("manual capacity fill origins bind actual plan Risk price and gross consump
     assert.equal(result.bindings[0]!.execution.riskDecision.decision, "approved");
     assert.equal(result.bindings[0]!.fillOrigin.riskOrigin!.commitHash, result.bindings[0]!.riskOrigin.commitHash);
     assert.equal(result.bindings[0]!.mandateBinding.mandate.mandateId, state.manual.mandate.mandateId);
+    assert.equal(result.bindings[0]!.mandateBinding.root.event.reservationId, state.manual.bound.reservationId);
     assert.deepEqual(await run(state), result);
     assert.equal(result.assessment.accountingAndResultingPositionAuthority, "not_verified");
     assert.equal(result.assessment.riskPolicyAndRuleAuthority, "not_verified");
