@@ -12,6 +12,7 @@ import { createCandidateAssignmentSetRecord, parseCandidateAssignmentSetRecord, 
 import { CandidateSizingInputFileRepository, getDurableCandidateSizingInputObservation,
   type VerifiedCandidateSizingInputHistory } from "./candidateSizingInputFiles.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
+import { type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
 
 export const CANDIDATE_ASSIGNMENT_RECORDS_FILE_NAME = "candidate-assignment-records.jsonl";
 const sourceSchema = z.object({ requestObservation: bucketSelectionRequestObservationSchema,
@@ -57,11 +58,12 @@ export class CandidateAssignmentFileRepository {
   }
   /** Holds request -> snapshot -> sizing input -> assignment locks. Consumers must not re-enter any of these repositories. */
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedCandidateAssignmentHistory,
-    inputs: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory) => Promise<T>): Promise<T> {
-    return this.withSources((inputs, requests) => this.withLock(async () => {
+    inputs: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory,
+    snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
+    return this.withSources((inputs, requests, snapshots) => this.withLock(async () => {
       const { history, observedAt } = await this.readUnderLock(inputs, requests);
       observations.set(history, observedAt);
-      try { return await operation(history, inputs, requests); } finally { observations.delete(history); }
+      try { return await operation(history, inputs, requests, snapshots); } finally { observations.delete(history); }
     }));
   }
   async appendAssignment(value: unknown): Promise<VerifiedCandidateAssignmentOrigin & { kind: "assignment" }> {
@@ -93,7 +95,8 @@ export class CandidateAssignmentFileRepository {
       return result;
     }));
   }
-  private withSources<T>(operation: (inputs: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory) => Promise<T>) {
+  private withSources<T>(operation: (inputs: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory,
+    snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>) {
     return new CandidateSizingInputFileRepository(this.baseDir, this.options).withDurableVerifiedHistory(operation);
   }
   private async persist(value: RecordValue, inputs: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory,

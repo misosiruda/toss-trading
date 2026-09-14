@@ -63,11 +63,12 @@ export class CandidateSizingInputFileRepository {
   }
 
   /** Request -> snapshot -> sizing input. The second argument shares the existing request lease, without re-entering its lock. */
-  async withDurableVerifiedHistory<T>(operation: (history: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory) => Promise<T>): Promise<T> {
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory,
+    snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
     return this.withSources((requests, snapshots) => this.withLock(async () => {
       const { history, observedAt } = await this.readUnderLock(requests, snapshots);
       observations.set(history, observedAt);
-      try { return await operation(history, requests); }
+      try { return await operation(history, requests, snapshots); }
       finally { observations.delete(history); }
     }));
   }

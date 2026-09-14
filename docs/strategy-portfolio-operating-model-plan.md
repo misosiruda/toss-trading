@@ -4868,6 +4868,38 @@ durable origin, actual source resolver 및 공용 allocator와 activation의 원
 기존 opaque Selector 예약 ID를 소급해 발급 원본이 검증된 것으로 취급하지 않는다. 기존 writer/API 및
 안전 기본값 변경은 없으며 현재 단계 rollback은 신규 consumer 중단과 코드 rollback만 필요하다.
 
+#### Selector opening reservation 발급 원본 저장
+
+`SelectorOpeningCapacityReservationFileRepository`는 `selector-opening-capacity-reservations.jsonl`에
+발급 record와 request/snapshot/sizing/assignment 원본 관측을 entry/commit pair로 저장한다.
+Entry는 complete record/source, append 시작 시각, predecessor commit hash를 포함하며 commit marker는
+entry hash와 committedAt을 다시 hash한다. 실제 전체 source 저장소 검증 후 관측한 prefix의 count/hash와
+commit hash를 재대조하고, exact selected allocation·BUY sizing·현재 snapshot scope/시각을 확인한다.
+발급 createdAt은 실제 set commit 이전일 수 없다. Source 관측 순서는 request→snapshot→sizing→assignment→append이며
+시계 역행을 허용하지 않는다. 기존 assignment 저장소가 전체 sealed set을 재생한 결과를 인덱싱하여
+발급 후보마다 같은 set 전체를 다시 재생하지 않는다.
+
+`CandidateSizingInputFileRepository`와 `CandidateAssignmentFileRepository`의 durable callback은 이미
+잠금 안에 있는 snapshot history를 추가 인자로 공유한다. 기존 callback은 기존 인자만 계속 사용할 수
+있으며 저장 형식과 기존 append 동작은 바뀌지 않는다. 신규 발급 저장은 request→snapshot→sizing→assignment→reservation
+순서로 source 잠금을 commit까지 보유하고 callback 안에서 같은 저장소를 재진입하지 않는다.
+Durable observation은 repository 발급 객체의 callback lifetime에만 유효하며 복사본·종료된 lease는 거절한다.
+
+같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
+CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
+재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
+Torn line, hash/chain/receipt mismatch, duplicate issuance, 손상 suffix와 관측 중 파일 변경은 fail-closed다.
+Journal bytes는 UTF-8 decode/encode 왕복이 정확히 일치해야 하며 malformed byte의 대체 문자 변환으로
+JSON/hash가 우연히 같아지는 경우도 거절한다. 올바르게 인코딩된 U+FFFD 식별자는 계속 허용한다.
+Pending barrier는 entry/marker 중단 시 남겨 자동 재시도나 읽기가 불완전한 기록을 성공으로 간주하지 않게 한다.
+잠금 획득의 EEXIST 및 Windows EPERM만 monotonic deadline 안에서 재시도하고 초기화 실패/소유권 변경은
+자동 복구하지 않는다. 원본 데이터를 삭제하거나 거래를 활성화하지 않는다.
+
+신규 파일만 추가되며 기존 opaque 예약을 자동 변환하지 않는다. 실제 원장 allocator/CAS·mandate activation
+동일 transaction·accounting/position 반영·과거 disk 가용성 증명은 후속이다. Rollback은 신규 consumer를
+중단하고 코드를 되돌리며 새 journal을 보존한다. Pending barrier가 남았으면 진행 writer와 원본 무결성을
+별도로 확인한 명시적 복구가 필요하고 이 PR은 자동 복구 명령을 제공하지 않는다.
+
 ### PR 6. Rebalance preview planner
 
 - sell-first deterministic plan
