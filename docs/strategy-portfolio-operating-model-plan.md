@@ -3725,6 +3725,16 @@ committedAt을 hash한다. Read/append마다 전체 pair와 실제 source prefix
 duplicate ID를 거절한다. Exact retry는 원래 저장한 source 관측값을 그대로 반환하고 새 관측값으로
 과거 origin을 덮어쓰지 않는다. 같은 record ID에 다른 createdAt은 collision이다.
 
+Manual assignment, sizing snapshot 및 manual reservation 파일은 JSON/hash 검증 전에 UTF-8
+decode/encode 왕복 bytes가 원본과 정확히 같은지 검사한다. 잘못된 byte가 U+FFFD로 대체돼
+기존 허용 식별자와 같은 문자열·hash를 만드는 경우에도 fail-closed한다. 일반 read/resolve,
+신규 append와 exact retry 및 durable callback 모두 이 검사를 거치며 손상 source에 의존한
+예약 read/retry도 거절한다. 정상 UTF-8로 저장된 U+FFFD는 계속 허용하고 파일을 자동 변환하거나
+복구하지 않는다. 회귀 테스트는 실제 source-bound 예약의 세 파일을 각각 0xff/0x80/0xc2로
+변조하여 callback 미호출, 원본 bytes 보존, 정상 bytes 복원 후 restart/retry를 확인한다.
+Artifact schema·ID/hash 계산·잠금 순서·거래 정책 변경은 없다. 코드 rollback은 가능하지만
+이 잘못된 UTF-8 거절 경계가 사라지므로 손상 파일을 정상 이력으로 취급할 위험이 되돌아온다.
+
 Append는 pending barrier를 먼저 동기화한 뒤 entry와 marker를 각각 append/fsync하고 마지막에
 barrier를 제거·directory sync한다. 도중 실패 시 성공을 반환하지 않으며 남은 pending/torn/불완전
 pair는 자동 복구하거나 삭제하지 않는다. Marker의 committedAt은 entry fsync 이후 marker 작성

@@ -147,7 +147,7 @@ export class PortfolioSizingSnapshotFileRepository {
   > {
     let raw: string;
     try {
-      raw = await readFile(this.recordsPath, "utf8");
+      raw = decodePortfolioSizingSnapshotSource(await readFile(this.recordsPath));
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
         return Object.freeze([]);
@@ -172,6 +172,12 @@ export class PortfolioSizingSnapshotFileRepository {
       await release();
     }
   }
+}
+
+function decodePortfolioSizingSnapshotSource(bytes: Buffer): string {
+  const raw = bytes.toString("utf8");
+  if (!Buffer.from(raw, "utf8").equals(bytes)) throw new Error("portfolio sizing snapshot source contains invalid UTF-8");
+  return raw;
 }
 
 /** Parses and independently resolves a complete durable snapshot log. */
@@ -239,7 +245,7 @@ async function readDurableBoundSnapshotSource(path: string): Promise<{ snapshots
   try {
     const before = await handle.stat({ bigint: true });
     const bytes = await handle.readFile();
-    const snapshots = parsePortfolioSizingSnapshots(bytes.toString("utf8"));
+    const snapshots = parsePortfolioSizingSnapshots(decodePortfolioSizingSnapshotSource(bytes));
     await handle.sync();
     await syncOutputDirectory(dirname(path));
     // Date the flushed generation before the final verification, never after descriptor close.

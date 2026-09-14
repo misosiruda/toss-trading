@@ -172,7 +172,7 @@ export class ManualAssignmentFileRepository {
   private async readAllUnderLock(): Promise<readonly ManualAssignmentEvent[]> {
     let raw: string;
     try {
-      raw = await readFile(this.eventsPath, "utf8");
+      raw = decodeManualAssignmentSource(await readFile(this.eventsPath));
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
         return Object.freeze([]);
@@ -197,6 +197,12 @@ export class ManualAssignmentFileRepository {
       await release();
     }
   }
+}
+
+function decodeManualAssignmentSource(bytes: Buffer): string {
+  const raw = bytes.toString("utf8");
+  if (!Buffer.from(raw, "utf8").equals(bytes)) throw new Error("manual assignment source contains invalid UTF-8");
+  return raw;
 }
 
 function parseManualAssignmentHistory(raw: string): readonly ManualAssignmentEvent[] {
@@ -246,7 +252,7 @@ async function readDurableBoundManualSource(path: string): Promise<{ events: rea
     const before = await handle.stat({ bigint: true });
     if (!before.isFile() || !(await lstat(path)).isFile()) throw new Error("manual assignment source must be a regular file");
     const bytes = await handle.readFile();
-    const events = parseManualAssignmentHistory(bytes.toString("utf8"));
+    const events = parseManualAssignmentHistory(decodeManualAssignmentSource(bytes));
     await handle.sync();
     await syncOutputDirectory(dirname(path));
     // Capture the flushed generation before revalidation, not after closing the descriptor.
