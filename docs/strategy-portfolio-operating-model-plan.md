@@ -4889,6 +4889,8 @@ Durable observation은 repository 발급 객체의 callback lifetime에만 유�
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
 Torn line, hash/chain/receipt mismatch, duplicate issuance, 손상 suffix와 관측 중 파일 변경은 fail-closed다.
+Journal bytes는 UTF-8 decode/encode 왕복이 정확히 일치해야 하며 malformed byte의 대체 문자 변환으로
+JSON/hash가 우연히 같아지는 경우도 거절한다. 올바르게 인코딩된 U+FFFD 식별자는 계속 허용한다.
 Pending barrier는 entry/marker 중단 시 남겨 자동 재시도나 읽기가 불완전한 기록을 성공으로 간주하지 않게 한다.
 잠금 획득의 EEXIST 및 Windows EPERM만 monotonic deadline 안에서 재시도하고 초기화 실패/소유권 변경은
 자동 복구하지 않는다. 원본 데이터를 삭제하거나 거래를 활성화하지 않는다.

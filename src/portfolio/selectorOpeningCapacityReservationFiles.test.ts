@@ -5,8 +5,10 @@ import { syncBuiltinESMExports } from "node:module";
 import test, { type TestContext } from "node:test";
 import { createBucketSelectionRequest } from "./bucketSelectionRequest.js";
 import { BucketSelectionRequestFileRepository, createBucketSelectionRequestPaths } from "./bucketSelectionRequestFiles.js";
-import { createCandidateAssignmentPaths } from "./candidateAssignmentFiles.js";
-import { createCandidateSizingInputPaths } from "./candidateSizingInputFiles.js";
+import { createCandidateAssignment } from "./candidateAssignment.js";
+import { CandidateAssignmentFileRepository, createCandidateAssignmentPaths } from "./candidateAssignmentFiles.js";
+import { createCandidateSizingInputRecord } from "./candidateSizingInput.js";
+import { CandidateSizingInputFileRepository, createCandidateSizingInputPaths } from "./candidateSizingInputFiles.js";
 import { createPortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { PortfolioSizingSnapshotFileRepository, createPortfolioSizingSnapshotPaths } from "./portfolioSizingSnapshotFiles.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
@@ -104,6 +106,44 @@ test("selector issuance reads revalidate all four actual source histories and pr
       }
       await writeFile(path, valid);
     }
+    assert.equal((await repo.readAll()).length, 1);
+  });
+});
+
+test("selector issuance rejects malformed UTF-8 even when replacement decoding preserves all parsed hashes", async (context) => {
+  await fixture(context, async ({ dir, record, request: originalRequest }) => {
+    const { requestId: _rid, requestHash: _rh, ...requestPayload } = originalRequest;
+    const request = createBucketSelectionRequest({ ...requestPayload, cycleId: "unicode", createdAt: at(50) });
+    await new BucketSelectionRequestFileRepository(dir).append(request);
+    const inputs = new CandidateSizingInputFileRepository(dir);
+    const { sizingInputRecordId: _sid, sizingInputHash: _sh, ...sizingPayload } = (await inputs.readAll())[0]!.record;
+    const sizing = createCandidateSizingInputRecord({ ...sizingPayload, requestId: request.requestId, symbol: "\ufffd", createdAt: at(50) });
+    await inputs.append(sizing);
+    const assignments = new CandidateAssignmentFileRepository(dir);
+    const origin = (await assignments.readAll()).find((item) => item.kind === "assignment")!;
+    if (origin.kind !== "assignment") throw new Error("wrong fixture assignment");
+    const { assignmentId: _aid, assignmentHash: _ah, sizingOutputHash: _oh, ...assignmentPayload } = origin.record;
+    const assignment = createCandidateAssignment({ ...assignmentPayload, requestId: request.requestId, symbol: "\ufffd",
+      sizingInputRecordId: sizing.sizingInputRecordId, sizingInputHash: sizing.sizingInputHash, createdAt: at(50) });
+    await assignments.appendAssignment(assignment);
+    const set = (await assignments.sealRequest(request.requestId)).record;
+    const unicode = rebuild(record, { selectionRequestId: request.requestId, selectionRequestHash: request.requestHash, symbol: "\ufffd",
+      candidateAssignmentId: assignment.assignmentId, candidateAssignmentHash: assignment.assignmentHash,
+      candidateAssignmentSetId: set.candidateAssignmentSetId, candidateAssignmentSetHash: set.candidateAssignmentSetHash });
+    const repo = new Repository(dir), path = paths(dir).recordsPath;
+    await repo.append(unicode);
+    const valid = await readFile(path), index = valid.indexOf(Buffer.from("\ufffd", "utf8"));
+    assert.notEqual(index, -1);
+    assert.equal((await repo.readAll())[0]!.record.symbol, "\ufffd");
+    for (const invalidByte of [0xff, 0x80, 0xc2]) {
+      const corrupt = Buffer.concat([valid.subarray(0, index), Buffer.from([invalidByte]), valid.subarray(index + 3)]);
+      assert.equal(corrupt.toString("utf8"), valid.toString("utf8"));
+      await writeFile(path, corrupt);
+      await assert.rejects(new Repository(dir).readAll(), /invalid UTF-8/);
+      await assert.rejects(repo.append(unicode), /invalid UTF-8/);
+      assert.deepEqual(await readFile(path), corrupt);
+    }
+    await writeFile(path, valid);
     assert.equal((await repo.readAll()).length, 1);
   });
 });
