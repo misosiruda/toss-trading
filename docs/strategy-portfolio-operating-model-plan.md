@@ -916,6 +916,16 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   mandate-bound unused slot 수, available slot, reserved notional과 remaining budget을 독립
   재계산한다. snapshot/hash mismatch, version
   gap 또는 state mismatch는 신규 mandate를 fail-closed한다.
+- 선행 계약 `bucketOpeningCapacityState.ts`는 위 state의 strict constructor/parser와 정책 payload 결속을
+  제공한다. Stable `capacityStateId`는 `(portfolioId, bucket)`에서 파생하고 policy/snapshot/version 변경 시
+  유지한다. 자기 hash만 제외한 전체 payload에 stable ID, optional reservation origin과 시각까지 포함해
+  독립 rehash한다. 명시적인 undefined origin, malformed Unicode, 비정수·unsafe·negative-zero 금액/수,
+  unsafe slot/notional 합계와 양수 예약 금액이 뒷받침하지 않는 예약 slot은 거절한다.
+  Policy 결속은 같은 portfolio/hash와 생성 시각, 명시적인 maximum position count에 대한 available slot
+  재계산만 검증한다. 한도 초과 상태는 available slot 0으로 표현하며 예약을 삭제하지 않는다.
+  이 순수 계약은 현재 active policy, snapshot 보유·예약·예산 원본 replay, event version의 최신성,
+  `bucket-opening-capacity-state.json` 저장/CAS나 allocation/activation transaction을 증명하지 않는다.
+  이들 저장·원자 처리 경계는 후속이다. 기존 저장 형식 변경이나 migration은 없고 코드 rollback이 가능하다.
 - 선행 읽기 모델 `resolveStoredSnapshotOpeningCapacity`는 실제 저장된 active policy, sizing snapshot,
   pending plan/fill/reservation 원본과 capacity event history를 결합해 snapshot cutoff의 점유량을 계산한다.
   모든 bucket에 명시적인 `openingCapacityPolicy`가 필요하고 snapshot policy hash와 active policy가
