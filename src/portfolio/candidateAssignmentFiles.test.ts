@@ -16,7 +16,10 @@ import { createCandidateSizingInputRecord } from "./candidateSizingInput.js";
 import { CandidateSizingInputFileRepository, createCandidateSizingInputPaths, getDurableCandidateSizingInputObservation } from "./candidateSizingInputFiles.js";
 import { createInvestmentMandateRecord } from "./investmentMandate.js";
 import { InvestmentMandateFileRepository, createInvestmentMandatePaths } from "./investmentMandateFiles.js";
-import { resolveStoredSelectorMandateAssignmentBinding } from "./storedSelectorMandateAssignmentBinding.js";
+import { resolveStoredSelectorMandateAssignmentBinding, resolveStoredSelectorMandateAssignmentBindings } from "./storedSelectorMandateAssignmentBinding.js";
+import { resolveStoredSelectorOpeningCapacityMandateOrigins } from "./storedSelectorOpeningCapacityMandateOrigins.js";
+import { createOpeningCapacityReservationEvent, type OpeningCapacityReservationEvent } from "./openingCapacityReservationEvent.js";
+import { OpeningCapacityReservationEventFileRepository, createOpeningCapacityReservationEventPaths } from "./openingCapacityReservationEventFiles.js";
 import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
 import { createPortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { PortfolioSizingSnapshotFileRepository, createPortfolioSizingSnapshotPaths } from "./portfolioSizingSnapshotFiles.js";
@@ -342,10 +345,159 @@ test("stored selector mandate fails on missing sets corrupt source histories and
   await assert.rejects(resolveStoredSelectorMandateAssignmentBinding(query), /set source is missing/);
 }));
 
-async function seedStoredSelectorMandate(dir: string, failure = "none") {
+test("stored selector capacity bindings preserve global slot and actual root mandate candidate sources", async () => temporary(async (dir) => {
+  const data = await seedSelectorCapacity(dir);
+  const paths = [createOpeningCapacityReservationEventPaths(dir).eventsPath, createInvestmentMandatePaths(dir).recordsPath,
+    createCandidateAssignmentPaths(dir).recordsPath];
+  const before = await Promise.all(paths.map((path) => readFile(path)));
+  const result = await resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId });
+  assert.equal(result.bindings.length, 1);
+  assert.deepEqual(result.bindings[0]!.root, data.root);
+  assert.deepEqual(result.bindings[0]!.event, data.bound);
+  assert.equal(result.bindings[0]!.source.binding.mandate.selectedRank, 2);
+  assert.equal(result.bindings[0]!.source.binding.mandate.reservedSlotOrdinal, 19);
+  assert.deepEqual(result.assessment.unverifiedEventIds, []);
+  assert.equal(result.assessment.rootAllocationAuthority, "not_verified");
+  assert.equal(result.assessment.mandateActivationAuthority, "not_verified");
+  assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
+  assert.equal(result.assessment.sourceBeforeCreationReceipt, "not_recorded");
+  assert.ok(Object.isFrozen(result.bindings[0]!.source.binding.mandate));
+  assert.ok(Object.isFrozen(result.bindings));
+  const restarted = await resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId });
+  assert.deepEqual(restarted.bindings[0]!.rootOrigin, result.bindings[0]!.rootOrigin);
+  assert.deepEqual(restarted.bindings[0]!.source.binding, result.bindings[0]!.source.binding);
+  assert.deepEqual(await Promise.all(paths.map((path) => readFile(path))), before);
+  assert.equal((await new InvestmentMandateFileRepository(dir).readSnapshot()).states[0]!.status, "proposed");
+}));
+
+test("stored selector capacity bindings reject independently hashed root lineage mismatches and missing sources", async () => {
+  for (const mode of ["slot", "id", "hash", "amount", "set", "candidate", "policy", "bound_hash", "early", "missing", "corrupt"]) await temporary(async (dir) => {
+    const data = await seedSelectorCapacity(dir, mode);
+    if (mode === "missing") await writeFile(createInvestmentMandatePaths(dir).recordsPath, "");
+    if (mode === "corrupt") await writeFile(createCandidateAssignmentPaths(dir).recordsPath, "{corrupt}\n");
+    await assert.rejects(resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId }),
+      mode === "early" ? /chronology mismatch/ : mode === "missing" ? /source is missing/ : mode === "corrupt" ? () => true : /exact root reservation lineage/);
+  });
+});
+
+test("stored selector capacity reads each source once and shares validated set context across multiple bindings", async (context) => temporary(async (dir) => {
+  const data = await seedSelectorCapacity(dir);
+  const assignments = await new CandidateAssignmentFileRepository(dir).withDurableVerifiedHistory(async (history) => history);
+  const a = assignments.origins.find((origin) => origin.kind === "assignment" && origin.record.symbol === "A");
+  if (!a || a.kind !== "assignment") throw new Error("missing fixture assignment");
+  const now = new Date().toISOString(), events = new OpeningCapacityReservationEventFileRepository(dir);
+  const root = createOpeningCapacityReservationEvent({ eventType: "reserved", portfolioId: a.record.portfolioId, policyHash: a.record.policyHash,
+    bucket: a.record.bucket, reservationId: "second-reservation", reservationHash: OTHER, remainingReservedNotionalKrw: 70,
+    occupiesNewPositionSlot: true, capacityLedgerVersion: 3, asOf: now, createdAt: now,
+    reservationSource: { sourceKind: "selector", candidateAssignmentSetId: data.sealed.record.candidateAssignmentSetId,
+      candidateAssignmentSetHash: data.sealed.record.candidateAssignmentSetHash, candidateAssignmentId: a.record.assignmentId, reservedSlotOrdinal: 20 } });
+  await events.append(root);
+  if (data.mandate.assignmentSource !== "deterministic_selector") throw new Error("missing selector fixture");
+  const { mandateId: _id, mandateHash: _hash, ...payload } = data.mandate;
+  const mandate = createInvestmentMandateRecord({ ...payload, symbol: a.record.symbol, candidateAssignmentId: a.record.assignmentId,
+    selectedRank: 1, selectionScore: a.record.selectionScore, maximumOpeningNotionalKrw: 70, reservedMaximumNotionalKrw: 70,
+    openingCapacityReservationId: root.reservationId, openingCapacityReservationHash: root.reservationHash, reservedSlotOrdinal: 20,
+    createdAt: new Date().toISOString() });
+  await new InvestmentMandateFileRepository(dir).appendRecord(mandate);
+  const later = new Date().toISOString();
+  await events.append(createOpeningCapacityReservationEvent({ eventType: "bound_to_mandate", portfolioId: root.portfolioId,
+    policyHash: root.policyHash, bucket: root.bucket, reservationId: root.reservationId, reservationHash: root.reservationHash,
+    previousCapacityReservationEventId: root.capacityReservationEventId, mandateId: mandate.mandateId, mandateHash: mandate.mandateHash,
+    remainingReservedNotionalKrw: 70, occupiesNewPositionSlot: true, capacityLedgerVersion: 4, asOf: later, createdAt: later }));
+  await assert.rejects(resolveStoredSelectorMandateAssignmentBindings({ baseDir: dir, mandateIds: [mandate.mandateId, mandate.mandateId] }), /unique IDs/);
+  await assert.rejects(resolveStoredSelectorMandateAssignmentBindings({ baseDir: dir, mandateIds: ["missing"] }), /source is missing/);
+  const spies = [InvestmentMandateFileRepository, CandidateAssignmentFileRepository, CandidateSizingInputFileRepository,
+    BucketSelectionRequestFileRepository, PortfolioSizingSnapshotFileRepository].map((repository) =>
+    context.mock.method(repository.prototype, "withDurableVerifiedHistory"));
+  const eventSpy = context.mock.method(OpeningCapacityReservationEventFileRepository.prototype, "withDurableVerifiedHistory");
+  try {
+    const result = await resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId });
+    assert.equal(result.bindings.length, 2);
+    assert.deepEqual(result.assessment.unverifiedEventIds, []);
+    for (const spy of spies) assert.equal(spy.mock.callCount(), 1);
+    assert.equal(eventSpy.mock.callCount(), 2);
+    assert.equal(result.bindings[0]!.source.binding.set, result.bindings[1]!.source.binding.set);
+    assert.equal(result.bindings[0]!.source.assignmentOrigins, result.bindings[1]!.source.assignmentOrigins);
+    assert.equal(result.bindings[0]!.source.assessment.mandateObservation, result.bindings[1]!.source.assessment.mandateObservation);
+  } finally { context.mock.restoreAll(); }
+}));
+
+test("stored selector capacity bindings list unbound roots and reject event generation changes during source reads", async (context) => {
+  await temporary(async (dir) => {
+    const data = await seedSelectorCapacity(dir, "unbound");
+    const result = await resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId });
+    assert.equal(result.bindings.length, 0);
+    assert.deepEqual(result.assessment.unverifiedEventIds, [data.root.capacityReservationEventId]);
+    await assert.rejects(resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId, events: [] } as never));
+  });
+  await temporary(async (dir) => {
+    const data = await seedSelectorCapacity(dir);
+    const original = CandidateAssignmentFileRepository.prototype.withDurableVerifiedHistory;
+    context.mock.method(CandidateAssignmentFileRepository.prototype, "withDurableVerifiedHistory", async function (
+      this: CandidateAssignmentFileRepository, operation: Parameters<typeof original>[0]
+    ) {
+      const result = await original.call(this, operation);
+      const now = new Date().toISOString();
+      await new OpeningCapacityReservationEventFileRepository(dir).append(createOpeningCapacityReservationEvent({
+        eventType: "reserved", portfolioId: data.candidate.portfolioId, policyHash: data.candidate.policyHash, bucket: data.candidate.bucket,
+        reservationId: "unverified-manual", reservationHash: HASH,
+        reservationSource: { sourceKind: "manual", manualCapacityReservationId: "unverified-manual", manualCapacityReservationHash: HASH },
+        remainingReservedNotionalKrw: 1, occupiesNewPositionSlot: true, capacityLedgerVersion: 3, asOf: now, createdAt: now
+      }));
+      return result;
+    });
+    try {
+      await assert.rejects(resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId }), /event generation changed/);
+    } finally { context.mock.restoreAll(); }
+    const journal = await new OpeningCapacityReservationEventFileRepository(dir).readAll();
+    const result = await resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId });
+    assert.equal(result.bindings.length, 1);
+    assert.deepEqual(result.assessment.unverifiedEventIds, [journal[2]!.capacityReservationEventId]);
+    const now = new Date().toISOString();
+    const released = createOpeningCapacityReservationEvent({ eventType: "released", portfolioId: data.root.portfolioId,
+      policyHash: data.root.policyHash, bucket: data.root.bucket, reservationId: data.root.reservationId, reservationHash: data.root.reservationHash,
+      previousCapacityReservationEventId: data.bound.capacityReservationEventId, remainingReservedNotionalKrw: 0, occupiesNewPositionSlot: false,
+      capacityLedgerVersion: 4, asOf: now, createdAt: now, releaseReasonCode: "synthetic-terminal",
+      releaseOrigin: { originKind: "mandate_terminal", mandateId: data.mandate.mandateId, mandateHash: data.mandate.mandateHash,
+        mandateEventId: "unverified-terminal", mandateEventHash: HASH } });
+    await new OpeningCapacityReservationEventFileRepository(dir).append(released);
+    const terminal = await resolveStoredSelectorOpeningCapacityMandateOrigins({ baseDir: dir, portfolioId: data.candidate.portfolioId });
+    assert.equal(terminal.bindings.length, 1);
+    assert.deepEqual(terminal.assessment.unverifiedEventIds, [journal[2]!.capacityReservationEventId, released.capacityReservationEventId]);
+  });
+});
+
+async function seedSelectorCapacity(dir: string, mode = "none") {
+  let root!: OpeningCapacityReservationEvent;
+  const events = new OpeningCapacityReservationEventFileRepository(dir);
+  const fixture = await seedStoredSelectorMandate(dir, "none", async (candidate, sealed) => {
+    const now = new Date().toISOString();
+    root = createOpeningCapacityReservationEvent({ eventType: "reserved", portfolioId: candidate.portfolioId,
+      policyHash: mode === "policy" ? OTHER : candidate.policyHash, bucket: candidate.bucket,
+      reservationId: mode === "id" ? "different-reservation" : "synthetic-reservation", reservationHash: mode === "hash" ? OTHER : HASH,
+      reservationSource: { sourceKind: "selector", candidateAssignmentSetId: sealed.record.candidateAssignmentSetId,
+        candidateAssignmentSetHash: mode === "set" ? OTHER : sealed.record.candidateAssignmentSetHash,
+        candidateAssignmentId: mode === "candidate" ? "different-candidate" : candidate.assignmentId, reservedSlotOrdinal: mode === "slot" ? 2 : 19 },
+      remainingReservedNotionalKrw: mode === "amount" ? 29 : 30, occupiesNewPositionSlot: true,
+      capacityLedgerVersion: 1, asOf: mode === "early" ? AT : now, createdAt: now });
+    await events.append(root);
+  });
+  const now = new Date().toISOString();
+  const bound = createOpeningCapacityReservationEvent({ eventType: "bound_to_mandate", portfolioId: root.portfolioId,
+    policyHash: root.policyHash, bucket: root.bucket, reservationId: root.reservationId, reservationHash: root.reservationHash,
+    previousCapacityReservationEventId: root.capacityReservationEventId, mandateId: fixture.mandate.mandateId,
+    mandateHash: mode === "bound_hash" ? OTHER : fixture.mandate.mandateHash,
+    remainingReservedNotionalKrw: root.remainingReservedNotionalKrw, occupiesNewPositionSlot: true, capacityLedgerVersion: 2, asOf: now, createdAt: now });
+  if (mode !== "unbound") await events.append(bound);
+  return { ...fixture, root, bound };
+}
+
+async function seedStoredSelectorMandate(dir: string, failure = "none", beforeMandate?: (candidate: CandidateAssignment,
+  sealed: Awaited<ReturnType<CandidateAssignmentFileRepository["sealRequest"]>>) => Promise<void>) {
   const a = await seed(dir, "A", 0.9), candidate = await seed(dir, "B", 0.8), repo = new CandidateAssignmentFileRepository(dir);
   await repo.appendAssignment(a); await repo.appendAssignment(candidate);
   const sealed = await repo.sealRequest(candidate.requestId), selected = sealed.record.selectedAssignments[1]!;
+  await beforeMandate?.(candidate, sealed);
   const mandate = createInvestmentMandateRecord({ portfolioId: candidate.portfolioId, market: candidate.market, symbol: candidate.symbol,
     bucket: candidate.bucket, policyHash: candidate.policyHash, asOf: AT, minWeightRatio: candidate.minWeightRatio,
     targetWeightRatio: candidate.targetWeightRatio, maxWeightRatio: candidate.maxWeightRatio, maximumOpeningNotionalKrw: selected.reservedMaximumNotionalKrw,
