@@ -4832,6 +4832,42 @@ stored_snapshot_pending_reservation_bindings_only이며 root allocator/CAS, curr
 형식, API/runner/writer와 운영 기본값은 변경하지 않으며 신규 consumer 중단과 코드 rollback에
 데이터 변환·삭제가 필요 없다.
 
+#### Selector opening reservation 발급 기록 계약
+
+`SelectorOpeningCapacityReservationRecord`는 Selector의 예약 ID/hash가 가리키는 독립 발급 payload다.
+`selectorOpeningCapacityReservation.ts`의 factory/parser는 다음 모든 payload 필드를 canonical hash에
+포함하고 ID는 `selector_capacity_reservation` prefix와 hash에서 파생한다. ID/hash와 canonical UTC
+`createdAt`만 identity 계산에서 제외한다. Unknown field, 비정규 식별자, unsafe integer, 음수 0,
+0인 rank/version/금액 및 개별 예약보다 작은 aggregate 금액은 거절한다.
+
+```text
+selectionRequestId / selectionRequestHash
+candidateAssignmentSetId / candidateAssignmentSetHash
+candidateAssignmentId / candidateAssignmentHash / selectedRank
+portfolioId / policyHash / bucket / market / symbol
+currentPortfolioSnapshotId / currentPortfolioSnapshotHash
+capacityLedgerVersion / reservedSlotOrdinal
+reservedMaximumNotionalKrw / resultingReservedNotionalKrw
+```
+
+`resolveSelectorOpeningCapacityReservationBinding`은 supplied request·assignment 전체·sealed set을
+독립 재생하고 선택된 exact rank/금액 및 BUY sizing 원본을 대조한다. Request-local rank를 전역 slot
+ordinal로 추론하지 않는다. Current transaction snapshot은 이전 request snapshot과 다를 수 있지만
+동일 portfolio/policy의 exact ID/hash여야 하며 request asOf 이후·발급 시각 이하여야 한다. Set 생성보다
+이른 발급은 거절한다. Selector의 배정액을 현재 잔액에 맞춰 임의로 줄이는 것은 허용하지 않는다.
+실제 용량 충돌은 기존 계약대로 transaction rollback과 stale request 재평가 대상이다.
+
+`resolveSelectorOpeningCapacityReservedEventBinding`은 기존 root event의 exact reservation ID/hash,
+scope, version, set/assignment, 전역 slot, notional과 시각을 발급 기록에 대조한다.
+`resolveSelectorOpeningCapacityMandateBinding`은 기존 전체 Selector mandate 대조에 더해 발급 ID/hash,
+전역 slot과 생성 순서를 검증한다. 기존 event/mandate schema를 바꾸지 않는다.
+
+이 단계는 supplied contract이며 실제 저장 원본 completeness, eligibility/정확한 sizing,
+현재 snapshot 권한, aggregate budget/slot unique/CAS 배정 권한을 증명하지 않는다. 발급 기록 저장,
+durable origin, actual source resolver 및 공용 allocator와 activation의 원자적 연결은 후속이다.
+기존 opaque Selector 예약 ID를 소급해 발급 원본이 검증된 것으로 취급하지 않는다. 기존 writer/API 및
+안전 기본값 변경은 없으며 현재 단계 rollback은 신규 consumer 중단과 코드 rollback만 필요하다.
+
 ### PR 6. Rebalance preview planner
 
 - sell-first deterministic plan
