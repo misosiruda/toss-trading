@@ -4799,6 +4799,39 @@ mandate/turnover 권한, resulting state·회계 원본, opening reservation, �
 현재 실행 권한으로 사용하지 않는다. 기존 조회/API/runner·저장 형식·안전 기본값은 그대로이며
 신규 consumer 중단과 코드 rollback에 append-only 데이터 변환·삭제는 필요 없다.
 
+#### Snapshot pending BUY의 실제 예약 원본 및 잔액 연결
+
+`resolveStoredSnapshotPendingReservationOrigins`는 위 pending execution 원본 대조를 먼저 수행하고
+manual/Selector의 실제 root·mandate·fill·retirement 원본을 함께 읽는다. 세 조회의 plan generation,
+두 예약 경로 및 마지막 capacity 관측의 generation과 관측 시각 순서를 비교한다. 체결·종료·최종
+mandate 관측의 record/event count와 hash도 일치해야 하며 중간에 원본이 추가되면 재조회를 요구한다. Source별 조회는
+각각 한 번 수행하며 마지막 잠금은 mandate → capacity 순서다. 전체 이력의 손상은 기준 시점 이후
+suffix에 있더라도 숨기지 않는다.
+
+각 pending BUY의 action mandate와 plan의 원래 policy를 기준으로 exact reservation ID/hash,
+portfolio/market/symbol 및 bound mandate를 대조한다. Snapshot의 현재 policy hash로 이전 policy의
+미완료 주문을 지우거나 강제로 재분류하지 않는다. Snapshot asOf보다 먼저 commit된 capacity event
+prefix에서 reservation head를 선택하며 같은 millisecond commit은 모호하므로 거절한다. 이후의
+정상 체결·retirement는 과거 head와 잔액을 바꾸지 않는다. 기준 시점에 아직 bound되지 않았거나
+released/소진된 예약, 비활성·review_required·만료 mandate의 pending BUY는 거절한다. Mandate 상태는
+실제 전체 이력을 검증한 뒤 instrument별 원래 event 순서를 보존해 cutoff 기준으로 재생한다.
+
+해당 pending action의 모든 선행 actual execution에는 같은 예약의 actual 소비 event가 있어야 하며
+기준 시점 head의 version 이내여야 한다. Plan 체결만 있고 예약 차감이 누락되었거나 아직 기록되지
+않았다면 실패한다. 같은 예약을 참조하는 여러 pending BUY의 remainingNotionalKrw는 BigInt로 합산해
+기준 시점 remainingReservedNotionalKrw를 초과하지 않아야 한다. 이는 gross 잔액 대조이며 net cash,
+실제 position 소유권이나 최종 주문 수량 계산을 대신하지 않는다. SELL은 선행 pending/체결 원본 검증을
+유지하고 opening reservation binding 대상으로 승격하지 않는다.
+
+반환값은 actual pending·manual/Selector 원본 결과, reservation root/bound/head origin, 당시 mandate
+상태, 선행 소비 origin과 reservation별 pending/remaining gross 합계를 보존한다. 두 원본 경로 모두
+확인하지 못한 capacity event는 미검증 ID 목록에 유지한다. Scope는
+stored_snapshot_pending_reservation_bindings_only이며 root allocator/CAS, current slot/budget 배정,
+현재 실행 권한, 회계/resulting state, Risk policy/rule, 가격 freshness/trust와 최종 sizing을 승인하지
+않는다. Commit/createdAt만으로 실제 과거 disk 가용성을 소급 증명하지 않는다. 기존 snapshot·이벤트
+형식, API/runner/writer와 운영 기본값은 변경하지 않으며 신규 consumer 중단과 코드 rollback에
+데이터 변환·삭제가 필요 없다.
+
 ### PR 6. Rebalance preview planner
 
 - sell-first deterministic plan
