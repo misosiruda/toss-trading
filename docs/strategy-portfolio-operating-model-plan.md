@@ -916,6 +916,26 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   mandate-bound unused slot 수, available slot, reserved notional과 remaining budget을 독립
   재계산한다. snapshot/hash mismatch, version
   gap 또는 state mismatch는 신규 mandate를 fail-closed한다.
+- 선행 읽기 모델 `resolveStoredSnapshotOpeningCapacity`는 실제 저장된 active policy, sizing snapshot,
+  pending plan/fill/reservation 원본과 capacity event history를 결합해 snapshot cutoff의 점유량을 계산한다.
+  모든 bucket에 명시적인 `openingCapacityPolicy`가 필요하고 snapshot policy hash와 active policy가
+  일치해야 한다. Policy와 event의 관측 generation이 도중에 바뀌면 혼합하지 않고 거절한다.
+  해제되지 않은 과거 policy의 예약도 현재 snapshot의 bucket 점유량과 금액에 합산한다.
+- 이 읽기 모델에서 `pendingReservationCount`는 아직 bound되지 않은 신규 종목 예약 및 pending BUY가
+  있는 bound 신규 종목 예약의 수다. Pending BUY 없는 bound 신규 종목 예약은
+  `mandateBoundUnusedSlotCount`에만 포함한다. 첫 fill로 slot flag가 false가 된 예약은 별도 slot을
+  차감하지 않고 snapshot의 양수 보유 수를 사용한다. Pending BUY의 gross 금액은 이미 remaining
+  reservation에 포함되므로 `reservedOpeningNotionalKrw`에 다시 더하지 않는다.
+  `unsubmittedReservedNotionalKrw`는 전체 잔여 예약 금액에서 해당 pending 금액을 뺀 값이다.
+- 종목 중복 보유 bucket, 미분류 양수 보유분, 신규 slot의 보유/예약 종목 중복, 같은 policy/bucket의
+  점유 slot ordinal 중복과 unsafe aggregate는 이 읽기 모델에서 거절한다. Commit이 cutoff와 같은
+  millisecond이면 전후 관계를 추정하지 않는다. 아직 source 검증이 없는 request cancellation 등은
+  cutoff 이전에 있으면 거절하며 임의 해제나 원본 기본값을 만들지 않는다.
+- 이 결과는 `stored_snapshot_opening_occupancy_only` 관측이며 실제 `BucketOpeningCapacityState`
+  저장·current ledger·CAS·accounting/resulting-state authority 또는 신규 할당 승인이 아니다. Snapshot의
+  실제 보유 수량이 fill/이체/매도까지 포함한 원장 결과와 같은지, source가 과거 시점 디스크에 있었는지와
+  여러 파일의 원자적 최신성은 별도 검증 대상이다. 이 결과로 current allocation/activation gate를
+  대체하지 않는다. 저장 artifact나 기존 API 변경은 없고 읽기 모듈 코드 rollback에 데이터 삭제가 필요 없다.
 - capacity reservation event hash는 event ID/hash/createdAt을 제외한 complete strict variant
   payload에서 계산하고 ID는 hash에서 파생한다. resolver는 source assignment/manual reservation,
   mandate/event와 paper fill origin을 exact ID/hash로 resolve한 뒤 독립 rehash한다. 첫 `reserved`

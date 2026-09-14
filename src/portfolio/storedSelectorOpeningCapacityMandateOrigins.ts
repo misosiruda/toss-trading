@@ -45,6 +45,9 @@ export async function resolveStoredSelectorOpeningCapacityMandateOrigins(value: 
     if (Date.parse(origin.committedAt) >= Date.parse(root.asOf)) throw new Error("selector capacity issuance source chronology mismatch");
     rootIssuances.set(scope(root), origin);
   }
+  const issuedRoots = Object.freeze([...roots.values()].map((root) => Object.freeze({ root,
+    rootOrigin: resolveStoredOpeningCapacityEventOrigin(initial.history, root.capacityReservationEventId),
+    reservationOrigin: rootIssuances.get(scope(root))! })));
   const targets = selected.filter((event): event is Extract<OpeningCapacityReservationEvent, { eventType: "bound_to_mandate" }> =>
     event.eventType === "bound_to_mandate" && roots.has(scope(event)));
   const sources = targets.length ? await resolveStoredSelectorMandateAssignmentBindings({ baseDir,
@@ -99,12 +102,13 @@ export async function resolveStoredSelectorOpeningCapacityMandateOrigins(value: 
         sourceAssessmentHash: binding.source.assessmentHash }))), verifiedBoundMandateCount: bindings.length,
       eventGenerationHash: history.generationHash, initialEventObservedAt: initial.observedAt, eventObservedAt: observedAt,
       verifiedSelectorRootCount: rootIssuances.size, issuanceGenerationHash: issuance?.generationHash ?? null,
+      issuedRootsHash: hashCanonicalPayload(issuedRoots),
       issuanceObservedAt: issuance?.observedAt ?? null,
       unverifiedEventIds: Object.freeze(selected.filter((event) => !verifiedIds.has(event.capacityReservationEventId)).map((event) => event.capacityReservationEventId)),
       rootAllocationAuthority: "not_verified" as const, mandateActivationAuthority: "not_verified" as const,
       candidateEligibilityAndSizing: "not_verified" as const, slotAndBudgetAllocationAuthority: "not_verified" as const,
       sourceBeforeCreationReceipt: "not_recorded" as const, currentExecutionAuthority: "not_granted" as const });
-    return Object.freeze({ bindings: Object.freeze(bindings), assessment, assessmentHash: hashCanonicalPayload(assessment) });
+    return Object.freeze({ issuedRoots, bindings: Object.freeze(bindings), assessment, assessmentHash: hashCanonicalPayload(assessment) });
   });
 }
 
