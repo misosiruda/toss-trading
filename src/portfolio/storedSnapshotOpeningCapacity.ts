@@ -64,6 +64,7 @@ export async function resolveStoredSnapshotOpeningCapacity(value: z.input<typeof
       throw new Error("snapshot opening capacity observation clock moved backwards");
     }
     const cutoff = Date.parse(snapshot.asOf), heads = new Map<string, OpeningCapacityReservationEvent>();
+    const policyVersions = new Map<StrategyBucket, number>(), policyLastReservations = new Map<StrategyBucket, string>();
     const unverified = new Set(sources.assessment.unverifiedCapacityEventIds);
     for (const event of history.events) {
       if (event.portfolioId !== snapshot.portfolioId) continue;
@@ -74,8 +75,14 @@ export async function resolveStoredSnapshotOpeningCapacity(value: z.input<typeof
         throw new Error("snapshot opening capacity event lacks a verified source");
       }
       heads.set(reservationKey(event), event);
+      if (event.policyHash === activePolicy.policy.policyHash) {
+        policyVersions.set(event.bucket, event.capacityLedgerVersion);
+        if (event.eventType === "reserved") policyLastReservations.set(event.bucket, event.reservationId);
+      }
     }
     const buckets = activePolicy.policy.strategyBuckets.map((policy) => ({ bucket: policy.bucket,
+      capacityLedgerVersion: policyVersions.get(policy.bucket) ?? 0,
+      ...(policyLastReservations.has(policy.bucket) ? { lastReservationRecordId: policyLastReservations.get(policy.bucket)! } : {}),
       maximumPositionCount: policy.openingCapacityPolicy!.maximumPositionCount,
       activePositionCount: [...positions.values()].filter((bucket) => bucket === policy.bucket).length,
       pendingReservationCount: 0, mandateBoundUnusedSlotCount: 0, reserved: 0n, pending: 0n }));

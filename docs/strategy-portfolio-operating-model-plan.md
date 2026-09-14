@@ -926,6 +926,18 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   이 순수 계약은 현재 active policy, snapshot 보유·예약·예산 원본 replay, event version의 최신성,
   `bucket-opening-capacity-state.json` 저장/CAS나 allocation/activation transaction을 증명하지 않는다.
   이들 저장·원자 처리 경계는 후속이다. 기존 저장 형식 변경이나 migration은 없고 코드 rollback이 가능하다.
+- `resolveStoredBucketOpeningCapacityStates`는 실제 저장 occupancy/budget 원본에서 5개 bucket의 상태를
+  함께 생성하고 정책 payload 결속까지 재검증한다. Occupancy는 cutoff 이전 current policy/bucket의
+  마지막 event version과 마지막 `reserved` root의 reservation ID를 별도로 반환한다. Current policy의
+  event가 없으면 version은 0이고 last reservation ID는 생략하지만 과거 정책의 미해제 예약은 점유·금액에
+  계속 포함한다. Version은 최신 current ledger나 다른 정책 epoch의 version을 합친 값이 아니다.
+  상태의 remaining budget은 공용 현금/max band 상한이며 selection request의 min/entry gap 예산이 아니다.
+  전체 bucket 상태와 snapshot/policy scope를 하나의 `projectionHash`로 결속해 공용 현금 문맥을 보존한다.
+  관측 시각은 별도 assessment에만 포함하므로 같은 snapshot에서 재관측해도 projection payload/hash는 같다.
+  Snapshot의 offset-qualified as-of는 같은 instant의 canonical UTC로 상태에 기록하며 원본 snapshot hash는
+  변경하지 않는다. 이 읽기 모델은 상태 파일을 쓰지 않으며 current ledger/CAS·실제 결과 회계와 원자 할당은
+  여전히 미검증이다. 기존 occupancy 반환 metadata/assessment hash는 추가 필드에 따라 달라지지만 저장
+  artifact/API 형식은 바꾸지 않는다. 새 반환 필드 consumer는 함께 rollback하며 데이터 변환·삭제는 없다.
 - 선행 읽기 모델 `resolveStoredSnapshotOpeningCapacity`는 실제 저장된 active policy, sizing snapshot,
   pending plan/fill/reservation 원본과 capacity event history를 결합해 snapshot cutoff의 점유량을 계산한다.
   모든 bucket에 명시적인 `openingCapacityPolicy`가 필요하고 snapshot policy hash와 active policy가
