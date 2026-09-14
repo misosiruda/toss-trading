@@ -1687,20 +1687,33 @@ reservation/slot 권한 및 currentExecutionAuthority는 여전히 부여하지 
 운영 activation 변경은 없으며 코드 rollback에 기존 원본 데이터 변환/삭제가 없다.
 
 `resolveStoredSelectorOpeningCapacityMandateOrigins`는 portfolio의 실제 capacity event journal을
-전체 재생한 뒤 selector root에 이어진 `bound_to_mandate`의 mandate ID를 모아 한 번에 stored source
-대조를 실행한다. Root의 portfolio/policy/bucket, reservation ID/hash, 전역 slot, 금액과 set/assignment 참조를
+전체 재생한 뒤 모든 selector root의 실제 발급 journal을 한 번 관측한다. 발급 record의 전체
+request/snapshot/sizing/assignment 원본과 저장 receipt를 재검증하고 root의 ID/hash, portfolio/policy/bucket,
+ledger version, 전역 slot, 정확한 예약 금액, set/assignment 참조 및 신규 slot 점유를 대조한다.
+발급 commit은 root asOf보다 엄격히 앞서야 하며 같은 millisecond 또는 나중에 저장된 발급은 거절한다.
+공통 record/event 비교는 `resolveSelectorOpeningCapacityReservedRecordBinding`을 사용하되 이 순수
+함수만으로 actual source를 인증하지 않는다. Supplied full binding도 같은 비교 함수를 사용한다.
+이어 `bound_to_mandate`의 mandate ID를 모아 한 번에 stored source 대조를 실행한다.
+Root의 portfolio/policy/bucket, reservation ID/hash, 전역 slot, 금액과 set/assignment 참조를
 mandate와 정확히 비교한다. Request-local rank는 slot으로 사용하지 않는다. Set commit은 root asOf
 이하여야 하고 root commit은 mandate 생성 이하여야 하며 mandate 생성은 bound event asOf 이하여야 한다.
 각 source 관측 후 journal을 다시 잠가 generation 불변과 관측 시각 순서를 검사하므로 중간 append는
 전체 재조회 대상으로 거절한다. Event 잠금을 source 잠금과 중첩하지 않는다.
 
-반환값은 root/bound event storage origin, 실제 mandate/candidate sources, 관측 hash와 미검증 event ID를
-보존한다. Unbound selector root, manual event 및 fill/release successor를 통과 처리하지 않는다.
-이 검사는 역사적 source-content binding이며 root reservation hash의 발급 권한, 공용 slot/budget CAS,
+반환값은 root/bound event storage origin, 실제 issuance origin/commit 및 mandate/candidate sources,
+발급 journal generation/관측 시각·검증 root 수와 미검증 event ID를 보존한다. Binding hash에도 발급
+commit hash를 포함한다. Unbound root도 발급 원본은 필수지만 mandate 결속 완료로 취급하지 않으므로
+미검증 event 목록에 남는다. Manual event 및 fill/release successor도 별도 검증 대상으로 남긴다.
+Root는 portfolio 기준 전체 정책·종료 이력을 포함한다. 기존 발급 없는 예약을 자동 변환하거나
+추정 발급하지 않으며 실제 발급이 없거나 손상되면 이후 mandate/fill/terminal/pending 소비도 거절한다.
+발급 원본용과 mandate binding용 source batch는 각각 한 번이고 root 수에 따라 반복하지 않는다.
+이는 역사적 source-content binding이며 실제 발급 보존을 검증하더라도 공용 slot/budget CAS,
 활성화 및 eligibility/최종 sizing은 검증하지 않는다. `rootAllocationAuthority=not_verified`,
 `currentExecutionAuthority=not_granted`, `sourceBeforeCreationReceipt=not_recorded`를 유지한다.
 관측 시각/hash는 재조회마다 달라질 수 있다. Schema, writer 및 기본값 변경 없이 소비 경로를 제거하는
-코드 rollback이 가능하고 기존 journal 변환/삭제는 필요 없다.
+코드 rollback이 가능하고 기존 journal 변환/삭제는 필요 없다. 새 검증 전에 source-bound 발급과
+root를 올바른 순서로 보존해야 하며, 발급 없는 과거 root는 명시적 복구 정책 없이는 새 consumer에
+수용되지 않는다. Rollback은 이 필수 원본 검사를 제거하므로 안전 경계가 약해짐에 유의한다.
 
 `resolveStoredSelectorMandateAssignmentBindings`는 중복 없는 mandate ID 목록을 받아 mandate와
 request/snapshot/sizing/assignment 원본을 각각 한 번 관측하고 ID 및 request별 index를 만든다.

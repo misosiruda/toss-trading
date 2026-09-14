@@ -115,6 +115,8 @@ test("pending BUY reservation origins aggregate separate pending actions instead
 test("pending BUY reservation origins reject final capacity generation changes and preserve corrupt fill bytes", async (context) => {
   await fixture(context, "selector", { count: 1 }, async (state) => {
     const stored = { state, snapshot: await storeSnapshot(state, context) };
+    const capacityPath = createOpeningCapacityReservationEventPaths(state.dir).eventsPath;
+    const originalCapacity = await readFile(capacityPath);
     const original = OpeningCapacityReservationEventFileRepository.prototype.withDurableVerifiedHistory;
     let observations = 0;
     const mocked = context.mock.method(OpeningCapacityReservationEventFileRepository.prototype, "withDurableVerifiedHistory",
@@ -128,8 +130,11 @@ test("pending BUY reservation origins reject final capacity generation changes a
       } as typeof original);
     try { await assert.rejects(run(stored), /capacity generation changed/); assert.equal(observations, 9); }
     finally { mocked.mock.restore(); }
-    const retry = await run(stored);
-    assert.equal(retry.bindings.length, 1); assert.equal(retry.assessment.unverifiedCapacityEventIds.length, 1);
+    // The appended older-policy root lacks actual issuance, so even a fresh resolution must reject it.
+    await assert.rejects(run(stored), /issuance source is missing/);
+    // Restore only this synthetic fixture to independently exercise corrupt fill propagation.
+    await writeFile(capacityPath, originalCapacity);
+    assert.equal((await run(stored)).bindings.length, 1);
     const path = createPaperFillExecutionPaths(state.dir).recordsPath, valid = await readFile(path, "utf8");
     await writeFile(path, valid + "{broken}\n");
     await assert.rejects(run(stored)); assert.equal(await readFile(path, "utf8"), valid + "{broken}\n");

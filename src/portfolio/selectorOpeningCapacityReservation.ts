@@ -103,8 +103,17 @@ export function resolveSelectorOpeningCapacityReservedEventBinding(value: z.inpu
   const input = bindingSchema.extend({ event: z.unknown() }).parse(value);
   if (!isDeepStrictEqual(input, value)) throw new Error("selector capacity event binding must already be canonical");
   const { event: raw, ...sources } = input;
-  const binding = resolveSelectorOpeningCapacityReservationBinding(sources), reservation = binding.reservation;
-  const event = parseOpeningCapacityReservationEvent(raw);
+  const binding = resolveSelectorOpeningCapacityReservationBinding(sources);
+  const { event } = resolveSelectorOpeningCapacityReservedRecordBinding({ event: raw, reservation: binding.reservation });
+  return Object.freeze({ ...binding, event });
+}
+
+/** Exact record/event comparison only. Callers must separately authenticate the issuance's stored sources. */
+export function resolveSelectorOpeningCapacityReservedRecordBinding(value: { event: unknown; reservation: unknown }) {
+  const input = z.object({ event: z.unknown(), reservation: z.unknown() }).strict().parse(value);
+  if (!isDeepStrictEqual(input, value)) throw new Error("selector capacity record binding must already be canonical");
+  const reservation = parseSelectorOpeningCapacityReservationRecord(input.reservation);
+  const event = parseOpeningCapacityReservationEvent(input.event);
   if (event.eventType !== "reserved" || event.reservationSource.sourceKind !== "selector" ||
     event.reservationId !== reservation.selectorCapacityReservationId || event.reservationHash !== reservation.selectorCapacityReservationHash ||
     event.portfolioId !== reservation.portfolioId || event.policyHash !== reservation.policyHash || event.bucket !== reservation.bucket ||
@@ -115,7 +124,7 @@ export function resolveSelectorOpeningCapacityReservedEventBinding(value: z.inpu
     event.reservationSource.reservedSlotOrdinal !== reservation.reservedSlotOrdinal || Date.parse(event.asOf) < Date.parse(reservation.createdAt)) {
     throw new Error("selector capacity event does not preserve its complete issuance lineage");
   }
-  return Object.freeze({ ...binding, event });
+  return Object.freeze({ reservation, event });
 }
 
 /** Bind the full selector mandate allocation to issuance, retaining selected rank separately from global slot. */

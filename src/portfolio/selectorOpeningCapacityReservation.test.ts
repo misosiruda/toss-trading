@@ -141,11 +141,11 @@ test("selector issuance root event preserves identity version global slot alloca
     if (bound.event.reservationSource.sourceKind !== "selector") throw new Error("wrong bound source");
     assert.equal(bound.event.reservationSource.reservedSlotOrdinal, 19);
     for (const patch of [{ reservationId: "wrong" }, { reservationHash: OTHER }, { portfolioId: "other" }, { policyHash: OTHER }, { bucket: "swing" },
-      { capacityLedgerVersion: 2 }, { remainingReservedNotionalKrw: 99 }, { asOf: at(19) },
+      { capacityLedgerVersion: 2 }, { remainingReservedNotionalKrw: 99 }, { occupiesNewPositionSlot: false }, { asOf: at(19) },
       { reservationSource: { ...eventInput.reservationSource, reservedSlotOrdinal: 1 } },
       { reservationSource: { ...eventInput.reservationSource, candidateAssignmentId: "wrong" } },
       { reservationSource: { ...eventInput.reservationSource, candidateAssignmentSetHash: OTHER } }]) {
-      assert.throws(() => bindEvent({ ...input, event: createOpeningCapacityReservationEvent({ ...eventInput, ...patch } as never) }), /complete issuance lineage/);
+      assert.throws(() => bindEvent({ ...input, event: createOpeningCapacityReservationEvent({ ...eventInput, ...patch } as never) }), /complete issuance lineage|allocated new-position slot/);
     }
     assert.throws(() => bindEvent({ ...input, event: original.bound }));
     assert.throws(() => bindEvent({ ...input, event, extra: true } as never));

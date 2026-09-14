@@ -290,7 +290,7 @@ test("selector issuance rejects source rewrites during durable observation and r
 
 async function fixture(context: TestContext, operation: (input: { dir: string; record: SelectorOpeningCapacityReservationRecord;
   request: Awaited<ReturnType<BucketSelectionRequestFileRepository["resolveById"]>> }) => Promise<void>) {
-  await storedFixture(context, { count: 0 }, async (state) => {
+  await storedFixture(context, { count: 0, storeSelectorIssuance: false }, async (state) => {
     context.mock.timers.setTime(START + 50);
     const mandate = state.manual.mandate;
     if (mandate.assignmentSource !== "deterministic_selector") throw new Error("wrong fixture mandate");
