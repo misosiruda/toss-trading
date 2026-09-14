@@ -13,10 +13,13 @@ import { InvestmentMandateFileRepository } from "./investmentMandateFiles.js";
 import { createOpeningCapacityReservationEvent } from "./openingCapacityReservationEvent.js";
 import { OpeningCapacityReservationEventFileRepository } from "./openingCapacityReservationEventFiles.js";
 import { PortfolioSizingSnapshotFileRepository } from "./portfolioSizingSnapshotFiles.js";
+import { createSelectorOpeningCapacityReservationRecord } from "./selectorOpeningCapacityReservation.js";
+import { SelectorOpeningCapacityReservationFileRepository } from "./selectorOpeningCapacityReservationFiles.js";
 import { HASH, START, PORTFOLIO, AT, at, snapshot, seedCapacityExecutionHistory,
   type Options } from "./storedManualOpeningCapacityTestFixtures.js";
 
-async function seedSelectorHistory(dir: string, context: TestContext, options: Options) {
+type SelectorOptions = Options & { storeSelectorIssuance?: boolean };
+async function seedSelectorHistory(dir: string, context: TestContext, options: SelectorOptions) {
   context.mock.timers.setTime(START + 10);
   const origin = snapshot();
   const request = createBucketSelectionRequest({ cycleId: "selector-cycle", triggerIdentity: "scheduled:boundary", triggerRef: "synthetic",
@@ -43,9 +46,19 @@ async function seedSelectorHistory(dir: string, context: TestContext, options: O
   const assignments = new CandidateAssignmentFileRepository(dir);
   await assignments.appendAssignment(assignment);
   const sealed = await assignments.sealRequest(request.requestId);
+  context.mock.timers.setTime(START + 15);
+  const issuance = createSelectorOpeningCapacityReservationRecord({ selectionRequestId: request.requestId, selectionRequestHash: request.requestHash,
+    candidateAssignmentSetId: sealed.record.candidateAssignmentSetId, candidateAssignmentSetHash: sealed.record.candidateAssignmentSetHash,
+    candidateAssignmentId: assignment.assignmentId, candidateAssignmentHash: assignment.assignmentHash, selectedRank: 1,
+    portfolioId: PORTFOLIO, policyHash: HASH, bucket: assignment.bucket, market: assignment.market, symbol: assignment.symbol,
+    currentPortfolioSnapshotId: origin.portfolioSnapshotId, currentPortfolioSnapshotHash: origin.portfolioSnapshotHash,
+    capacityLedgerVersion: 1, reservedSlotOrdinal: 19, reservedMaximumNotionalKrw: 100, resultingReservedNotionalKrw: 100, createdAt: at(15) });
+  // Issuance repository tests deliberately start before issuance; downstream provenance fixtures persist it.
+  if (options.storeSelectorIssuance !== false) await new SelectorOpeningCapacityReservationFileRepository(dir).append(issuance);
   context.mock.timers.setTime(START + 20);
   const root = createOpeningCapacityReservationEvent({ eventType: "reserved", portfolioId: PORTFOLIO, policyHash: HASH, bucket: "intraday",
-    reservationId: "selector-reservation", reservationHash: HASH, capacityLedgerVersion: 1, remainingReservedNotionalKrw: 100, occupiesNewPositionSlot: true,
+    reservationId: issuance.selectorCapacityReservationId, reservationHash: issuance.selectorCapacityReservationHash,
+    capacityLedgerVersion: 1, remainingReservedNotionalKrw: 100, occupiesNewPositionSlot: true,
     reservationSource: { sourceKind: "selector", candidateAssignmentSetId: sealed.record.candidateAssignmentSetId,
       candidateAssignmentSetHash: sealed.record.candidateAssignmentSetHash, candidateAssignmentId: assignment.assignmentId, reservedSlotOrdinal: 19 }, asOf: at(20), createdAt: at(20) });
   const capacity = new OpeningCapacityReservationEventFileRepository(dir);
@@ -69,7 +82,7 @@ async function seedSelectorHistory(dir: string, context: TestContext, options: O
 
 
 export type SelectorCapacityState = Awaited<ReturnType<typeof seedSelectorHistory>>;
-export async function fixture(context: TestContext, options: Options, operation: (state: Awaited<ReturnType<typeof seedSelectorHistory>>) => Promise<void>) {
+export async function fixture(context: TestContext, options: SelectorOptions, operation: (state: Awaited<ReturnType<typeof seedSelectorHistory>>) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), "stored-selector-capacity-fill-"));
   context.mock.timers.enable({ apis: ["Date"], now: START });
   try { await operation(await seedSelectorHistory(dir, context, options)); }

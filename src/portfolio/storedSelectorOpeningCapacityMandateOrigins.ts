@@ -6,11 +6,14 @@ import { OpeningCapacityReservationEventFileRepository, getDurableOpeningCapacit
   resolveStoredOpeningCapacityEventOrigin, type VerifiedOpeningCapacityEventOrigin } from "./openingCapacityReservationEventFiles.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { resolveStoredSelectorMandateAssignmentBindings } from "./storedSelectorMandateAssignmentBinding.js";
+import { resolveSelectorOpeningCapacityReservedRecordBinding } from "./selectorOpeningCapacityReservation.js";
+import { SelectorOpeningCapacityReservationFileRepository, getDurableSelectorCapacityReservationObservation,
+  type VerifiedSelectorCapacityReservationOrigin } from "./selectorOpeningCapacityReservationFiles.js";
 
 const inputSchema = z.object({ baseDir: z.string().min(1),
   portfolioId: openingCapacityReservationEventPayloadSchema.options[0].shape.portfolioId }).strict();
 
-/** Historical selector root -> bound mandate source-content checks, not root allocation or current execution authority. */
+/** Actual issuance -> every selector root -> bound mandate checks, not current allocation or execution authority. */
 export async function resolveStoredSelectorOpeningCapacityMandateOrigins(value: z.input<typeof inputSchema>,
   options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
   const input = inputSchema.parse(value);
@@ -25,6 +28,23 @@ export async function resolveStoredSelectorOpeningCapacityMandateOrigins(value: 
   const selected = initial.history.events.filter((event) => event.portfolioId === input.portfolioId);
   const roots = new Map(selected.filter((event) => event.eventType === "reserved" && event.reservationSource.sourceKind === "selector")
     .map((event) => [scope(event), event]));
+  const issuance = roots.size ? await new SelectorOpeningCapacityReservationFileRepository(baseDir, lockOptions)
+    .withDurableVerifiedHistory(async (history) => ({ origins: history.origins, generationHash: history.generationHash,
+      observedAt: getDurableSelectorCapacityReservationObservation(history) })) : null;
+  if (issuance) {
+    if (Date.parse(issuance.observedAt) < Date.parse(lastObservedAt)) throw new Error("selector capacity mandate observation clock moved backwards");
+    lastObservedAt = issuance.observedAt;
+  }
+  const issuanceById = new Map(issuance?.origins.map((origin) => [origin.record.selectorCapacityReservationId, origin]));
+  const rootIssuances = new Map<string, VerifiedSelectorCapacityReservationOrigin>();
+  for (const root of roots.values()) {
+    const origin = issuanceById.get(root.reservationId);
+    if (!origin) throw new Error("selector capacity root issuance source is missing");
+    resolveSelectorOpeningCapacityReservedRecordBinding({ event: root, reservation: origin.record });
+    // Equal timestamps cannot prove that the durable issuance preceded this evaluation.
+    if (Date.parse(origin.committedAt) >= Date.parse(root.asOf)) throw new Error("selector capacity issuance source chronology mismatch");
+    rootIssuances.set(scope(root), origin);
+  }
   const targets = selected.filter((event): event is Extract<OpeningCapacityReservationEvent, { eventType: "bound_to_mandate" }> =>
     event.eventType === "bound_to_mandate" && roots.has(scope(event)));
   const sources = targets.length ? await resolveStoredSelectorMandateAssignmentBindings({ baseDir,
@@ -37,6 +57,7 @@ export async function resolveStoredSelectorOpeningCapacityMandateOrigins(value: 
     lastObservedAt = sources[0]!.assessment.assignmentObservedAt;
   }
   const bindings: Readonly<{ root: OpeningCapacityReservationEvent; rootOrigin: VerifiedOpeningCapacityEventOrigin;
+    reservationOrigin: VerifiedSelectorCapacityReservationOrigin;
     event: OpeningCapacityReservationEvent; eventOrigin: VerifiedOpeningCapacityEventOrigin;
     source: Awaited<ReturnType<typeof resolveStoredSelectorMandateAssignmentBindings>>[number] }>[] = [];
   const verifiedIds = new Set<string>();
@@ -61,7 +82,7 @@ export async function resolveStoredSelectorOpeningCapacityMandateOrigins(value: 
       throw new Error("selector capacity mandate source chronology mismatch");
     }
     verifiedIds.add(root.capacityReservationEventId); verifiedIds.add(event.capacityReservationEventId);
-    bindings.push(Object.freeze({ root, rootOrigin, event,
+    bindings.push(Object.freeze({ root, rootOrigin, reservationOrigin: rootIssuances.get(scope(root))!, event,
       eventOrigin: resolveStoredOpeningCapacityEventOrigin(initial.history, event.capacityReservationEventId), source }));
   }
   // A changed journal requires a new complete resolution; never combine different event generations.
@@ -74,8 +95,11 @@ export async function resolveStoredSelectorOpeningCapacityMandateOrigins(value: 
     const assessment = Object.freeze({ verificationScope: "stored_selector_capacity_mandate_bindings_only" as const,
       portfolioId: input.portfolioId, bindingsHash: hashCanonicalPayload(bindings.map((binding) => ({
         rootCommitHash: binding.rootOrigin.commitHash, eventCommitHash: binding.eventOrigin.commitHash,
+        reservationCommitHash: binding.reservationOrigin.commitHash,
         sourceAssessmentHash: binding.source.assessmentHash }))), verifiedBoundMandateCount: bindings.length,
       eventGenerationHash: history.generationHash, initialEventObservedAt: initial.observedAt, eventObservedAt: observedAt,
+      verifiedSelectorRootCount: rootIssuances.size, issuanceGenerationHash: issuance?.generationHash ?? null,
+      issuanceObservedAt: issuance?.observedAt ?? null,
       unverifiedEventIds: Object.freeze(selected.filter((event) => !verifiedIds.has(event.capacityReservationEventId)).map((event) => event.capacityReservationEventId)),
       rootAllocationAuthority: "not_verified" as const, mandateActivationAuthority: "not_verified" as const,
       candidateEligibilityAndSizing: "not_verified" as const, slotAndBudgetAllocationAuthority: "not_verified" as const,
