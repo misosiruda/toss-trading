@@ -920,6 +920,8 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   pending plan/fill/reservation 원본과 capacity event history를 결합해 snapshot cutoff의 점유량을 계산한다.
   모든 bucket에 명시적인 `openingCapacityPolicy`가 필요하고 snapshot policy hash와 active policy가
   일치해야 한다. Policy와 event의 관측 generation이 도중에 바뀌면 혼합하지 않고 거절한다.
+  마지막 event 관측의 앞뒤에서 policy generation을 대조해 그 사이의 policy record/activation 추가도
+  거절한다. 뒤쪽 policy 재조회는 event lease를 해제한 후 수행하여 역순 중첩 lock을 만들지 않는다.
   해제되지 않은 과거 policy의 예약도 현재 snapshot의 bucket 점유량과 금액에 합산한다.
 - 이 읽기 모델에서 `pendingReservationCount`는 아직 bound되지 않은 신규 종목 예약 및 pending BUY가
   있는 bound 신규 종목 예약의 수다. Pending BUY 없는 bound 신규 종목 예약은

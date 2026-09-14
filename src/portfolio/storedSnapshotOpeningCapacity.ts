@@ -57,7 +57,7 @@ export async function resolveStoredSnapshotOpeningCapacity(value: z.input<typeof
   if (policyGeneration(await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir, lockOptions)) !== policyGenerationHash) {
     throw new Error("snapshot opening capacity policy generation changed");
   }
-  return new OpeningCapacityReservationEventFileRepository(baseDir, lockOptions).withDurableVerifiedHistory(async (history) => {
+  const result = await new OpeningCapacityReservationEventFileRepository(baseDir, lockOptions).withDurableVerifiedHistory(async (history) => {
     const observedAt = getDurableOpeningCapacityEventObservedAt(history);
     if (history.generationHash !== sources.assessment.eventGenerationHash) throw new Error("snapshot opening capacity event generation changed");
     if (Date.parse(observedAt) < Date.parse(sources.assessment.eventObservedAt) || Date.now() < Date.parse(observedAt)) {
@@ -113,4 +113,10 @@ export async function resolveStoredSnapshotOpeningCapacity(value: z.input<typeof
     return Object.freeze({ activePolicy, sources, capacities, totalReservedOpeningNotionalKrw: Number(totalReserved),
       assessment, assessmentHash: hashCanonicalPayload(assessment) });
   });
+  // Cover policy changes at either side of the final event observation without nesting policy locks inside the event lease.
+  if (policyGeneration(await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir, lockOptions)) !== policyGenerationHash) {
+    throw new Error("snapshot opening capacity policy generation changed after event observation");
+  }
+  if (Date.now() < Date.parse(result.assessment.observedAt)) throw new Error("snapshot opening capacity observation clock moved backwards");
+  return result;
 }
