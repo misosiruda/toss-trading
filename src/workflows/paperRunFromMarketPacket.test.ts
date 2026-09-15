@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -97,6 +97,79 @@ test("market packet paper run fails closed for stale packet before provider call
   assert.equal(provider.calls, 0);
   assert.equal(decisions.records.length, 0);
   assert.equal(trades.records.length, 0);
+});
+
+test("market packet paper run rejects a packet with an obsolete portfolio before provider or trade writes", async () => {
+  const dir = await tempDir(), paths = createStoragePaths(dir), packet = marketPacket();
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(packet);
+  const current = { ...packet.virtualPortfolio, cashKrw: 800_000, updatedAt: now.toISOString() };
+  const store = new FileVirtualPortfolioStore(paths.virtualPortfolioPath);
+  await store.write(current);
+  const provider = { calls: 0, async decide(input: MarketPacket) {
+    this.calls++; return new StaticMarketPacketDecisionProvider(virtualDecision()).decide(input);
+  } };
+  const result = await runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir, provider, now });
+  assert.equal(result.status, "failed"); assert.equal(result.failureReason, "portfolio_state_changed");
+  assert.equal(provider.calls, 0); assert.deepEqual(await store.read(), current);
+  assert.equal((await new FileVirtualDecisionStore(paths.virtualDecisionsPath).readAll()).records.length, 0);
+  assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 0);
+});
+
+test("market packet paper run rejects a portfolio change during provider execution without overwriting it", async () => {
+  const dir = await tempDir(), paths = createStoragePaths(dir), packet = marketPacket();
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(packet);
+  const store = new FileVirtualPortfolioStore(paths.virtualPortfolioPath);
+  await store.write(packet.virtualPortfolio);
+  const current = { ...packet.virtualPortfolio, cashKrw: 600_000, updatedAt: now.toISOString() };
+  const provider: DecisionProvider = { async decide(input) {
+    await store.write(current);
+    return new StaticMarketPacketDecisionProvider(virtualDecision()).decide(input);
+  } };
+  const result = await runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir, provider, now });
+  assert.equal(result.status, "failed"); assert.equal(result.failureReason, "portfolio_state_changed");
+  assert.deepEqual(await store.read(), current);
+  assert.equal((await new FileVirtualDecisionStore(paths.virtualDecisionsPath).readAll()).records.length, 0);
+  assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 0);
+});
+
+test("concurrent market packet paper runs apply only one result from the same starting portfolio", async () => {
+  const dir = await tempDir(), paths = createStoragePaths(dir), packet = marketPacket();
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(packet);
+  let arrived = 0, release!: () => void;
+  const both = new Promise<void>((done) => { release = done; });
+  const provider: DecisionProvider = { async decide(input) {
+    if (++arrived === 2) release();
+    await both;
+    return new StaticMarketPacketDecisionProvider(virtualDecision()).decide(input);
+  } };
+  const results = await Promise.all([1, 2].map(() => runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir, provider, now })));
+  assert.equal(arrived, 2);
+  assert.equal(results.filter((result) => result.status === "completed").length, 1);
+  assert.equal(results.find((result) => result.status === "failed")!.failureReason, "portfolio_state_changed");
+  assert.equal((await new FileVirtualDecisionStore(paths.virtualDecisionsPath).readAll()).records.length, 1);
+  assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 1);
+  assert.equal((await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).read())!.cashKrw, 930_000);
+});
+
+test("paper application failure after a trade write retains a recovery barrier and blocks a new run", async (context) => {
+  const dir = await tempDir(), paths = createStoragePaths(dir), packet = marketPacket();
+  context.after(() => rm(dir, { recursive: true, force: true }));
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(packet);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write(packet.virtualPortfolio);
+  const original = FileVirtualTradeStore.prototype.append, denied = new Error("after trade append failure");
+  const mock = context.mock.method(FileVirtualTradeStore.prototype, "append", async function (this: FileVirtualTradeStore, ...args: Parameters<typeof original>) {
+    await original.apply(this, args); throw denied;
+  });
+  try {
+    await assert.rejects(runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir,
+      provider: new StaticMarketPacketDecisionProvider(virtualDecision()), now }), (error) => error === denied);
+  } finally { mock.mock.restore(); }
+  assert.deepEqual(JSON.parse(await readFile(paths.virtualPortfolioPath, "utf8")), packet.virtualPortfolio);
+  assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 1);
+  const provider = new CountingDecisionProvider();
+  await assert.rejects(runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir, provider, now }), /paper portfolio lock is unavailable/);
+  assert.equal(provider.calls, 0);
+  assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 1);
 });
 
 test("market packet paper run rejects decision packet mismatch without saving decision", async () => {
