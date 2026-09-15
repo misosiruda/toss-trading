@@ -5853,10 +5853,10 @@ MCP·HTTP·live order surface와 mock/paper-only 기본값은 변경하지 않�
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
 선행 current portfolio 동시성 연결은 기존 paper runner에 적용한다. `FileVirtualPortfolioStore`의
-`read`/`write`와 `withExclusiveUpdate`가 같은 `virtual-portfolio.json.lock` 디렉터리를 사용하며,
+`read`/`write`, `readSnapshot`과 조건부 갱신이 같은 `virtual-portfolio.json.lock` 디렉터리를 사용하며,
 현재 값 비교부터 decision/trade/risk 적용 및 portfolio 파일 교체까지 다른 협력 writer의 진입을
 차단한다. `paperDecisionPipeline`은 provider 호출 전에 현재 저장 잔고와 packet 잔고를 대조하고,
-provider 호출 후 잠금 안에서 최초 저장 값을 다시 비교한다. 불일치하면 `portfolio_state_changed`와
+provider 호출 후 잠금 안에서 최초 저장 값과 revision hash를 다시 비교한다. 불일치하면 `portfolio_state_changed`와
 `PAPER_PORTFOLIO_STATE_CHANGED` audit를 남기고 decision/trade를 쓰지 않는다. Provider는 잠금 밖에서
 실행하므로 외부 응답을 기다리는 동안 잔고 writer를 막지 않는다. 같은 초기 잔고로 두 BUY runner가
 경합하면 하나만 적용되고 다른 하나는 변경된 잔고를 확인해 거절한다.
@@ -5866,7 +5866,7 @@ provider 호출 후 잠금 안에서 최초 저장 값을 다시 비교한다. �
 자동 잠금 탈취나 부분 기록 삭제를 하지 않는다. 실제 trade append 직후 오류를 주입해 기존 잔고
 보존, 추가 provider 호출 차단 및 trade 중복 추가 차단을 검증한다. 개별 portfolio 파일은 unique 임시
 파일 write/fsync/rename으로 교체하지만 **여러 artifact의 commit/rollback 또는 exactly-once journal은
-아니다**. 값이 바뀌었다가 동일하게 돌아온 ABA 이력, trigger identity dedupe와 공용 capacity allocator,
+아니다**. Trigger identity dedupe와 공용 capacity allocator,
 active policy/mandate/fill 회계 원자 연결은 여전히 후속이다. 기존 JSON 형식과 import 경로는 유지한다.
 배포·롤백 때는 모든 reader/writer를 중지하고, 실패 장벽이 있으면 관련 artifact를 대조한 명시적 복구
 후 진행한다. 구버전 프로세스와 동시 실행하면 구버전 writer가 새 잠금을 사용하지 않으므로 지원하지
@@ -5875,6 +5875,30 @@ Portfolio 파일과 디렉터리 동기화는 잠금 안에서 완료하고 잠�
 따라서 해제 후 cleanup sync 오류로 완료된 HOLD/거절 결과를 실패로 뒤집지 않는다. 잠금 삭제 자체의
 durability는 약속하지 않으므로 crash 후 이전 lock이 다시 보일 수 있으며, 이 경우 자동 탈취하지 않고
 복구 장벽으로 취급한다. 삭제 실패도 남은 디렉터리를 보존해 후속 실행을 차단한다.
+
+실제 writer의 revision journal은 `<portfolio 파일 경로>.revisions.jsonl`에 저장한다. 각
+`paper_portfolio_revision.v1` entry는 연속 sequence, 직전 revision hash, 변경 전 portfolio 값의 hash와
+전체 변경 후 portfolio를 가지며, 자기 `revisionHash`만 제외한 전체 payload를 독립 SHA-256으로 검증한다.
+Object key 정렬 기반 hash와 schema 순서의 canonical JSON line을 함께 검사하고 UTF-8 손상, torn line,
+중복 JSON key, sequence/predecessor gap, 현재 JSON 값과 마지막 entry의 불일치를 거절한다. 기존 JSON
+파일은 그대로 유지하고 모든 일반 reader/writer도 journal이 있으면 전체 chain과 현재 값을 대조한다.
+Journal이 없는 기존 파일은 revision null인 legacy 관측이며 read는 이력을 합성하지 않는다. 최초 write가
+실제로 관측한 기존 값의 hash를 첫 entry에 보존하지만 과거 회계/거래 lineage를 인증하는 것은 아니다.
+
+일반 write와 성공한 조건부 write는 값이 같아도 새 revision을 기록한다. `paperDecisionPipeline`은
+`readSnapshot`의 portfolio/revision을 provider 호출 전에 캡처하고 `withExclusiveSnapshotUpdate`에서
+두 값을 비교한다. 따라서 관측 이후 다른 writer의 A→B→A 변경과 같은 값의 HOLD commit도 오래된
+실행을 거절한다. 기존 `withExclusiveUpdate`는 값 CAS 호환 API로 남지만 실제 runner는 revision API를
+사용한다. 새 runner가 시작되기 전 완료된 동일 packet의 반복 실행이나 별도 trigger/cycle dedupe는
+아직 보장하지 않는다. 정책/sizing snapshot의 `portfolioVersion`과 이 revision을 연결하는 것도 후속이다.
+
+새 JSON 임시 파일을 먼저 sync한 뒤 journal append/fsync와 부모 디렉터리 sync, JSON rename/sync 순으로
+반영한다. Journal 쓰기 시작 이후 오류는 일반 write에서도 lock을 복구 장벽으로 남기며, prior JSON이
+남아 있어도 자동 retry하지 않는다. Journal과 JSON의 전체 자동 roll-forward/rollback은 후속이다.
+배포와 rollback은 모든 writer를 중지하고 journal/JSON 및 부분 실행 기록을 대조해야 한다. Journal 도입
+후에는 이를 무시하는 구버전 writer로 바로 rollback하지 않으며, journal 삭제/초기화나 실행 중 외부
+파일 교체는 지원하지 않는다. Journal 전체가 외부에서 삭제된 상태는 도입 전 legacy 부재와
+구별할 독립 anchor가 없으므로 이를 변조 방지 또는 과거 이력 완전성 증거로 주장하지 않는다.
 
 - cadence scheduler와 conflict resolver
 - immutable regime/thesis trigger event repository와 dedupe resolver

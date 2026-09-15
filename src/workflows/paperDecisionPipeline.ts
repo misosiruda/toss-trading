@@ -69,7 +69,8 @@ export async function runPaperDecisionPipeline(
 ): Promise<PaperDecisionPipelineResult> {
   const auditEventIds: string[] = [];
   const portfolio = virtualPortfolioSchema.parse(options.portfolio);
-  const expectedStoredPortfolio = await options.repositories.portfolioStore.read();
+  const expectedSnapshot = await options.repositories.portfolioStore.readSnapshot();
+  const expectedStoredPortfolio = expectedSnapshot.portfolio;
   const stateChanged = async (): Promise<PaperDecisionPipelineResult> => {
     const summary = "Paper portfolio changed; build a new market packet before retrying.";
     auditEventIds.push(await appendPaperAudit(options.repositories.auditLog, "PAPER_PORTFOLIO_STATE_CHANGED", summary, options.now));
@@ -137,7 +138,7 @@ export async function runPaperDecisionPipeline(
   });
 
   try {
-    return await options.repositories.portfolioStore.withExclusiveUpdate(expectedStoredPortfolio, async () => {
+    return await options.repositories.portfolioStore.withExclusiveSnapshotUpdate(expectedSnapshot, async () => {
       const result = await applyRecordedDecision({ ...options, portfolio }, recordedDecision, auditEventIds);
       return { portfolio: result.portfolio, result };
     });

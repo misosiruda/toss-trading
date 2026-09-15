@@ -87,9 +87,9 @@ test("paper portfolio malformed sources reject conditional update before the cal
   });
 });
 
-test("paper portfolio atomic replacement keeps prior bytes on write sync and rename faults", async (context) => {
+test("paper portfolio atomic replacement keeps prior bytes and fences a journaled rename failure", async (context) => {
   await fixture(context, async (path) => {
-    const store = new FileVirtualPortfolioStore(path), old = portfolio(); await store.write(old);
+    const store = new FileVirtualPortfolioStore(path, { lockTimeoutMs: 60 }), old = portfolio(); await store.write(old);
     const bytes = await fs.readFile(path);
     for (const phase of ["write", "sync", "rename"] as const) {
       const originalOpen = fs.open, originalRename = fs.rename, denied = Object.assign(new Error("injected EIO"), { code: "EIO" });
@@ -103,8 +103,14 @@ test("paper portfolio atomic replacement keeps prior bytes on write sync and ren
       syncBuiltinESMExports();
       try { await assert.rejects(store.write(portfolio(1)), (error) => error === denied); }
       finally { mock.mock.restore(); syncBuiltinESMExports(); }
-      assert.deepEqual(await fs.readFile(path), bytes); assert.deepEqual(await store.read(), old);
-      assert.deepEqual(await fs.readdir(dirname(path)), ["portfolio.json"]);
+      assert.deepEqual(await fs.readFile(path), bytes);
+      if (phase === "rename") {
+        await assert.rejects(store.read(), /lock is unavailable/);
+        assert.deepEqual((await fs.readdir(dirname(path))).sort(), ["portfolio.json", "portfolio.json.lock", "portfolio.json.revisions.jsonl"]);
+      } else {
+        assert.deepEqual(await store.read(), old);
+        assert.deepEqual((await fs.readdir(dirname(path))).sort(), ["portfolio.json", "portfolio.json.revisions.jsonl"]);
+      }
     }
   });
 });
@@ -188,7 +194,7 @@ test("paper portfolio completes durability before unlock without fallible post-u
     } finally { rmdirMock.mock.restore(); openMock.mock.restore(); syncBuiltinESMExports(); }
     assert.equal(unlocked, true); assert.equal(afterUnlockDirectorySyncs, 0);
     if (process.platform !== "win32") assert.ok(beforeUnlockDirectorySyncs >= 2);
-    assert.deepEqual(await fs.readdir(dirname(path)), ["portfolio.json"]);
+    assert.deepEqual((await fs.readdir(dirname(path))).sort(), ["portfolio.json", "portfolio.json.revisions.jsonl"]);
     assert.deepEqual(await store.read(), old);
   });
 });
