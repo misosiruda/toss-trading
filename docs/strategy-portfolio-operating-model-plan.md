@@ -5906,8 +5906,11 @@ Journal이 없는 기존 파일은 revision null인 legacy 관측이며 read는 
 Risk decision, paper trade 또는 no-op, 변경 후 portfolio와 순서대로 기록할 audit 전체를
 `paper_prepared_application.v1`에 넣는다. 입력은 전체 packet, 원본 provider decision, 관측한
 portfolio/revision, 평가 시각과 decision summary를 포함한다. `paper_order_engine.v1` 실행 모델은
-현재 기본 Risk/execution 정책을 사용하며 provider가 전달한 policyVersion 문자열을 실행 권한으로
-승격하지 않는다. 모델 동작 변경 시 기존 v1의 재생 의미를 보존하는 별도 버전 분리가 필요하다.
+고정된 v1 Risk/execution 정책을 사용하며 provider가 전달한 policyVersion 문자열을 실행 권한으로
+승격하지 않는다. `paper/executionModels/v1`에 원본 커밋의 전체 상대 의존성 22개 파일을 보존한다.
+공용 dispatcher가 저장된 executionModelVersion으로 v1을 선택하고 unknown version을 거절하므로
+현재 주문 엔진·Risk·confidence·validation 변경이 과거 기록의 재생 결과에 적용되지 않는다.
+파일별 hash/import 경계와 변경 전 golden 기록을 검증하며, 새 모델은 v1을 고치지 않고 별도로 추가한다.
 
 전체 canonical payload에서 `applicationHash`만 제외해 SHA-256을 계산하고
 `<portfolio 파일 경로>.applications/<hash hex>.json`을 exclusive create한 뒤 파일·디렉터리를

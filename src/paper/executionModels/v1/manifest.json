@@ -1,0 +1,28 @@
+{
+  "modelVersion": "paper_order_engine.v1",
+  "sourceCommit": "947e77e3fe32ac07a1a8ec7ba0f4f22fc7e1e544",
+  "files": {
+    "analytics/marketRegimeClassifier.ts": "534244666e190e5e49dc823d4579d7d0ee822152d6ed9c805c82824bdb0b77d7",
+    "domain/schemas.ts": "3a30030d7af4e4e4a87861d8f7739d0a23dc18c66be2d74c15ff1f4197451e4e",
+    "market/candidateDataRefs.ts": "b281cb2d6b48d232cc4304e74eb7d225559d334ac0447519a18f2f15fe9b7172",
+    "market/packetHash.ts": "259714def408d2d4576b49f28590d9fa874b7b65e0525e141cabb0f0764068a3",
+    "paper/costModel.ts": "408b0b5e681aaf275858c388447eec089a4277f77837236ecbe340bd877993d4",
+    "paper/decisionConfidence.ts": "2eda67082a425e4529f517445603f83c40eaff26b6eef4af240dfb2dd80e2690",
+    "paper/decisionHash.ts": "a967625d48a8575a2eccbc0bccbc6620b5e60a4ff84c2995afe3f4a7c3df7ffc",
+    "paper/decisionIdentity.ts": "07002b6d3685d960b5ac7b1085aa9b7aa902ce4e619e9b55dd678e475d70685a",
+    "paper/decisionNormalizer.ts": "86d9acfb76e6f7667d3e82b1ba56206fb6ecf6af585b95317440c261aab76fd0",
+    "paper/dustPosition.ts": "6962e193cdfbdf577a9375a8099cf6415fe9553a855224b94c76223af2401243",
+    "paper/dynamicCashReservePolicy.ts": "9bf3e7b56e7876baff4ca67f0f0562cbeef49ada22f01b54ca23798c06027196",
+    "paper/executionModel.ts": "5a7e8b96b658041a1d3750eddadb3df2cd1da7432766ef9a206943a0a25239f0",
+    "paper/hedgePolicy.ts": "83f40e5696f82bb3412e1d33036e61bcd3ca9579791c7a1ea06737d91c7c39ae",
+    "paper/liquidityModel.ts": "b4a8e6c34dcd7b48c7d647da3770a9c20530a47c96aec469c980942a10c65ffa",
+    "paper/orderEngine.ts": "e125c86b48b8a871f998614c7eaac814d08b5318409bb57e2246bffb759c4dfb",
+    "paper/portfolioExposureAggregator.ts": "2473eed0555250009c2ead18defbae33c9e059bb2b897850bd639de7e027d785",
+    "paper/preparedApplication.ts": "c05fc1cc79cbfc056a14aaa9b4995f2a1ce76688744f0f5da0ca5874df2aee87",
+    "paper/riskBranches.ts": "96707fe1011c84eab16ba851cdd7f542ce18f95ad481e247f295f01fda75afdd",
+    "paper/riskEngine.ts": "818fe719a8b1f00e5b96116c27fcfdaf80bfaad3625850fbedda8cc95d0cfb02",
+    "paper/riskPolicy.ts": "5c89171278eea17ebe4a4227d69415d46fc4a83df6d5fa07d35748422c4e61ea",
+    "paper/strategyBucketPolicy.ts": "c99b124c924fb1504b5d7d3befac1dbabc02af12639f77396a20b206e3310f46",
+    "paper/virtualDecisionValidation.ts": "200b070345e1955142b974e759a92890ae3ab1a89fa6462e00801fabc436e167"
+  }
+}
