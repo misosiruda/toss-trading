@@ -32,7 +32,7 @@ export class FileVirtualPortfolioStore {
   }
 
   /** Never re-enter this store from operation. No provider/network call belongs inside this lock.
-   * Other files are NOT rolled back on failure. Once operation starts, failure preserves the lock
+   * Other files are NOT rolled back on failure. Callback/portfolio commit failure preserves the lock
    * as a recovery barrier so a retry cannot apply the same trade against an unchanged portfolio.
    */
   async withExclusiveUpdate<T>(expected: VirtualPortfolio | null,
@@ -99,9 +99,11 @@ export class FileVirtualPortfolioStore {
     finally {
       // Only delete this owner's unique file; a foreign file prevents non-recursive directory removal.
       // Cooperating processes never replace an active directory. Out-of-band online takeover is unsupported.
+      // Portfolio durability is completed while locked. Do not perform fallible I/O after removing the
+      // barrier: a failed cleanup sync must not turn a committed unchanged portfolio into a retryable error.
+      // A crash may resurrect unflushed lock deletion; that is a fail-closed barrier, not lost portfolio data.
       if (!preserveBarrier) {
         await assertOwned(); await unlink(ownerPath); await rmdir(this.lockPath);
-        await syncDirectory(dirname(this.lockPath));
       }
     }
   }

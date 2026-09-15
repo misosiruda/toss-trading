@@ -164,6 +164,51 @@ test("paper portfolio validates options and preserves callback return values", a
   });
 });
 
+test("paper portfolio completes durability before unlock without fallible post-unlock I/O", async (context) => {
+  await fixture(context, async (path) => {
+    const store = new FileVirtualPortfolioStore(path), old = portfolio(); await store.write(old);
+    const originalOpen = fs.open, originalRmdir = fs.rmdir;
+    let unlocked = false, beforeUnlockDirectorySyncs = 0, afterUnlockDirectorySyncs = 0;
+    const denied = Object.assign(new Error("injected post-unlock sync failure"), { code: "EIO" });
+    const rmdirMock = context.mock.method(fs, "rmdir", async (...args: Parameters<typeof fs.rmdir>) => {
+      await originalRmdir(...args); if (args[0] === `${path}.lock`) unlocked = true;
+    });
+    const openMock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      if (args[0] === dirname(path)) {
+        if (unlocked) { afterUnlockDirectorySyncs++; throw denied; }
+        const handle = await originalOpen(...args), originalSync = handle.sync.bind(handle);
+        context.mock.method(handle, "sync", async () => { beforeUnlockDirectorySyncs++; await originalSync(); });
+        return handle;
+      }
+      return originalOpen(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.equal(await store.withExclusiveUpdate(old, async () => ({ portfolio: old, result: "committed" })), "committed");
+    } finally { rmdirMock.mock.restore(); openMock.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(unlocked, true); assert.equal(afterUnlockDirectorySyncs, 0);
+    if (process.platform !== "win32") assert.ok(beforeUnlockDirectorySyncs >= 2);
+    assert.deepEqual(await fs.readdir(dirname(path)), ["portfolio.json"]);
+    assert.deepEqual(await store.read(), old);
+  });
+});
+
+test("paper portfolio failed directory removal leaves a barrier after an unchanged update", async (context) => {
+  await fixture(context, async (path) => {
+    const store = new FileVirtualPortfolioStore(path, { lockTimeoutMs: 60 }), old = portfolio(); await store.write(old);
+    const originalRmdir = fs.rmdir, denied = Object.assign(new Error("injected unlock failure"), { code: "EACCES" });
+    const mock = context.mock.method(fs, "rmdir", async (...args: Parameters<typeof fs.rmdir>) => {
+      if (args[0] === `${path}.lock`) throw denied; return originalRmdir(...args);
+    });
+    syncBuiltinESMExports();
+    try { await assert.rejects(store.withExclusiveUpdate(old, async () => ({ portfolio: old, result: null })), (error) => error === denied); }
+    finally { mock.mock.restore(); syncBuiltinESMExports(); }
+    assert.deepEqual(await fs.readdir(`${path}.lock`), []);
+    await assert.rejects(store.read(), /lock is unavailable/);
+    assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")), old);
+  });
+});
+
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => { resolve = done; });
