@@ -938,6 +938,40 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   변경하지 않는다. 이 읽기 모델은 상태 파일을 쓰지 않으며 current ledger/CAS·실제 결과 회계와 원자 할당은
   여전히 미검증이다. 기존 occupancy 반환 metadata/assessment hash는 추가 필드에 따라 달라지지만 저장
   artifact/API 형식은 바꾸지 않는다. 새 반환 필드 consumer는 함께 rollback하며 데이터 변환·삭제는 없다.
+- `BucketOpeningCapacityStateFileRepository`는 `bucket-opening-capacity-state.json`에 portfolio별 전체
+  5개 bucket projection을 저장한다. Document는 `bucket_opening_capacity_state_document.v1`,
+  portfolio ID 정렬 projection 배열과 자기 hash를 제외한 전체 payload의 `documentHash`를 갖는다.
+  `refresh({ portfolioSnapshotId, expectedDocumentHash })`는 실제 저장 원본에서 상태를 재계산하고
+  문서 전체 CAS로 교체한다. 다른 portfolio의 상태도 보존하며 caller-supplied state/resolver는 받지 않는다.
+  같은 상태의 exact retry는 bytes/hash를 바꾸지 않는다. 다른 상태의 stale expected hash, 이전 시각으로의
+  복귀와 같은 시각의 다른 snapshot으로 교체는 거절한다. Ordinary read는 자동 refresh하지 않는다.
+  모든 저장 projection을 원본에서 다시 계산해 전체 payload와 대조하므로 독립적으로 rehash한 위조 상태,
+  누락·손상 원본, 중복 portfolio, 비정렬 문서, invalid UTF-8와 torn/비정규 JSON을 fail-closed한다.
+  Outer state lock은 문서 reader/writer를 직렬화하고 temporary file write/fsync/rename으로 전체 bucket을
+  함께 교체한다. `.bucket-opening-capacity-state.json.lock/<generation>/owner`에 UUID 소유권을 쓰고
+  `<UUID>.released` 표식이 정확히 일치하고 sync된 경우에만 다음 연속 generation을 exclusive mkdir로
+  획득한다. 해제 시 owner/generation 경로를 삭제·rename하지 않으므로 최종 소유권 확인 직후 교체된
+  다른 token을 해제하지 않는다. 획득 EEXIST/Windows EPERM만 monotonic timeout 안에서 재시도한다.
+  다음 generation mkdir 직후와 owner 초기화 후의 작업 진입·쓰기 전·해제 경계에서도 캡처한 이전
+  owner/release token을 재검증한다. 그 사이 교체되면 consumer를 실행하지 않거나 갱신을 거절하며
+  이미 확보한 generation은 미해제 barrier로 보존한다. 이전 세대 검증 결과만으로 새 작업을 승인하지 않는다.
+  초기화 실패, 불완전한 release, generation 누락 및 abandoned/replaced lock은 자동 복구하지 않는다.
+  세대별 디렉터리와 표식은 read/refresh마다 누적되며 online GC는 제공하지 않는다. 보존량 모니터링과
+  실행 writer가 없는 상태에서의 명시적 보관/복구가 필요하다. 기존 file 형태 barrier도 덮어쓰지 않는다.
+  직렬화 보장은 이 프로토콜을 사용하는 repository 프로세스 사이의 동시성에 한정된다. 실행 중인
+  reader/writer가 있는 동안 외부 도구로 owner/release/state 경로를 교체하는 online takeover는 지원하지
+  않는다. 복구 전 모든 reader/writer를 중지해야 한다. 소유권 재검증은 관측한 손상을 거절하는 방어이며
+  외부 파일 교체와 state rename을 원자적으로 묶는 OS fencing이 아니다. 실제 rename 직전 정지한
+  writer에 대해 별도 프로세스의 획득 timeout, 기존 owner/state 보존, 완료 후 stale CAS 거절을 검증한다.
+  중첩 projection/state의 객체 key 순서도 실제 재계산 문서의 직렬화 bytes와 대조한다.
+  Rename 후 directory sync 실패는 성공으로 보고하지 않으며
+  동일 입력 재시도로 저장된 결과의 durability를 다시 확인한다. Windows directory fsync EPERM은 기존 저장소와
+  같은 제한으로 처리한다. 프로세스 재시도/CAS 경합, 실제 manual/selector 부분 fill 원본 및 I/O fault를 검증한다.
+  이 저장소는 역사적 snapshot projection 저장/CAS이며 **현재 portfolio 원장의 최신성이나 신규 할당 권한이
+  아니다**. Source lease는 저장 commit 전체를 묶지 않으며 snapshot 회계, 예약/mandate activation/fill의
+  원자 transaction과 현재 selection budget/sizing gate는 후속이다. Source lock 안에서 이 저장소를 재진입하면
+  안 된다. 새 저장 형식만 추가하므로 코드 rollback에 기존 파일 변환·삭제가 필요 없고 이전 코드는 새 파일을
+  사용하지 않는다. 손상 파일과 실패 lock은 진행 중인 writer 및 원본 일관성을 확인하는 명시적 복구가 필요하다.
 - 선행 읽기 모델 `resolveStoredSnapshotOpeningCapacity`는 실제 저장된 active policy, sizing snapshot,
   pending plan/fill/reservation 원본과 capacity event history를 결합해 snapshot cutoff의 점유량을 계산한다.
   모든 bucket에 명시적인 `openingCapacityPolicy`가 필요하고 snapshot policy hash와 active policy가
