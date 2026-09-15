@@ -132,6 +132,49 @@ test("opening capacity release preserves a replacement after final ownership rea
   });
 });
 
+test("opening capacity claims revalidate a changed predecessor before any consumer work", async (context) => {
+  for (const phase of ["before-mkdir", "after-mkdir", "after-owner-sync"] as const) for (const field of ["owner", "release"] as const) {
+    await directory(async (dir) => {
+      const repository = new BucketOpeningCapacityStateFileRepository(dir);
+      assert.equal(await repository.readVerifiedSnapshot(), null);
+      const { lockPath, statePath } = createBucketOpeningCapacityStatePaths(dir);
+      const oldOwnerPath = join(lockPath, "1", "owner"), token = await fs.readFile(oldOwnerPath, "utf8");
+      const target = field === "owner" ? oldOwnerPath : join(lockPath, "1", `${token.trim()}.released`);
+      const replacement = "22222222-2222-4222-8222-222222222222\n";
+      const originalMkdir = fs.mkdir, originalOpen = fs.open, originalRead = fs.readFile;
+      let injected = false, consumers = 0;
+      const inject = async () => { injected = true; await fs.writeFile(target, replacement); };
+      const mkdirMock = context.mock.method(fs, "mkdir", async (...args: Parameters<typeof fs.mkdir>) => {
+        const selected = args[0] === join(lockPath, "2");
+        if (selected && phase === "before-mkdir") await inject();
+        const result = await originalMkdir(...args);
+        if (selected && phase === "after-mkdir") await inject();
+        return result;
+      });
+      const openMock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+        const handle = await originalOpen(...args);
+        if (phase === "after-owner-sync" && args[0] === join(lockPath, "2", "owner") && args[1] === "wx") {
+          const sync = handle.sync.bind(handle);
+          context.mock.method(handle, "sync", async () => { await sync(); await inject(); });
+        }
+        return handle;
+      });
+      const readMock = context.mock.method(fs, "readFile", async (...args: Parameters<typeof fs.readFile>) => {
+        if (args[0] === statePath) consumers += 1;
+        return originalRead(...args);
+      });
+      syncBuiltinESMExports();
+      try { await assert.rejects(repository.readVerifiedSnapshot(), /predecessor changed/); }
+      finally { mkdirMock.mock.restore(); openMock.mock.restore(); readMock.mock.restore(); syncBuiltinESMExports(); }
+      assert.equal(injected, true); assert.equal(consumers, 0);
+      assert.equal(await fs.readFile(target, "utf8"), replacement);
+      assert.ok((await fs.readdir(lockPath)).includes("2"));
+      assert.equal((await fs.readdir(join(lockPath, "2"))).some((name) => name.endsWith(".released")), false);
+      await assert.rejects(new BucketOpeningCapacityStateFileRepository(dir, { lockTimeoutMs: 30 }).readVerifiedSnapshot(), /lock is unavailable/);
+    });
+  }
+});
+
 test("opening capacity state read errors are not treated as acquisition contention", async (context) => {
   for (const code of ["EEXIST", "EPERM"]) await directory(async (dir) => {
     const { statePath } = createBucketOpeningCapacityStatePaths(dir), original = fs.readFile, denied = failure(code);

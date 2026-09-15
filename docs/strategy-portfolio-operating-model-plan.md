@@ -952,6 +952,9 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   `<UUID>.released` 표식이 정확히 일치하고 sync된 경우에만 다음 연속 generation을 exclusive mkdir로
   획득한다. 해제 시 owner/generation 경로를 삭제·rename하지 않으므로 최종 소유권 확인 직후 교체된
   다른 token을 해제하지 않는다. 획득 EEXIST/Windows EPERM만 monotonic timeout 안에서 재시도한다.
+  다음 generation mkdir 직후와 owner 초기화 후의 작업 진입·쓰기 전·해제 경계에서도 캡처한 이전
+  owner/release token을 재검증한다. 그 사이 교체되면 consumer를 실행하지 않거나 갱신을 거절하며
+  이미 확보한 generation은 미해제 barrier로 보존한다. 이전 세대 검증 결과만으로 새 작업을 승인하지 않는다.
   초기화 실패, 불완전한 release, generation 누락 및 abandoned/replaced lock은 자동 복구하지 않는다.
   세대별 디렉터리와 표식은 read/refresh마다 누적되며 online GC는 제공하지 않는다. 보존량 모니터링과
   실행 writer가 없는 상태에서의 명시적 보관/복구가 필요하다. 기존 file 형태 barrier도 덮어쓰지 않는다.

@@ -107,8 +107,8 @@ export class BucketOpeningCapacityStateFileRepository {
     let lastContention: unknown;
     while (true) {
       if (performance.now() >= deadline) throw new Error("opening capacity state lock is unavailable", { cause: lastContention });
-      const generation = await nextLockGeneration(this.paths.lockPath);
-      const generationPath = generation === null ? null : join(this.paths.lockPath, String(generation));
+      const claim = await nextLockGeneration(this.paths.lockPath);
+      const generationPath = claim === null ? null : join(this.paths.lockPath, String(claim.generation));
       try {
         if (generationPath === null) throw Object.assign(new Error("opening capacity owner has not released its generation"), { code: "EEXIST" });
         await mkdir(generationPath);
@@ -119,6 +119,9 @@ export class BucketOpeningCapacityStateFileRepository {
         await new Promise((done) => setTimeout(done, Math.max(1, Math.min(this.options.lockRetryDelayMs, deadline - performance.now()))));
         continue;
       }
+      // Claiming the next directory does not authorize work if its previously observed predecessor changed.
+      // Keep a failed claim as an unreleased barrier; deleting it would reintroduce ownership races.
+      await assertLockPredecessor(claim!.predecessor);
       const token = `${randomUUID()}\n`;
       const ownerPath = join(generationPath!, "owner");
       // Failed initialization leaves this generation as a barrier; no automatic recovery or generation deletion.
@@ -128,6 +131,7 @@ export class BucketOpeningCapacityStateFileRepository {
       await syncDirectory(this.paths.lockPath);
       const assertOwned = async () => {
         if (await readFile(ownerPath, "utf8") !== token) throw new Error("opening capacity state lock ownership changed");
+        await assertLockPredecessor(claim!.predecessor);
       };
       try { await assertOwned(); return await operation(assertOwned); }
       finally {
@@ -144,7 +148,8 @@ export class BucketOpeningCapacityStateFileRepository {
 }
 
 /** Append-only lock generations avoid a check-then-unlink race on a reusable ownership path. */
-async function nextLockGeneration(root: string): Promise<number | null> {
+type LockPredecessor = Readonly<{ ownerPath: string; releasePath: string; token: string }>;
+async function nextLockGeneration(root: string): Promise<{ generation: number; predecessor: LockPredecessor | null } | null> {
   const entries = await readdir(root, { withFileTypes: true });
   const numbers = entries.map((entry) => {
     const number = Number(entry.name);
@@ -155,7 +160,7 @@ async function nextLockGeneration(root: string): Promise<number | null> {
   }).sort((a, b) => a - b);
   if (numbers.some((number, index) => number !== index + 1)) throw new Error("opening capacity lock generation chain has a gap");
   const last = numbers.at(-1);
-  if (last === undefined) return 1;
+  if (last === undefined) return { generation: 1, predecessor: null };
   const path = join(root, String(last)), ownerPath = join(path, "owner");
   let token: string;
   try { token = await readFile(ownerPath, "utf8"); }
@@ -169,7 +174,16 @@ async function nextLockGeneration(root: string): Promise<number | null> {
   await syncFile(releasePath);
   if (await readFile(ownerPath, "utf8") !== token) throw new Error("opening capacity state lock ownership changed");
   if (!Number.isSafeInteger(last + 1)) throw new Error("opening capacity lock generation overflow");
-  return last + 1;
+  return { generation: last + 1, predecessor: Object.freeze({ ownerPath, releasePath, token }) };
+}
+
+async function assertLockPredecessor(predecessor: LockPredecessor | null): Promise<void> {
+  if (predecessor === null) return;
+  const { ownerPath, releasePath, token } = predecessor;
+  try {
+    if (await readFile(ownerPath, "utf8") !== token || await readFile(releasePath, "utf8") !== token ||
+      await readFile(ownerPath, "utf8") !== token) throw new Error("owner or release token mismatch");
+  } catch (error) { throw new Error("opening capacity lock predecessor changed", { cause: error }); }
 }
 
 function makeDocument(projections: readonly Projection[]): StoredBucketOpeningCapacityDocument {
