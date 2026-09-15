@@ -1,0 +1,844 @@
+{
+  "buy": {
+    "expectedSnapshot": {
+      "portfolio": {
+        "portfolioId": "paper_fixture",
+        "cashKrw": 1000000,
+        "positions": [],
+        "updatedAt": "2026-06-11T00:00:00.000Z"
+      },
+      "revisionHash": null
+    },
+    "packet": {
+      "packetId": "prepared_fixture",
+      "mode": "paper_only",
+      "generatedAt": "2026-06-11T00:00:00.000Z",
+      "expiresAt": "2026-06-11T00:05:00.000Z",
+      "virtualPortfolio": {
+        "portfolioId": "paper_fixture",
+        "cashKrw": 1000000,
+        "positions": [],
+        "updatedAt": "2026-06-11T00:00:00.000Z"
+      },
+      "candidates": [
+        {
+          "market": "KR",
+          "symbol": "SYNTHETIC",
+          "name": "Synthetic",
+          "lastPriceKrw": 70000,
+          "ranking": 1,
+          "score": 90,
+          "reasonCodes": [
+            "fixture"
+          ],
+          "sourceRefs": [
+            "synthetic:fixture"
+          ],
+          "collectedAt": "2026-06-11T00:00:00.000Z",
+          "staleAfter": "2026-06-11T00:05:00.000Z"
+        }
+      ],
+      "constraints": {
+        "maxNewPositions": 3,
+        "maxBudgetPerSymbolKrw": 100000,
+        "allowedActions": [
+          "VIRTUAL_BUY",
+          "VIRTUAL_SELL",
+          "VIRTUAL_HOLD"
+        ]
+      }
+    },
+    "providerDecision": {
+      "packetId": "prepared_fixture",
+      "packetHash": "sha256:c7ff885cde8e387dec6bccc4d9a98dd4548c03a9b66c419b56bd4c68ac50b2c9",
+      "promptVersion": "static-fixture-v1",
+      "modelId": "static-decision-provider",
+      "schemaVersion": "virtual-decision.schema.v1",
+      "policyVersion": "paper-risk-policy.v1",
+      "summary": "Synthetic decision",
+      "decisions": [
+        {
+          "symbol": "SYNTHETIC",
+          "market": "KR",
+          "action": "VIRTUAL_BUY",
+          "confidence": 0.7,
+          "budgetKrw": 70000,
+          "thesis": "Synthetic fixture",
+          "riskFactors": [
+            "synthetic"
+          ],
+          "dataRefs": [
+            "synthetic:fixture"
+          ],
+          "claimSupport": [
+            {
+              "claim": "Synthetic fixture",
+              "dataRefs": [
+                "synthetic:fixture"
+              ]
+            }
+          ],
+          "expiresAt": "2026-06-11T00:05:00.000Z"
+        }
+      ]
+    },
+    "evaluatedAt": "2026-06-11T00:01:00.000Z",
+    "decisionSummary": "Synthetic paper intent",
+    "schemaVersion": "paper_prepared_application.v1",
+    "executionModelVersion": "paper_order_engine.v1",
+    "decision": {
+      "packetId": "prepared_fixture",
+      "packetHash": "sha256:c7ff885cde8e387dec6bccc4d9a98dd4548c03a9b66c419b56bd4c68ac50b2c9",
+      "decisionHash": "sha256:62da58cda6bcd5880a308385255a0a0a828699d25b12e2e26810b28b2b01f42a",
+      "promptVersion": "static-fixture-v1",
+      "modelId": "static-decision-provider",
+      "schemaVersion": "virtual-decision.schema.v1",
+      "policyVersion": "paper-risk-policy.v1",
+      "summary": "Synthetic decision",
+      "decisions": [
+        {
+          "symbol": "SYNTHETIC",
+          "market": "KR",
+          "action": "VIRTUAL_BUY",
+          "confidence": 0.7,
+          "budgetKrw": 70000,
+          "thesis": "Synthetic fixture",
+          "riskFactors": [
+            "synthetic"
+          ],
+          "dataRefs": [
+            "synthetic:fixture"
+          ],
+          "claimSupport": [
+            {
+              "claim": "Synthetic fixture",
+              "dataRefs": [
+                "synthetic:fixture"
+              ]
+            }
+          ],
+          "confidenceBreakdown": {
+            "modelConfidence": 0.7,
+            "evidenceQualityScore": 92,
+            "dataCompletenessScore": 100,
+            "policyEligibilityScore": 50,
+            "executionRiskScore": 100,
+            "overallScore": 85,
+            "reasonCodes": [
+              "MODEL_CONFIDENCE_HIGH",
+              "EVIDENCE_QUALITY_HIGH",
+              "DATA_COMPLETENESS_HIGH",
+              "POLICY_ELIGIBILITY_MEDIUM",
+              "EXECUTION_RISK_CONTROL_HIGH"
+            ]
+          },
+          "expiresAt": "2026-06-11T00:05:00.000Z"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "portfolio": {
+          "portfolioId": "paper_fixture",
+          "cashKrw": 930000,
+          "positions": [
+            {
+              "market": "KR",
+              "symbol": "SYNTHETIC",
+              "quantity": 1,
+              "averagePriceKrw": 70000,
+              "marketPriceKrw": 70000,
+              "marketValueKrw": 70000,
+              "unrealizedPnlKrw": 0,
+              "updatedAt": "2026-06-11T00:01:00.000Z"
+            }
+          ],
+          "updatedAt": "2026-06-11T00:01:00.000Z"
+        },
+        "riskDecision": {
+          "riskDecisionId": "vrisk_prepared_fixture_SYNTHETIC",
+          "packetId": "prepared_fixture",
+          "symbol": "SYNTHETIC",
+          "approved": true,
+          "rejectCodes": [],
+          "checkedRules": [
+            "packet_freshness",
+            "decision_freshness",
+            "candidate_presence",
+            "candidate_price",
+            "candidate_lifecycle",
+            "cash_limit",
+            "cash_reserve",
+            "regime_cash_reserve",
+            "budget_limit",
+            "target_exposure",
+            "symbol_exposure",
+            "position_weight",
+            "bucket_budget",
+            "bucket_turnover",
+            "sector_exposure",
+            "country_exposure",
+            "currency_exposure",
+            "exposure_metadata",
+            "hedge_policy",
+            "sell_position",
+            "cooldown"
+          ],
+          "createdAt": "2026-06-11T00:01:00.000Z"
+        },
+        "trade": {
+          "tradeId": "vtrade_prepared_fixture_SYNTHETIC_VIRTUAL_BUY",
+          "packetId": "prepared_fixture",
+          "decisionId": "vrisk_prepared_fixture_SYNTHETIC",
+          "market": "KR",
+          "symbol": "SYNTHETIC",
+          "action": "VIRTUAL_BUY",
+          "quantity": 1,
+          "sourcePriceKrw": 70000,
+          "priceKrw": 70000,
+          "fillPriceRule": "current_candidate_last_price",
+          "grossAmountKrw": 70000,
+          "amountKrw": 70000,
+          "netAmountKrw": 70000,
+          "feeKrw": 0,
+          "taxKrw": 0,
+          "slippageKrw": 0,
+          "spreadCostKrw": 0,
+          "impactCostKrw": 0,
+          "totalCostKrw": 0,
+          "costModelVersion": "paper_cost_model.v5",
+          "requestedNotionalKrw": 70000,
+          "filledNotionalKrw": 70000,
+          "fillStatus": "filled",
+          "liquidityStatus": "not_modeled",
+          "maxParticipationRate": 0.1,
+          "priceSourceRefs": [
+            "synthetic:fixture"
+          ],
+          "fillRatio": 1,
+          "fractionalShares": true,
+          "status": "VIRTUAL_FILLED",
+          "executedAt": "2026-06-11T00:01:00.000Z"
+        }
+      }
+    ],
+    "auditEvents": [
+      {
+        "eventId": "audit_virtual_decision_recorded_1781136060000",
+        "eventType": "VIRTUAL_DECISION_RECORDED",
+        "actor": "system",
+        "summary": "Synthetic paper intent",
+        "maskedRefs": [],
+        "createdAt": "2026-06-11T00:01:00.000Z"
+      },
+      {
+        "eventId": "audit_virtual_risk_approved_1781136060000",
+        "eventType": "VIRTUAL_RISK_APPROVED",
+        "actor": "system",
+        "summary": "KR:SYNTHETIC VIRTUAL_BUY",
+        "maskedRefs": [],
+        "createdAt": "2026-06-11T00:01:00.000Z"
+      },
+      {
+        "eventId": "audit_paper_order_filled_1781136060000",
+        "eventType": "PAPER_ORDER_FILLED",
+        "actor": "system",
+        "summary": "KR:SYNTHETIC VIRTUAL_BUY",
+        "maskedRefs": [],
+        "createdAt": "2026-06-11T00:01:00.000Z"
+      }
+    ],
+    "portfolio": {
+      "portfolioId": "paper_fixture",
+      "cashKrw": 930000,
+      "positions": [
+        {
+          "market": "KR",
+          "symbol": "SYNTHETIC",
+          "quantity": 1,
+          "averagePriceKrw": 70000,
+          "marketPriceKrw": 70000,
+          "marketValueKrw": 70000,
+          "unrealizedPnlKrw": 0,
+          "updatedAt": "2026-06-11T00:01:00.000Z"
+        }
+      ],
+      "updatedAt": "2026-06-11T00:01:00.000Z"
+    },
+    "applicationHash": "sha256:1eaa1b761fec26f07049da07905b0a5c2d0937844063c7c2500bc71b1a6d556e"
+  },
+  "sell": {
+    "expectedSnapshot": {
+      "portfolio": {
+        "portfolioId": "paper_fixture",
+        "cashKrw": 930000,
+        "positions": [
+          {
+            "market": "KR",
+            "symbol": "SYNTHETIC",
+            "quantity": 1,
+            "averagePriceKrw": 70000,
+            "marketPriceKrw": 70000,
+            "marketValueKrw": 70000,
+            "unrealizedPnlKrw": 0,
+            "updatedAt": "2026-06-11T00:01:00.000Z"
+          }
+        ],
+        "updatedAt": "2026-06-11T00:01:00.000Z"
+      },
+      "revisionHash": null
+    },
+    "packet": {
+      "packetId": "prepared_fixture",
+      "mode": "paper_only",
+      "generatedAt": "2026-06-11T00:00:00.000Z",
+      "expiresAt": "2026-06-11T00:05:00.000Z",
+      "virtualPortfolio": {
+        "portfolioId": "paper_fixture",
+        "cashKrw": 930000,
+        "positions": [
+          {
+            "market": "KR",
+            "symbol": "SYNTHETIC",
+            "quantity": 1,
+            "averagePriceKrw": 70000,
+            "marketPriceKrw": 70000,
+            "marketValueKrw": 70000,
+            "unrealizedPnlKrw": 0,
+            "updatedAt": "2026-06-11T00:01:00.000Z"
+          }
+        ],
+        "updatedAt": "2026-06-11T00:01:00.000Z"
+      },
+      "candidates": [
+        {
+          "market": "KR",
+          "symbol": "SYNTHETIC",
+          "name": "Synthetic",
+          "lastPriceKrw": 70000,
+          "ranking": 1,
+          "score": 90,
+          "reasonCodes": [
+            "fixture"
+          ],
+          "sourceRefs": [
+            "synthetic:fixture"
+          ],
+          "collectedAt": "2026-06-11T00:00:00.000Z",
+          "staleAfter": "2026-06-11T00:05:00.000Z"
+        }
+      ],
+      "constraints": {
+        "maxNewPositions": 3,
+        "maxBudgetPerSymbolKrw": 100000,
+        "allowedActions": [
+          "VIRTUAL_BUY",
+          "VIRTUAL_SELL",
+          "VIRTUAL_HOLD"
+        ]
+      }
+    },
+    "providerDecision": {
+      "packetId": "prepared_fixture",
+      "packetHash": "sha256:6464b662ad51cc11d1a0c5a2b95de49bdc633614e09dda8662b5ba5ad208bf3c",
+      "promptVersion": "static-fixture-v1",
+      "modelId": "static-decision-provider",
+      "schemaVersion": "virtual-decision.schema.v1",
+      "policyVersion": "paper-risk-policy.v1",
+      "summary": "Synthetic decision",
+      "decisions": [
+        {
+          "symbol": "SYNTHETIC",
+          "market": "KR",
+          "action": "VIRTUAL_SELL",
+          "confidence": 0.7,
+          "budgetKrw": 0,
+          "sellAll": true,
+          "reduceOnly": true,
+          "thesis": "Synthetic fixture",
+          "riskFactors": [
+            "synthetic"
+          ],
+          "dataRefs": [
+            "synthetic:fixture"
+          ],
+          "claimSupport": [
+            {
+              "claim": "Synthetic fixture",
+              "dataRefs": [
+                "synthetic:fixture"
+              ]
+            }
+          ],
+          "expiresAt": "2026-06-11T00:05:00.000Z"
+        }
+      ]
+    },
+    "evaluatedAt": "2026-06-11T00:01:00.000Z",
+    "decisionSummary": "Synthetic paper intent",
+    "schemaVersion": "paper_prepared_application.v1",
+    "executionModelVersion": "paper_order_engine.v1",
+    "decision": {
+      "packetId": "prepared_fixture",
+      "packetHash": "sha256:6464b662ad51cc11d1a0c5a2b95de49bdc633614e09dda8662b5ba5ad208bf3c",
+      "decisionHash": "sha256:3402897015305b2a94cb79437968c7a7bfc53cc43a8606b55e2fd5ed758c7d64",
+      "promptVersion": "static-fixture-v1",
+      "modelId": "static-decision-provider",
+      "schemaVersion": "virtual-decision.schema.v1",
+      "policyVersion": "paper-risk-policy.v1",
+      "summary": "Synthetic decision",
+      "decisions": [
+        {
+          "symbol": "SYNTHETIC",
+          "market": "KR",
+          "action": "VIRTUAL_SELL",
+          "confidence": 0.7,
+          "budgetKrw": 0,
+          "sellAll": true,
+          "reduceOnly": true,
+          "thesis": "Synthetic fixture",
+          "riskFactors": [
+            "synthetic"
+          ],
+          "dataRefs": [
+            "synthetic:fixture"
+          ],
+          "claimSupport": [
+            {
+              "claim": "Synthetic fixture",
+              "dataRefs": [
+                "synthetic:fixture"
+              ]
+            }
+          ],
+          "confidenceBreakdown": {
+            "modelConfidence": 0.7,
+            "evidenceQualityScore": 92,
+            "dataCompletenessScore": 100,
+            "policyEligibilityScore": 50,
+            "executionRiskScore": 100,
+            "overallScore": 85,
+            "reasonCodes": [
+              "MODEL_CONFIDENCE_HIGH",
+              "EVIDENCE_QUALITY_HIGH",
+              "DATA_COMPLETENESS_HIGH",
+              "POLICY_ELIGIBILITY_MEDIUM",
+              "EXECUTION_RISK_CONTROL_HIGH"
+            ]
+          },
+          "expiresAt": "2026-06-11T00:05:00.000Z"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "portfolio": {
+          "portfolioId": "paper_fixture",
+          "cashKrw": 1000000,
+          "positions": [],
+          "updatedAt": "2026-06-11T00:01:00.000Z"
+        },
+        "riskDecision": {
+          "riskDecisionId": "vrisk_prepared_fixture_SYNTHETIC",
+          "packetId": "prepared_fixture",
+          "symbol": "SYNTHETIC",
+          "approved": true,
+          "rejectCodes": [],
+          "checkedRules": [
+            "packet_freshness",
+            "decision_freshness",
+            "candidate_presence",
+            "candidate_price",
+            "candidate_lifecycle",
+            "cash_limit",
+            "cash_reserve",
+            "regime_cash_reserve",
+            "budget_limit",
+            "target_exposure",
+            "symbol_exposure",
+            "position_weight",
+            "bucket_budget",
+            "bucket_turnover",
+            "sector_exposure",
+            "country_exposure",
+            "currency_exposure",
+            "exposure_metadata",
+            "hedge_policy",
+            "sell_position",
+            "cooldown"
+          ],
+          "createdAt": "2026-06-11T00:01:00.000Z"
+        },
+        "trade": {
+          "tradeId": "vtrade_prepared_fixture_SYNTHETIC_VIRTUAL_SELL",
+          "packetId": "prepared_fixture",
+          "decisionId": "vrisk_prepared_fixture_SYNTHETIC",
+          "market": "KR",
+          "symbol": "SYNTHETIC",
+          "action": "VIRTUAL_SELL",
+          "quantity": 1,
+          "sourcePriceKrw": 70000,
+          "priceKrw": 70000,
+          "fillPriceRule": "current_candidate_last_price",
+          "grossAmountKrw": 70000,
+          "amountKrw": 70000,
+          "netAmountKrw": 70000,
+          "feeKrw": 0,
+          "taxKrw": 0,
+          "slippageKrw": 0,
+          "spreadCostKrw": 0,
+          "impactCostKrw": 0,
+          "totalCostKrw": 0,
+          "costModelVersion": "paper_cost_model.v5",
+          "requestedNotionalKrw": 70000,
+          "filledNotionalKrw": 70000,
+          "fillStatus": "filled",
+          "liquidityStatus": "not_modeled",
+          "maxParticipationRate": 0.1,
+          "realizedPnlKrw": 0,
+          "priceSourceRefs": [
+            "synthetic:fixture"
+          ],
+          "fillRatio": 1,
+          "fractionalShares": true,
+          "status": "VIRTUAL_FILLED",
+          "executedAt": "2026-06-11T00:01:00.000Z"
+        }
+      }
+    ],
+    "auditEvents": [
+      {
+        "eventId": "audit_virtual_decision_recorded_1781136060000",
+        "eventType": "VIRTUAL_DECISION_RECORDED",
+        "actor": "system",
+        "summary": "Synthetic paper intent",
+        "maskedRefs": [],
+        "createdAt": "2026-06-11T00:01:00.000Z"
+      },
+      {
+        "eventId": "audit_virtual_risk_approved_1781136060000",
+        "eventType": "VIRTUAL_RISK_APPROVED",
+        "actor": "system",
+        "summary": "KR:SYNTHETIC VIRTUAL_SELL",
+        "maskedRefs": [],
+        "createdAt": "2026-06-11T00:01:00.000Z"
+      },
+      {
+        "eventId": "audit_paper_order_filled_1781136060000",
+        "eventType": "PAPER_ORDER_FILLED",
+        "actor": "system",
+        "summary": "KR:SYNTHETIC VIRTUAL_SELL",
+        "maskedRefs": [],
+        "createdAt": "2026-06-11T00:01:00.000Z"
+      }
+    ],
+    "portfolio": {
+      "portfolioId": "paper_fixture",
+      "cashKrw": 1000000,
+      "positions": [],
+      "updatedAt": "2026-06-11T00:01:00.000Z"
+    },
+    "applicationHash": "sha256:4070079ff34c18462d6f9efc174c2996892c28fca9ea04b92579229b1a181e35"
+  },
+  "hold": {
+    "expectedSnapshot": {
+      "portfolio": {
+        "portfolioId": "paper_fixture",
+        "cashKrw": 1000000,
+        "positions": [],
+        "updatedAt": "2026-06-11T00:00:00.000Z"
+      },
+      "revisionHash": null
+    },
+    "packet": {
+      "packetId": "prepared_fixture",
+      "mode": "paper_only",
+      "generatedAt": "2026-06-11T00:00:00.000Z",
+      "expiresAt": "2026-06-11T00:05:00.000Z",
+      "virtualPortfolio": {
+        "portfolioId": "paper_fixture",
+        "cashKrw": 1000000,
+        "positions": [],
+        "updatedAt": "2026-06-11T00:00:00.000Z"
+      },
+      "candidates": [
+        {
+          "market": "KR",
+          "symbol": "SYNTHETIC",
+          "name": "Synthetic",
+          "lastPriceKrw": 70000,
+          "ranking": 1,
+          "score": 90,
+          "reasonCodes": [
+            "fixture"
+          ],
+          "sourceRefs": [
+            "synthetic:fixture"
+          ],
+          "collectedAt": "2026-06-11T00:00:00.000Z",
+          "staleAfter": "2026-06-11T00:05:00.000Z"
+        }
+      ],
+      "constraints": {
+        "maxNewPositions": 3,
+        "maxBudgetPerSymbolKrw": 100000,
+        "allowedActions": [
+          "VIRTUAL_BUY",
+          "VIRTUAL_SELL",
+          "VIRTUAL_HOLD"
+        ]
+      }
+    },
+    "providerDecision": {
+      "packetId": "prepared_fixture",
+      "packetHash": "sha256:c7ff885cde8e387dec6bccc4d9a98dd4548c03a9b66c419b56bd4c68ac50b2c9",
+      "promptVersion": "static-fixture-v1",
+      "modelId": "static-decision-provider",
+      "schemaVersion": "virtual-decision.schema.v1",
+      "policyVersion": "paper-risk-policy.v1",
+      "summary": "Synthetic decision",
+      "decisions": []
+    },
+    "evaluatedAt": "2026-06-11T00:01:00.000Z",
+    "decisionSummary": "Synthetic paper intent",
+    "schemaVersion": "paper_prepared_application.v1",
+    "executionModelVersion": "paper_order_engine.v1",
+    "decision": {
+      "packetId": "prepared_fixture",
+      "packetHash": "sha256:c7ff885cde8e387dec6bccc4d9a98dd4548c03a9b66c419b56bd4c68ac50b2c9",
+      "decisionHash": "sha256:17b479c426fcb3f3a3bcd6f01a2ab03081e4a99f2a6c44d5c6b1be48c5be8168",
+      "promptVersion": "static-fixture-v1",
+      "modelId": "static-decision-provider",
+      "schemaVersion": "virtual-decision.schema.v1",
+      "policyVersion": "paper-risk-policy.v1",
+      "summary": "Synthetic decision",
+      "decisions": []
+    },
+    "steps": [],
+    "auditEvents": [
+      {
+        "eventId": "audit_virtual_decision_recorded_1781136060000",
+        "eventType": "VIRTUAL_DECISION_RECORDED",
+        "actor": "system",
+        "summary": "Synthetic paper intent",
+        "maskedRefs": [],
+        "createdAt": "2026-06-11T00:01:00.000Z"
+      }
+    ],
+    "portfolio": {
+      "portfolioId": "paper_fixture",
+      "cashKrw": 1000000,
+      "positions": [],
+      "updatedAt": "2026-06-11T00:00:00.000Z"
+    },
+    "applicationHash": "sha256:1a5fdec11ca944952268456adbbdce5f6a5e0c0ff2593b4f480785198dd9eba2"
+  },
+  "rejected": {
+    "expectedSnapshot": {
+      "portfolio": {
+        "portfolioId": "paper_fixture",
+        "cashKrw": 1000000,
+        "positions": [],
+        "updatedAt": "2026-06-11T00:00:00.000Z"
+      },
+      "revisionHash": null
+    },
+    "packet": {
+      "packetId": "prepared_fixture",
+      "mode": "paper_only",
+      "generatedAt": "2026-06-11T00:00:00.000Z",
+      "expiresAt": "2026-06-11T00:05:00.000Z",
+      "virtualPortfolio": {
+        "portfolioId": "paper_fixture",
+        "cashKrw": 1000000,
+        "positions": [],
+        "updatedAt": "2026-06-11T00:00:00.000Z"
+      },
+      "candidates": [
+        {
+          "market": "KR",
+          "symbol": "SYNTHETIC",
+          "name": "Synthetic",
+          "lastPriceKrw": 70000,
+          "ranking": 1,
+          "score": 90,
+          "reasonCodes": [
+            "fixture"
+          ],
+          "sourceRefs": [
+            "synthetic:fixture"
+          ],
+          "collectedAt": "2026-06-11T00:00:00.000Z",
+          "staleAfter": "2026-06-11T00:05:00.000Z"
+        }
+      ],
+      "constraints": {
+        "maxNewPositions": 3,
+        "maxBudgetPerSymbolKrw": 100000,
+        "allowedActions": [
+          "VIRTUAL_BUY",
+          "VIRTUAL_SELL",
+          "VIRTUAL_HOLD"
+        ]
+      }
+    },
+    "providerDecision": {
+      "packetId": "prepared_fixture",
+      "packetHash": "sha256:c7ff885cde8e387dec6bccc4d9a98dd4548c03a9b66c419b56bd4c68ac50b2c9",
+      "promptVersion": "static-fixture-v1",
+      "modelId": "static-decision-provider",
+      "schemaVersion": "virtual-decision.schema.v1",
+      "policyVersion": "paper-risk-policy.v1",
+      "summary": "Synthetic decision",
+      "decisions": [
+        {
+          "symbol": "SYNTHETIC",
+          "market": "KR",
+          "action": "VIRTUAL_BUY",
+          "confidence": 0.7,
+          "budgetKrw": 70000,
+          "thesis": "Synthetic fixture",
+          "riskFactors": [
+            "synthetic"
+          ],
+          "dataRefs": [
+            "synthetic:fixture"
+          ],
+          "claimSupport": [
+            {
+              "claim": "Synthetic fixture",
+              "dataRefs": [
+                "synthetic:fixture"
+              ]
+            }
+          ],
+          "expiresAt": "2026-06-11T00:05:00.000Z"
+        }
+      ]
+    },
+    "evaluatedAt": "2026-06-12T00:00:00.000Z",
+    "decisionSummary": "Synthetic paper intent",
+    "schemaVersion": "paper_prepared_application.v1",
+    "executionModelVersion": "paper_order_engine.v1",
+    "decision": {
+      "packetId": "prepared_fixture",
+      "packetHash": "sha256:c7ff885cde8e387dec6bccc4d9a98dd4548c03a9b66c419b56bd4c68ac50b2c9",
+      "decisionHash": "sha256:62da58cda6bcd5880a308385255a0a0a828699d25b12e2e26810b28b2b01f42a",
+      "promptVersion": "static-fixture-v1",
+      "modelId": "static-decision-provider",
+      "schemaVersion": "virtual-decision.schema.v1",
+      "policyVersion": "paper-risk-policy.v1",
+      "summary": "Synthetic decision",
+      "decisions": [
+        {
+          "symbol": "SYNTHETIC",
+          "market": "KR",
+          "action": "VIRTUAL_BUY",
+          "confidence": 0.7,
+          "budgetKrw": 70000,
+          "thesis": "Synthetic fixture",
+          "riskFactors": [
+            "synthetic"
+          ],
+          "dataRefs": [
+            "synthetic:fixture"
+          ],
+          "claimSupport": [
+            {
+              "claim": "Synthetic fixture",
+              "dataRefs": [
+                "synthetic:fixture"
+              ]
+            }
+          ],
+          "confidenceBreakdown": {
+            "modelConfidence": 0.7,
+            "evidenceQualityScore": 92,
+            "dataCompletenessScore": 100,
+            "policyEligibilityScore": 50,
+            "executionRiskScore": 100,
+            "overallScore": 85,
+            "reasonCodes": [
+              "MODEL_CONFIDENCE_HIGH",
+              "EVIDENCE_QUALITY_HIGH",
+              "DATA_COMPLETENESS_HIGH",
+              "POLICY_ELIGIBILITY_MEDIUM",
+              "EXECUTION_RISK_CONTROL_HIGH"
+            ]
+          },
+          "expiresAt": "2026-06-11T00:05:00.000Z"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "portfolio": {
+          "portfolioId": "paper_fixture",
+          "cashKrw": 1000000,
+          "positions": [],
+          "updatedAt": "2026-06-11T00:00:00.000Z"
+        },
+        "riskDecision": {
+          "riskDecisionId": "vrisk_prepared_fixture_SYNTHETIC",
+          "packetId": "prepared_fixture",
+          "symbol": "SYNTHETIC",
+          "approved": false,
+          "rejectCodes": [
+            "VIRTUAL_PACKET_STALE",
+            "VIRTUAL_DECISION_STALE"
+          ],
+          "checkedRules": [
+            "packet_freshness",
+            "decision_freshness",
+            "candidate_presence",
+            "candidate_price",
+            "candidate_lifecycle",
+            "cash_limit",
+            "cash_reserve",
+            "regime_cash_reserve",
+            "budget_limit",
+            "target_exposure",
+            "symbol_exposure",
+            "position_weight",
+            "bucket_budget",
+            "bucket_turnover",
+            "sector_exposure",
+            "country_exposure",
+            "currency_exposure",
+            "exposure_metadata",
+            "hedge_policy",
+            "sell_position",
+            "cooldown"
+          ],
+          "createdAt": "2026-06-12T00:00:00.000Z"
+        },
+        "trade": null
+      }
+    ],
+    "auditEvents": [
+      {
+        "eventId": "audit_virtual_decision_recorded_1781222400000",
+        "eventType": "VIRTUAL_DECISION_RECORDED",
+        "actor": "system",
+        "summary": "Synthetic paper intent",
+        "maskedRefs": [],
+        "createdAt": "2026-06-12T00:00:00.000Z"
+      },
+      {
+        "eventId": "audit_virtual_risk_rejected_1781222400000",
+        "eventType": "VIRTUAL_RISK_REJECTED",
+        "actor": "system",
+        "summary": "KR:SYNTHETIC VIRTUAL_BUY",
+        "maskedRefs": [],
+        "createdAt": "2026-06-12T00:00:00.000Z"
+      }
+    ],
+    "portfolio": {
+      "portfolioId": "paper_fixture",
+      "cashKrw": 1000000,
+      "positions": [],
+      "updatedAt": "2026-06-11T00:00:00.000Z"
+    },
+    "applicationHash": "sha256:dca1f2ad2c523363a93e766eb5b22e12ab659c80daa0f1d74e971486593e8b89"
+  }
+}

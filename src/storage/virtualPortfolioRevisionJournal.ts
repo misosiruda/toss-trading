@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { open, readFile } from "node:fs/promises";
 import { z } from "zod";
 import { sha256HashSchema, virtualPortfolioSchema, type VirtualPortfolio } from "../domain/schemas.js";
+import { readPreparedPaperApplication } from "./preparedPaperApplicationFiles.js";
 
-const entrySchema = z.object({
+const legacyEntrySchema = z.object({
   schemaVersion: z.literal("paper_portfolio_revision.v1"),
   sequence: z.number().int().positive().safe(),
   previousRevisionHash: sha256HashSchema.nullable(),
@@ -11,6 +12,8 @@ const entrySchema = z.object({
   portfolio: virtualPortfolioSchema,
   revisionHash: sha256HashSchema
 }).strict();
+const entrySchema = z.discriminatedUnion("schemaVersion", [legacyEntrySchema,
+  legacyEntrySchema.extend({ schemaVersion: z.literal("paper_portfolio_revision.v2"), applicationHash: sha256HashSchema }).strict()]);
 
 export interface VirtualPortfolioRevisionSnapshot {
   portfolio: VirtualPortfolio | null;
@@ -27,7 +30,8 @@ export interface PortfolioRevisionJournalHead extends VirtualPortfolioRevisionSn
 }
 
 /** Internal storage operations: the caller must hold the matching portfolio lock throughout. */
-export async function readPortfolioRevisionJournal(path: string, portfolio: VirtualPortfolio | null): Promise<PortfolioRevisionJournalHead> {
+export async function readPortfolioRevisionJournal(path: string, portfolio: VirtualPortfolio | null,
+  portfolioPath?: string): Promise<PortfolioRevisionJournalHead> {
   let bytes: Buffer;
   try { bytes = await readFile(path); }
   catch (error) {
@@ -48,6 +52,15 @@ export async function readPortfolioRevisionJournal(path: string, portfolio: Virt
       (previous !== null && entry.previousPortfolioHash !== hashPortfolioRevisionPayload(previous.portfolio))) {
       throw new Error("paper portfolio revision predecessor mismatch");
     }
+    if (entry.schemaVersion === "paper_portfolio_revision.v2") {
+      if (!portfolioPath) throw new Error("paper application source path is required");
+      const application = await readPreparedPaperApplication(portfolioPath, entry.applicationHash);
+      if (application.expectedSnapshot.revisionHash !== entry.previousRevisionHash ||
+        hashPortfolioRevisionPayload(application.expectedSnapshot.portfolio) !== entry.previousPortfolioHash ||
+        hashPortfolioRevisionPayload(application.portfolio) !== hashPortfolioRevisionPayload(entry.portfolio)) {
+        throw new Error("paper revision application origin mismatch");
+      }
+    }
     previous = entry;
   }
   if (previous === null || hashPortfolioRevisionPayload(previous.portfolio) !== hashPortfolioRevisionPayload(portfolio)) {
@@ -57,13 +70,15 @@ export async function readPortfolioRevisionJournal(path: string, portfolio: Virt
 }
 
 /** Appends before legacy projection replacement. Any failure from this point needs a recovery barrier. */
-export async function appendPortfolioRevision(path: string, head: PortfolioRevisionJournalHead, portfolio: VirtualPortfolio): Promise<void> {
+export async function appendPortfolioRevision(path: string, head: PortfolioRevisionJournalHead, portfolio: VirtualPortfolio,
+  applicationHash?: string): Promise<void> {
   const payload = {
-    schemaVersion: "paper_portfolio_revision.v1" as const,
+    schemaVersion: applicationHash === undefined ? "paper_portfolio_revision.v1" as const : "paper_portfolio_revision.v2" as const,
     sequence: head.sequence + 1,
     previousRevisionHash: head.revisionHash,
     previousPortfolioHash: hashPortfolioRevisionPayload(head.portfolio),
-    portfolio
+    portfolio,
+    ...(applicationHash === undefined ? {} : { applicationHash })
   };
   const entry = entrySchema.parse({ ...payload, revisionHash: hashPortfolioRevisionPayload(payload) });
   const handle = await open(path, head.sequence === 0 ? "wx" : "a");

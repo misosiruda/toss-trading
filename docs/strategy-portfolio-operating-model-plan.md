@@ -5900,6 +5900,43 @@ Journal이 없는 기존 파일은 revision null인 legacy 관측이며 read는 
 파일 교체는 지원하지 않는다. Journal 전체가 외부에서 삭제된 상태는 도입 전 legacy 부재와
 구별할 독립 anchor가 없으므로 이를 변조 방지 또는 과거 이력 완전성 증거로 주장하지 않는다.
 
+실행 전 전체 결과 기록은 실제 `paperDecisionPipeline`의 `withPreparedApplication` 경로에 연결한다.
+동일 portfolio revision 잠금에서 provider 원본 decision을 다시 semantic 검증하고 confidence/hash를
+계산한 뒤, 기존 deterministic `PaperOrderEngine`으로 모든 decision을 순서대로 계산한다. 각 단계의
+Risk decision, paper trade 또는 no-op, 변경 후 portfolio와 순서대로 기록할 audit 전체를
+`paper_prepared_application.v1`에 넣는다. 입력은 전체 packet, 원본 provider decision, 관측한
+portfolio/revision, 평가 시각과 decision summary를 포함한다. `paper_order_engine.v1` 실행 모델은
+고정된 v1 Risk/execution 정책을 사용하며 provider가 전달한 policyVersion 문자열을 실행 권한으로
+승격하지 않는다. `paper/executionModels/v1`에 원본 커밋의 전체 상대 의존성 22개 파일을 보존한다.
+공용 dispatcher가 저장된 executionModelVersion으로 v1을 선택하고 unknown version을 거절하므로
+현재 주문 엔진·Risk·confidence·validation 변경이 과거 기록의 재생 결과에 적용되지 않는다.
+파일별 hash/import 경계와 변경 전 golden 기록을 검증하며, 새 모델은 v1을 고치지 않고 별도로 추가한다.
+
+전체 canonical payload에서 `applicationHash`만 제외해 SHA-256을 계산하고
+`<portfolio 파일 경로>.applications/<hash hex>.json`을 exclusive create한 뒤 파일·디렉터리를
+동기화한다. Windows의 기존 directory fsync EPERM 예외는 유지하므로 전원 장애 수준의 보장은
+추가하지 않는다. 이 저장이 성공하기 전에는 application decision/trade/audit를 쓰지 않는다.
+기존 packet 선택·provider 실패·validation 실패 audit는 이 application 경계 밖이다.
+기록은 완료 receipt가 아니라 복구 대조용 intent이며, 존재만으로 거래 적용을 승인하지 않는다.
+동일 경로가 이미 있으면 자동 재사용/덮어쓰기하지 않는다. Intent 저장 또는 이후 effect/commit 실패는
+기존 잠금을 보존하고 자동 재시도를 차단한다. 불완전 파일이나 실패 잠금을 자동 삭제하지 않는다.
+
+성공한 application의 잔고 변경은 `paper_portfolio_revision.v2`가 intent hash를 참조한다.
+일반 portfolio write의 v1과 혼합할 수 있으며, 모든 revision reader는 v2의 실제 intent 파일을
+읽어 canonical bytes·파일명 hash·전체 rehash·독립 실행 재생을 검사한다. 관측 revision/이전 잔고 및
+계산한 최종 잔고가 revision entry와 같아야 한다. 원본 누락, 손상 또는 독립 rehash한 Risk/fill/audit
+변조도 거절한다. 이전 이력에 application 원본을 사후 합성하지 않는다. 기존 legacy JSON,
+decision/trade/audit 형식과 audit ID 규칙은 유지하며 기존 audit ID를 멱등성 키로 사용하지 않는다.
+
+Intent 파일은 실패 잠금이 남아도 별도 read helper로 오프라인 검증할 수 있다. 이 검증은 실제
+decision/trade/audit 로그의 완료·정확한 prefix 또는 durable 적용을 증명하지 않는다. 현재 로그 writer의
+개별 fsync와 전체 artifact 원자성, 완료 marker, automatic roll-forward/rollback, trigger 중복 제거 및
+공용 capacity 배정은 후속이다. 재시작 시 정상 portfolio 조회가 가능한 경우에도 intent 자체를
+실행 완료 receipt로 해석하지 않는다. 새 v2 reader를 먼저 배포하고 모든 writer를 중지해 전환한다.
+V2 생성 뒤 구버전 reader/writer로 즉시 rollback할 수 없으며 intent와 revision을 함께 보존해야 한다.
+실패 복구는 모든 관련 writer를 중지하고 intent/현재 JSON/revision/decision/trade/audit를 대조해야 한다.
+자동 migration, 이력 삭제, MCP/HTTP mutation 또는 live order surface는 추가하지 않는다.
+
 - cadence scheduler와 conflict resolver
 - immutable regime/thesis trigger event repository와 dedupe resolver
 - immutable risk-state update origin repository와 breach trigger resolver

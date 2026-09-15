@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -14,6 +14,7 @@ import {
   FileVirtualTradeStore
 } from "../storage/repositories.js";
 import type { DecisionProvider } from "./paperDecisionPipeline.js";
+import { readPreparedPaperApplication } from "../storage/preparedPaperApplicationFiles.js";
 import {
   FailingMarketPacketDecisionProvider,
   MarketPacketDryRunDecisionProvider,
@@ -63,6 +64,12 @@ test("market packet paper run records decision, trade, portfolio, and audit chai
   );
   assert.equal(trades.records.length, 1);
   assert.equal(portfolio?.cashKrw, 930_000);
+  const [intentFile] = await readdir(`${paths.virtualPortfolioPath}.applications`);
+  const intent = await readPreparedPaperApplication(paths.virtualPortfolioPath, `sha256:${intentFile!.slice(0, -5)}`);
+  assert.deepEqual(intent.decision, decisions.records[0]);
+  assert.deepEqual(intent.steps.flatMap((step) => step.trade ? [step.trade] : []), trades.records);
+  assert.deepEqual(intent.portfolio, portfolio);
+  assert.deepEqual(intent.auditEvents, audit.records.slice(1));
   assert.deepEqual(
     audit.records.map((event) => event.eventType),
     [
@@ -195,6 +202,10 @@ test("paper application failure after a trade write retains a recovery barrier a
   await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write(packet.virtualPortfolio);
   const original = FileVirtualTradeStore.prototype.append, denied = new Error("after trade append failure");
   const mock = context.mock.method(FileVirtualTradeStore.prototype, "append", async function (this: FileVirtualTradeStore, ...args: Parameters<typeof original>) {
+    const [intentFile] = await readdir(`${paths.virtualPortfolioPath}.applications`);
+    const intent = await readPreparedPaperApplication(paths.virtualPortfolioPath, `sha256:${intentFile!.slice(0, -5)}`);
+    assert.deepEqual(intent.steps[0]!.trade, args[0]);
+    assert.equal(intent.auditEvents.at(-1)!.eventType, "PAPER_ORDER_FILLED");
     await original.apply(this, args); throw denied;
   });
   try {
