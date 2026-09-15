@@ -17,6 +17,7 @@ import {
 } from "../storage/repositories.js";
 import type { DecisionProvider } from "./paperDecisionPipeline.js";
 import { readPreparedPaperApplication } from "../storage/preparedPaperApplicationFiles.js";
+import { withPaperExecutionLogAppend } from "../storage/paperExecutionLogLocks.js";
 import {
   FailingMarketPacketDecisionProvider,
   MarketPacketDryRunDecisionProvider,
@@ -217,9 +218,38 @@ test("paper application failure after a trade write retains a recovery barrier a
   assert.deepEqual(JSON.parse(await readFile(paths.virtualPortfolioPath, "utf8")), packet.virtualPortfolio);
   assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 1);
   const provider = new CountingDecisionProvider();
-  await assert.rejects(runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir, provider, now }), /paper portfolio lock is unavailable/);
+  await assert.rejects(runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir, provider, now }), /paper execution log lock is unavailable/);
   assert.equal(provider.calls, 0);
   assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 1);
+});
+
+test("paper application keeps all log writers locked through portfolio commit", async (context) => {
+  const dir = await tempDir(), paths = createStoragePaths(dir), packet = marketPacket();
+  context.after(() => rm(dir, { recursive: true, force: true }));
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(packet);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write(packet.virtualPortfolio);
+  let enter!: () => void, release!: () => void;
+  const entered = new Promise<void>((done) => { enter = done; }), gate = new Promise<void>((done) => { release = done; });
+  const original = fs.rename;
+  const mock = context.mock.method(fs, "rename", async (...args: Parameters<typeof fs.rename>) => {
+    if (args[1] === paths.virtualPortfolioPath) { enter(); await gate; }
+    return original(...args);
+  });
+  syncBuiltinESMExports();
+  const pending = runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir,
+    provider: new StaticMarketPacketDecisionProvider(virtualDecision()), now });
+  const settled = pending.catch(() => undefined);
+  try {
+    await entered;
+    for (const path of [paths.auditLogPath, paths.virtualDecisionsPath, paths.virtualTradesPath]) {
+      await assert.rejects(withPaperExecutionLogAppend(path, async () => assert.fail("must stay locked"), { lockTimeoutMs: 60 }), /log lock is unavailable/);
+    }
+    assert.deepEqual(JSON.parse(await readFile(paths.virtualPortfolioPath, "utf8")), packet.virtualPortfolio);
+  } finally { release(); await settled; mock.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal((await pending).status, "completed");
+  for (const path of [paths.auditLogPath, paths.virtualDecisionsPath, paths.virtualTradesPath]) {
+    await assert.rejects(readdir(`${path}.paper-log.lock`), { code: "ENOENT" });
+  }
 });
 
 test("paper application refuses portfolio commit when a trade log fsync fails", async (context) => {

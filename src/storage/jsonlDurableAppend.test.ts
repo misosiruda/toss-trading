@@ -46,7 +46,7 @@ test("durable JSONL errors reject without retry or removal of partial written by
     const originalOpen = fs.open, denied = Object.assign(new Error(`injected ${phase}`), { code: "EIO" });
     let attempts = 0, closes = 0;
     const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
-      if (phase === "directory" && args[0] === dirname(path)) throw denied;
+      if (phase === "directory" && attempts > 0 && args[0] === dirname(path)) throw denied;
       if (args[0] === path) { attempts++; if (phase === "open") throw denied; }
       const handle = await originalOpen(...args);
       if (args[0] === path) {

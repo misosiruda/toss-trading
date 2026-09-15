@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import type { z } from "zod";
 
 import { parseWithSchema } from "../domain/schemas.js";
+import { withPaperExecutionLogAppend } from "./paperExecutionLogLocks.js";
 
 export interface JsonlReadResult<T> {
   records: T[];
@@ -23,17 +24,19 @@ export class JsonlStore<T> {
     await appendFile(this.filePath, `${JSON.stringify(parsed)}\n`, "utf8");
   }
 
-  /** Await this record's write/fsync/close and parent directory sync before reporting success.
-   * Not an atomic multi-record append, commit receipt or rollback protocol. Failed bytes are preserved.
+  /** Serialize cooperating writers and await write/fsync/close plus parent directory sync.
+   * Joins a held paper batch when present. Failed bytes/lock remain for explicit recovery.
+   * Not an atomic read snapshot, commit receipt or rollback protocol.
    */
   async appendDurably(value: T): Promise<void> {
     const parsed = parseWithSchema(this.schema, value, this.label);
     const line = `${JSON.stringify(parsed)}\n`;
-    await mkdir(dirname(this.filePath), { recursive: true });
-    const handle = await open(this.filePath, "a");
-    try { await handle.writeFile(line, "utf8"); await handle.sync(); }
-    finally { await handle.close(); }
-    await syncDirectory(dirname(this.filePath));
+    await withPaperExecutionLogAppend(this.filePath, async () => {
+      const handle = await open(this.filePath, "a");
+      try { await handle.writeFile(line, "utf8"); await handle.sync(); }
+      finally { await handle.close(); }
+      await syncDirectory(dirname(this.filePath));
+    });
   }
 
   async readAll(): Promise<JsonlReadResult<T>> {
