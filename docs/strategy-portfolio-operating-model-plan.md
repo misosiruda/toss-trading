@@ -5977,10 +5977,56 @@ Owner token 변경·해제 실패·abandoned lock을 자동 삭제하거나 탈�
 
 `readAll`은 기존 forensic 조회와 corruptLineCount 정책을 유지하므로 batch 중간 또는 실패 후의
 부분 로그도 관측할 수 있다. 이를 committed snapshot이나 적용 완료 증거로 해석하지 않는다.
-정확한 prefix/완료 receipt, 다중 artifact 원자 read/recovery 및 공용 capacity allocator는 후속이다.
+협력 writer 직렬화 자체는 정확한 prefix/완료 receipt를 제공하지 않는다. 아래의 별도 로그 증거를
+연결하더라도 다중 artifact 원자 read/recovery 및 공용 capacity allocator는 후속이다.
 배포·rollback은 모든 관련 writer를 중지하고 로그/intent/revision/JSON과 남은 잠금을 대조해야 한다.
 구버전 writer는 로그 잠금을 무시하므로 혼합 실행 및 실패 잠금이 있는 상태의 단순 rollback은
 지원하지 않는다. Artifact payload/hash와 v1 실행 모델은 바꾸지 않고 자동 migration도 하지 않는다.
+
+실제 paper pipeline은 `withLoggedPreparedApplication`에서 로그 batch → portfolio revision 잠금
+순서를 유지하고, prepared intent 다음에 `paper_application_log_plan.v1`을 먼저 저장한다.
+계획은 application hash와 audit/decision/trade 각각의 실행 전 존재 여부, byte length 및 SHA-256을
+포함한다. 실제 파일을 잠금 안에서 관측·동기화하고, plan 전체 payload에서 `planHash`만 제외해
+독립 digest를 계산한다. `<portfolio 경로>.application-log-plans/<plan hash>.json`에 exclusive
+create/write/fsync한 뒤에만 application 로그를 추가한다. 기존 prefix는 UTF-8·JSONL framing을
+검사하지만 그 자체를 인증된 과거 거래 lineage로 승격하지 않는다.
+
+Effect callback이 끝나면 로그 batch를 seal해 추가 append를 거절하고 이미 등록된 queue를 기다린다.
+이후 각 로그의 기존 prefix hash를 재확인하고, 새 suffix의 전체 JSON payload가 고정 실행 모델의
+decision 1개, 순서대로 계산한 audit 전체 및 trade 전체와 정확히 같은지 확인한다. 누락·중복·추가
+기록, 다른 수량, prefix 변경, torn line, suffix의 중복 JSON key/비canonical bytes는 거절한다.
+로그 관측을 sync할 때는 기존 저장소처럼 `r+` handle을 쓰되 파일을 생성하거나 내용을 바꾸지 않는다.
+`lstat`의 실제 ENOENT만 부재로 취급하며 open/read/fsync/close 오류는 부재로 숨기지 않는다.
+
+대조 성공 후 `paper_application_log_receipt.v1`이 application/plan hash와 세 로그의 실행 후
+존재 여부·길이·hash를 저장한다. `receiptHash`만 제외한 전체 payload를 해시하고
+`<portfolio 경로>.application-log-receipts/<receipt hash>.json`을 exclusive create/fsync한다.
+이 receipt는 로그 추가 완료 증거이며 portfolio commit marker는 아니다. 실제 잔고 확정은 뒤따르는
+`paper_portfolio_revision.v3`가 application hash와 log receipt hash를 함께 참조하면서 수행한다.
+Plan/receipt 저장 또는 suffix 대조 실패 시 잔고 확정을 건너뛰고 기존 portfolio 실패 장벽을 남긴다.
+로그 쓰기가 시작된 실패는 batch의 로그 장벽도 보존한다. Receipt 뒤 잔고 rename이 실패하면 로그
+receipt를 별도로 읽을 수 있어도 portfolio가 적용됐다고 판정하지 않는다.
+
+모든 portfolio reader/writer는 v3 entry의 실제 intent, plan, receipt와 구성된 실제 로그 prefix를
+다시 읽어 canonical bytes, hash-derived filename, full digest, origin, prefix 및 suffix 재생을 검증한다.
+이후의 정상 append-only suffix는 허용하되 이미 증명한 prefix의 삭제·절단·변조는 거절한다.
+Receipt는 filesystem 경로를 제공하지 않는다. 로그 경로는 `FileVirtualPortfolioStore`의 신뢰된
+`executionLogPaths` 설정에서 가져오며 기본값은 portfolio 파일과 같은 디렉터리의 기존 세 로그다.
+별도 로그 경로를 쓰면 writer와 모든 reader에 같은 설정이 필요하다. Pipeline이 전달한 경로와
+설정이 다르면 effect 전 거절한다. 임의 manifest가 reader를 다른 파일로 돌릴 수 없다.
+
+Journal의 v3 receipt들은 한 번의 read 호출 안에서 함께 검증한다. 각 실제 로그는 한 번만 읽고,
+before/after byte boundary를 정렬하여 SHA-256 상태를 누적·복사하므로 매 revision마다 전체 로그를
+다시 읽거나 prefix 전체를 재해시하지 않는다. Buffer와 digest는 호출 밖에 캐시하지 않아 다음 read는
+실제 파일을 다시 검사한다. 기존 prefix의 빈 줄·공백 separator는 `JsonlStore.readAll`과 같이 무시하되
+원본 bytes/hash는 그대로 보존한다. 새 suffix의 빈 줄은 허용하지 않으며 torn line 검증도 유지한다.
+
+일반 write의 v1과 기존 `withPreparedApplication`의 v2는 유지하고 과거 로그 receipt를 합성하지 않는다.
+v1/v2/v3 혼합 이력을 지원하지만 v3 생성 이후에는 v3 reader를 배포한 상태를 유지해야 한다.
+Rollback은 모든 writer를 중지하고 intent/plan/receipt/log/revision/JSON과 실패 잠금을 함께 대조해야
+하며 v3를 모르는 구버전 writer로 즉시 돌아갈 수 없다. 고정 실행 모델이나 기존 로그 payload는
+변경하지 않는다. 전체 이력 삭제를 식별하는 외부 anchor, 자동 recovery, trigger exactly-once,
+공용 allocator 및 정책/mandate/회계 전체 원자 연결은 여전히 후속이다.
 
 - cadence scheduler와 conflict resolver
 - immutable regime/thesis trigger event repository와 dedupe resolver

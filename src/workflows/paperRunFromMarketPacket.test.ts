@@ -17,6 +17,7 @@ import {
 } from "../storage/repositories.js";
 import type { DecisionProvider } from "./paperDecisionPipeline.js";
 import { readPreparedPaperApplication } from "../storage/preparedPaperApplicationFiles.js";
+import { defaultPaperExecutionLogPaths, readPaperApplicationLogPlan, readPaperApplicationLogReceipt } from "../storage/paperApplicationLogReceipts.js";
 import { withPaperExecutionLogAppend } from "../storage/paperExecutionLogLocks.js";
 import {
   FailingMarketPacketDecisionProvider,
@@ -73,6 +74,13 @@ test("market packet paper run records decision, trade, portfolio, and audit chai
   assert.deepEqual(intent.steps.flatMap((step) => step.trade ? [step.trade] : []), trades.records);
   assert.deepEqual(intent.portfolio, portfolio);
   assert.deepEqual(intent.auditEvents, audit.records.slice(1));
+  const revision = JSON.parse((await readFile(`${paths.virtualPortfolioPath}.revisions.jsonl`, "utf8")).trimEnd().split("\n").at(-1)!);
+  assert.equal(revision.schemaVersion, "paper_portfolio_revision.v3");
+  const receipt = await readPaperApplicationLogReceipt(paths.virtualPortfolioPath, revision.logReceiptHash, defaultPaperExecutionLogPaths(paths.virtualPortfolioPath));
+  const logPlan = await readPaperApplicationLogPlan(paths.virtualPortfolioPath, receipt.planHash);
+  assert.equal(receipt.applicationHash, intent.applicationHash);
+  assert.equal(logPlan.before.audit.byteLength, Buffer.byteLength(`${JSON.stringify(audit.records[0])}\n`));
+  assert.equal(receipt.after.trade.byteLength, Buffer.byteLength(await readFile(paths.virtualTradesPath)));
   assert.deepEqual(
     audit.records.map((event) => event.eventType),
     [
@@ -240,7 +248,7 @@ test("paper application keeps all log writers locked through portfolio commit", 
     provider: new StaticMarketPacketDecisionProvider(virtualDecision()), now });
   const settled = pending.catch(() => undefined);
   try {
-    await entered;
+    await Promise.race([entered, pending.then(() => { throw new Error("portfolio commit boundary was not reached"); })]);
     for (const path of [paths.auditLogPath, paths.virtualDecisionsPath, paths.virtualTradesPath]) {
       await assert.rejects(withPaperExecutionLogAppend(path, async () => assert.fail("must stay locked"), { lockTimeoutMs: 60 }), /log lock is unavailable/);
     }

@@ -4,6 +4,9 @@ import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { verifyPreparedPaperApplication, type PreparedPaperApplication } from "../paper/preparedApplication.js";
 import { writePreparedPaperApplication } from "./preparedPaperApplicationFiles.js";
+import { capturePaperExecutionLogPaths, defaultPaperExecutionLogPaths, preparePaperApplicationLogPlan,
+  completePaperApplicationLogs, type PaperExecutionLogPaths } from "./paperApplicationLogReceipts.js";
+import { withPaperExecutionLogBatch } from "./paperExecutionLogLocks.js";
 import { parseWithSchema, virtualPortfolioSchema, type VirtualPortfolio } from "../domain/schemas.js";
 import { appendPortfolioRevision, readPortfolioRevisionJournal, virtualPortfolioRevisionSnapshotSchema, type PortfolioRevisionJournalHead,
   type VirtualPortfolioRevisionSnapshot } from "./virtualPortfolioRevisionJournal.js";
@@ -20,13 +23,15 @@ export class FileVirtualPortfolioStore {
   private readonly revisionPath: string;
   private readonly timeoutMs: number;
   private readonly retryMs: number;
-  constructor(filePath: string, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+  private readonly executionLogPaths: PaperExecutionLogPaths;
+  constructor(filePath: string, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number; executionLogPaths?: PaperExecutionLogPaths } = {}) {
     if (!filePath) throw new Error("paper portfolio file path is required");
     this.filePath = resolve(filePath);
     this.lockPath = `${this.filePath}.lock`;
     this.revisionPath = `${this.filePath}.revisions.jsonl`;
     this.timeoutMs = positiveInteger(options.lockTimeoutMs ?? 5000);
     this.retryMs = positiveInteger(options.lockRetryDelayMs ?? 10);
+    this.executionLogPaths = capturePaperExecutionLogPaths(options.executionLogPaths ?? defaultPaperExecutionLogPaths(this.filePath));
   }
 
   read(): Promise<VirtualPortfolio | null> {
@@ -69,6 +74,22 @@ export class FileVirtualPortfolioStore {
   async withPreparedApplication<T>(expected: VirtualPortfolioRevisionSnapshot,
     prepare: () => PreparedPaperApplication, apply: (application: PreparedPaperApplication) => Promise<T>): Promise<T> {
     const captured = virtualPortfolioRevisionSnapshotSchema.parse(expected);
+    return this.preparedUpdate(captured, prepare, apply, false);
+  }
+
+  /** The actual runner records exact pre/post log prefixes before committing a v3 revision.
+   * Non-default log locations must also be supplied to every reader via repository configuration.
+   */
+  async withLoggedPreparedApplication<T>(expected: VirtualPortfolioRevisionSnapshot,
+    prepare: () => PreparedPaperApplication, apply: (application: PreparedPaperApplication) => Promise<T>,
+    paths: PaperExecutionLogPaths): Promise<T> {
+    const captured = virtualPortfolioRevisionSnapshotSchema.parse(expected);
+    if (!isDeepStrictEqual(capturePaperExecutionLogPaths(paths), this.executionLogPaths)) throw new Error("paper application log paths differ from repository configuration");
+    return withPaperExecutionLogBatch(Object.values(this.executionLogPaths), () => this.preparedUpdate(captured, prepare, apply, true));
+  }
+
+  private async preparedUpdate<T>(captured: VirtualPortfolioRevisionSnapshot,
+    prepare: () => PreparedPaperApplication, apply: (application: PreparedPaperApplication) => Promise<T>, logged: boolean): Promise<T> {
     return this.withLock(async (assertOwned, preserveBarrier) => {
       const stored = await this.readStoredSnapshot();
       if (!isDeepStrictEqual(captured, { portfolio: stored.portfolio, revisionHash: stored.revisionHash })) {
@@ -79,9 +100,11 @@ export class FileVirtualPortfolioStore {
       await assertOwned();
       try {
         await writePreparedPaperApplication(this.filePath, application);
+        const plan = logged ? await preparePaperApplicationLogPlan(this.filePath, application.applicationHash, this.executionLogPaths) : undefined;
         await assertOwned();
         const result = await apply(structuredClone(application));
-        await this.writeStored(application.portfolio, stored, assertOwned, preserveBarrier, application.applicationHash);
+        const receipt = plan ? await completePaperApplicationLogs(this.filePath, plan.planHash, this.executionLogPaths) : undefined;
+        await this.writeStored(application.portfolio, stored, assertOwned, preserveBarrier, application.applicationHash, receipt?.receiptHash);
         return result;
       } catch (error) { preserveBarrier(); throw error; }
     });
@@ -104,7 +127,7 @@ export class FileVirtualPortfolioStore {
   }
 
   private async readStoredSnapshot(): Promise<PortfolioRevisionJournalHead> {
-    return readPortfolioRevisionJournal(this.revisionPath, await this.readStored(), this.filePath);
+    return readPortfolioRevisionJournal(this.revisionPath, await this.readStored(), this.filePath, this.executionLogPaths);
   }
 
   private async readStored(): Promise<VirtualPortfolio | null> {
@@ -118,7 +141,7 @@ export class FileVirtualPortfolioStore {
   }
 
   private async writeStored(portfolio: VirtualPortfolio, head: PortfolioRevisionJournalHead,
-    assertOwned: () => Promise<void>, preserveBarrier: () => void, applicationHash?: string) {
+    assertOwned: () => Promise<void>, preserveBarrier: () => void, applicationHash?: string, logReceiptHash?: string) {
     const temporary = `${this.filePath}.tmp-${randomUUID()}`;
     const handle = await open(temporary, "wx");
     try {
@@ -126,7 +149,7 @@ export class FileVirtualPortfolioStore {
       finally { await handle.close(); }
       await assertOwned();
       try {
-        await appendPortfolioRevision(this.revisionPath, head, portfolio, applicationHash);
+        await appendPortfolioRevision(this.revisionPath, head, portfolio, applicationHash, logReceiptHash);
         await syncDirectory(dirname(this.revisionPath));
         await assertOwned();
         await rename(temporary, this.filePath);
