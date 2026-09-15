@@ -7,8 +7,7 @@ import { virtualPortfolioSchema } from "../domain/schemas.js";
 import { isDeepStrictEqual } from "node:util";
 import { VirtualPortfolioStateChangedError } from "../storage/virtualPortfolioFileStore.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
-import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
-import { PaperOrderEngine } from "../paper/orderEngine.js";
+import { preparePaperApplication, type PreparedPaperApplication } from "../paper/preparedApplication.js";
 import {
   summarizeVirtualDecisionValidation,
   validateVirtualDecisionAgainstPacket,
@@ -132,75 +131,37 @@ export async function runPaperDecisionPipeline(
     });
   }
 
-  const recordedDecision = bindVirtualDecisionConfidenceBreakdown({
-    decision: decisionResult.decision,
-    packet: options.packet
-  });
+  const providerDecision = decisionResult.decision;
 
   try {
-    return await options.repositories.portfolioStore.withExclusiveSnapshotUpdate(expectedSnapshot, async () => {
-      const result = await applyRecordedDecision({ ...options, portfolio }, recordedDecision, auditEventIds);
-      return { portfolio: result.portfolio, result };
-    });
+    return await options.repositories.portfolioStore.withPreparedApplication(expectedSnapshot,
+      () => preparePaperApplication({ expectedSnapshot, packet: options.packet, providerDecision,
+        evaluatedAt: options.now.toISOString(), decisionSummary: options.recordedDecisionSummary?.(providerDecision.decisions.length) ??
+          `Recorded ${providerDecision.decisions.length} paper-only decision(s)` }),
+      (application) => applyPreparedApplication(options.repositories, application, auditEventIds));
   } catch (error) {
     if (error instanceof VirtualPortfolioStateChangedError) return stateChanged();
     throw error;
   }
 }
 
-async function applyRecordedDecision(options: PaperDecisionPipelineOptions,
-  recordedDecision: ReturnType<typeof bindVirtualDecisionConfidenceBreakdown>, auditEventIds: string[]): Promise<PaperDecisionPipelineResult> {
-  await options.repositories.decisionStore.append(recordedDecision);
-  auditEventIds.push(
-    await appendPaperAudit(
-      options.repositories.auditLog,
-      "VIRTUAL_DECISION_RECORDED",
-      options.recordedDecisionSummary?.(recordedDecision.decisions.length) ??
-        `Recorded ${recordedDecision.decisions.length} paper-only decision(s)`,
-      options.now
-    )
-  );
-
-  let currentPortfolio = options.portfolio;
+async function applyPreparedApplication(repositories: PaperDecisionPipelineRepositories,
+  application: PreparedPaperApplication, auditEventIds: string[]): Promise<PaperDecisionPipelineResult> {
+  await repositories.decisionStore.append(application.decision);
+  let auditIndex = 0;
+  const appendNextAudit = async () => {
+    const event = application.auditEvents[auditIndex++]!;
+    await repositories.auditLog.append(event); auditEventIds.push(event.eventId);
+  };
+  await appendNextAudit();
   let tradeCount = 0;
   let rejectedCount = 0;
-  const engine = new PaperOrderEngine();
-
-  for (const decision of recordedDecision.decisions) {
-    const result = engine.execute({
-      packet: options.packet,
-      portfolio: currentPortfolio,
-      decision,
-      riskPolicy: { now: options.now }
-    });
-    currentPortfolio = result.portfolio;
-
-    if (!result.riskDecision.approved) {
-      rejectedCount += 1;
-    }
-
-    auditEventIds.push(
-      await appendPaperAudit(
-        options.repositories.auditLog,
-        result.riskDecision.approved
-          ? "VIRTUAL_RISK_APPROVED"
-          : "VIRTUAL_RISK_REJECTED",
-        `${decision.market}:${decision.symbol} ${decision.action}`,
-        options.now
-      )
-    );
-
-    if (result.trade) {
-      await options.repositories.tradeStore.append(result.trade);
-      tradeCount += 1;
-      auditEventIds.push(
-        await appendPaperAudit(
-          options.repositories.auditLog,
-          "PAPER_ORDER_FILLED",
-          `${result.trade.market}:${result.trade.symbol} ${result.trade.action}`,
-          options.now
-        )
-      );
+  for (const step of application.steps) {
+    if (!step.riskDecision.approved) rejectedCount += 1;
+    await appendNextAudit();
+    if (step.trade) {
+      await repositories.tradeStore.append(step.trade); tradeCount += 1;
+      await appendNextAudit();
     }
   }
 
@@ -209,7 +170,7 @@ async function applyRecordedDecision(options: PaperDecisionPipelineOptions,
     tradeCount,
     rejectedCount,
     auditEventIds,
-    portfolio: currentPortfolio,
+    portfolio: application.portfolio,
     failure: null
   };
 }

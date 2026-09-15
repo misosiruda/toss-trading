@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, rmdir, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { verifyPreparedPaperApplication, type PreparedPaperApplication } from "../paper/preparedApplication.js";
+import { writePreparedPaperApplication } from "./preparedPaperApplicationFiles.js";
 import { parseWithSchema, virtualPortfolioSchema, type VirtualPortfolio } from "../domain/schemas.js";
 import { appendPortfolioRevision, readPortfolioRevisionJournal, virtualPortfolioRevisionSnapshotSchema, type PortfolioRevisionJournalHead,
   type VirtualPortfolioRevisionSnapshot } from "./virtualPortfolioRevisionJournal.js";
@@ -61,6 +63,30 @@ export class FileVirtualPortfolioStore {
     return this.update(captured.portfolio, captured.revisionHash, operation);
   }
 
+  /** Prepare and fsync the complete intent before any application effect, under the same revision lock.
+   * A failed intent/effect/commit remains behind the existing barrier; no automatic recovery is implied.
+   */
+  async withPreparedApplication<T>(expected: VirtualPortfolioRevisionSnapshot,
+    prepare: () => PreparedPaperApplication, apply: (application: PreparedPaperApplication) => Promise<T>): Promise<T> {
+    const captured = virtualPortfolioRevisionSnapshotSchema.parse(expected);
+    return this.withLock(async (assertOwned, preserveBarrier) => {
+      const stored = await this.readStoredSnapshot();
+      if (!isDeepStrictEqual(captured, { portfolio: stored.portfolio, revisionHash: stored.revisionHash })) {
+        throw new VirtualPortfolioStateChangedError();
+      }
+      const application = verifyPreparedPaperApplication(prepare());
+      if (!isDeepStrictEqual(application.expectedSnapshot, captured)) throw new Error("paper application observation mismatch");
+      await assertOwned();
+      try {
+        await writePreparedPaperApplication(this.filePath, application);
+        await assertOwned();
+        const result = await apply(structuredClone(application));
+        await this.writeStored(application.portfolio, stored, assertOwned, preserveBarrier, application.applicationHash);
+        return result;
+      } catch (error) { preserveBarrier(); throw error; }
+    });
+  }
+
   private async update<T>(captured: VirtualPortfolio | null, expectedRevision: string | null | undefined,
     operation: () => Promise<{ portfolio: VirtualPortfolio; result: T }>): Promise<T> {
     return this.withLock(async (assertOwned, preserveBarrier) => {
@@ -78,7 +104,7 @@ export class FileVirtualPortfolioStore {
   }
 
   private async readStoredSnapshot(): Promise<PortfolioRevisionJournalHead> {
-    return readPortfolioRevisionJournal(this.revisionPath, await this.readStored());
+    return readPortfolioRevisionJournal(this.revisionPath, await this.readStored(), this.filePath);
   }
 
   private async readStored(): Promise<VirtualPortfolio | null> {
@@ -92,7 +118,7 @@ export class FileVirtualPortfolioStore {
   }
 
   private async writeStored(portfolio: VirtualPortfolio, head: PortfolioRevisionJournalHead,
-    assertOwned: () => Promise<void>, preserveBarrier: () => void) {
+    assertOwned: () => Promise<void>, preserveBarrier: () => void, applicationHash?: string) {
     const temporary = `${this.filePath}.tmp-${randomUUID()}`;
     const handle = await open(temporary, "wx");
     try {
@@ -100,7 +126,7 @@ export class FileVirtualPortfolioStore {
       finally { await handle.close(); }
       await assertOwned();
       try {
-        await appendPortfolioRevision(this.revisionPath, head, portfolio);
+        await appendPortfolioRevision(this.revisionPath, head, portfolio, applicationHash);
         await syncDirectory(dirname(this.revisionPath));
         await assertOwned();
         await rename(temporary, this.filePath);
