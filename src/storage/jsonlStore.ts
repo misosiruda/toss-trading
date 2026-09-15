@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import type { z } from "zod";
@@ -21,6 +21,19 @@ export class JsonlStore<T> {
     const parsed = parseWithSchema(this.schema, value, this.label);
     await mkdir(dirname(this.filePath), { recursive: true });
     await appendFile(this.filePath, `${JSON.stringify(parsed)}\n`, "utf8");
+  }
+
+  /** Await this record's write/fsync/close and parent directory sync before reporting success.
+   * Not an atomic multi-record append, commit receipt or rollback protocol. Failed bytes are preserved.
+   */
+  async appendDurably(value: T): Promise<void> {
+    const parsed = parseWithSchema(this.schema, value, this.label);
+    const line = `${JSON.stringify(parsed)}\n`;
+    await mkdir(dirname(this.filePath), { recursive: true });
+    const handle = await open(this.filePath, "a");
+    try { await handle.writeFile(line, "utf8"); await handle.sync(); }
+    finally { await handle.close(); }
+    await syncDirectory(dirname(this.filePath));
   }
 
   async readAll(): Promise<JsonlReadResult<T>> {
@@ -52,6 +65,18 @@ export class JsonlStore<T> {
 
     return { records, corruptLineCount };
   }
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try { handle = await open(path, "r"); }
+  catch (error) { if (unsupportedDirectorySync(error)) return; throw error; }
+  try { await handle.sync(); }
+  catch (error) { if (!unsupportedDirectorySync(error)) throw error; }
+  finally { await handle.close(); }
+}
+function unsupportedDirectorySync(error: unknown): boolean {
+  return process.platform === "win32" && isNodeError(error) && error.code === "EPERM";
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

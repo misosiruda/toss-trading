@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
+import fs from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 
 import type { MarketPacket, VirtualDecision } from "../domain/schemas.js";
 import {
@@ -218,6 +220,33 @@ test("paper application failure after a trade write retains a recovery barrier a
   await assert.rejects(runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir, provider, now }), /paper portfolio lock is unavailable/);
   assert.equal(provider.calls, 0);
   assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 1);
+});
+
+test("paper application refuses portfolio commit when a trade log fsync fails", async (context) => {
+  const dir = await tempDir(), paths = createStoragePaths(dir), packet = marketPacket();
+  context.after(() => rm(dir, { recursive: true, force: true }));
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(packet);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write(packet.virtualPortfolio);
+  const before = await readFile(paths.virtualPortfolioPath), revisions = await readFile(`${paths.virtualPortfolioPath}.revisions.jsonl`);
+  const originalOpen = fs.open, denied = Object.assign(new Error("trade log fsync failure"), { code: "EIO" });
+  const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    const handle = await originalOpen(...args);
+    if (args[0] === paths.virtualTradesPath) context.mock.method(handle, "sync", async () => { throw denied; });
+    return handle;
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir,
+      provider: new StaticMarketPacketDecisionProvider(virtualDecision()), now }), (error) => error === denied);
+  } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+  assert.deepEqual(await readFile(paths.virtualPortfolioPath), before);
+  assert.deepEqual(await readFile(`${paths.virtualPortfolioPath}.revisions.jsonl`), revisions);
+  const [intentFile] = await readdir(`${paths.virtualPortfolioPath}.applications`);
+  const intent = await readPreparedPaperApplication(paths.virtualPortfolioPath, `sha256:${intentFile!.slice(0, -5)}`);
+  assert.equal(intent.steps[0]!.trade!.action, "VIRTUAL_BUY");
+  assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 1);
+  assert.equal((await readdir(`${paths.virtualPortfolioPath}.lock`)).length, 1);
+  await assert.rejects(new FileVirtualPortfolioStore(paths.virtualPortfolioPath, { lockTimeoutMs: 60 }).read(), /lock is unavailable/);
 });
 
 test("market packet paper run rejects decision packet mismatch without saving decision", async () => {

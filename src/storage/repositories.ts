@@ -153,7 +153,7 @@ export class FileAuditLog {
   }
 
   append(event: AuditEvent): Promise<void> {
-    return this.store.append(event);
+    return this.store.appendDurably(event);
   }
 
   readAll(): Promise<JsonlReadResult<AuditEvent>> {
@@ -173,7 +173,7 @@ export class FileVirtualDecisionStore {
   }
 
   append(decision: VirtualDecision): Promise<void> {
-    return this.store.append(bindVirtualDecisionHash(decision));
+    return this.store.appendDurably(bindVirtualDecisionHash(decision));
   }
 
   readAll(): Promise<JsonlReadResult<VirtualDecision>> {
@@ -189,7 +189,7 @@ export class FileVirtualTradeStore {
   }
 
   append(trade: VirtualTrade): Promise<void> {
-    return this.store.append(trade);
+    return this.store.appendDurably(trade);
   }
 
   readAll(): Promise<JsonlReadResult<VirtualTrade>> {

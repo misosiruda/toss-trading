@@ -5929,13 +5929,29 @@ portfolio/revision, 평가 시각과 decision summary를 포함한다. `paper_or
 decision/trade/audit 형식과 audit ID 규칙은 유지하며 기존 audit ID를 멱등성 키로 사용하지 않는다.
 
 Intent 파일은 실패 잠금이 남아도 별도 read helper로 오프라인 검증할 수 있다. 이 검증은 실제
-decision/trade/audit 로그의 완료·정확한 prefix 또는 durable 적용을 증명하지 않는다. 현재 로그 writer의
-개별 fsync와 전체 artifact 원자성, 완료 marker, automatic roll-forward/rollback, trigger 중복 제거 및
+decision/trade/audit 로그의 완료·정확한 prefix 또는 durable 적용을 증명하지 않는다. 전체 artifact
+원자성, 완료 marker, automatic roll-forward/rollback, trigger 중복 제거 및
 공용 capacity 배정은 후속이다. 재시작 시 정상 portfolio 조회가 가능한 경우에도 intent 자체를
 실행 완료 receipt로 해석하지 않는다. 새 v2 reader를 먼저 배포하고 모든 writer를 중지해 전환한다.
 V2 생성 뒤 구버전 reader/writer로 즉시 rollback할 수 없으며 intent와 revision을 함께 보존해야 한다.
 실패 복구는 모든 관련 writer를 중지하고 intent/현재 JSON/revision/decision/trade/audit를 대조해야 한다.
 자동 migration, 이력 삭제, MCP/HTTP mutation 또는 live order surface는 추가하지 않는다.
+
+개별 실행 로그는 `JsonlStore.appendDurably`를 통해 해당 파일 handle의 write/fsync/close 및
+부모 디렉터리 sync가 완료된 뒤 append 성공을 반환한다. `FileAuditLog`, `FileVirtualDecisionStore`,
+`FileVirtualTradeStore`의 기존 append API가 이 경로를 사용하며 해당 저장소의 모든 호출에 적용된다.
+다른 JSONL 저장소의 일반 append, JSONL 한 줄 형식, decision hash 생성과 readAll의 corruptLineCount
+정책은 유지한다. 입력은 I/O 대기 전에 검증·직렬화해 호출자 변경이 저장 내용에 반영되지 않는다.
+
+Paper application의 로그 sync 실패는 기존 intent와 이미 기록됐을 수 있는 로그 bytes를 보존하고
+잔고 revision/JSON 확정 전에 실패 장벽을 남긴다. 파일 open/write/sync/close/디렉터리 sync 오류를
+자동 재시도하거나 부분 bytes를 삭제하지 않는다. Application 밖의 audit append 실패도 호출자에게
+전달되지만, 독립 로그 호출 자체가 portfolio 잠금이나 별도 복구 장벽을 획득하지는 않는다.
+Windows directory sync EPERM 예외는 기존 경계대로 유지한다. 새로 생성된 모든 상위 디렉터리의
+durability나 장치 전원 장애 수준까지 보장하지 않으므로 사전 준비된 저장 경로를 사용해야 한다.
+이 변경은 로그 간 원자성, 다중 writer 직렬화, 완료 prefix/receipt, torn-line 복구 또는 exactly-once를
+추가하지 않는다. 기존 손상 이력의 자동 수정도 하지 않는다. Runtime artifact 형식 변경은 없고 코드
+rollback으로 복구할 수 있으나 rollback하면 append 성공 전에 fsync를 기다리는 보장이 사라진다.
 
 - cadence scheduler와 conflict resolver
 - immutable regime/thesis trigger event repository와 dedupe resolver
