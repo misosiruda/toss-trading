@@ -5852,6 +5852,26 @@ MCP·HTTP·live order surface와 mock/paper-only 기본값은 변경하지 않�
 
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
+선행 current portfolio 동시성 연결은 기존 paper runner에 적용한다. `FileVirtualPortfolioStore`의
+`read`/`write`와 `withExclusiveUpdate`가 같은 `virtual-portfolio.json.lock` 디렉터리를 사용하며,
+현재 값 비교부터 decision/trade/risk 적용 및 portfolio 파일 교체까지 다른 협력 writer의 진입을
+차단한다. `paperDecisionPipeline`은 provider 호출 전에 현재 저장 잔고와 packet 잔고를 대조하고,
+provider 호출 후 잠금 안에서 최초 저장 값을 다시 비교한다. 불일치하면 `portfolio_state_changed`와
+`PAPER_PORTFOLIO_STATE_CHANGED` audit를 남기고 decision/trade를 쓰지 않는다. Provider는 잠금 밖에서
+실행하므로 외부 응답을 기다리는 동안 잔고 writer를 막지 않는다. 같은 초기 잔고로 두 BUY runner가
+경합하면 하나만 적용되고 다른 하나는 변경된 잔고를 확인해 거절한다.
+
+조건부 갱신 callback이 시작된 후 오류가 나면 일부 decision/trade/audit가 이미 기록되었을 수 있어
+소유자 파일과 잠금 디렉터리를 복구 장벽으로 보존한다. 후속 읽기·쓰기·runner는 timeout 후 실패하며
+자동 잠금 탈취나 부분 기록 삭제를 하지 않는다. 실제 trade append 직후 오류를 주입해 기존 잔고
+보존, 추가 provider 호출 차단 및 trade 중복 추가 차단을 검증한다. 개별 portfolio 파일은 unique 임시
+파일 write/fsync/rename으로 교체하지만 **여러 artifact의 commit/rollback 또는 exactly-once journal은
+아니다**. 값이 바뀌었다가 동일하게 돌아온 ABA 이력, trigger identity dedupe와 공용 capacity allocator,
+active policy/mandate/fill 회계 원자 연결은 여전히 후속이다. 기존 JSON 형식과 import 경로는 유지한다.
+배포·롤백 때는 모든 reader/writer를 중지하고, 실패 장벽이 있으면 관련 artifact를 대조한 명시적 복구
+후 진행한다. 구버전 프로세스와 동시 실행하면 구버전 writer가 새 잠금을 사용하지 않으므로 지원하지
+않는다. 실행 중 외부 파일 교체는 지원하지 않으며 Risk Engine과 paper-only 기본값은 바꾸지 않는다.
+
 - cadence scheduler와 conflict resolver
 - immutable regime/thesis trigger event repository와 dedupe resolver
 - immutable risk-state update origin repository와 breach trigger resolver

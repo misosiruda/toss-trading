@@ -3,6 +3,9 @@ import type {
   MarketPacket,
   VirtualPortfolio
 } from "../domain/schemas.js";
+import { virtualPortfolioSchema } from "../domain/schemas.js";
+import { isDeepStrictEqual } from "node:util";
+import { VirtualPortfolioStateChangedError } from "../storage/virtualPortfolioFileStore.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import { bindVirtualDecisionConfidenceBreakdown } from "../paper/decisionConfidence.js";
 import { PaperOrderEngine } from "../paper/orderEngine.js";
@@ -39,6 +42,7 @@ export interface PaperDecisionPipelineOptions {
 }
 
 export type PaperDecisionPipelineFailure =
+  | { kind: "portfolio"; failureReason: "portfolio_state_changed"; summary: string }
   | {
       kind: "provider";
       failureReason: string;
@@ -64,6 +68,16 @@ export async function runPaperDecisionPipeline(
   options: PaperDecisionPipelineOptions
 ): Promise<PaperDecisionPipelineResult> {
   const auditEventIds: string[] = [];
+  const portfolio = virtualPortfolioSchema.parse(options.portfolio);
+  const expectedStoredPortfolio = await options.repositories.portfolioStore.read();
+  const stateChanged = async (): Promise<PaperDecisionPipelineResult> => {
+    const summary = "Paper portfolio changed; build a new market packet before retrying.";
+    auditEventIds.push(await appendPaperAudit(options.repositories.auditLog, "PAPER_PORTFOLIO_STATE_CHANGED", summary, options.now));
+    return failedPipelineResult({ auditEventIds, portfolio,
+      failure: { kind: "portfolio", failureReason: "portfolio_state_changed", summary } });
+  };
+  if ((expectedStoredPortfolio !== null && !isDeepStrictEqual(expectedStoredPortfolio, portfolio)) ||
+    !isDeepStrictEqual(portfolio, options.packet.virtualPortfolio)) return stateChanged();
   const decisionResult = await options.provider.decide(options.packet);
 
   if (decisionResult.failure || !decisionResult.decision) {
@@ -122,6 +136,19 @@ export async function runPaperDecisionPipeline(
     packet: options.packet
   });
 
+  try {
+    return await options.repositories.portfolioStore.withExclusiveUpdate(expectedStoredPortfolio, async () => {
+      const result = await applyRecordedDecision({ ...options, portfolio }, recordedDecision, auditEventIds);
+      return { portfolio: result.portfolio, result };
+    });
+  } catch (error) {
+    if (error instanceof VirtualPortfolioStateChangedError) return stateChanged();
+    throw error;
+  }
+}
+
+async function applyRecordedDecision(options: PaperDecisionPipelineOptions,
+  recordedDecision: ReturnType<typeof bindVirtualDecisionConfidenceBreakdown>, auditEventIds: string[]): Promise<PaperDecisionPipelineResult> {
   await options.repositories.decisionStore.append(recordedDecision);
   auditEventIds.push(
     await appendPaperAudit(
@@ -175,8 +202,6 @@ export async function runPaperDecisionPipeline(
       );
     }
   }
-
-  await options.repositories.portfolioStore.write(currentPortfolio);
 
   return {
     status: "completed",

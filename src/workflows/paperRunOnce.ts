@@ -138,7 +138,9 @@ export async function runPaperDecisionOnce(
         0,
         pipelineResult.failure?.kind === "validation"
           ? "AI decision rejected by semantic validation; no paper order was created."
-          : "AI decision failed; no paper order was created."
+          : pipelineResult.failure?.kind === "portfolio"
+            ? "Paper portfolio changed; no paper order was created. Build a new market packet."
+            : "AI decision failed; no paper order was created."
       ),
       packetId: packetResult.packet.packetId,
       tradeCount: 0,

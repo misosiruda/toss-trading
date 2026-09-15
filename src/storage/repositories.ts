@@ -12,8 +12,6 @@ import {
   type MarketPacket,
   virtualDecisionSchema,
   type VirtualDecision,
-  virtualPortfolioSchema,
-  type VirtualPortfolio,
   virtualTradeSchema,
   type VirtualTrade
 } from "../domain/schemas.js";
@@ -43,7 +41,7 @@ import {
   VIRTUAL_PORTFOLIO_FILE_NAME,
   VIRTUAL_TRADES_FILE_NAME
 } from "./artifactPaths.js";
-import { JsonFileStore } from "./fileStore.js";
+export { FileVirtualPortfolioStore } from "./virtualPortfolioFileStore.js";
 import { JsonlStore, type JsonlReadResult } from "./jsonlStore.js";
 
 export interface StoragePaths {
@@ -160,26 +158,6 @@ export class FileAuditLog {
 
   readAll(): Promise<JsonlReadResult<AuditEvent>> {
     return this.store.readAll();
-  }
-}
-
-export class FileVirtualPortfolioStore {
-  private readonly store: JsonFileStore<VirtualPortfolio>;
-
-  constructor(filePath: string) {
-    this.store = new JsonFileStore(
-      filePath,
-      virtualPortfolioSchema,
-      "virtualPortfolio"
-    );
-  }
-
-  read(): Promise<VirtualPortfolio | null> {
-    return this.store.read();
-  }
-
-  write(portfolio: VirtualPortfolio): Promise<void> {
-    return this.store.write(portfolio);
   }
 }
 
