@@ -104,15 +104,17 @@ test("active-policy current sizing requires actual complete activation and depen
   });
 });
 
-test("active-policy current sizing holds portfolio and activation locks through destination fsync and retry", async (context) => {
-  await fixture(context, async ({ request, records, activations, retirement, store }) => {
+test("active-policy current sizing holds portfolio, policy and activation locks through destination fsync and retry", async (context) => {
+  await fixture(context, async ({ baseDir, request, records, activations, retirement, store, policy }) => {
     const original = fs.open; let checked = 0;
+    const policies = new RuntimePortfolioPolicyFileRepository(baseDir, policy.dependencies, options);
     const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
       const handle = await original(...args);
       if (args[0] === records && (args[1] === "a" || args[1] === "r+")) {
         const sync = handle.sync.bind(handle);
         context.mock.method(handle, "sync", async () => {
           await assert.rejects(activations.appendRetired(retirement), /lock/);
+          await assert.rejects(policies.append(policyFixture("v2").policy), /lock/);
           await assert.rejects(store.read(), /lock/);
           checked++; await sync();
         });
@@ -124,7 +126,51 @@ test("active-policy current sizing holds portfolio and activation locks through 
     finally { mock.mock.restore(); syncBuiltinESMExports(); }
     assert.equal(checked, 2);
     await activations.appendRetired(retirement); assert.ok(await store.read());
+    await policies.append(policyFixture("v2").policy);
     await assert.rejects(publish(request, options));
+  });
+});
+
+test("active-policy current sizing keeps policy writers excluded while acquiring the final activation lock", async (context) => {
+  await fixture(context, async ({ baseDir, request, policy }) => {
+    const original = fs.open, paths = createRuntimePortfolioPolicyActivationPaths(baseDir);
+    const policyPath = createRuntimePortfolioPolicyPaths(baseDir).recordsPath;
+    const policies = new RuntimePortfolioPolicyFileRepository(baseDir, policy.dependencies, options);
+    let generationSynced = false, checked = false;
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      if (args[0] === paths.lockPath && args[1] === "wx" && generationSynced) {
+        await assert.rejects(policies.append(policyFixture("v2").policy), /lock/); checked = true;
+      }
+      const handle = await original(...args);
+      if (args[0] === policyPath && args[1] === "r+") {
+        const sync = handle.sync.bind(handle);
+        context.mock.method(handle, "sync", async () => { await sync(); generationSynced = true; });
+      }
+      return handle;
+    });
+    syncBuiltinESMExports();
+    try { await publish(request, options); }
+    finally { mock.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(checked, true);
+    await policies.append(policyFixture("v2").policy);
+  });
+});
+
+test("active-policy current sizing refuses failed policy generation fsync and releases its owned locks", async (context) => {
+  await fixture(context, async ({ baseDir, request, records, store, activations, retirement, policy }) => {
+    const original = fs.open, path = createRuntimePortfolioPolicyPaths(baseDir).recordsPath;
+    const failure = new Error("synthetic policy generation sync failure");
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      const handle = await original(...args);
+      if (args[0] === path && args[1] === "r+") context.mock.method(handle, "sync", async () => { throw failure; });
+      return handle;
+    });
+    syncBuiltinESMExports();
+    try { await assert.rejects(publish(request, options), (error) => error === failure); }
+    finally { mock.mock.restore(); syncBuiltinESMExports(); }
+    await assert.rejects(fs.readFile(records), { code: "ENOENT" });
+    assert.ok(await store.read()); await activations.appendRetired(retirement);
+    await new RuntimePortfolioPolicyFileRepository(baseDir, policy.dependencies, options).append(policyFixture("v2").policy);
   });
 });
 

@@ -81,6 +81,17 @@ export class RuntimePortfolioPolicyFileRepository {
     return this.withLock(async () => this.readGenerationUnderLock());
   }
 
+  /** Keeps cooperative policy writers excluded through dependent persistence.
+   * Consumers must not re-enter this repository. Policy precedes activation in lock order.
+   */
+  async withDurablePolicyGeneration<T>(operation: (policies: readonly RuntimePortfolioPolicyRecord[]) => Promise<T>): Promise<T> {
+    return this.withLock(async () => {
+      const policies = await this.readAllUnderLock();
+      if (policies.length > 0) await syncDurableJsonFile(this.recordsPath);
+      return operation(policies);
+    });
+  }
+
   async append(value: unknown): Promise<RuntimePortfolioPolicyRecord> {
     const parsed = validateRuntimePortfolioPolicyDependencies(
       value,

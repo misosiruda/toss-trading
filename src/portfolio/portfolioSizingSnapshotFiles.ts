@@ -9,6 +9,7 @@ import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtim
 import type { PortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { resolvePortfolioSizingSnapshot } from "./portfolioSizingSnapshotResolver.js";
 import { readStoredRuntimePortfolioPolicyActivationSnapshot, RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
+import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -124,7 +125,7 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.withLock(() => this.appendUnderLock(candidate));
   }
 
-  /** Concrete source binding, with the established sizing -> activation lock order.
+  /** Concrete source binding, with sizing -> policy -> activation lock order.
    * Both new append and exact retry must match the currently active policy.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
@@ -133,14 +134,17 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.withLock(async () => {
       // Do not carry a policy/dependency generation across the destination lock wait.
       const source = await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir, options);
-      const activations = new RuntimePortfolioPolicyActivationFileRepository(baseDir, source.policies, source.dependencies.repository, options);
-      return activations.withDurableActivePolicy(candidate.portfolioId, async (active, observedAt) => {
-        if (candidate.policyHash !== active.policy.policyHash) throw new Error("sizing snapshot active policy mismatch");
-        if (Date.parse(candidate.asOf) < Date.parse(active.activation.effectiveFrom) || Date.parse(candidate.asOf) > Date.parse(observedAt)) {
-          throw new Error("sizing snapshot cutoff is outside the observed active policy interval");
-        }
-        return this.appendUnderLock(candidate);
-      });
+      return new RuntimePortfolioPolicyFileRepository(baseDir, source.dependencies.repository, options)
+        .withDurablePolicyGeneration(async (policies) => {
+          const activations = new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies, source.dependencies.repository, options);
+          return activations.withDurableActivePolicy(candidate.portfolioId, async (active, observedAt) => {
+            if (candidate.policyHash !== active.policy.policyHash) throw new Error("sizing snapshot active policy mismatch");
+            if (Date.parse(candidate.asOf) < Date.parse(active.activation.effectiveFrom) || Date.parse(candidate.asOf) > Date.parse(observedAt)) {
+              throw new Error("sizing snapshot cutoff is outside the observed active policy interval");
+            }
+            return this.appendUnderLock(candidate);
+          });
+        });
     });
   }
 

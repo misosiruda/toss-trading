@@ -5913,8 +5913,12 @@ Snapshot 저장 실패는 오류와 남은 bytes를 보존하되 portfolio를 �
 
 `appendPolicyBoundCurrentPortfolioSizingSnapshot`은 같은 실제 잔고/revision publisher에 저장된
 정책 원본 검증을 추가한 경로다. Sizing 잠금을 얻은 뒤 실제 dependency/policy/activation 파일을 읽어
-잠금 대기 중 정책 원본의 부분 append 실패도 거절한다. Portfolio → sizing snapshot → activation
-순서로 잠금을 유지하며 저장 및 exact retry를 완료한다. Sizing 저장소의
+잠금 대기 중 정책 원본의 부분 append 실패도 거절한다. 이후 정책 저장소의
+`withDurablePolicyGeneration`으로 실제 정책 이력을 잠금 안에서 다시 읽고 fsync하며 portfolio → sizing
+snapshot → policy → activation 순서로 잠금을 유지해 저장 및 exact retry를 완료한다. Policy 잠금은
+activation 잠금 대기 및 destination 저장 동안에도 유지하므로 중간의 정책 append 실패로 원본이
+손상될 수 있는 cooperative writer gap을 남기지 않는다. Callback에서 같은 policy 저장소를 재진입하거나
+activation → policy 역순으로 잠금을 획득하지 않는다. Sizing 저장소의
 `appendForActivePolicy`는 activation 이력을 잠금 안에서 다시 읽고 fsync한 관측 시각의 활성 정책과
 입력 `policyHash`를 비교한다. 평가 cutoff는 그 activation의 `effectiveFrom` 이상, 관측 시각 이하여야
 한다. 정책 부재·종료·교체·손상은 거절하며 동일 hash의 정책이 다시 활성화돼도 이전 epoch의 cutoff는
