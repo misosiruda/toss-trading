@@ -958,6 +958,11 @@ type OpeningCapacityReservationEvent = OpeningCapacityReservationEventBase &
   초기화 실패, 불완전한 release, generation 누락 및 abandoned/replaced lock은 자동 복구하지 않는다.
   세대별 디렉터리와 표식은 read/refresh마다 누적되며 online GC는 제공하지 않는다. 보존량 모니터링과
   실행 writer가 없는 상태에서의 명시적 보관/복구가 필요하다. 기존 file 형태 barrier도 덮어쓰지 않는다.
+  직렬화 보장은 이 프로토콜을 사용하는 repository 프로세스 사이의 동시성에 한정된다. 실행 중인
+  reader/writer가 있는 동안 외부 도구로 owner/release/state 경로를 교체하는 online takeover는 지원하지
+  않는다. 복구 전 모든 reader/writer를 중지해야 한다. 소유권 재검증은 관측한 손상을 거절하는 방어이며
+  외부 파일 교체와 state rename을 원자적으로 묶는 OS fencing이 아니다. 실제 rename 직전 정지한
+  writer에 대해 별도 프로세스의 획득 timeout, 기존 owner/state 보존, 완료 후 stale CAS 거절을 검증한다.
   중첩 projection/state의 객체 key 순서도 실제 재계산 문서의 직렬화 bytes와 대조한다.
   Rename 후 directory sync 실패는 성공으로 보고하지 않으며
   동일 입력 재시도로 저장된 결과의 durability를 다시 확인한다. Windows directory fsync EPERM은 기존 저장소와

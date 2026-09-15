@@ -170,6 +170,49 @@ test("opening capacity file serializes real process retries and competing docume
   });
 });
 
+test("opening capacity holds its generation across rename and rejects a competing process before and after commit", async (context) => {
+  await fixture(context, async (dir) => {
+    const first = await storeSource(dir), next = await storeSource(dir, "paper-portfolio", 200);
+    const other = await storeSource(dir, "paper-portfolio", 300);
+    const repository = new BucketOpeningCapacityStateFileRepository(dir);
+    const old = await repository.refresh({ portfolioSnapshotId: first.portfolioSnapshotId, expectedDocumentHash: null });
+    const { statePath, lockPath } = createBucketOpeningCapacityStatePaths(dir), bytes = await fs.readFile(statePath);
+    let resume!: () => void, entered!: () => void;
+    const gate = new Promise<void>((done) => { resume = done; });
+    const reached = new Promise<void>((done) => { entered = done; });
+    const originalRename = fs.rename;
+    const renameMock = context.mock.method(fs, "rename", async (...args: Parameters<typeof fs.rename>) => {
+      if (args[1] === statePath) { entered(); await gate; }
+      return originalRename(...args);
+    });
+    syncBuiltinESMExports();
+    const pending = repository.refresh({ portfolioSnapshotId: next.portfolioSnapshotId, expectedDocumentHash: old.documentHash });
+    // Attach rejection handling immediately so a pre-rename error cannot become an unhandled rejection.
+    const outcome = pending.then((value) => ({ value }), (error: unknown) => ({ error }));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([reached, outcome.then(() => { throw new Error("writer ended before rename barrier"); }),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("rename barrier timed out")), 30000); })]);
+      const ownerPath = join(lockPath, "2", "owner"), owner = await fs.readFile(ownerPath, "utf8");
+      const competing = await childRefresh(dir, other.portfolioSnapshotId, old.documentHash, 200);
+      assert.notEqual(competing.code, 0, competing.output);
+      assert.match(competing.output, /opening capacity state lock is unavailable/);
+      assert.deepEqual((await fs.readdir(lockPath)).sort(), ["1", "2"]);
+      assert.deepEqual(await fs.readdir(join(lockPath, "2")), ["owner"]);
+      assert.equal(await fs.readFile(ownerPath, "utf8"), owner);
+      assert.deepEqual(await fs.readFile(statePath), bytes);
+    } finally {
+      clearTimeout(timer); resume(); await outcome;
+      renameMock.mock.restore(); syncBuiltinESMExports();
+    }
+    const updated = await pending;
+    const stale = await childRefresh(dir, other.portfolioSnapshotId, old.documentHash);
+    assert.notEqual(stale.code, 0, stale.output); assert.match(stale.output, /CAS mismatch/);
+    assert.equal(await fs.readFile(statePath, "utf8"), `${JSON.stringify(updated)}\n`);
+    assert.deepEqual(await repository.readVerifiedSnapshot(), updated);
+  });
+});
+
 test("opening capacity atomic replacement preserves prior bytes on write sync and rename failures", async (context) => {
   await fixture(context, async (dir) => {
     const first = await storeSource(dir), next = await storeSource(dir, "paper-portfolio", 200);
@@ -248,14 +291,14 @@ async function storeSource(dir: string, portfolioId = "paper-portfolio", cutoff 
     portfolioVersion: version, asOf: at(cutoff), virtualPortfolio: { ...source.virtualPortfolio, portfolioId, updatedAt: at(cutoff) } }));
 }
 function failure(code: string) { return Object.assign(new Error(`injected ${code}`), { code }); }
-function childRefresh(dir: string, snapshotId: string, hash: string | null): Promise<{ code: number | null; output: string }> {
+function childRefresh(dir: string, snapshotId: string, hash: string | null, lockTimeoutMs = 60000): Promise<{ code: number | null; output: string }> {
   const moduleUrl = new URL("./bucketOpeningCapacityStateFiles.js", import.meta.url).href;
   const code = `import { BucketOpeningCapacityStateFileRepository as Repository } from ${JSON.stringify(moduleUrl)};
-    try { const result = await new Repository(process.argv[1], { lockTimeoutMs: 60000 }).refresh({
+    try { const result = await new Repository(process.argv[1], { lockTimeoutMs: Number(process.argv[4]) }).refresh({
       portfolioSnapshotId: process.argv[2], expectedDocumentHash: JSON.parse(process.argv[3]) }); console.log(result.documentHash); }
     catch (error) { console.error(error.message); process.exitCode = 1; }`;
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["--input-type=module", "-e", code, dir, snapshotId, JSON.stringify(hash)], { windowsHide: true });
+    const child = spawn(process.execPath, ["--input-type=module", "-e", code, dir, snapshotId, JSON.stringify(hash), String(lockTimeoutMs)], { windowsHide: true });
     let output = "", timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill(); }, 90000);
     child.stdout.on("data", (chunk) => { output += String(chunk); }); child.stderr.on("data", (chunk) => { output += String(chunk); });

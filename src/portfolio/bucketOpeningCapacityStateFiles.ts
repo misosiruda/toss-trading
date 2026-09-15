@@ -26,7 +26,10 @@ export function createBucketOpeningCapacityStatePaths(baseDir: string) {
     lockPath: join(baseDir, `.${BUCKET_OPENING_CAPACITY_STATE_FILE_NAME}.lock`) };
 }
 
-/** Whole-document projection CAS only. No latest-portfolio, source lease, allocation or execution authority. */
+/** Whole-document projection CAS only. No latest-portfolio, source lease, allocation or execution authority.
+ * Serializes cooperating repository processes, not out-of-band filesystem writers. Recovery requires all
+ * readers/writers to be stopped; ownership checks detect observed corruption, not an atomic takeover fence.
+ */
 export class BucketOpeningCapacityStateFileRepository {
   private readonly baseDir: string;
   private readonly paths: ReturnType<typeof createBucketOpeningCapacityStatePaths>;
