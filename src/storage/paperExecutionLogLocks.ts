@@ -9,6 +9,7 @@ interface Scope {
   queues: Map<string, Promise<void>>;
   accepting: boolean;
   active: boolean;
+  sealed: boolean;
   dirty: boolean;
   failed: boolean;
   failure: unknown;
@@ -16,6 +17,28 @@ interface Scope {
 }
 interface Lease { release(): Promise<void>; assertOwned(): Promise<void> }
 const scopes = new AsyncLocalStorage<Scope>();
+
+/** Internal observation boundary: the caller must await all its append operations first. */
+export async function assertPaperExecutionLogBatchHeld(paths: readonly string[]): Promise<void> {
+  const scope = scopes.getStore();
+  if (!scope?.active || !scope.accepting) throw new Error("paper execution log observation requires an active batch");
+  for (const path of paths) {
+    if (!scope.keys.has(pathKey(await canonicalPath(path)))) throw new Error("paper execution log observation is outside the held batch");
+  }
+  if (!scope.active || !scope.accepting) throw new Error("paper execution log scope has expired");
+  if (scope.failed) throw scope.failure;
+  await scope.assertOwned();
+}
+
+/** Stop accepting new writes and drain registered writes before recording exact completion prefixes. */
+export async function sealPaperExecutionLogBatch(paths: readonly string[]): Promise<void> {
+  const scope = scopes.getStore();
+  if (!scope?.active || !scope.accepting) throw new Error("paper execution log sealing requires an active batch");
+  scope.sealed = true;
+  await assertPaperExecutionLogBatchHeld(paths);
+  await Promise.all(scope.queues.values());
+  await assertPaperExecutionLogBatchHeld(paths);
+}
 
 /** Cooperating writers only. Readers remain forensic views, not committed transaction snapshots.
  * Acquire all log locks before a portfolio lock. Never call providers or nest batches here.
@@ -31,7 +54,7 @@ export async function withPaperExecutionLogBatch<T>(paths: readonly string[], op
   if (new Set(keys).size !== keys.length) throw new Error("paper execution log paths must be distinct");
   canonical.sort((a, b) => pathKey(a) < pathKey(b) ? -1 : pathKey(a) > pathKey(b) ? 1 : 0);
   const leases: Lease[] = [];
-  const scope: Scope = { keys: new Set(keys), queues: new Map(), accepting: true, active: true, dirty: false, failed: false, failure: undefined,
+  const scope: Scope = { keys: new Set(keys), queues: new Map(), accepting: true, active: true, sealed: false, dirty: false, failed: false, failure: undefined,
     async assertOwned() { for (const lease of leases) await lease.assertOwned(); } };
   let result!: T;
   try {
@@ -61,9 +84,11 @@ export async function withPaperExecutionLogAppend(path: string, operation: () =>
   options: PaperExecutionLogLockOptions = {}): Promise<void> {
   const inherited = scopes.getStore();
   if (inherited && (!inherited.accepting || !inherited.active)) throw new Error("paper execution log scope has expired");
+  if (inherited?.sealed) throw new Error("paper execution log batch is sealed");
   const key = pathKey(await canonicalPath(path));
   if (inherited) {
     if (!inherited.accepting || !inherited.active) throw new Error("paper execution log scope has expired");
+    if (inherited.sealed) throw new Error("paper execution log batch is sealed");
     if (!inherited.keys.has(key)) throw new Error("paper execution log append is outside the held batch");
     return enqueue(inherited, key, operation);
   }

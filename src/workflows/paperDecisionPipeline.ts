@@ -6,7 +6,6 @@ import type {
 import { virtualPortfolioSchema } from "../domain/schemas.js";
 import { isDeepStrictEqual } from "node:util";
 import { VirtualPortfolioStateChangedError } from "../storage/virtualPortfolioFileStore.js";
-import { withPaperExecutionLogBatch } from "../storage/paperExecutionLogLocks.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import { preparePaperApplication, type PreparedPaperApplication } from "../paper/preparedApplication.js";
 import {
@@ -136,12 +135,12 @@ export async function runPaperDecisionPipeline(
 
   try {
     const repositories = options.repositories;
-    return await withPaperExecutionLogBatch([repositories.auditLog.filePath, repositories.decisionStore.filePath, repositories.tradeStore.filePath],
-      () => repositories.portfolioStore.withPreparedApplication(expectedSnapshot,
+    return await repositories.portfolioStore.withLoggedPreparedApplication(expectedSnapshot,
       () => preparePaperApplication({ expectedSnapshot, packet: options.packet, providerDecision,
         evaluatedAt: options.now.toISOString(), decisionSummary: options.recordedDecisionSummary?.(providerDecision.decisions.length) ??
           `Recorded ${providerDecision.decisions.length} paper-only decision(s)` }),
-      (application) => applyPreparedApplication(repositories, application, auditEventIds)));
+      (application) => applyPreparedApplication(repositories, application, auditEventIds),
+      { audit: repositories.auditLog.filePath, decision: repositories.decisionStore.filePath, trade: repositories.tradeStore.filePath });
   } catch (error) {
     if (error instanceof VirtualPortfolioStateChangedError) return stateChanged();
     throw error;
