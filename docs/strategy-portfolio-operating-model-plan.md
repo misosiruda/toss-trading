@@ -6015,6 +6015,12 @@ Receipt는 filesystem 경로를 제공하지 않는다. 로그 경로는 `FileVi
 별도 로그 경로를 쓰면 writer와 모든 reader에 같은 설정이 필요하다. Pipeline이 전달한 경로와
 설정이 다르면 effect 전 거절한다. 임의 manifest가 reader를 다른 파일로 돌릴 수 없다.
 
+Journal의 v3 receipt들은 한 번의 read 호출 안에서 함께 검증한다. 각 실제 로그는 한 번만 읽고,
+before/after byte boundary를 정렬하여 SHA-256 상태를 누적·복사하므로 매 revision마다 전체 로그를
+다시 읽거나 prefix 전체를 재해시하지 않는다. Buffer와 digest는 호출 밖에 캐시하지 않아 다음 read는
+실제 파일을 다시 검사한다. 기존 prefix의 빈 줄·공백 separator는 `JsonlStore.readAll`과 같이 무시하되
+원본 bytes/hash는 그대로 보존한다. 새 suffix의 빈 줄은 허용하지 않으며 torn line 검증도 유지한다.
+
 일반 write의 v1과 기존 `withPreparedApplication`의 v2는 유지하고 과거 로그 receipt를 합성하지 않는다.
 v1/v2/v3 혼합 이력을 지원하지만 v3 생성 이후에는 v3 reader를 배포한 상태를 유지해야 한다.
 Rollback은 모든 writer를 중지하고 intent/plan/receipt/log/revision/JSON과 실패 잠금을 함께 대조해야

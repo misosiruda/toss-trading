@@ -3,7 +3,7 @@ import { open, readFile } from "node:fs/promises";
 import { z } from "zod";
 import { sha256HashSchema, virtualPortfolioSchema, type VirtualPortfolio } from "../domain/schemas.js";
 import { readPreparedPaperApplication } from "./preparedPaperApplicationFiles.js";
-import { readPaperApplicationLogReceipt, type PaperExecutionLogPaths } from "./paperApplicationLogReceipts.js";
+import { capturePaperExecutionLogPaths, readPaperApplicationLogReceipts, type PaperExecutionLogPaths } from "./paperApplicationLogReceipts.js";
 
 const legacyEntrySchema = z.object({
   schemaVersion: z.literal("paper_portfolio_revision.v1"),
@@ -35,6 +35,7 @@ export interface PortfolioRevisionJournalHead extends VirtualPortfolioRevisionSn
 /** Internal storage operations: the caller must hold the matching portfolio lock throughout. */
 export async function readPortfolioRevisionJournal(path: string, portfolio: VirtualPortfolio | null,
   portfolioPath?: string, executionLogPaths?: PaperExecutionLogPaths): Promise<PortfolioRevisionJournalHead> {
+  executionLogPaths = executionLogPaths && capturePaperExecutionLogPaths(executionLogPaths);
   let bytes: Buffer;
   try { bytes = await readFile(path); }
   catch (error) {
@@ -45,10 +46,17 @@ export async function readPortfolioRevisionJournal(path: string, portfolio: Virt
   if (!bytes.equals(Buffer.from(raw, "utf8")) || !raw.endsWith("\n") || raw.length === 0) {
     throw new Error("paper portfolio revision journal has invalid UTF-8 or a torn entry");
   }
-  let previous: z.infer<typeof entrySchema> | null = null;
-  for (const line of raw.slice(0, -1).split("\n")) {
+  const entries = raw.slice(0, -1).split("\n").map((line) => {
     const entry = entrySchema.parse(JSON.parse(line));
     if (line !== JSON.stringify(entry)) throw new Error("paper portfolio revision entry is not canonical");
+    return entry;
+  });
+  const logHashes = entries.flatMap((entry) => entry.schemaVersion === "paper_portfolio_revision.v3" ? [entry.logReceiptHash] : []);
+  if (logHashes.length && (!portfolioPath || !executionLogPaths)) throw new Error("paper application log source configuration is required");
+  const logReceipts = logHashes.length ? await readPaperApplicationLogReceipts(portfolioPath!, logHashes, executionLogPaths!) : [];
+  let receiptIndex = 0;
+  let previous: z.infer<typeof entrySchema> | null = null;
+  for (const entry of entries) {
     const { revisionHash, ...payload } = entry;
     if (revisionHash !== hashPortfolioRevisionPayload(payload)) throw new Error("paper portfolio revision hash mismatch");
     if (entry.sequence !== (previous?.sequence ?? 0) + 1 || entry.previousRevisionHash !== (previous?.revisionHash ?? null) ||
@@ -64,8 +72,7 @@ export async function readPortfolioRevisionJournal(path: string, portfolio: Virt
         throw new Error("paper revision application origin mismatch");
       }
       if (entry.schemaVersion === "paper_portfolio_revision.v3") {
-        if (!executionLogPaths) throw new Error("paper application log source configuration is required");
-        const receipt = await readPaperApplicationLogReceipt(portfolioPath, entry.logReceiptHash, executionLogPaths);
+        const receipt = logReceipts[receiptIndex++]!;
         if (receipt.applicationHash !== entry.applicationHash) throw new Error("paper revision log receipt origin mismatch");
       }
     }

@@ -92,32 +92,68 @@ export async function readPaperApplicationLogPlan(portfolioPath: string, hash: s
  */
 export async function readPaperApplicationLogReceipt(portfolioPath: string, hash: string,
   paths: PaperExecutionLogPaths): Promise<PaperApplicationLogReceipt> {
+  return (await readPaperApplicationLogReceipts(portfolioPath, [hash], paths))[0]!;
+}
+
+/** Per-call verification only: read each current log once and hash sorted prefix boundaries
+ * incrementally. No buffers, successful validations or digests survive a repository read.
+ */
+export async function readPaperApplicationLogReceipts(portfolioPath: string, hashes: readonly string[],
+  paths: PaperExecutionLogPaths): Promise<PaperApplicationLogReceipt[]> {
   paths = capturePaperExecutionLogPaths(paths);
+  const capturedHashes = [...hashes];
+  const records = [];
+  for (const hash of capturedHashes) records.push(await readReceiptSources(portfolioPath, hash));
+  for (const role of roles) {
+    if (records.length === 0) break;
+    const current = await readLog(paths[role], false);
+    const lengths = records.flatMap(({ receipt, plan }) => [plan.before[role].byteLength, receipt.after[role].byteLength]);
+    const digests = prefixDigests(current.bytes, lengths);
+    const digest = (length: number) => digests.get(length)!;
+    for (const { receipt, plan, application } of records) {
+      const expected = receipt.after[role];
+      verifyPrefix(expected, current, digest);
+      verifySuffix(application, role, plan.before[role],
+        { exists: expected.exists, bytes: current.bytes.subarray(0, expected.byteLength) }, digest);
+    }
+  }
+  return records.map(({ receipt }) => receipt);
+}
+
+async function readReceiptSources(portfolioPath: string, hash: string) {
   const receipt = await readCanonical(paperApplicationLogReceiptPath(portfolioPath, hash), receiptSchema);
   const { receiptHash, ...payload } = receipt;
   if (receiptHash !== hash || receiptHash !== hashPreparedApplicationPayload(payload)) throw new Error("paper log receipt hash mismatch");
   const plan = await readPaperApplicationLogPlan(portfolioPath, receipt.planHash);
   if (plan.applicationHash !== receipt.applicationHash) throw new Error("paper log receipt application origin mismatch");
   const application = await readPreparedPaperApplication(portfolioPath, receipt.applicationHash);
-  for (const role of roles) {
-    const current = await readLog(paths[role], false), expected = receipt.after[role];
-    verifyPrefix(expected, current);
-    verifySuffix(application, role, plan.before[role], { exists: expected.exists, bytes: current.bytes.subarray(0, expected.byteLength) });
-  }
-  return receipt;
+  return { receipt, plan, application };
 }
 
 function verifySuffix(application: PreparedPaperApplication, role: typeof roles[number], before: Prefix,
-  after: { exists: boolean; bytes: Buffer }) {
-  verifyPrefix(before, after);
+  after: { exists: boolean; bytes: Buffer }, digest?: (length: number) => string) {
+  verifyPrefix(before, after, digest);
   const expected = role === "audit" ? application.auditEvents : role === "decision" ? [application.decision]
     : application.steps.flatMap((step) => step.trade ? [step.trade] : []);
   const actual = parseLines(after.bytes.subarray(before.byteLength), true);
   if (!isDeepStrictEqual(actual, expected)) throw new Error(`paper application ${role} log suffix mismatch`);
 }
-function verifyPrefix(expected: Prefix, actual: { exists: boolean; bytes: Buffer }) {
+function verifyPrefix(expected: Prefix, actual: { exists: boolean; bytes: Buffer }, digest?: (length: number) => string) {
   if ((expected.exists && !actual.exists) || actual.bytes.length < expected.byteLength ||
-    bytesHash(actual.bytes.subarray(0, expected.byteLength)) !== expected.hash) throw new Error("paper application log prefix mismatch");
+    (digest ? digest(expected.byteLength) : bytesHash(actual.bytes.subarray(0, expected.byteLength))) !== expected.hash) {
+    throw new Error("paper application log prefix mismatch");
+  }
+}
+function prefixDigests(bytes: Buffer, lengths: number[]): Map<number, string> {
+  const result = new Map<number, string>(), hash = createHash("sha256");
+  let offset = 0;
+  for (const length of [...new Set(lengths)].sort((a, b) => a - b)) {
+    if (length > bytes.length) throw new Error("paper application log prefix mismatch");
+    hash.update(bytes.subarray(offset, length));
+    result.set(length, `sha256:${hash.copy().digest("hex")}`);
+    offset = length;
+  }
+  return result;
 }
 function prefix(value: { exists: boolean; bytes: Buffer }): Prefix {
   return { exists: value.exists, byteLength: value.bytes.length, hash: bytesHash(value.bytes) };
@@ -127,7 +163,7 @@ function parseLines(bytes: Buffer, canonical: boolean): unknown[] {
   if (bytes.length === 0) return [];
   const raw = decode(bytes);
   if (!raw.endsWith("\n")) throw new Error("paper application log has a torn final line");
-  return raw.slice(0, -1).split("\n").map((line) => {
+  return raw.slice(0, -1).split("\n").filter((line) => canonical || line.trim().length !== 0).map((line) => {
     const value: unknown = JSON.parse(line);
     if (canonical && JSON.stringify(value) !== line) throw new Error("paper application log suffix is not canonical");
     return value;

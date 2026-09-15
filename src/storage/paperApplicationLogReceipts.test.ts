@@ -216,6 +216,70 @@ test("durable source fsync errors propagate even when the error code is ENOENT",
   });
 });
 
+test("journal verification reads each log once across multiple receipts and does not cache later reads", async (context) => {
+  const source = (await readGolden()).buy!;
+  await fixture(context, source, async ({ path, paths, store }) => {
+    let last!: PreparedPaperApplication;
+    for (let index = 0; index < 4; index++) {
+      if (index) await store.write(source.packet.virtualPortfolio);
+      last = preparePaperApplication({ expectedSnapshot: await store.readSnapshot(), packet: source.packet,
+        providerDecision: source.providerDecision, evaluatedAt: source.evaluatedAt, decisionSummary: source.decisionSummary });
+      await store.withLoggedPreparedApplication(last.expectedSnapshot, () => last, (value) => appendApplication(value, paths), paths);
+      // The next before prefix need not equal the previous after prefix.
+      await new FileAuditLog(paths.audit).append({ ...last.auditEvents[0]!, summary: `independent audit ${index}` });
+    }
+    const original = fs.open, counts = new Map<string, number>();
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      const handle = await original(...args);
+      if (Object.values(paths).includes(String(args[0])) && args[1] === "r") {
+        const read = handle.readFile.bind(handle);
+        context.mock.method(handle, "readFile", async () => {
+          counts.set(String(args[0]), (counts.get(String(args[0])) ?? 0) + 1);
+          return read();
+        });
+      }
+      return handle;
+    });
+    syncBuiltinESMExports();
+    try {
+      for (const operation of [() => store.read(), () => store.readSnapshot(), () => store.write(last.portfolio)]) {
+        counts.clear(); await operation();
+        assert.deepEqual(Object.values(paths).map((path) => counts.get(path)), [1, 1, 1]);
+      }
+      const originalBytes = await fs.readFile(paths.audit);
+      await fs.writeFile(paths.audit, originalBytes.toString().replace("independent audit 1", "independent audit X"));
+      await assert.rejects(store.read(), /prefix mismatch/);
+      await fs.writeFile(paths.audit, originalBytes);
+      assert.deepEqual(await store.read(), last.portfolio);
+    } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+  });
+});
+
+test("legacy blank separator lines remain byte-exact while new blank suffix lines are rejected", async (context) => {
+  const source = (await readGolden()).buy!;
+  for (const extraSuffix of [false, true]) await fixture(context, source, async ({ path, paths, store, app }) => {
+    const prior = Buffer.from(`\n \t\r\n${JSON.stringify(app.auditEvents[0]!)}\r\n\n \t\n`);
+    await fs.writeFile(paths.audit, prior);
+    assert.equal((await new FileAuditLog(paths.audit).readAll()).corruptLineCount, 0);
+    let effects = 0;
+    const execution = store.withLoggedPreparedApplication(app.expectedSnapshot, () => app, async (value) => {
+      effects++; await appendApplication(value, paths);
+      if (extraSuffix) await fs.appendFile(paths.audit, "\n");
+    }, paths);
+    if (extraSuffix) {
+      await assert.rejects(execution);
+      assert.deepEqual(JSON.parse(await fs.readFile(path, "utf8")), app.expectedSnapshot.portfolio);
+    } else {
+      await execution;
+      assert.deepEqual(await new FileVirtualPortfolioStore(path).read(), app.portfolio);
+      const receipt = await readPaperApplicationLogReceipt(path, (await revision(path)).logReceiptHash, paths);
+      assert.equal((await readPaperApplicationLogPlan(path, receipt.planHash)).before.audit.byteLength, prior.length);
+    }
+    assert.equal(effects, 1);
+    assert.deepEqual((await fs.readFile(paths.audit)).subarray(0, prior.length), prior);
+  });
+});
+
 async function appendApplication(app: PreparedPaperApplication, paths: PaperExecutionLogPaths) {
   await new FileVirtualDecisionStore(paths.decision).append(app.decision);
   for (const event of app.auditEvents) await new FileAuditLog(paths.audit).append(event);
