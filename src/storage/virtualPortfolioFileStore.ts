@@ -45,6 +45,19 @@ export class FileVirtualPortfolioStore {
     });
   }
 
+  /** Keep the actual revision fixed while a consumer persists derived evidence. This does not
+   * write the portfolio or grant execution authority. Do not re-enter this store or acquire
+   * execution-log locks in the callback (lock order: logs -> portfolio -> sizing source).
+   */
+  async withLockedSnapshot<T>(operation: (snapshot: VirtualPortfolioRevisionSnapshot) => Promise<T>): Promise<T> {
+    return this.withLock(async (assertOwned) => {
+      const { portfolio, revisionHash } = await this.readStoredSnapshot();
+      const result = await operation(structuredClone({ portfolio, revisionHash }));
+      await assertOwned();
+      return result;
+    });
+  }
+
   async write(portfolio: VirtualPortfolio): Promise<void> {
     const captured = parseWithSchema(virtualPortfolioSchema, portfolio, "virtualPortfolio");
     await this.withLock(async (assertOwned, preserveBarrier) =>

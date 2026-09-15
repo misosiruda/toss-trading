@@ -5890,7 +5890,26 @@ Journal이 없는 기존 파일은 revision null인 legacy 관측이며 read는 
 두 값을 비교한다. 따라서 관측 이후 다른 writer의 A→B→A 변경과 같은 값의 HOLD commit도 오래된
 실행을 거절한다. 기존 `withExclusiveUpdate`는 값 CAS 호환 API로 남지만 실제 runner는 revision API를
 사용한다. 새 runner가 시작되기 전 완료된 동일 packet의 반복 실행이나 별도 trigger/cycle dedupe는
-아직 보장하지 않는다. 정책/sizing snapshot의 `portfolioVersion`과 이 revision을 연결하는 것도 후속이다.
+아직 보장하지 않는다. Sizing snapshot의 실제 revision 연결은 아래 current publisher로 제공하며,
+정책 활성화·공용 예약·체결 회계와의 전체 transaction 연결은 후속이다.
+
+`appendCurrentPortfolioSizingSnapshot`은 `FileVirtualPortfolioStore.withLockedSnapshot` 안에서 실제
+잔고와 전체 revision 이력을 읽고, 저장소가 관측한 `revisionHash`를 snapshot의 `portfolioVersion`으로
+사용한다. 호출자는 portfolio ID/version/잔고를 전달할 수 없다. 실제 현금·보유 수량에 대해 기존
+valuation/exposure resolver를 다시 실행하고 snapshot 저장·fsync·exact retry 완료까지 portfolio
+잠금을 유지한다. 잠금 순서는 portfolio → sizing snapshot이며 이 callback에서 execution-log 잠금을
+역순으로 획득하거나 같은 portfolio store를 재호출하지 않는다. 현재 잔고/이력은 변경하지 않는다.
+Journal 없는 legacy 또는 부재 잔고는 새 이력을 합성하지 않고 거절한다. 같은 잔고로 되돌아오는 ABA도
+서로 다른 revision과 sizing snapshot ID로 구분한다. V3 이력이 있으면 구성된 실제 log plan/receipt까지
+재검증하며 사용자 지정 로그 경로는 기존 portfolio store와 같게 제공해야 한다.
+
+기존 일반 snapshot append/read와 과거 버전 문자열은 유지한다. 이 publisher의 결과도 저장 직후
+portfolio가 갱신되면 과거 snapshot이므로 current execution lease가 아니다. Policy hash, 가격 증거와
+pending action의 원본 권한은 이 연결만으로 승인하지 않으며 기존 downstream source 검증이 계속 필요하다.
+`asOf`는 요청된 평가 cutoff이며 해당 과거 시각에 현재 revision bytes가 디스크에 존재했음을 증명하지 않는다.
+Snapshot 저장 실패는 오류와 남은 bytes를 보존하되 portfolio를 갱신하지 않는다. 원본 portfolio 잠금은
+소유권 확인 후 해제하며 snapshot의 partial/corrupt source는 기존 reader가 fail-closed한다. 새 API를
+중지하는 코드 rollback이 가능하고 기존 JSON/schema/reader migration이나 artifact 삭제는 없다.
 
 새 JSON 임시 파일을 먼저 sync한 뒤 journal append/fsync와 부모 디렉터리 sync, JSON rename/sync 순으로
 반영한다. Journal 쓰기 시작 이후 오류는 일반 write에서도 lock을 복구 장벽으로 남기며, prior JSON이
