@@ -3,32 +3,45 @@ import { mkdir, open, readFile, readdir, rename, rmdir, unlink } from "node:fs/p
 import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { parseWithSchema, virtualPortfolioSchema, type VirtualPortfolio } from "../domain/schemas.js";
+import { appendPortfolioRevision, readPortfolioRevisionJournal, virtualPortfolioRevisionSnapshotSchema, type PortfolioRevisionJournalHead,
+  type VirtualPortfolioRevisionSnapshot } from "./virtualPortfolioRevisionJournal.js";
+export type { VirtualPortfolioRevisionSnapshot } from "./virtualPortfolioRevisionJournal.js";
 
 export class VirtualPortfolioStateChangedError extends Error {
   constructor() { super("paper portfolio state changed before application"); }
 }
 
-/** Shared by existing paper writers. This is value CAS, not an accounting journal or a live portfolio store. */
+/** Shared by existing paper writers. Revision history is not a multi-artifact accounting transaction. */
 export class FileVirtualPortfolioStore {
   private readonly filePath: string;
   private readonly lockPath: string;
+  private readonly revisionPath: string;
   private readonly timeoutMs: number;
   private readonly retryMs: number;
   constructor(filePath: string, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
     if (!filePath) throw new Error("paper portfolio file path is required");
     this.filePath = resolve(filePath);
     this.lockPath = `${this.filePath}.lock`;
+    this.revisionPath = `${this.filePath}.revisions.jsonl`;
     this.timeoutMs = positiveInteger(options.lockTimeoutMs ?? 5000);
     this.retryMs = positiveInteger(options.lockRetryDelayMs ?? 10);
   }
 
   read(): Promise<VirtualPortfolio | null> {
-    return this.withLock(async () => this.readStored());
+    return this.withLock(async () => (await this.readStoredSnapshot()).portfolio);
+  }
+
+  readSnapshot(): Promise<VirtualPortfolioRevisionSnapshot> {
+    return this.withLock(async () => {
+      const { portfolio, revisionHash } = await this.readStoredSnapshot();
+      return { portfolio, revisionHash };
+    });
   }
 
   async write(portfolio: VirtualPortfolio): Promise<void> {
     const captured = parseWithSchema(virtualPortfolioSchema, portfolio, "virtualPortfolio");
-    await this.withLock((assertOwned) => this.writeStored(captured, assertOwned));
+    await this.withLock(async (assertOwned, preserveBarrier) =>
+      this.writeStored(captured, await this.readStoredSnapshot(), assertOwned, preserveBarrier));
   }
 
   /** Never re-enter this store from operation. No provider/network call belongs inside this lock.
@@ -38,16 +51,34 @@ export class FileVirtualPortfolioStore {
   async withExclusiveUpdate<T>(expected: VirtualPortfolio | null,
     operation: () => Promise<{ portfolio: VirtualPortfolio; result: T }>): Promise<T> {
     const captured = expected === null ? null : parseWithSchema(virtualPortfolioSchema, expected, "expectedVirtualPortfolio");
+    return this.update(captured, undefined, operation);
+  }
+
+  /** Captures the whole observation before waiting. Every successful write advances the revision, even HOLD. */
+  async withExclusiveSnapshotUpdate<T>(expected: VirtualPortfolioRevisionSnapshot,
+    operation: () => Promise<{ portfolio: VirtualPortfolio; result: T }>): Promise<T> {
+    const captured = virtualPortfolioRevisionSnapshotSchema.parse(expected);
+    return this.update(captured.portfolio, captured.revisionHash, operation);
+  }
+
+  private async update<T>(captured: VirtualPortfolio | null, expectedRevision: string | null | undefined,
+    operation: () => Promise<{ portfolio: VirtualPortfolio; result: T }>): Promise<T> {
     return this.withLock(async (assertOwned, preserveBarrier) => {
-      if (!isDeepStrictEqual(await this.readStored(), captured)) throw new VirtualPortfolioStateChangedError();
+      const stored = await this.readStoredSnapshot();
+      if (!isDeepStrictEqual(stored.portfolio, captured) ||
+        (expectedRevision !== undefined && expectedRevision !== stored.revisionHash)) throw new VirtualPortfolioStateChangedError();
       try {
         const next = await operation();
         const portfolio = parseWithSchema(virtualPortfolioSchema, next.portfolio, "virtualPortfolio");
         if (captured !== null && portfolio.portfolioId !== captured.portfolioId) throw new Error("paper portfolio update changes portfolio identity");
-        await this.writeStored(portfolio, assertOwned);
+        await this.writeStored(portfolio, stored, assertOwned, preserveBarrier);
         return next.result;
       } catch (error) { preserveBarrier(); throw error; }
     });
+  }
+
+  private async readStoredSnapshot(): Promise<PortfolioRevisionJournalHead> {
+    return readPortfolioRevisionJournal(this.revisionPath, await this.readStored());
   }
 
   private async readStored(): Promise<VirtualPortfolio | null> {
@@ -60,15 +91,21 @@ export class FileVirtualPortfolioStore {
     return parseWithSchema(virtualPortfolioSchema, JSON.parse(raw), "virtualPortfolio");
   }
 
-  private async writeStored(portfolio: VirtualPortfolio, assertOwned: () => Promise<void>) {
+  private async writeStored(portfolio: VirtualPortfolio, head: PortfolioRevisionJournalHead,
+    assertOwned: () => Promise<void>, preserveBarrier: () => void) {
     const temporary = `${this.filePath}.tmp-${randomUUID()}`;
     const handle = await open(temporary, "wx");
     try {
       try { await handle.writeFile(`${JSON.stringify(portfolio, null, 2)}\n`, "utf8"); await handle.sync(); }
       finally { await handle.close(); }
       await assertOwned();
-      await rename(temporary, this.filePath);
-      await syncDirectory(dirname(this.filePath));
+      try {
+        await appendPortfolioRevision(this.revisionPath, head, portfolio);
+        await syncDirectory(dirname(this.revisionPath));
+        await assertOwned();
+        await rename(temporary, this.filePath);
+        await syncDirectory(dirname(this.filePath));
+      } catch (error) { preserveBarrier(); throw error; }
     } catch (error) { await unlink(temporary).catch(() => undefined); throw error; }
   }
 

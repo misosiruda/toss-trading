@@ -132,6 +132,43 @@ test("market packet paper run rejects a portfolio change during provider executi
   assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 0);
 });
 
+test("market packet paper run rejects portfolio ABA during provider execution", async (context) => {
+  const dir = await tempDir(), paths = createStoragePaths(dir), packet = marketPacket();
+  context.after(() => rm(dir, { recursive: true, force: true }));
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(packet);
+  const store = new FileVirtualPortfolioStore(paths.virtualPortfolioPath);
+  await store.write(packet.virtualPortfolio);
+  const provider: DecisionProvider = { async decide(input) {
+    await store.write({ ...packet.virtualPortfolio, cashKrw: 600_000 });
+    await store.write(packet.virtualPortfolio);
+    return new StaticMarketPacketDecisionProvider(virtualDecision()).decide(input);
+  } };
+  const result = await runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir, provider, now });
+  assert.equal(result.status, "failed"); assert.equal(result.failureReason, "portfolio_state_changed");
+  assert.deepEqual(await store.read(), packet.virtualPortfolio);
+  assert.equal((await new FileVirtualDecisionStore(paths.virtualDecisionsPath).readAll()).records.length, 0);
+  assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 0);
+});
+
+test("concurrent unchanged HOLD runs reject the obsolete portfolio revision", async (context) => {
+  const dir = await tempDir(), paths = createStoragePaths(dir), packet = marketPacket();
+  context.after(() => rm(dir, { recursive: true, force: true }));
+  await new FileMarketPacketStore(paths.marketPacketsPath).append(packet);
+  await new FileVirtualPortfolioStore(paths.virtualPortfolioPath).write(packet.virtualPortfolio);
+  let arrived = 0, release!: () => void;
+  const both = new Promise<void>((done) => { release = done; });
+  const provider: DecisionProvider = { async decide(input) {
+    if (++arrived === 2) release();
+    await both;
+    return new StaticMarketPacketDecisionProvider({ ...virtualDecision(), decisions: [] }).decide(input);
+  } };
+  const results = await Promise.all([1, 2].map(() => runPaperDecisionFromLatestMarketPacket({ storageBaseDir: dir, provider, now })));
+  assert.equal(results.filter((result) => result.status === "completed").length, 1);
+  assert.equal(results.find((result) => result.status === "failed")!.failureReason, "portfolio_state_changed");
+  assert.equal((await new FileVirtualDecisionStore(paths.virtualDecisionsPath).readAll()).records.length, 1);
+  assert.equal((await new FileVirtualTradeStore(paths.virtualTradesPath).readAll()).records.length, 0);
+});
+
 test("concurrent market packet paper runs apply only one result from the same starting portfolio", async () => {
   const dir = await tempDir(), paths = createStoragePaths(dir), packet = marketPacket();
   await new FileMarketPacketStore(paths.marketPacketsPath).append(packet);
