@@ -6,6 +6,7 @@ import type {
 import { virtualPortfolioSchema } from "../domain/schemas.js";
 import { isDeepStrictEqual } from "node:util";
 import { VirtualPortfolioStateChangedError } from "../storage/virtualPortfolioFileStore.js";
+import { withPaperExecutionLogBatch } from "../storage/paperExecutionLogLocks.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import { preparePaperApplication, type PreparedPaperApplication } from "../paper/preparedApplication.js";
 import {
@@ -134,11 +135,13 @@ export async function runPaperDecisionPipeline(
   const providerDecision = decisionResult.decision;
 
   try {
-    return await options.repositories.portfolioStore.withPreparedApplication(expectedSnapshot,
+    const repositories = options.repositories;
+    return await withPaperExecutionLogBatch([repositories.auditLog.filePath, repositories.decisionStore.filePath, repositories.tradeStore.filePath],
+      () => repositories.portfolioStore.withPreparedApplication(expectedSnapshot,
       () => preparePaperApplication({ expectedSnapshot, packet: options.packet, providerDecision,
         evaluatedAt: options.now.toISOString(), decisionSummary: options.recordedDecisionSummary?.(providerDecision.decisions.length) ??
           `Recorded ${providerDecision.decisions.length} paper-only decision(s)` }),
-      (application) => applyPreparedApplication(options.repositories, application, auditEventIds));
+      (application) => applyPreparedApplication(repositories, application, auditEventIds)));
   } catch (error) {
     if (error instanceof VirtualPortfolioStateChangedError) return stateChanged();
     throw error;

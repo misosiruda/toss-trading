@@ -148,7 +148,7 @@ export interface HistoricalSnapshotQueryResult
 export class FileAuditLog {
   private readonly store: JsonlStore<AuditEvent>;
 
-  constructor(filePath: string) {
+  constructor(readonly filePath: string) {
     this.store = new JsonlStore(filePath, auditEventSchema, "auditEvent");
   }
 
@@ -164,7 +164,7 @@ export class FileAuditLog {
 export class FileVirtualDecisionStore {
   private readonly store: JsonlStore<VirtualDecision>;
 
-  constructor(filePath: string) {
+  constructor(readonly filePath: string) {
     this.store = new JsonlStore(
       filePath,
       virtualDecisionSchema,
@@ -184,7 +184,7 @@ export class FileVirtualDecisionStore {
 export class FileVirtualTradeStore {
   private readonly store: JsonlStore<VirtualTrade>;
 
-  constructor(filePath: string) {
+  constructor(readonly filePath: string) {
     this.store = new JsonlStore(filePath, virtualTradeSchema, "virtualTrade");
   }
 

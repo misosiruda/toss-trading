@@ -5946,12 +5946,41 @@ V2 생성 뒤 구버전 reader/writer로 즉시 rollback할 수 없으며 intent
 Paper application의 로그 sync 실패는 기존 intent와 이미 기록됐을 수 있는 로그 bytes를 보존하고
 잔고 revision/JSON 확정 전에 실패 장벽을 남긴다. 파일 open/write/sync/close/디렉터리 sync 오류를
 자동 재시도하거나 부분 bytes를 삭제하지 않는다. Application 밖의 audit append 실패도 호출자에게
-전달되지만, 독립 로그 호출 자체가 portfolio 잠금이나 별도 복구 장벽을 획득하지는 않는다.
+전달된다. 개별 로그 동기화와 아래의 협력 writer 잠금은 portfolio 전체 transaction과 구분한다.
 Windows directory sync EPERM 예외는 기존 경계대로 유지한다. 새로 생성된 모든 상위 디렉터리의
 durability나 장치 전원 장애 수준까지 보장하지 않으므로 사전 준비된 저장 경로를 사용해야 한다.
-이 변경은 로그 간 원자성, 다중 writer 직렬화, 완료 prefix/receipt, torn-line 복구 또는 exactly-once를
+개별 동기화 자체는 로그 간 원자성, 완료 prefix/receipt, torn-line 복구 또는 exactly-once를
 추가하지 않는다. 기존 손상 이력의 자동 수정도 하지 않는다. Runtime artifact 형식 변경은 없고 코드
 rollback으로 복구할 수 있으나 rollback하면 append 성공 전에 fsync를 기다리는 보장이 사라진다.
+
+협력 writer의 직렬화는 `paperExecutionLogLocks`에 연결한다. 세 실행 로그의 기존 `append`는
+각 파일의 `<로그 경로>.paper-log.lock` 디렉터리와 UUID owner token을 획득한 뒤 동기화한다.
+실제 `paperDecisionPipeline`은 provider/semantic 검증 후 audit/decision/trade 경로를 canonical
+경로 순서로 잠그고, 그 안에서 기존 portfolio revision 잠금과 prepared application을 실행한다.
+따라서 application 로그 기록부터 잔고 revision/JSON 확정까지 독립 writer가 해당 로그에 추가할 수 없다.
+잠금 순서는 log batch → portfolio이며 provider/network 호출은 batch 밖에 둔다. 기존 packet 선택과
+provider 실패 audit도 개별 writer 잠금에 참여한다. 서로 다른 portfolio가 로그 경로를 공유하면
+공통 경로에서 직렬화되지만 별도 portfolio 사이의 회계 transaction을 합치는 것은 아니다.
+
+Batch의 `AsyncLocalStorage` 범위 안에서 기존 append 호출은 재획득하지 않고 소유권을 재검증한다.
+동일 파일의 concurrent append는 queue로 직렬화한다. 범위 밖 경로, 중첩 batch, 종료된 범위에서
+뒤늦게 실행된 append는 거절한다. Canonical parent 경로를 사용하고 중복 경로, symbolic link인
+로그와 hard-linked 로그를 거절한다. 실행 중 외부 경로/파일 교체나 비협력 writer는 지원하지 않는다.
+입력 schema 검증/직렬화는 잠금 대기 전에 수행한다. Callback은 모든 append를 await해야 한다.
+
+Append 시작 이후 오류가 발생하면 기록된 bytes와 batch의 모든 로그 잠금을 보존한다. Caller가
+append 오류를 삼켜도 batch는 실패하며 후속 queue는 쓰지 않는다. 쓰기 전의 callback/획득 실패는
+이미 획득한 정상 잠금을 해제하지만 초기화에 실패한 잠금은 남긴다. EEXIST와 Windows EPERM
+획득 경합만 monotonic timeout 안에서 재시도하며 write/fsync/close 오류는 재시도하지 않는다.
+Owner token 변경·해제 실패·abandoned lock을 자동 삭제하거나 탈취하지 않는다. 잠금 해제 뒤
+추가 fsync는 하지 않으므로 crash 후 잠금이 다시 보일 수 있으며 이 경우 fail-closed로 남는다.
+
+`readAll`은 기존 forensic 조회와 corruptLineCount 정책을 유지하므로 batch 중간 또는 실패 후의
+부분 로그도 관측할 수 있다. 이를 committed snapshot이나 적용 완료 증거로 해석하지 않는다.
+정확한 prefix/완료 receipt, 다중 artifact 원자 read/recovery 및 공용 capacity allocator는 후속이다.
+배포·rollback은 모든 관련 writer를 중지하고 로그/intent/revision/JSON과 남은 잠금을 대조해야 한다.
+구버전 writer는 로그 잠금을 무시하므로 혼합 실행 및 실패 잠금이 있는 상태의 단순 rollback은
+지원하지 않는다. Artifact payload/hash와 v1 실행 모델은 바꾸지 않고 자동 migration도 하지 않는다.
 
 - cadence scheduler와 conflict resolver
 - immutable regime/thesis trigger event repository와 dedupe resolver
