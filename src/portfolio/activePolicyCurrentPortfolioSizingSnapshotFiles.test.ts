@@ -10,7 +10,7 @@ import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js"
 import { createPortfolioSizingSnapshotPaths, PortfolioSizingSnapshotFileRepository } from "./portfolioSizingSnapshotFiles.js";
 import { policyFixture, storePolicyFixture } from "./portfolioActionRiskDecisionTestFixtures.js";
 import { createRuntimePortfolioPolicyActivationPaths, RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
-import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
+import { createRuntimePortfolioPolicyPaths, RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
 
 const START = "2026-09-01T00:00:00.000Z";
 const CUTOFF = "2026-09-02T00:00:00.000Z";
@@ -150,7 +150,7 @@ test("active-policy current sizing preserves partial destination and releases so
   });
 });
 
-test("active-policy current sizing rechecks activation after loading sources and before destination append", async (context) => {
+test("active-policy current sizing observes retirement occurring while acquiring the sizing lock", async (context) => {
   await fixture(context, async ({ baseDir, request, records, activations, retirement }) => {
     const lock = createPortfolioSizingSnapshotPaths(baseDir).lockPath, original = fs.open;
     let retired = false;
@@ -165,6 +165,34 @@ test("active-policy current sizing rechecks activation after loading sources and
     finally { mock.mock.restore(); syncBuiltinESMExports(); }
     assert.equal(retired, true);
     await assert.rejects(fs.readFile(records), { code: "ENOENT" });
+  });
+});
+
+test("active-policy current sizing rejects a policy writer's partial append during the sizing lock wait", async (context) => {
+  await fixture(context, async ({ baseDir, request, records, store, policy }) => {
+    const lock = createPortfolioSizingSnapshotPaths(baseDir).lockPath, original = fs.open;
+    const policyPath = createRuntimePortfolioPolicyPaths(baseDir).recordsPath;
+    const failure = new Error("synthetic policy writer failure"); let attempted = false;
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      if (args[0] === lock && args[1] === "wx" && !attempted) {
+        attempted = true;
+        await assert.rejects(new RuntimePortfolioPolicyFileRepository(baseDir, policy.dependencies)
+          .append(policyFixture("v2").policy), (error) => error === failure);
+      }
+      const handle = await original(...args);
+      if (args[0] === policyPath && args[1] === "a") {
+        const write = handle.writeFile.bind(handle);
+        context.mock.method(handle, "writeFile", async () => { await write("{"); throw failure; });
+      }
+      return handle;
+    });
+    syncBuiltinESMExports();
+    try { await assert.rejects(publish(request, options), /torn/); }
+    finally { mock.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(attempted, true);
+    await assert.rejects(fs.readFile(records), { code: "ENOENT" });
+    await assert.rejects(new RuntimePortfolioPolicyFileRepository(baseDir, policy.dependencies).readAll(), /torn/);
+    assert.ok(await store.read());
   });
 });
 

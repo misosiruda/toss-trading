@@ -130,8 +130,9 @@ export class PortfolioSizingSnapshotFileRepository {
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
-    const source = await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir, options);
     return this.withLock(async () => {
+      // Do not carry a policy/dependency generation across the destination lock wait.
+      const source = await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir, options);
       const activations = new RuntimePortfolioPolicyActivationFileRepository(baseDir, source.policies, source.dependencies.repository, options);
       return activations.withDurableActivePolicy(candidate.portfolioId, async (active, observedAt) => {
         if (candidate.policyHash !== active.policy.policyHash) throw new Error("sizing snapshot active policy mismatch");
