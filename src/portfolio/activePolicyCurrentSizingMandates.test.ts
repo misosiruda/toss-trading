@@ -82,6 +82,20 @@ test("current sizing validates terminal execution mandates at Risk time instead 
   });
 });
 
+test("current sizing evaluates mandate lifecycle at snapshot cutoff even when the pending input is older", async (context) => {
+  for (const transition of ["review_required", "retired", "expired"] as const) await fixture(context, "fractional_buy", async (state) => {
+    if (transition !== "expired") {
+      const { mandateEventId: _id, mandateEventHash: _hash, eventType: _type, ...scope } = state.activation;
+      await state.mandates.appendEvent(createInvestmentMandateEvent({ ...scope, eventType: transition,
+        previousMandateEventId: state.activation.mandateEventId, asOf: at(60), createdAt: at(60) }));
+    }
+    const first = await publish(request(state), options), before = await fs.readFile(state.records);
+    await assert.rejects(publish(request(state, [state.pending], 70), options), /active opening mandate|investment mandate is required/);
+    assert.deepEqual(await fs.readFile(state.records), before);
+    assert.deepEqual(await publish(request(state), options), first);
+  }, transition === "expired" ? { mandate: { expiresAt: at(60) } } : {});
+});
+
 test("current sizing holds the mandate writer lock through destination append and exact retry", async (context) => {
   await fixture(context, "whole_buy", async (state) => {
     const original = fs.open; let checks = 0, inspect = true;

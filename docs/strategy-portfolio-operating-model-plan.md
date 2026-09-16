@@ -4968,13 +4968,15 @@ Policy-bound current publisher는 plan 뒤, policy 앞에서 실제 mandate reco
 관측보다 이르거나 mandate record/event 생성이 관측보다 미래이면 거절한다. 기존 Risk writer의
 snapshot → mandate → policy/activation 순서를 역전하지 않는다.
 
-Pending mandate action은 원래 plan의 policy/portfolio/market/symbol과 pending cutoff의 생명주기를
+Pending mandate action은 원래 plan의 policy/portfolio/market/symbol과 snapshot cutoff의 생명주기를
 대조한다. 이전 정책의 미완료 계획을 현재 정책으로 바꾸지 않는다. BUY는 active open-or-increase
 mandate만 허용하고 manual/selector의 예약 ID/hash를 pending 입력과 비교한다. SELL에는
 review_required와 classify_existing_reduce_only를 허용하며 legacy reduce-only action에 mandate를
 합성하지 않는다. Terminal plan을 포함한 모든 execution의 실제 Risk 결정은 결정 시점 mandate,
 bucket과 BUY 권한을 재검증한다. Risk에 mandate receipt가 있으면 관측 prefix hash/count와 해당
-event identity도 대조한다. 후속 정상 retirement는 과거 Risk 시점의 상태를 바꾸지 않는다.
+event identity도 대조한다. Receipt의 prefix에 있는 모든 record/event는 해당 관측 시각까지 생성됐어야
+한다. 오래된 pending 입력 시각으로 snapshot cutoff 이전의 종료·만료·review_required를 우회하지
+못한다. 후속 정상 retirement는 과거 Risk 시점의 상태를 바꾸지 않는다.
 
 이 연결은 reservation **참조** 대조이며 실제 발급·소비 ledger나 사용 가능한 예약 잔액을 인증하지
 않는다. Mandate 자체의 assignment 원본, 과거 디스크 존재, Risk 수치 규칙과 resulting accounting도

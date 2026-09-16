@@ -30,6 +30,8 @@ test("mandate comparison validates optional Risk receipt identity prefix chronol
         for (const invalid of [{ ...receipt, mandateId: "other" }, { ...receipt, mandateEventHash: H("other") },
           { ...receipt, observation: { ...receipt.observation, recordsHash: H("other") } },
           { ...receipt, observation: { ...receipt.observation, eventCount: 0 } },
+          { ...receipt, observation: { ...receipt.observation, observedAt: at(-1) } },
+          { ...receipt, observation: { ...receipt.observation, observedAt: at(3) } },
           { ...receipt, observation: { ...receipt.observation, observedAt: at(32) } }]) {
           assert.throws(() => bindSnapshotPendingMandateOrigins(progress, pending, withReceipt(invalid), history));
         }
@@ -37,7 +39,7 @@ test("mandate comparison validates optional Risk receipt identity prefix chronol
       });
       assert.throws(() => bindSnapshotPendingMandateOrigins(progress, pending, executions, escaped), /not repository verified/);
     });
-  });
+  }, { activationOffset: 5 });
 });
 
 test("current sizing refuses a future-created mandate suffix even outside the pending cutoff", async (context) => {

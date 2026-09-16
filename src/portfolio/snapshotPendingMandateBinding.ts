@@ -27,7 +27,7 @@ export function bindSnapshotPendingMandateOrigins(
     const plan = plans.get(pending.planId)!;
     const mandate = resolveCurrentInvestmentMandateAsOf({ ...history, mandateId: action.mandateId,
       portfolioId: plan.portfolioId, policyHash: plan.policyHash, market: action.market, symbol: action.symbol,
-      asOf: pending.asOf, knownAt: pending.asOf });
+      asOf: progress.projection.asOf, knownAt: progress.projection.asOf });
     if (pending.side !== "BUY") continue;
     const record = mandate.record;
     if (mandate.status !== "active" || (record.assignmentSource === "manual_policy" &&
@@ -54,6 +54,9 @@ export function bindSnapshotPendingMandateOrigins(
       if (receipt === null) continue; // Historical records lack receipts; do not manufacture past durable availability.
       const { observation: priorObservation, ...identity } = receipt;
       const observed = resolveObservedInvestmentMandateHistory(history, priorObservation);
+      if ([...observed.records, ...observed.events].some((record) => Date.parse(record.createdAt) > Date.parse(priorObservation.observedAt))) {
+        throw new Error("sizing snapshot Risk mandate receipt predates source creation");
+      }
       const prior = validateRiskDecisionMandateState(binding, observed);
       if (Date.parse(priorObservation.observedAt) > Date.parse(binding.decision.decidedAt) ||
         !isDeepStrictEqual(identity, riskDecisionMandateIdentity(prior)) ||

@@ -26,7 +26,7 @@ import { SourcePriceEvidenceFileRepository } from "./sourcePriceEvidenceFiles.js
 
 interface Tweaks { risk?: Partial<Parameters<typeof createPortfolioActionRiskDecision>[0]>; unbound?: boolean; completion?: boolean;
   mandate?: Partial<Pick<InvestmentMandateRecord, "bucket" | "portfolioId" | "market" | "symbol" | "policyHash" | "validFrom" | "expiresAt">>;
-  reduceOnly?: boolean; selector?: boolean }
+  reduceOnly?: boolean; selector?: boolean; activationOffset?: number }
 
 export const T = Date.parse("2026-09-02T00:00:00.000Z"), at = (offset: number) => new Date(T + offset).toISOString();
 export const H = (value: string) => hashCanonicalPayload({ synthetic: value });
@@ -61,7 +61,8 @@ async function seed(baseDir: string, kind: Kind, context: TestContext, tweaks: T
           reservedMaximumNotionalKrw: 400, reservationKind: "new_position" as const, reservedSlotOrdinal: 0 } }), ...tweaks.mandate }));
   const activation = await mandates.appendEvent(createInvestmentMandateEvent({ mandateId: mandate.mandateId, mandateHash: mandate.mandateHash,
     portfolioId: mandate.portfolioId, policyHash: mandate.policyHash, market: mandate.market, symbol: mandate.symbol, bucket: mandate.bucket,
-    eventType: "activated", asOf: mandate.validFrom, createdAt: mandate.validFrom, reasonCodes: ["synthetic"] }));
+    eventType: "activated", asOf: tweaks.activationOffset === undefined ? mandate.validFrom : at(tweaks.activationOffset),
+    createdAt: tweaks.activationOffset === undefined ? mandate.validFrom : at(tweaks.activationOffset), reasonCodes: ["synthetic"] }));
   const target: RebalanceExecutionTarget = kind === "fractional_buy" ? { targetKind: "fractional_buy_notional", targetNotionalKrw: 100 }
     : kind === "fractional_sell" ? { targetKind: "fractional_sell_quantity", targetQuantity: 0.3, referencePriceKrw: 100,
       markedTargetNotionalKrw: 30, priceEvidenceRef: price.evidenceRef }
