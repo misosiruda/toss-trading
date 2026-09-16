@@ -3962,9 +3962,24 @@ createdAt ≥ observedAt을 검증한다. createdAt은 durable commit 또는 과
 독립 재검증한다. Unknown field, 비정상 Unicode/공백 identifier, 잘못된 offset-qualified 시각,
 비양수·비유한 rate와 price-domain ref는 거절한다. 결과와 provenance 배열은 immutable이다.
 이 계약은 선언된 conversion evidence이며 source 신뢰, freshness, 실제 외부 조회, 저장 원본 또는
-snapshot 결속을 보장하지 않는다. 전용 durable FX 저장소 및 policy-bound current publisher 연결은
-후속이며 기존 FX fixture parser, valuation input/schema, snapshot 파일을 자동 변환하지 않는다.
-기존 소비자가 새 계약을 요구하도록 바꾸지 않아 코드 롤백에 데이터 migration이나 삭제는 없다.
+snapshot 결속을 보장하지 않는다. 전용 durable FX 저장소와 policy-bound current publisher 연결은
+아래 저장 경로 및 PR7의 current publisher에서 추가한다. 기존 FX fixture parser, valuation input/schema,
+snapshot 파일을 자동 변환하지 않으며 계약 자체의 추가에 데이터 migration이나 삭제는 없다.
+
+`SourceFxEvidenceFileRepository`는 `source-fx-evidence.jsonl`의 full record entry와 post-record-fsync
+commit marker를 별도 line으로 기록한다. Entry hash는 createdAt을 포함한 전체 record, append 시작 시각과
+직전 commit hash에 결속되고 marker는 entry hash와 commit 시각을 독립 hash한다. Source contract/pair/
+observed instant의 origin 충돌, 같은 ref의 다른 metadata, 중복 ref/origin, chain/chronology 불일치,
+누락 marker, blank/torn/비정상 UTF-8 및 duplicate JSON key를 포함한 noncanonical line은 거절한다.
+신규 append 후 전체 파일을 다시 read/fsync/recheck하고 exact retry도 실제 descriptor를 fsync한다.
+잠금 안의 read는 descriptor bytes/stat 및 pathname이 가리키는 descriptor를 대조한 뒤 관측을 발급한다.
+`withDurableVerifiedHistory` callback 동안 writer 잠금을 유지하고 origin/observation token은 callback 종료 시
+만료된다. 순수 parser나 caller가 만든 객체는 원본 관측으로 사용할 수 없다. 이 관측도 외부 provider 신뢰,
+freshness 또는 과거 시각의 디스크 존재를 인증하지 않으며 비협력 외부 파일 변경은 지원하지 않는다.
+경합 timeout은 monotonic clock을 사용한다. 실패 bytes 및 소유권을 잃은/초기화 실패한 잠금은 보존하고,
+부분 기록을 자동 삭제하거나 abandoned lock을 탈취하지 않는다. File/close/sync 실패는 전파하며
+Windows directory sync EPERM만 기존 정책대로 예외 처리한다. 잠금 삭제 durability는 약속하지 않으므로
+crash 후 남거나 재등장한 lock은 명시적 복구 대상이다. 기존 가격 저장소와의 데이터 migration은 없다.
 
 여섯 번째 분할은 valuation/exposure replay를 통과한 snapshot만
 `portfolio-sizing-snapshots.jsonl`에 저장하는 strict append-only repository를 구현한다. append와
@@ -5929,7 +5944,8 @@ Snapshot 저장 실패는 오류와 남은 bytes를 보존하되 portfolio를 �
 정책 원본 검증을 추가한 경로다. Sizing 잠금을 얻은 뒤 실제 dependency/policy/activation 파일을 읽어
 잠금 대기 중 정책 원본의 부분 append 실패도 거절한다. 이후 정책 저장소의
 `withDurablePolicyGeneration`으로 실제 정책 이력을 잠금 안에서 다시 읽고 fsync하며 portfolio → price
-(보유 mark가 있는 경우) → sizing snapshot → policy → activation 순서로 잠금을 유지해 저장 및 exact retry를 완료한다. Policy 잠금은
+(보유 mark가 있는 경우) → FX(valuation에 FX가 있는 경우) → sizing snapshot → policy → activation 순서로
+잠금을 유지해 저장 및 exact retry를 완료한다. Policy 잠금은
 activation 잠금 대기 및 destination 저장 동안에도 유지하므로 중간의 정책 append 실패로 원본이
 손상될 수 있는 cooperative writer gap을 남기지 않는다. Callback에서 같은 policy 저장소를 재진입하거나
 activation → policy 역순으로 잠금을 획득하지 않는다. Sizing 저장소의
@@ -5955,16 +5971,28 @@ Dependency 전용 writer 잠금은 아니며 비협력 writer를 차단하거나
 거절한다. 신규 append와 exact retry 모두 가격 잠금을 먼저 획득해 sizing/policy/activation 잠금 및
 destination fsync 완료까지 유지한다. 기존 price-bound Risk의 price → snapshot 순서를 역전하지 않는다.
 Cash-only 잔고에는 가격 파일을 요구하지 않는다. 이미 KRW인 US mark에 FX rate를 다시 곱하지 않는다.
-이는 mark의 저장 원본 결속이며 FX 원본 진위, sourceContractId의 외부 신뢰 및 freshness 정책은
+이는 mark의 저장 원본 결속이며 sourceContractId의 외부 신뢰 및 freshness 정책은
 검증하지 않는다. 이전에 caller-only mark로 통과하던 policy-bound 호출은 이제 실제 committed 가격을
 먼저 저장해야 한다. 일반 publisher/append/read와 artifact schema는 유지하고 과거 snapshot을 재작성하지 않는다.
 가격 잠금의 경합 timeout은 monotonic clock으로 계산해 벽시계 정지·역행에도 종료하며, 증거의
 관측/commit/cutoff 시각은 기존 wall clock 의미를 유지한다. 보존된 실패 잠금을 자동 탈취하지 않는다.
 
+US 평가에 사용한 FX 입력도 `SourceFxEvidenceFileRepository`의 실제 committed 원본에 연결한다.
+가격 잠금 뒤, sizing 잠금 전에 FX 잠금을 획득해 ref의 base/quote currency, rate와 observedAt을 대조하고
+원본 관측·생성·commit 시각 ≤ snapshot cutoff ≤ durable FX observation 시각을 확인한다.
+FX 잠금은 신규 append와 exact retry destination fsync 완료까지 유지한다. FX가 없는 KR/cash-only
+평가에는 FX 파일을 요구하지 않는다. 누락·손상·미commit·다른 값/시각·cutoff 이후 원본은 거절하고
+일반 `appendCurrentPortfolioSizingSnapshot`과 과거 snapshot reader는 기존 의미를 유지한다.
+이전에 caller-only FX ref로 통과하던 policy-bound US 호출은 해당 FX를 실제로 먼저 commit해야 한다.
+이 연결은 저장 FX record와 입력의 일치를 검증하지만 KRW mark가 그 rate로 실제 환산됐다는 conversion lineage,
+외부 source의 신뢰/freshness, pending/reservation 및 Risk 권한은 인증하지 않는다. 기존 mark에 rate를
+다시 곱하지 않으며 새 FX 파일을 삭제하거나 과거 snapshot을 재작성하지 않는다. Rollback은 새 경로를
+중지하고 기록을 보존하는 코드 rollback이며 강화된 FX 원본 검증이 제거된다는 점을 검토해야 한다.
+
 이 경로는 실제 정책과 snapshot의 저장 시점 결속이며 일반 append/read 및
 `appendCurrentPortfolioSizingSnapshot`의 의미는 바꾸지 않는다. 저장 schema에 activation receipt를 추가하지 않으므로 과거 디스크 존재 시각이나
 현재 실행 권한의 증거로 재사용할 수 없다. 활성 정책은 잠금 안의 관측 시각 기준이며 이미 기록된
-future-effective 전이가 이후 도래하는 것을 멈추지는 않는다. 가격 trust/freshness·FX/pending 원본 권한, 공용 예약,
+future-effective 전이가 이후 도래하는 것을 멈추지는 않는다. 가격/FX trust/freshness·환산 lineage·pending 원본 권한, 공용 예약,
 최종 Risk 및 다중 bucket scheduler 연결은 별도 검증이 필요하다. 저장 실패 시 부분 destination을
 보존하고 원본 portfolio/activation을 변경하지 않으며 소유한 원본 잠금을 해제한다. 활성 정책 잠금의
 추가 대기·timeout 및 긴 이력 검증 비용은 운영 관측 대상이고 장기 부하 성능은 아직 측정하지 않았다.
