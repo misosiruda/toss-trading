@@ -12,9 +12,11 @@ import { RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfol
 import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
 import { withDurablePolicyDependencies } from "./runtimePolicyDependencyGeneration.js";
 import { SourcePriceEvidenceFileRepository, getDurableSourcePriceEvidenceObservation,
-  resolveVerifiedSourcePriceEvidenceOrigin } from "./sourcePriceEvidenceFiles.js";
+  resolveVerifiedSourcePriceEvidenceOrigin, type VerifiedSourcePriceEvidenceHistory } from "./sourcePriceEvidenceFiles.js";
 import { SourceFxEvidenceFileRepository, getDurableSourceFxEvidenceObservation,
   resolveVerifiedSourceFxEvidenceOrigin } from "./sourceFxEvidenceFiles.js";
+import { withStoredPendingPlanActionProgress } from "./storedPendingPlanActionProgress.js";
+import { bindSnapshotPendingPlanProgress } from "./snapshotPendingPlanBinding.js";
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -130,15 +132,17 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.withLock(() => this.appendUnderLock(candidate));
   }
 
-  /** Concrete source binding, with price -> FX -> sizing -> policy -> activation lock order.
-   * Both new append and exact retry must match stored marks/FX and the currently active policy.
-   * External source trust/freshness, mark conversion lineage and pending authority remain separate gates.
+  /** Concrete source binding, with price -> FX -> sizing -> event -> plan -> policy -> activation lock order.
+   * New append and exact retry match marks/FX, pending plan progress/gross and the active policy.
+   * External trust/freshness, conversion lineage and reservation/fill/Risk authority remain separate gates.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
-    return withStoredMarkPrices(baseDir, candidate, options, () => withStoredFxRates(baseDir, candidate, options,
-      () => this.withLock(() => withDurablePolicyDependencies(baseDir, async (dependencies, verifyDependencies) => {
+    return withStoredMarkPrices(baseDir, candidate, options, (prices) => withStoredFxRates(baseDir, candidate, options,
+      () => this.withLock(() => withStoredPendingPlanActionProgress({ baseDir, portfolioId: candidate.portfolioId, asOf: candidate.asOf }, async (progress) => {
+      bindSnapshotPendingPlanProgress(candidate, progress, prices);
+      return withDurablePolicyDependencies(baseDir, async (dependencies, verifyDependencies) => {
       // Do not carry a policy/dependency generation across the destination lock wait.
       return new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository, options)
         .withDurablePolicyGeneration(async (policies) => {
@@ -154,7 +158,8 @@ export class PortfolioSizingSnapshotFileRepository {
             return snapshot;
           });
         });
-    }))));
+      });
+    }, options))));
   }
 
   private async appendUnderLock(candidate: PortfolioSizingSnapshot): Promise<PortfolioSizingSnapshot> {
@@ -205,10 +210,10 @@ export class PortfolioSizingSnapshotFileRepository {
 
 /** Holds the actual price writer lock through destination persistence; never accepts caller histories. */
 async function withStoredMarkPrices<T>(baseDir: string, snapshot: PortfolioSizingSnapshot,
-  options: PortfolioSizingSnapshotFileRepositoryOptions, operation: () => Promise<T>): Promise<T> {
+  options: PortfolioSizingSnapshotFileRepositoryOptions, operation: (history: VerifiedSourcePriceEvidenceHistory | null) => Promise<T>): Promise<T> {
   const marks = snapshot.valuationInputs.filter((input) => input.kind === "mark_price");
-  // Cash-only portfolios need no market price source. Exact position coverage was already replayed.
-  if (marks.length === 0) return operation();
+  // Pending quantity targets may need prices even without positions. Acquire before later plan locks.
+  if (marks.length === 0 && snapshot.pendingActionInputs.length === 0) return operation(null);
   return new SourcePriceEvidenceFileRepository(baseDir, options).withDurableVerifiedHistory(async (history) => {
     const cutoff = Date.parse(snapshot.asOf);
     if (cutoff > Date.parse(getDurableSourcePriceEvidenceObservation(history).observedAt)) {
@@ -224,7 +229,7 @@ async function withStoredMarkPrices<T>(baseDir: string, snapshot: PortfolioSizin
         throw new Error("sizing snapshot mark source was unavailable at its cutoff");
       }
     }
-    return operation();
+    return operation(history);
   });
 }
 

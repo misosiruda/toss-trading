@@ -60,7 +60,8 @@ test("active-policy current sizing binds disk policy and portfolio revision with
 test("active-policy current sizing rejects wrong policy, portfolio and evaluation intervals before append", async (context) => {
   await fixture(context, async ({ path, store, request, records, activations, retirement, policy }) => {
     await assert.rejects(publish({ ...request, policyHash: `sha256:${"e".repeat(64)}` }, options), /active policy mismatch/);
-    await assert.rejects(publish({ ...request, asOf: "9999-01-01T00:00:00.000Z" }, options), /outside/);
+    // The held pending source now rejects a future cutoff before reading the activation epoch.
+    await assert.rejects(publish({ ...request, asOf: "9999-01-01T00:00:00.000Z" }, options), /pending plan cutoff follows source observation/);
     await store.write({ portfolioId: "other-paper", cashKrw: 100, positions: [], updatedAt: START });
     await assert.rejects(publish(request, options));
     await store.write({ portfolioId: policy.policy.portfolioId, cashKrw: 100, positions: [], updatedAt: START });
