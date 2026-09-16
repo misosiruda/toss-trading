@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readDurableRebalanceSource } from "./rebalanceDurableSource.js";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -79,6 +80,16 @@ const commitMarkerSchema = z.object({
 export interface VerifiedPaperFillExecutionHistory {
   records: readonly PaperFillExecutionRecord[];
 }
+const heldFillObservations = new WeakMap<VerifiedPaperFillExecutionHistory, Readonly<{
+  observedAt: string; recordCount: number; recordsHash: string; sourceGenerationHash: string | null
+}>>();
+
+/** Callback-scoped source possession only, not genuine Risk or resulting portfolio authority. */
+export function getHeldPaperFillExecutionObservation(history: VerifiedPaperFillExecutionHistory) {
+  const observation = heldFillObservations.get(history);
+  if (observation === undefined) throw new Error("paper fill source lease is unverified or expired");
+  return observation;
+}
 
 export function createPaperFillExecutionPaths(baseDir: string): {
   recordsPath: string;
@@ -120,6 +131,20 @@ export class PaperFillExecutionFileRepository {
 
   async readVerifiedHistory(): Promise<VerifiedPaperFillExecutionHistory> {
     return this.withLock(async () => this.readHistoryUnderLock());
+  }
+
+  /** Holds actual source bytes and completion markers durable before invoking the consumer. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedPaperFillExecutionHistory) => Promise<T>): Promise<T> {
+    return this.withLock(async () => {
+      const { raw, observedAt } = await readDurableRebalanceSource(this.recordsPath), history = this.historyFromRaw(raw);
+      const metadata = persistedPaperFillMetadata.get(history)!;
+      if (metadata.appendedAtById.size !== history.records.length) throw new Error("paper fill source lease requires committed records; legacy history is not eligible");
+      const times = [...metadata.appendedAtById.values(), ...[...metadata.completionById.values()].map((item) => item.completedAt)];
+      if (times.some((time) => Date.parse(time) > Date.parse(observedAt))) throw new Error("paper fill source observation clock precedes commit or completion");
+      heldFillObservations.set(history, Object.freeze({ observedAt, recordCount: history.records.length,
+        recordsHash: hashCanonicalPayload(history.records), sourceGenerationHash: metadata.lastEntryHash }));
+      try { return await operation(history); } finally { heldFillObservations.delete(history); }
+    });
   }
 
   async resolveById(
@@ -286,8 +311,13 @@ export class PaperFillExecutionFileRepository {
         throw error;
       }
     }
+    const history = this.historyFromRaw(raw);
+    if (persistedPaperFillMetadata.get(history)!.completionById.size > 0) await syncDurableJsonFile(this.recordsPath);
+    return history;
+  }
+
+  private historyFromRaw(raw: string): VerifiedPaperFillExecutionHistory {
     const { history, appendedAtById, riskOriginById, completionById, lastEntryHash } = parsePaperFillExecutionLog(raw);
-    if (completionById.size > 0) await syncDurableJsonFile(this.recordsPath);
     persistedPaperFillExecutionHistories.add(history);
     persistedPaperFillMetadata.set(history, { appendedAtById, riskOriginById, completionById, lastEntryHash,
       recordsById: new Map(history.records.map((record) => [record.paperFillRecordId, record])) });
@@ -554,9 +584,9 @@ async function acquireExclusiveLock(input: {
   timeoutMs: number;
   retryDelayMs: number;
 }): Promise<() => Promise<void>> {
-  const deadline = Date.now() + input.timeoutMs;
+  const deadline = performance.now() + input.timeoutMs;
   while (true) {
-    if (Date.now() >= deadline) {
+    if (performance.now() >= deadline) {
       throw new Error("paper fill execution repository lock is unavailable");
     }
     try {
@@ -586,7 +616,7 @@ async function acquireExclusiveLock(input: {
       if (!isRetryableLockContention(error)) {
         throw error;
       }
-      const remainingMs = deadline - Date.now();
+      const remainingMs = deadline - performance.now();
       if (remainingMs <= 0) {
         throw new Error("paper fill execution repository lock is unavailable");
       }

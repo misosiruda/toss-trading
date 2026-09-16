@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readDurableRebalanceSource } from "./rebalanceDurableSource.js";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -52,6 +53,16 @@ const verifiedPortfolioActionRiskDecisionMetadata =
 
 export interface VerifiedPortfolioActionRiskDecisionHistory {
   records: readonly PortfolioActionRiskDecision[];
+}
+const heldRiskObservations = new WeakMap<VerifiedPortfolioActionRiskDecisionHistory, Readonly<{
+  observedAt: string; recordCount: number; recordsHash: string; sourceGenerationHash: string | null
+}>>();
+
+/** Callback-scoped source possession only, not approval policy/rule or execution authority. */
+export function getHeldPortfolioActionRiskDecisionObservation(history: VerifiedPortfolioActionRiskDecisionHistory) {
+  const observation = heldRiskObservations.get(history);
+  if (observation === undefined) throw new Error("Risk source lease is unverified or expired");
+  return observation;
 }
 
 export interface VerifiedPortfolioActionRiskDecisionOrigin {
@@ -214,6 +225,22 @@ export class PortfolioActionRiskDecisionFileRepository {
 
   async readVerifiedHistory(): Promise<VerifiedPortfolioActionRiskDecisionHistory> {
     return this.withLock(async () => this.readHistoryUnderLock());
+  }
+
+  /** Observes actual descriptor durability and retains the writer lock through consumption. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedPortfolioActionRiskDecisionHistory) => Promise<T>): Promise<T> {
+    return this.withLock(async () => {
+      const { raw, observedAt } = await readDurableRebalanceSource(this.recordsPath);
+      const history = createVerifiedPortfolioActionRiskDecisionHistory(parsePortfolioActionRiskDecisionEntries(raw));
+      const metadata = getVerifiedHistoryMetadata(history);
+      if (metadata.appendedAtById.size !== history.records.length) throw new Error("Risk source lease requires committed records; legacy history is not eligible");
+      if ([...metadata.appendedAtById.values()].some((time) => Date.parse(time) > Date.parse(observedAt))) {
+        throw new Error("Risk source observation clock precedes commit");
+      }
+      heldRiskObservations.set(history, Object.freeze({ observedAt, recordCount: history.records.length,
+        recordsHash: hashCanonicalPayload(history.records), sourceGenerationHash: metadata.lastEntryHash }));
+      try { return await operation(history); } finally { heldRiskObservations.delete(history); }
+    });
   }
 
   async resolveById(riskDecisionId: string): Promise<PortfolioActionRiskDecision> {
@@ -1034,9 +1061,9 @@ async function acquireExclusiveLock(input: {
   timeoutMs: number;
   retryDelayMs: number;
 }): Promise<() => Promise<void>> {
-  const deadline = Date.now() + input.timeoutMs;
+  const deadline = performance.now() + input.timeoutMs;
   while (true) {
-    if (Date.now() >= deadline) {
+    if (performance.now() >= deadline) {
       throw new Error("portfolio action risk decision repository lock is unavailable");
     }
     try {
@@ -1066,7 +1093,7 @@ async function acquireExclusiveLock(input: {
       if (!isRetryableLockContention(error)) {
         throw error;
       }
-      const remainingMs = deadline - Date.now();
+      const remainingMs = deadline - performance.now();
       if (remainingMs <= 0) {
         throw new Error("portfolio action risk decision repository lock is unavailable");
       }
