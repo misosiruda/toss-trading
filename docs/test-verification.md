@@ -194,6 +194,28 @@ Rollback하면 Windows EPERM 즉시 실패 및 초기화 실패 시 lock 삭제 
 lock은 진행 중인 writer와 원본 무결성을 확인한 별도 복구가 필요하다. 이 변경은 전체 테스트 자동
 재시도, 오류 무시 또는 stale lock 자동 복구가 아니다.
 
+## 후보 평가·대기 예약 원본 테스트의 파일 단위 분리
+
+`storedCandidateSelectionScore.test.ts`의 79개 테스트를 점수, 증거 요구사항, hard gate,
+실행 비용, 유동성, 비용 기준, 현금, 분류, position exposure, bounded cost sizing의 10개 파일로
+분리한다. 기존 파일은 점수 테스트 10개를 유지한다. 18개 공통 선언은
+`storedCandidateEvidenceTestFixtures.ts`에서 재사용한다.
+
+`storedSnapshotPendingReservationOrigins.test.ts`의 8개 테스트는 원본·소비 이력·무결성·관측의
+4개 파일로 분리하고 기존 파일에 원본 테스트 2개를 남긴다. 6개 공통 선언은
+`snapshotPendingReservationTestFixtures.ts`로 이동한다. 두 fixture module은 테스트를 등록하지 않는다.
+
+분리 시 원본 87개 test expression의 전체 본문과 공통 선언 24개를 TypeScript AST로 추출해
+대조했다. Export modifier를 제외한 helper 본문, 테스트 이름·assertion·timeout·fault injection은
+그대로 유지하고 중복 등록은 없다. 원래 test 파일을 삭제하지 않아 이전 dist 파일이 별도 suite로
+남는 문제를 피한다. 생성된 각 test 파일은 실제 사용하는 import와 fixture만 명시한다.
+
+기존 Node 파일별 프로세스 격리 및 기본 병렬 실행을 사용한다. 파일 내부의 Date/filesystem mock,
+임시 디렉터리와 finally 정리는 유지하며 runner concurrency·영향 선택 임계값·전체 검증 gate를
+바꾸지 않는다. 성능 비교 시 분리 전 2개와 분리 후 14개 파일의 같은 87개 테스트를 실행하고,
+TAP duration과 build/quality를 포함한 profile 총시간을 구분한다. 부하가 다른 전체 suite의 시간이나
+항상 동일한 개선율을 보장하지 않는다. Production/저장 형식 변경이 없어 코드 rollback으로 복구한다.
+
 ### 검증 프로필 호환성
 
 기존 `check`는 전체 검증이고 `check:changed`는 영향 검증이라는 의미를 유지한다. 새 runner는 기존
