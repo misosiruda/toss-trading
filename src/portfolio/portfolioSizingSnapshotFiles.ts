@@ -132,7 +132,7 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.withLock(() => this.appendUnderLock(candidate));
   }
 
-  /** Concrete sources: price -> FX -> sizing -> event -> plan -> policy -> activation -> Risk -> fill.
+  /** Concrete sources: price -> FX -> sizing -> event -> plan -> mandate -> policy -> activation -> Risk -> fill.
    * New append and exact retry bind pending progress and persisted execution origins, including terminal plans.
    * Rule authority, reservation/accounting authority, external trust and conversion lineage remain separate gates.
    */
@@ -140,19 +140,27 @@ export class PortfolioSizingSnapshotFileRepository {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
     const [{ bindSnapshotPendingExecutionOrigins }, { PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
-      { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation }] = await Promise.all([
-      import("./snapshotPendingExecutionBinding.js"), import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js")
+      { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation }, { bindSnapshotPendingMandateOrigins },
+      { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }] = await Promise.all([
+      import("./snapshotPendingExecutionBinding.js"), import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js"),
+      import("./snapshotPendingMandateBinding.js"), import("./investmentMandateFiles.js")
     ]);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
     return withStoredMarkPrices(baseDir, candidate, options, (prices) => withStoredFxRates(baseDir, candidate, options,
       () => this.withLock(() => withStoredPendingPlanActionProgress({ baseDir, portfolioId: candidate.portfolioId, asOf: candidate.asOf }, async (progress) => {
-      bindSnapshotPendingPlanProgress(candidate, progress, prices);
+      const pendingBindings = bindSnapshotPendingPlanProgress(candidate, progress, prices);
+      return new InvestmentMandateFileRepository(baseDir, options).withDurableVerifiedHistory(async (mandates) => {
+      const mandateObservation = getDurableInvestmentMandateObservation(mandates);
+      if (Date.parse(mandateObservation.observedAt) < Date.parse(progress.assessment.observedAt)) {
+        throw new Error("sizing snapshot mandate observation clock moved backwards");
+      }
       return withDurablePolicyDependencies(baseDir, async (dependencies, verifyDependencies) => {
       // Do not carry a policy/dependency generation across the destination lock wait.
       return new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository, options)
         .withDurablePolicyGeneration(async (policies) => {
           const activations = new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies, dependencies.repository, options);
           return activations.withDurableActivePolicy(candidate.portfolioId, async (active, observedAt) => {
+            if (Date.parse(observedAt) < Date.parse(mandateObservation.observedAt)) throw new Error("sizing snapshot activation observation clock moved backwards");
             if (candidate.policyHash !== active.policy.policyHash) throw new Error("sizing snapshot active policy mismatch");
             if (Date.parse(candidate.asOf) < Date.parse(active.activation.effectiveFrom) || Date.parse(candidate.asOf) > Date.parse(observedAt)) {
               throw new Error("sizing snapshot cutoff is outside the observed active policy interval");
@@ -165,6 +173,7 @@ export class PortfolioSizingSnapshotFileRepository {
                   throw new Error("sizing snapshot fill observation clock moved backwards");
                 }
                 const bindings = bindSnapshotPendingExecutionOrigins(progress, risks, fills, prices);
+                bindSnapshotPendingMandateOrigins(progress, pendingBindings, bindings, mandates);
                 if (bindings.some(({ event, fillOrigin }) => fillOrigin.completion !== null &&
                   Date.parse(fillOrigin.completion.completedAt) >= Date.parse(event.asOf))) {
                   throw new Error("sizing snapshot fill completion was unavailable before its execution event");
@@ -177,6 +186,7 @@ export class PortfolioSizingSnapshotFileRepository {
             });
           });
         });
+      });
       });
     }, options))));
   }
