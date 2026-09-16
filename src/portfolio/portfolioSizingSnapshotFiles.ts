@@ -11,6 +11,8 @@ import { resolvePortfolioSizingSnapshot } from "./portfolioSizingSnapshotResolve
 import { RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
 import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
 import { withDurablePolicyDependencies } from "./runtimePolicyDependencyGeneration.js";
+import { SourcePriceEvidenceFileRepository, getDurableSourcePriceEvidenceObservation,
+  resolveVerifiedSourcePriceEvidenceOrigin } from "./sourcePriceEvidenceFiles.js";
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -126,13 +128,14 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.withLock(() => this.appendUnderLock(candidate));
   }
 
-  /** Concrete source binding, with sizing -> policy -> activation lock order.
-   * Both new append and exact retry must match the currently active policy.
+  /** Concrete source binding, with price -> sizing -> policy -> activation lock order.
+   * Both new append and exact retry must match stored mark prices and the currently active policy.
+   * FX provenance, price freshness/source trust and pending authority remain separate gates.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
-    return this.withLock(() => withDurablePolicyDependencies(baseDir, async (dependencies, verifyDependencies) => {
+    return withStoredMarkPrices(baseDir, candidate, options, () => this.withLock(() => withDurablePolicyDependencies(baseDir, async (dependencies, verifyDependencies) => {
       // Do not carry a policy/dependency generation across the destination lock wait.
       return new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository, options)
         .withDurablePolicyGeneration(async (policies) => {
@@ -148,7 +151,7 @@ export class PortfolioSizingSnapshotFileRepository {
             return snapshot;
           });
         });
-    }));
+    })));
   }
 
   private async appendUnderLock(candidate: PortfolioSizingSnapshot): Promise<PortfolioSizingSnapshot> {
@@ -195,6 +198,31 @@ export class PortfolioSizingSnapshotFileRepository {
       await release();
     }
   }
+}
+
+/** Holds the actual price writer lock through destination persistence; never accepts caller histories. */
+async function withStoredMarkPrices<T>(baseDir: string, snapshot: PortfolioSizingSnapshot,
+  options: PortfolioSizingSnapshotFileRepositoryOptions, operation: () => Promise<T>): Promise<T> {
+  const marks = snapshot.valuationInputs.filter((input) => input.kind === "mark_price");
+  // Cash-only portfolios need no market price source. Exact position coverage was already replayed.
+  if (marks.length === 0) return operation();
+  return new SourcePriceEvidenceFileRepository(baseDir, options).withDurableVerifiedHistory(async (history) => {
+    const cutoff = Date.parse(snapshot.asOf);
+    if (cutoff > Date.parse(getDurableSourcePriceEvidenceObservation(history).observedAt)) {
+      throw new Error("sizing snapshot mark cutoff is after its price observation");
+    }
+    for (const mark of marks) {
+      const origin = resolveVerifiedSourcePriceEvidenceOrigin(history, mark.evidenceRef), price = origin.record;
+      if (price.market !== mark.market || price.symbol !== mark.symbol || price.priceKrw !== mark.priceKrw ||
+        Date.parse(price.observedAt) !== Date.parse(mark.evidenceAsOf)) {
+        throw new Error("sizing snapshot mark differs from stored price evidence");
+      }
+      if ([price.observedAt, price.createdAt, origin.appendedAt].some((instant) => Date.parse(instant) > cutoff)) {
+        throw new Error("sizing snapshot mark source was unavailable at its cutoff");
+      }
+    }
+    return operation();
+  });
 }
 
 function decodePortfolioSizingSnapshotSource(bytes: Buffer): string {

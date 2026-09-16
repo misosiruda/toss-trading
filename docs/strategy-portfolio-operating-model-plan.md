@@ -5914,8 +5914,8 @@ Snapshot 저장 실패는 오류와 남은 bytes를 보존하되 portfolio를 �
 `appendPolicyBoundCurrentPortfolioSizingSnapshot`은 같은 실제 잔고/revision publisher에 저장된
 정책 원본 검증을 추가한 경로다. Sizing 잠금을 얻은 뒤 실제 dependency/policy/activation 파일을 읽어
 잠금 대기 중 정책 원본의 부분 append 실패도 거절한다. 이후 정책 저장소의
-`withDurablePolicyGeneration`으로 실제 정책 이력을 잠금 안에서 다시 읽고 fsync하며 portfolio → sizing
-snapshot → policy → activation 순서로 잠금을 유지해 저장 및 exact retry를 완료한다. Policy 잠금은
+`withDurablePolicyGeneration`으로 실제 정책 이력을 잠금 안에서 다시 읽고 fsync하며 portfolio → price
+(보유 mark가 있는 경우) → sizing snapshot → policy → activation 순서로 잠금을 유지해 저장 및 exact retry를 완료한다. Policy 잠금은
 activation 잠금 대기 및 destination 저장 동안에도 유지하므로 중간의 정책 append 실패로 원본이
 손상될 수 있는 cooperative writer gap을 남기지 않는다. Callback에서 같은 policy 저장소를 재진입하거나
 activation → policy 역순으로 잠금을 획득하지 않는다. Sizing 저장소의
@@ -5935,10 +5935,22 @@ Dependency 전용 writer 잠금은 아니며 비협력 writer를 차단하거나
 파일 읽기/fsync/close 오류를 전파하고 descriptor를 해제한다. Windows directory sync EPERM 예외는
 기존과 같으며 전원 장애 수준의 추가 보장은 없다. Schema 변경이나 자동 복구·원본 수정은 없다.
 
-이 경로는 실제 정책과 snapshot의 저장 시점 결속이며 일반 append/read 및 기존 publisher의 의미는
-바꾸지 않는다. 저장 schema에 activation receipt를 추가하지 않으므로 과거 디스크 존재 시각이나
+보유 mark가 있는 policy-bound publisher는 `SourcePriceEvidenceFileRepository`의 실제 가격 이력을
+잠그고 read/fsync한 뒤, mark의 ref가 가리키는 record의 market/symbol/priceKrw/observedAt을 대조한다.
+관측·생성·durable commit 시각이 snapshot cutoff보다 늦거나 commit 원본이 없는 legacy 가격이면
+거절한다. 신규 append와 exact retry 모두 가격 잠금을 먼저 획득해 sizing/policy/activation 잠금 및
+destination fsync 완료까지 유지한다. 기존 price-bound Risk의 price → snapshot 순서를 역전하지 않는다.
+Cash-only 잔고에는 가격 파일을 요구하지 않는다. 이미 KRW인 US mark에 FX rate를 다시 곱하지 않는다.
+이는 mark의 저장 원본 결속이며 FX 원본 진위, sourceContractId의 외부 신뢰 및 freshness 정책은
+검증하지 않는다. 이전에 caller-only mark로 통과하던 policy-bound 호출은 이제 실제 committed 가격을
+먼저 저장해야 한다. 일반 publisher/append/read와 artifact schema는 유지하고 과거 snapshot을 재작성하지 않는다.
+가격 잠금의 경합 timeout은 monotonic clock으로 계산해 벽시계 정지·역행에도 종료하며, 증거의
+관측/commit/cutoff 시각은 기존 wall clock 의미를 유지한다. 보존된 실패 잠금을 자동 탈취하지 않는다.
+
+이 경로는 실제 정책과 snapshot의 저장 시점 결속이며 일반 append/read 및
+`appendCurrentPortfolioSizingSnapshot`의 의미는 바꾸지 않는다. 저장 schema에 activation receipt를 추가하지 않으므로 과거 디스크 존재 시각이나
 현재 실행 권한의 증거로 재사용할 수 없다. 활성 정책은 잠금 안의 관측 시각 기준이며 이미 기록된
-future-effective 전이가 이후 도래하는 것을 멈추지는 않는다. 가격/pending 원본 권한, 공용 예약,
+future-effective 전이가 이후 도래하는 것을 멈추지는 않는다. 가격 trust/freshness·FX/pending 원본 권한, 공용 예약,
 최종 Risk 및 다중 bucket scheduler 연결은 별도 검증이 필요하다. 저장 실패 시 부분 destination을
 보존하고 원본 portfolio/activation을 변경하지 않으며 소유한 원본 잠금을 해제한다. 활성 정책 잠금의
 추가 대기·timeout 및 긴 이력 검증 비용은 운영 관측 대상이고 장기 부하 성능은 아직 측정하지 않았다.
