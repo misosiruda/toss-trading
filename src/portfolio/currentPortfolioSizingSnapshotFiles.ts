@@ -20,8 +20,9 @@ export async function appendCurrentPortfolioSizingSnapshot(value: z.input<typeof
   return publish(value, options, false);
 }
 
-/** Binds publication to stored marks/FX and the actual active policy, holding price -> FX -> sizing -> policy -> activation locks through fsync.
- * External source trust/freshness, mark conversion lineage, pending reservations, Risk and current execution are not authorized here.
+/** Binds stored marks/FX, pending plan progress/gross and active policy through destination fsync.
+ * Lock order: portfolio -> price -> FX -> sizing -> event -> plan -> policy -> activation.
+ * External trust/freshness, conversion lineage, reservations, actual fills/Risk and current execution are not authorized here.
  */
 export async function appendPolicyBoundCurrentPortfolioSizingSnapshot(value: z.input<typeof inputSchema>,
   options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}) {

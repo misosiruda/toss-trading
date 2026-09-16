@@ -4907,7 +4907,8 @@ Plan commit origin, 포함한 event의 commit origin, full plan/event content와
 안에서만 조회할 수 있고 복사본·일반 historical history·callback 종료 후 토큰은 거절한다.
 Callback 실패 시에도 두 잠금을 해제하며 기존 historical origin 조회와 projection/assessment 계약은 유지한다.
 이는 협력하는 repository writer의 배제이며 잠금을 무시한 외부 파일 변경을 방지하는 권한은 아니다.
-Current snapshot publisher와의 연결, reservation 및 fill/Risk 원본 검증은 아직 포함하지 않는다.
+아래 policy-bound current snapshot publisher가 이 callback을 사용한다. Callback 자체는
+reservation 및 fill/Risk 원본 검증을 제공하지 않는다.
 
 이 단계는 stored_pending_plan_action_progress_only이다. Commit 시각은 당시 disk availability의
 증명이 아니며 full history도 현재 generation lease 또는 진짜 fill/Risk 원본 검증이 아니다.
@@ -4916,6 +4917,22 @@ BUY opening reservation, SELL의 실제 가격 원본, snapshot pending 입력�
 Rollback은 신규 조회 consumer를 중단하고 코드만 되돌리며 기존 append-only 파일을 변환하지 않는다.
 
 #### Snapshot pending 목록과 계획·잔여 gross 금액 대조
+
+`appendPolicyBoundCurrentPortfolioSizingSnapshot`와 `appendForActivePolicy`는 신규 저장과 exact
+retry 모두 실제 잠긴 plan/event 이력의 cutoff prefix와 pending 입력을 대조한다. 잠금 순서는
+portfolio(현재 잔고 publisher) → price(보유 mark 또는 pending 입력이 있으면) → FX(입력이 있으면)
+→ sizing → event → plan → policy → activation이다. Plan/event 잠금과 필요한 가격 원본은
+destination fsync까지 유지한다. 보유 position이 없어도 pending 수량 목표가 있으면 실제 가격
+이력을 읽으며, pending 입력이 빈 배열이어도 plan/event 전체를 읽어 누락을 거절한다.
+
+공통 `bindSnapshotPendingPlanProgress`는 historical resolver와 publisher의 exact membership,
+plan/event/target hash, 잔여 수량 및 gross 금액 비교를 공유한다. Fractional BUY는 남은 금액 목표,
+whole-share BUY는 계획 원본 가격, SELL은 명시적 저장 가격과 남은 수량으로 평가한다.
+기존 `append`와 `appendCurrentPortfolioSizingSnapshot`의 historical 계약 및 JSONL schema는 유지한다.
+Policy-bound 경로에서 caller-only pending, 누락·추가·손상 source는 더 이상 저장·재시도할 수 없다.
+정상 cutoff 이후 event는 해당 과거 prefix를 바꾸지 않으며 이 결과가 현재 실행 허가를 뜻하지 않는다.
+실제 reservation/fill/Risk 원본, 외부 가격 trust/freshness와 분류별 exposure 최종 차감은 별도 gate다.
+Rollback은 강화된 publisher consumer를 중단하고 코드만 되돌리며 기존 snapshot을 변환하지 않는다.
 
 `resolveStoredSnapshotPendingActions`는 caller의 pending array 대신 실제 immutable snapshot을
 읽고 보유 valuation/exposure를 독립 재생한 뒤, 같은 asOf의 실제 대기 계획 진행 조회와 대조한다.
