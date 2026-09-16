@@ -8,8 +8,9 @@ import { sha256HashSchema } from "../domain/schemas.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import type { PortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { resolvePortfolioSizingSnapshot } from "./portfolioSizingSnapshotResolver.js";
-import { readStoredRuntimePortfolioPolicyActivationSnapshot, RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
+import { RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
 import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
+import { withDurablePolicyDependencies } from "./runtimePolicyDependencyGeneration.js";
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -131,21 +132,23 @@ export class PortfolioSizingSnapshotFileRepository {
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
-    return this.withLock(async () => {
+    return this.withLock(() => withDurablePolicyDependencies(baseDir, async (dependencies, verifyDependencies) => {
       // Do not carry a policy/dependency generation across the destination lock wait.
-      const source = await readStoredRuntimePortfolioPolicyActivationSnapshot(baseDir, options);
-      return new RuntimePortfolioPolicyFileRepository(baseDir, source.dependencies.repository, options)
+      return new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository, options)
         .withDurablePolicyGeneration(async (policies) => {
-          const activations = new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies, source.dependencies.repository, options);
+          const activations = new RuntimePortfolioPolicyActivationFileRepository(baseDir, policies, dependencies.repository, options);
           return activations.withDurableActivePolicy(candidate.portfolioId, async (active, observedAt) => {
             if (candidate.policyHash !== active.policy.policyHash) throw new Error("sizing snapshot active policy mismatch");
             if (Date.parse(candidate.asOf) < Date.parse(active.activation.effectiveFrom) || Date.parse(candidate.asOf) > Date.parse(observedAt)) {
               throw new Error("sizing snapshot cutoff is outside the observed active policy interval");
             }
-            return this.appendUnderLock(candidate);
+            await verifyDependencies();
+            const snapshot = await this.appendUnderLock(candidate);
+            await verifyDependencies();
+            return snapshot;
           });
         });
-    });
+    }));
   }
 
   private async appendUnderLock(candidate: PortfolioSizingSnapshot): Promise<PortfolioSizingSnapshot> {

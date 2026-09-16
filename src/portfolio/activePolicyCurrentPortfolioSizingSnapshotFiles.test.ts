@@ -11,6 +11,8 @@ import { createPortfolioSizingSnapshotPaths, PortfolioSizingSnapshotFileReposito
 import { policyFixture, storePolicyFixture } from "./portfolioActionRiskDecisionTestFixtures.js";
 import { createRuntimePortfolioPolicyActivationPaths, RuntimePortfolioPolicyActivationFileRepository } from "./runtimePortfolioPolicyActivationFiles.js";
 import { createRuntimePortfolioPolicyPaths, RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
+import { createImmutablePolicyDependencyPaths } from "./runtimePolicyDependencyFiles.js";
+import { withDurablePolicyDependencies } from "./runtimePolicyDependencyGeneration.js";
 
 const START = "2026-09-01T00:00:00.000Z";
 const CUTOFF = "2026-09-02T00:00:00.000Z";
@@ -260,5 +262,81 @@ test("active-policy current sizing captures inputs and propagates exact-retry sy
     finally { mock.mock.restore(); syncBuiltinESMExports(); }
     assert.deepEqual(await fs.readFile(records), before); assert.ok(await store.read());
     await activations.appendRetired(retirement);
+  });
+});
+
+test("active-policy current sizing rejects every dependency source changed during policy lock acquisition", async (context) => {
+  for (const kind of Object.keys(createImmutablePolicyDependencyPaths("unused")) as Array<keyof ReturnType<typeof createImmutablePolicyDependencyPaths>>) {
+    await fixture(context, async ({ baseDir, request, records, store }) => {
+      const original = fs.open, lock = createRuntimePortfolioPolicyPaths(baseDir).lockPath;
+      const dependency = createImmutablePolicyDependencyPaths(baseDir)[kind]; let changed = false;
+      const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+        if (args[0] === lock && args[1] === "wx" && !changed) { changed = true; await fs.appendFile(dependency, "{"); }
+        return original(...args);
+      });
+      syncBuiltinESMExports();
+      try { await assert.rejects(publish(request, options), /dependency source changed/); }
+      finally { mock.mock.restore(); syncBuiltinESMExports(); }
+      assert.equal(changed, true, kind); assert.ok(await store.read());
+      await assert.rejects(fs.readFile(records), { code: "ENOENT" });
+    });
+  }
+});
+
+test("active-policy current sizing detects dependency mutation during new and retry destination fsync", async (context) => {
+  for (const retry of [false, true]) for (const mutation of ["partial", "delete", "replace", "valid-extension", "absent-created"] as const) {
+    await fixture(context, async ({ baseDir, request, records, store }) => {
+      if (retry) await publish(request, options);
+      const paths = createImmutablePolicyDependencyPaths(baseDir), path = paths.riskParameters;
+      const originalBytes = await fs.readFile(path), original = fs.open; let changed = false;
+      const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+        const handle = await original(...args);
+        if (args[0] === records && args[1] === (retry ? "r+" : "a")) {
+          const sync = handle.sync.bind(handle);
+          context.mock.method(handle, "sync", async () => {
+            await sync(); changed = true;
+            if (mutation === "partial") await fs.appendFile(path, "{");
+            else if (mutation === "delete") await fs.unlink(path);
+            else if (mutation === "replace") { await fs.rename(path, `${path}.old`); await fs.writeFile(path, originalBytes); }
+            else if (mutation === "valid-extension") await fs.appendFile(path, "\n");
+            else await fs.writeFile(paths.scoringModels, "");
+          });
+        }
+        return handle;
+      });
+      syncBuiltinESMExports();
+      try { await assert.rejects(publish(request, options)); }
+      finally { mock.mock.restore(); syncBuiltinESMExports(); }
+      assert.equal(changed, true, `${mutation}/${retry}`); assert.ok(await store.read());
+      // The immutable destination is not deleted or reported as a successful policy-bound result.
+      assert.equal((await new PortfolioSizingSnapshotFileRepository(baseDir).readAll()).length, 1);
+      const bytes = await fs.readFile(records);
+      if (mutation === "partial" || mutation === "delete") await assert.rejects(publish(request, options));
+      assert.deepEqual(await fs.readFile(records), bytes);
+    });
+  }
+});
+
+test("dependency observation rejects corrupt bytes and fsync failure and expires after callback", async (context) => {
+  await fixture(context, async ({ baseDir, request, records }) => {
+    let verify!: () => Promise<void>;
+    await withDurablePolicyDependencies(baseDir, async (_dependencies, check) => { verify = check; await check(); });
+    await assert.rejects(verify(), /expired/);
+    const path = createImmutablePolicyDependencyPaths(baseDir).riskParameters, bytes = await fs.readFile(path);
+    for (const corrupt of [bytes.subarray(0, bytes.length - 1), Buffer.concat([bytes, Buffer.from([0xff, 10])])]) {
+      await fs.writeFile(path, corrupt); await assert.rejects(publish(request, options), /UTF-8|torn/);
+    }
+    await fs.writeFile(path, bytes);
+    const original = fs.open, failure = new Error("synthetic dependency fsync failure");
+    const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      const handle = await original(...args);
+      if (args[0] === path && args[1] === "r+") context.mock.method(handle, "sync", async () => { throw failure; });
+      return handle;
+    });
+    syncBuiltinESMExports();
+    try { await assert.rejects(publish(request, options), (error) => error === failure); }
+    finally { mock.mock.restore(); syncBuiltinESMExports(); }
+    await assert.rejects(fs.readFile(records), { code: "ENOENT" });
+    await publish(request, options);
   });
 });
