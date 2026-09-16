@@ -4961,6 +4961,19 @@ candidate/Risk의 미검증 플래그를 해제하지 않는다. 새 저장 형�
 
 #### Snapshot pending 계산에 사용된 체결·Risk 원본 연결
 
+Risk 및 paper fill repository의 `withDurableVerifiedHistory`는 실제 writer 잠금을 callback
+종료까지 유지한다. Plan/event 원본에서 사용하는 descriptor-bound reader를 재사용해 bytes·경로
+identity·stat·UTF-8 및 fsync를 검증하고, 모든 record의 commit과 fill v3 completion이 관측보다
+미래가 아닌지 확인한다. Commit 없는 legacy prefix는 새 held 경로에서 거절하지만 기존 historical
+조회는 유지한다. `getHeldPortfolioActionRiskDecisionObservation`과
+`getHeldPaperFillExecutionObservation`은 callback 안의 실제 history만 허용하며 성공·실패 종료 후
+만료된다. 기존 origin 조회 권한은 historical 설명 용도로 유지된다. 두 lock의 경합 timeout은
+monotonic clock을 사용하며 artifact에 기록하는 시각은 기존 wall clock이다.
+
+이 원본 잠금 API는 snapshot publisher와 아직 연결되지 않았고, 자체적으로 actual Risk 규칙 재평가,
+reservation 또는 결과 portfolio accounting 권한을 발급하지 않는다. Schema/기존 append contract
+변경은 없으며 rollback은 신규 consumer 사용 중단과 코드 복구로 수행한다. 원본 데이터를 변환하지 않는다.
+
 `resolveStoredSnapshotPendingExecutionOrigins`는 실제 snapshot pending 대조 결과에 포함된 모든
 plan prefix의 execution_applied를 실제 저장 Risk 결정·paper fill·source price에 연결한다.
 미완료 action뿐 아니라 rejected/applied 등 terminal plan의 체결도 검증해 잘못된 완료 이력으로

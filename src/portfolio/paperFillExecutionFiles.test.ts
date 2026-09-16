@@ -15,8 +15,10 @@ import {
   getPersistedPaperFillExecutionRecords,
   resolvePersistedPaperFillExecutionOrigin,
   parseVerifiedPaperFillExecutionHistory,
+  getHeldPaperFillExecutionObservation,
   type VerifiedPaperFillExecutionHistory
 } from "./paperFillExecutionFiles.js";
+import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 
 const HASH_A = `sha256:${"a".repeat(64)}`;
 
@@ -287,6 +289,102 @@ test("paper fill repository rejects missing, torn, orphaned and mismatched commi
       await assert.rejects(() => repository.append(record), /corrupt|torn/);
       assert.equal(await readFile(path, "utf8"), raw);
     }
+  });
+});
+
+test("paper fill held observations expire exclude writers and preserve historical origins", async (context) => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PaperFillExecutionFileRepository(baseDir, { lockTimeoutMs: 40, lockRetryDelayMs: 2 });
+    await repository.withDurableVerifiedHistory(async (history) => {
+      assert.equal(getHeldPaperFillExecutionObservation(history).recordCount, 0);
+      assert.equal(getHeldPaperFillExecutionObservation(history).sourceGenerationHash, null);
+    });
+    const record = await repository.append(paperFill());
+    const historical = await repository.readVerifiedHistory();
+    assert.throws(() => getHeldPaperFillExecutionObservation(historical), /unverified/);
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() + 1 });
+    try {
+      for (const fail of [false, true]) {
+        let escaped: VerifiedPaperFillExecutionHistory | undefined;
+        const operation = repository.withDurableVerifiedHistory(async (history) => {
+          escaped = history;
+          const observation = getHeldPaperFillExecutionObservation(history);
+          assert.equal(observation.recordCount, 1); assert.equal(observation.recordsHash, hashCanonicalPayload([record]));
+          assert.ok(Object.isFrozen(observation)); assert.match(observation.sourceGenerationHash!, /^sha256:/);
+          assert.throws(() => getHeldPaperFillExecutionObservation({ ...history }), /unverified/);
+          await assert.rejects(repository.append(record), /lock is unavailable/);
+          if (fail) throw new Error("synthetic fill consumer failure");
+        });
+        if (fail) await assert.rejects(operation, /consumer failure/); else await operation;
+        assert.throws(() => getHeldPaperFillExecutionObservation(escaped!), /expired/);
+        assert.deepEqual(resolvePersistedPaperFillExecutionOrigin(escaped!, record.paperFillRecordId).record, record);
+        assert.deepEqual(await repository.append(record), record);
+      }
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
+test("paper fill held source rejects legacy corrupt and future commits without repair", async (context) => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PaperFillExecutionFileRepository(baseDir), path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const record = await repository.append(paperFill()), raw = await readFile(path, "utf8"), marker = JSON.parse(raw.trimEnd().split("\n")[1]!);
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse(marker.committedAt) - 1 });
+    try { await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("future commit")), /clock precedes/); }
+    finally { context.mock.timers.reset(); }
+    await writeFile(path, `${JSON.stringify(record)}\n`);
+    assert.deepEqual((await repository.readVerifiedHistory()).records, [record]);
+    await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("legacy source")), /legacy/);
+    for (const damaged of [`${raw}{\n`, raw.slice(0, -1)]) {
+      await writeFile(path, damaged);
+      await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("corrupt source")));
+      assert.equal(await readFile(path, "utf8"), damaged);
+    }
+  });
+});
+
+test("paper fill held source requires durable completion and refuses a future completion observation", async (context) => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PaperFillExecutionFileRepository(baseDir), record = await repository.append(paperFill());
+    const path = createPaperFillExecutionPaths(baseDir).recordsPath, raw = await readFile(path, "utf8");
+    const [entry, oldMarker] = raw.trimEnd().split("\n").map((line) => JSON.parse(line));
+    const payload = { schemaVersion: "paper_fill_execution_entry.v3", record, appendStartedAt: entry.appendStartedAt, previousEntryHash: null,
+      riskOrigin: { riskDecisionId: "synthetic-risk", riskDecisionHash: HASH_A, commitHash: HASH_A, appendedAt: record.asOf } };
+    const entryHash = hashCanonicalPayload(payload), marker = { schemaVersion: oldMarker.schemaVersion, entryHash, committedAt: oldMarker.committedAt };
+    const commitHash = hashCanonicalPayload(marker), completion = { schemaVersion: "paper_fill_execution_completion.v1", commitHash,
+      completedAt: new Date(Date.parse(marker.committedAt) + 10).toISOString() };
+    const first = `${JSON.stringify({ ...payload, entryHash })}\n${JSON.stringify({ ...marker, commitHash })}\n`;
+    await writeFile(path, first);
+    await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("missing completion")), /corrupt/);
+    await writeFile(path, `${first}${JSON.stringify({ ...completion, completionHash: hashCanonicalPayload(completion) })}\n`);
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse(completion.completedAt) - 1 });
+    try {
+      await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("future completion")), /clock precedes/);
+      context.mock.timers.setTime(Date.parse(completion.completedAt));
+      await repository.withDurableVerifiedHistory(async (history) => {
+        assert.equal(resolvePersistedPaperFillExecutionOrigin(history, record.paperFillRecordId).completion!.completedAt, completion.completedAt);
+        assert.equal(getHeldPaperFillExecutionObservation(history).recordCount, 1);
+      });
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
+test("paper fill held source propagates descriptor fsync failure before consumption and releases its lock", async (context) => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new PaperFillExecutionFileRepository(baseDir, { lockTimeoutMs: 40, lockRetryDelayMs: 2 });
+    const record = await repository.append(paperFill()), path = createPaperFillExecutionPaths(baseDir).recordsPath;
+    const before = await readFile(path), probe = await open(path, "r"), prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const sourceStat = await probe.stat(), original = prototype.sync; await probe.close(); let failed = false;
+    const hook = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      if (own.isFile() && own.ino === sourceStat.ino && (process.platform === "win32" || own.dev === sourceStat.dev)) {
+        failed = true; throw new Error("synthetic held fill fsync failure");
+      }
+      return original.call(this);
+    });
+    try { await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("unflushed source")), /fill fsync failure/); }
+    finally { hook.mock.restore(); }
+    assert.equal(failed, true); assert.deepEqual(await readFile(path), before);
+    await repository.withDurableVerifiedHistory(async (history) => assert.deepEqual(history.records, [record]));
   });
 });
 

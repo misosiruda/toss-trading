@@ -11,7 +11,8 @@ import {
   createPortfolioActionRiskDecisionPaths,
   getVerifiedPortfolioActionRiskDecisions,
   parsePortfolioActionRiskDecisions,
-  resolveVerifiedPortfolioActionRiskDecisionOrigin
+  resolveVerifiedPortfolioActionRiskDecisionOrigin,
+  getHeldPortfolioActionRiskDecisionObservation
 } from "./portfolioActionRiskDecisionFiles.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 
@@ -320,6 +321,79 @@ test("risk decision repository rejects cross-entry clock rollback before writing
     } finally {
       context.mock.timers.reset();
     }
+  });
+});
+
+test("Risk held source observations expire and exclude writers without changing historical origin access", async (context) => {
+  await withDirectory(async (baseDir) => {
+    const repository = new PortfolioActionRiskDecisionFileRepository(baseDir, { lockTimeoutMs: 40, lockRetryDelayMs: 2 });
+    await repository.withDurableVerifiedHistory(async (history) => {
+      assert.equal(getHeldPortfolioActionRiskDecisionObservation(history).recordCount, 0);
+      assert.equal(getHeldPortfolioActionRiskDecisionObservation(history).sourceGenerationHash, null);
+    });
+    const record = await repository.append(createPortfolioActionRiskDecision(bucketInput()));
+    assert.throws(() => getHeldPortfolioActionRiskDecisionObservation({ records: [record] }), /unverified/);
+    const historical = await repository.readVerifiedHistory();
+    assert.throws(() => getHeldPortfolioActionRiskDecisionObservation(historical), /unverified/);
+    context.mock.timers.enable({ apis: ["Date"], now: Date.now() + 1 });
+    try {
+      for (const fail of [false, true]) {
+        let escaped: Awaited<ReturnType<typeof repository.readVerifiedHistory>> | undefined;
+        const operation = repository.withDurableVerifiedHistory(async (history) => {
+          escaped = history;
+          const observation = getHeldPortfolioActionRiskDecisionObservation(history);
+          assert.equal(observation.recordCount, 1); assert.equal(observation.recordsHash, hashCanonicalPayload([record]));
+          assert.ok(Object.isFrozen(observation)); assert.match(observation.sourceGenerationHash!, /^sha256:/);
+          assert.throws(() => getHeldPortfolioActionRiskDecisionObservation({ ...history }), /unverified/);
+          await assert.rejects(repository.append(record), /lock is unavailable/);
+          if (fail) throw new Error("synthetic Risk consumer failure");
+        });
+        if (fail) await assert.rejects(operation, /consumer failure/); else await operation;
+        assert.throws(() => getHeldPortfolioActionRiskDecisionObservation(escaped!), /expired/);
+        assert.deepEqual(resolveVerifiedPortfolioActionRiskDecisionOrigin(escaped!, record.riskDecisionId).record, record);
+        assert.deepEqual(await repository.append(record), record);
+      }
+    } finally { context.mock.timers.reset(); }
+  });
+});
+
+test("Risk held source rejects legacy corrupt and future commit histories without repair", async (context) => {
+  await withDirectory(async (baseDir) => {
+    const repository = new PortfolioActionRiskDecisionFileRepository(baseDir), path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    const record = await repository.append(createPortfolioActionRiskDecision(bucketInput())), raw = await readFile(path, "utf8");
+    const marker = JSON.parse(raw.trimEnd().split("\n")[1]!);
+    context.mock.timers.enable({ apis: ["Date"], now: Date.parse(marker.committedAt) - 1 });
+    try { await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("future commit")), /clock precedes/); }
+    finally { context.mock.timers.reset(); }
+    const legacy = `${JSON.stringify(legacyEntry(record, record.decidedAt, null))}\n`;
+    await writeFile(path, legacy);
+    assert.deepEqual((await repository.readVerifiedHistory()).records, [record]);
+    await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("legacy source")), /legacy/);
+    for (const damaged of [`${raw}{\n`, raw.slice(0, -1)]) {
+      await writeFile(path, damaged);
+      await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("corrupt source")));
+      assert.equal(await readFile(path, "utf8"), damaged);
+    }
+  });
+});
+
+test("Risk held source propagates descriptor fsync failure before consumption and releases its lock", async (context) => {
+  await withDirectory(async (baseDir) => {
+    const repository = new PortfolioActionRiskDecisionFileRepository(baseDir, { lockTimeoutMs: 40, lockRetryDelayMs: 2 });
+    const record = await repository.append(createPortfolioActionRiskDecision(bucketInput())), path = createPortfolioActionRiskDecisionPaths(baseDir).recordsPath;
+    const before = await readFile(path), probe = await open(path, "r"), prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const sourceStat = await probe.stat(), original = prototype.sync; await probe.close(); let failed = false;
+    const hook = context.mock.method(prototype, "sync", async function (this: FileHandle) {
+      const own = await this.stat();
+      if (own.isFile() && own.ino === sourceStat.ino && (process.platform === "win32" || own.dev === sourceStat.dev)) {
+        failed = true; throw new Error("synthetic held Risk fsync failure");
+      }
+      return original.call(this);
+    });
+    try { await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("unflushed source")), /Risk fsync failure/); }
+    finally { hook.mock.restore(); }
+    assert.equal(failed, true); assert.deepEqual(await readFile(path), before);
+    await repository.withDurableVerifiedHistory(async (history) => assert.deepEqual(history.records, [record]));
   });
 });
 
