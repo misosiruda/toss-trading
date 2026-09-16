@@ -5,7 +5,7 @@ import { calculatePendingPlanActionProgress, PENDING_PLAN_ACTION_PROGRESS_MODEL_
 import { rebalancePlanRecordSchema } from "./rebalancePlan.js";
 import { type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { RebalancePlanEventFileRepository, resolveDurableRebalancePlanEventObservation, resolveDurableRebalancePlanEventObservedAt,
-  resolveVerifiedRebalancePlanEventOrigin } from "./rebalancePlanEventFiles.js";
+  resolveVerifiedRebalancePlanEventOrigin, getHeldRebalancePlanEventObservation, type VerifiedRebalancePlanEventHistory } from "./rebalancePlanEventFiles.js";
 import { RebalancePlanFileRepository, type RebalancePlanFileRepositoryOptions } from "./rebalancePlanFiles.js";
 import { compareText, hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
@@ -19,17 +19,38 @@ const inputSchema = z.object({ baseDir: z.string().min(1), portfolioId: rebalanc
  */
 export async function resolveStoredPendingPlanActionProgress(value: z.input<typeof inputSchema>,
   options: RebalancePlanFileRepositoryOptions = {}) {
+  const { input, repository, readStartedAt } = captureRequest(value, options);
+  const history = await repository.readDurableVerifiedHistory();
+  return projectHistory(input, history, readStartedAt);
+}
+
+/** Keeps concrete event -> plan writer locks through consumption. Results escaping the callback are historical only.
+ * This is not reservation, fill/Risk, portfolio or current execution authority.
+ */
+export async function withStoredPendingPlanActionProgress<T>(value: z.input<typeof inputSchema>,
+  operation: (result: ReturnType<typeof projectHistory>) => Promise<T>, options: RebalancePlanFileRepositoryOptions = {}): Promise<T> {
+  const { input, repository, readStartedAt } = captureRequest(value, options);
+  return repository.withDurableVerifiedHistory(async (history) => {
+    getHeldRebalancePlanEventObservation(history);
+    return operation(projectHistory(input, history, readStartedAt));
+  });
+}
+
+function captureRequest(value: z.input<typeof inputSchema>, options: RebalancePlanFileRepositoryOptions) {
   const input = inputSchema.parse(value);
   if (!isDeepStrictEqual(input, value)) throw new Error("stored pending plan input must already be canonical");
   const baseDir = resolve(input.baseDir);
   const lockOptions = { ...options };
   const readStartedAt = Date.now();
-  const cutoff = Date.parse(input.asOf);
-  if (cutoff > readStartedAt) throw new Error("pending plan cutoff follows source observation");
+  if (Date.parse(input.asOf) > readStartedAt) throw new Error("pending plan cutoff follows source observation");
   const plans = new RebalancePlanFileRepository(baseDir, lockOptions);
   const repository = new RebalancePlanEventFileRepository(baseDir, plans, lockOptions);
+  return { input, repository, readStartedAt };
+}
+
+function projectHistory(input: z.infer<typeof inputSchema>, history: VerifiedRebalancePlanEventHistory, readStartedAt: number) {
+  const cutoff = Date.parse(input.asOf);
   // The repository validates complete histories, including foreign and post-cutoff suffixes, before filtering.
-  const history = await repository.readDurableVerifiedHistory();
   const observedAt = resolveDurableRebalancePlanEventObservedAt(history);
   if (Date.parse(observedAt) < readStartedAt || Date.now() < Date.parse(observedAt)) {
     throw new Error("pending plan observation clock moved backwards");
