@@ -7,7 +7,8 @@ import { sha256HashSchema } from "../domain/schemas.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import { parseRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { replayRebalancePlanEvents } from "./rebalancePlanEventReplay.js";
-import { RebalancePlanFileRepository, resolveVerifiedRebalancePlanOrigin, type VerifiedRebalancePlanHistory } from "./rebalancePlanFiles.js";
+import { RebalancePlanFileRepository, getHeldRebalancePlanObservation, resolveVerifiedRebalancePlanOrigin, type VerifiedRebalancePlanHistory } from "./rebalancePlanFiles.js";
+import { readDurableRebalanceSource } from "./rebalanceDurableSource.js";
 
 export const REBALANCE_PLAN_EVENTS_FILE_NAME = "rebalance-plan-events.jsonl";
 export interface VerifiedRebalancePlanEventHistory {
@@ -37,6 +38,9 @@ const markerSchema = z.object({
   schemaVersion: z.literal("rebalance_plan_event_commit.v1"), entryHash: sha256HashSchema,
   committedAt: offsetQualifiedIsoDateTimeSchema, commitHash: sha256HashSchema
 }).strict();
+const heldObservations = new WeakMap<VerifiedRebalancePlanEventHistory, Readonly<{
+  observedAt: string; planEntriesHash: string; planRecordCount: number; eventGenerationHash: string | null; eventCount: number
+}>>();
 
 export function createRebalancePlanEventPaths(baseDir: string) {
   return { eventsPath: join(baseDir, REBALANCE_PLAN_EVENTS_FILE_NAME), lockPath: join(baseDir, `.${REBALANCE_PLAN_EVENTS_FILE_NAME}.lock`) };
@@ -71,6 +75,22 @@ export class RebalancePlanEventFileRepository {
   }
   async readPlanState(planId: string): Promise<Replay> {
     return replayVerifiedRebalancePlanEventHistory(await this.readVerifiedHistory(), planId);
+  }
+
+  /** Event -> plan lock order matches ordinary readers/writers and both locks outlive the callback. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedRebalancePlanEventHistory) => Promise<T>): Promise<T> {
+    return this.withLock(() => this.plans.withDurableVerifiedHistory(async (plans) => {
+      const planObservation = getHeldRebalancePlanObservation(plans);
+      const { raw, observedAt } = await readDurableRebalanceSource(this.eventsPath), history = this.historyFromRaw(raw, plans);
+      if (Date.parse(observedAt) < Date.parse(planObservation.observedAt) ||
+        [...histories.get(history)!.origins.values()].some((origin) => Date.parse(origin.appendedAt) > Date.parse(observedAt))) {
+        throw new Error("rebalance event observation clock precedes plan observation or commit");
+      }
+      histories.get(history)!.observedAt = observedAt;
+      heldObservations.set(history, Object.freeze({ observedAt, planEntriesHash: planObservation.entriesHash,
+        planRecordCount: planObservation.recordCount, eventGenerationHash: history.generationHash, eventCount: history.events.length }));
+      try { return await operation(history); } finally { heldObservations.delete(history); }
+    }));
   }
 
   async append(value: unknown): Promise<RebalancePlanEvent> {
@@ -111,6 +131,10 @@ export class RebalancePlanEventFileRepository {
     let raw: string;
     try { raw = await readFile(this.eventsPath, "utf8"); }
     catch (error) { if (!isNodeError(error) || error.code !== "ENOENT") throw error; raw = ""; }
+    return this.historyFromRaw(raw, plans);
+  }
+
+  private historyFromRaw(raw: string, plans: VerifiedRebalancePlanHistory): VerifiedRebalancePlanEventHistory {
     if (raw.length > 0 && !raw.endsWith("\n")) throw new Error("rebalance event file has a torn final line");
     const lines = raw.split(/\r?\n/); lines.pop();
     const origins = new Map<string, VerifiedRebalancePlanEventOrigin>();
@@ -161,6 +185,13 @@ export class RebalancePlanEventFileRepository {
     const release = await acquireLock(this.lockPath, this.lockTimeoutMs, this.lockRetryDelayMs);
     try { return await operation(); } finally { await release(); }
   }
+}
+
+/** Callback-scoped plan/event source lease; no portfolio, fill or execution authority. */
+export function getHeldRebalancePlanEventObservation(history: VerifiedRebalancePlanEventHistory) {
+  const observation = heldObservations.get(history);
+  if (observation === undefined) throw new Error("rebalance event source lease is unverified or expired");
+  return observation;
 }
 
 /** A verified historical observation, not a claim of current generation or execution authority. */

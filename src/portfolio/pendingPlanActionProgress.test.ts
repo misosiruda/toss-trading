@@ -6,10 +6,11 @@ import test, { type TestContext } from "node:test";
 import { calculatePendingPlanActionProgress, parsePendingPlanActionProgress, PENDING_PLAN_ACTION_PROGRESS_MODEL_VERSION } from "./pendingPlanActionProgress.js";
 import { createRebalancePlanRecord, hashRebalanceExecutionTarget, type RebalancePlanRecord, type RebalanceExecutionTarget } from "./rebalancePlan.js";
 import { createRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
-import { RebalancePlanFileRepository, createRebalancePlanPaths } from "./rebalancePlanFiles.js";
-import { RebalancePlanEventFileRepository, createRebalancePlanEventPaths, resolveDurableRebalancePlanEventObservedAt } from "./rebalancePlanEventFiles.js";
+import { RebalancePlanFileRepository, createRebalancePlanPaths, getHeldRebalancePlanObservation } from "./rebalancePlanFiles.js";
+import { RebalancePlanEventFileRepository, createRebalancePlanEventPaths, resolveDurableRebalancePlanEventObservedAt,
+  getHeldRebalancePlanEventObservation, type VerifiedRebalancePlanEventHistory } from "./rebalancePlanEventFiles.js";
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
-import { resolveStoredPendingPlanActionProgress } from "./storedPendingPlanActionProgress.js";
+import { resolveStoredPendingPlanActionProgress, withStoredPendingPlanActionProgress } from "./storedPendingPlanActionProgress.js";
 
 const T = Date.parse("2026-09-01T00:00:00.000Z");
 const at = (offset: number) => new Date(T + offset).toISOString();
@@ -211,6 +212,110 @@ test("stored pending progress handles no approved plans and rejects caller sourc
       return result;
     });
     await assert.rejects(stored(baseDir, 5), /clock moved backwards/);
+  });
+});
+
+test("held pending progress preserves historical projection while excluding both source writers", async (context) => {
+  await withStore(context, async (baseDir, plans, repository) => {
+    const plan = await plans.append(makePlan()), events = history(plan);
+    for (const [index, item] of events.entries()) {
+      context.mock.timers.setTime(T + 20 + index * 10); await repository.append(item);
+    }
+    context.mock.timers.setTime(T + 100);
+    const expected = await stored(baseDir), options = { lockTimeoutMs: 40, lockRetryDelayMs: 2 };
+    const otherPlans = new RebalancePlanFileRepository(baseDir, options);
+    const otherEvents = new RebalancePlanEventFileRepository(baseDir, otherPlans, options);
+    const terminal = event(plan, "rejected", events[2], 100);
+    const escaped = await withStoredPendingPlanActionProgress({ baseDir, portfolioId: "paper-main", asOf: at(50) }, async (result) => {
+      assert.deepEqual(result, expected);
+      await assert.rejects(otherPlans.append(plan), /lock is unavailable/);
+      await assert.rejects(otherEvents.append(terminal), /lock is unavailable/);
+      assert.equal(result.assessment.currentExecutionAuthority, "not_granted");
+      return result;
+    });
+    assert.deepEqual(await otherPlans.append(plan), plan);
+    await otherEvents.append(terminal);
+    assert.deepEqual(escaped.projection, expected.projection);
+    context.mock.timers.setTime(T + 120);
+    assert.equal((await stored(baseDir, 110)).projection.pendingActions.length, 0);
+  });
+});
+
+test("held plan and event observations expire after success and failure without changing historical provenance", async (context) => {
+  await withStore(context, async (_baseDir, plans, repository) => {
+    const plan = await plans.append(makePlan());
+    const planHistory = await plans.withDurableVerifiedHistory(async (value) => {
+      assert.equal(getHeldRebalancePlanObservation(value).recordCount, 1);
+      assert.throws(() => getHeldRebalancePlanObservation({ ...value }), /unverified/);
+      return value;
+    });
+    assert.throws(() => getHeldRebalancePlanObservation(planHistory), /expired/);
+    const historical = await repository.readDurableVerifiedHistory();
+    assert.throws(() => getHeldRebalancePlanEventObservation(historical), /unverified/);
+    let escaped: VerifiedRebalancePlanEventHistory | undefined;
+    for (const fail of [false, true]) {
+      const operation = repository.withDurableVerifiedHistory(async (value) => {
+        escaped = value;
+        const observation = getHeldRebalancePlanEventObservation(value);
+        assert.equal(observation.planRecordCount, 1); assert.equal(observation.eventCount, 0);
+        assert.equal(observation.eventGenerationHash, null); assert.ok(Object.isFrozen(observation));
+        assert.throws(() => getHeldRebalancePlanEventObservation({ ...value }), /unverified/);
+        if (fail) throw new Error("synthetic consumer failure");
+      });
+      if (fail) await assert.rejects(operation, /consumer failure/); else await operation;
+      assert.throws(() => getHeldRebalancePlanEventObservation(escaped!), /expired/);
+      assert.equal(resolveDurableRebalancePlanEventObservedAt(escaped!), at(10));
+      assert.deepEqual(await plans.append(plan), plan);
+      assert.deepEqual(await repository.readAll(), []);
+    }
+  });
+});
+
+test("held pending progress keeps event before plan lock order and releases outer lock on contention", async (context) => {
+  await withStore(context, async (baseDir, plans) => {
+    const options = { lockTimeoutMs: 40, lockRetryDelayMs: 2 };
+    await plans.withDurableVerifiedHistory(async () => {
+      await assert.rejects(withStoredPendingPlanActionProgress({ baseDir, portfolioId: "paper-main", asOf: at(5) },
+        async () => assert.fail("must not consume without both locks"), options), /plan repository lock is unavailable/);
+      await assert.rejects(readFile(createRebalancePlanEventPaths(baseDir).lockPath), { code: "ENOENT" });
+    });
+    await withStoredPendingPlanActionProgress({ baseDir, portfolioId: "paper-main", asOf: at(5) }, async (result) => {
+      assert.deepEqual(result.projection.pendingActions, []);
+      assert.equal(result.assessment.sourceEventCount, 0);
+      await readFile(createRebalancePlanPaths(baseDir).lockPath);
+      await readFile(createRebalancePlanEventPaths(baseDir).lockPath);
+    });
+  });
+});
+
+test("held pending progress rejects corrupt future suffix and ambiguous cutoff before consuming", async (context) => {
+  await withStore(context, async (baseDir, plans, repository) => {
+    const plan = await plans.append(makePlan());
+    context.mock.timers.setTime(T + 20); await repository.append(history(plan)[0]);
+    context.mock.timers.setTime(T + 100);
+    const consume = async () => assert.fail("invalid source must not reach consumer");
+    await assert.rejects(withStoredPendingPlanActionProgress({ baseDir, portfolioId: "paper-main", asOf: at(20) }, consume), /ambiguous/);
+    await assert.rejects(withStoredPendingPlanActionProgress({ baseDir, portfolioId: "paper-main", asOf: at(101) }, consume), /cutoff follows/);
+    const path = createRebalancePlanEventPaths(baseDir).eventsPath;
+    const corrupt = `${await readFile(path, "utf8")}{\n`;
+    await writeFile(path, corrupt);
+    await assert.rejects(withStoredPendingPlanActionProgress({ baseDir, portfolioId: "paper-main", asOf: at(15) }, consume));
+    assert.equal(await readFile(path, "utf8"), corrupt);
+  });
+});
+
+test("held pending progress releases both locks after consumer failure and rejects clock reversal", async (context) => {
+  await withStore(context, async (baseDir, plans, repository) => {
+    const plan = await plans.append(makePlan());
+    context.mock.timers.setTime(T + 20); await repository.append(history(plan)[0]);
+    context.mock.timers.setTime(T + 100);
+    await assert.rejects(withStoredPendingPlanActionProgress({ baseDir, portfolioId: "paper-main", asOf: at(50) },
+      async () => { throw new Error("synthetic pending consumer failure"); }), /pending consumer failure/);
+    await plans.append(plan); assert.equal((await repository.readAll()).length, 1);
+    context.mock.timers.setTime(T + 15);
+    await assert.rejects(repository.withDurableVerifiedHistory(async () => assert.fail("clock reversal must reject")), /clock precedes/);
+    context.mock.timers.setTime(T + 5);
+    await assert.rejects(plans.withDurableVerifiedHistory(async () => assert.fail("future plan commit must reject")), /clock precedes/);
   });
 });
 

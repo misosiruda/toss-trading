@@ -7,6 +7,7 @@ import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import { parseRebalancePlanRecord, type RebalancePlanRecord } from "./rebalancePlan.js";
+import { readDurableRebalanceSource } from "./rebalanceDurableSource.js";
 
 export const REBALANCE_PLAN_RECORDS_FILE_NAME = "rebalance-plan-records.jsonl";
 export interface RebalancePlanFileRepositoryOptions { lockTimeoutMs?: number; lockRetryDelayMs?: number }
@@ -27,6 +28,7 @@ const markerSchema = z.object({
   committedAt: offsetQualifiedIsoDateTimeSchema, commitHash: sha256HashSchema
 }).strict();
 type ParsedEntry = VerifiedRebalancePlanOrigin;
+const heldObservations = new WeakMap<VerifiedRebalancePlanHistory, Readonly<{ observedAt: string; entriesHash: string; recordCount: number }>>();
 
 export function createRebalancePlanPaths(baseDir: string) {
   return { recordsPath: join(baseDir, REBALANCE_PLAN_RECORDS_FILE_NAME), lockPath: join(baseDir, `.${REBALANCE_PLAN_RECORDS_FILE_NAME}.lock`) };
@@ -59,6 +61,19 @@ export class RebalancePlanFileRepository {
   }
   async resolveById(planId: string): Promise<RebalancePlanRecord> {
     return resolveVerifiedRebalancePlanOrigin(await this.readVerifiedHistory(), planId).record;
+  }
+
+  /** Holds the actual plan writer lock through consumption; historical read APIs remain unchanged. */
+  async withDurableVerifiedHistory<T>(operation: (history: VerifiedRebalancePlanHistory) => Promise<T>): Promise<T> {
+    return this.withLock(async () => {
+      const { raw, observedAt } = await readDurableRebalanceSource(this.recordsPath), history = this.historyFromRaw(raw);
+      const entries = [...histories.get(history)!.origins.values()];
+      if (entries.some((entry) => Date.parse(entry.appendedAt) > Date.parse(observedAt))) {
+        throw new Error("rebalance plan observation clock precedes commit");
+      }
+      heldObservations.set(history, Object.freeze({ observedAt, entriesHash: hashCanonicalPayload(entries), recordCount: entries.length }));
+      try { return await operation(history); } finally { heldObservations.delete(history); }
+    });
   }
 
   async append(value: unknown): Promise<RebalancePlanRecord> {
@@ -94,6 +109,10 @@ export class RebalancePlanFileRepository {
     let raw: string;
     try { raw = await readFile(this.recordsPath, "utf8"); }
     catch (error) { if (!isNodeError(error) || error.code !== "ENOENT") throw error; raw = ""; }
+    return this.historyFromRaw(raw);
+  }
+
+  private historyFromRaw(raw: string): VerifiedRebalancePlanHistory {
     const entries = parseLog(raw);
     const history = Object.freeze({ records: Object.freeze(entries.map((entry) => entry.record)) });
     histories.set(history, {
@@ -123,6 +142,13 @@ export function resolveVerifiedRebalancePlanOrigin(history: VerifiedRebalancePla
   const origin = metadata.origins.get(planId);
   if (origin === undefined) throw new Error("rebalance plan does not resolve exactly once");
   return origin;
+}
+
+/** Only valid inside withDurableVerifiedHistory, never a reusable execution lease. */
+export function getHeldRebalancePlanObservation(history: VerifiedRebalancePlanHistory) {
+  const observation = heldObservations.get(history);
+  if (observation === undefined) throw new Error("rebalance plan source lease is unverified or expired");
+  return observation;
 }
 
 function parseLog(raw: string): readonly ParsedEntry[] {

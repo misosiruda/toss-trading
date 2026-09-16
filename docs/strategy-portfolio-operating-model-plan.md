@@ -4900,6 +4900,15 @@ Plan commit origin, 포함한 event의 commit origin, full plan/event content와
 잠금 해제 후 새 writer가 append해도 이전 generation의 시각을 조회 반환 시각으로 늦추지 않는다.
 새 artifact·API·runner·거래 활성화 또는 저장 형식 변경은 없다.
 
+`withStoredPendingPlanActionProgress`는 별도 callback 경로로 실제 event → plan writer 잠금을
+소비자 완료까지 유지한다. 각 원본을 같은 descriptor에서 읽고 fsync한 뒤 bytes·파일 identity·stat와
+현재 경로를 재검증하며, 손상·교체·비정상 UTF-8·다중 hard link·fsync 실패는 callback 전에 거절한다.
+빈 이력도 directory durability를 확인한다. Plan/event repository의 held observation은 callback
+안에서만 조회할 수 있고 복사본·일반 historical history·callback 종료 후 토큰은 거절한다.
+Callback 실패 시에도 두 잠금을 해제하며 기존 historical origin 조회와 projection/assessment 계약은 유지한다.
+이는 협력하는 repository writer의 배제이며 잠금을 무시한 외부 파일 변경을 방지하는 권한은 아니다.
+Current snapshot publisher와의 연결, reservation 및 fill/Risk 원본 검증은 아직 포함하지 않는다.
+
 이 단계는 stored_pending_plan_action_progress_only이다. Commit 시각은 당시 disk availability의
 증명이 아니며 full history도 현재 generation lease 또는 진짜 fill/Risk 원본 검증이 아니다.
 BUY opening reservation, SELL의 실제 가격 원본, snapshot pending 입력과의 exact 대조 및 최종
