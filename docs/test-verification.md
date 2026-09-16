@@ -216,6 +216,47 @@ lock은 진행 중인 writer와 원본 무결성을 확인한 별도 복구가 �
 TAP duration과 build/quality를 포함한 profile 총시간을 구분한다. 부하가 다른 전체 suite의 시간이나
 항상 동일한 개선율을 보장하지 않는다. Production/저장 형식 변경이 없어 코드 rollback으로 복구한다.
 
+## 캘린더 publication 통합 테스트의 파일 단위 분리
+
+전체 검증에서 `officialMarketCalendarRedirectChainBoundary.test.ts`가 마지막으로 남은 실행을
+확인한 뒤 동일 파일을 단독 측정했다. 기존 55개 중 앞의 52개는 redirect/document/parser/evidence/
+reader/package plan 검증이고, 마지막 3개는 실제 Windows filesystem preflight와 package writer를
+실행한다. 마지막 3개를 각 파일로 옮겨 기존 Node runner의 파일별 병렬 실행을 사용한다.
+
+| 파일 | 책임 | 테스트 수 |
+| --- | --- | --- |
+| `officialMarketCalendarRedirectChainBoundary.test.ts` | redirect부터 package plan까지의 기존 검증 | 52 |
+| `officialMarketCalendarPublicationPackageWriter.test.ts` | 실제 package publish와 중복 publish 거절 | 1 |
+| `officialMarketCalendarPublicationPackageIdentity.test.ts` | preflight 뒤 교체된 root의 mutation 차단 | 1 |
+| `officialMarketCalendarPublicationActivationBoundary.test.ts` | filesystem capability와 activation decision 결속 | 1 |
+
+공통 type/constant/function 선언 28개는 `officialMarketCalendarBoundaryTestFixtures.ts`로 이동한다.
+TypeScript AST로 55개 test expression 전체와 export modifier를 제외한 28개 선언 본문을 분리 전
+커밋과 대조했다. 테스트 이름·assertion·skip 조건·fault injection과 timeout을 변경하지 않고
+중복 등록은 없다. Fixture는 테스트나 filesystem probe를 import 시 실행하지 않는다. 기존 파일은
+52개를 유지하므로 오래된 동일 compiled 파일이 55개를 별도 실행하지 않는다.
+
+실제 Windows filesystem 검증을 mock이나 cache로 바꾸지 않는다. 각 테스트의 기존 mkdtemp,
+probe 경로 및 cleanup을 유지하며 production, runner concurrency/영향 선택 임계값, 전체 검증
+gate와 안전 정책 변경은 없다. Fixture 변경 시 이를 사용하는 네 테스트 파일이 함께 선택된다.
+
+2026-09-16 Windows x64 / Node v22.15.0 / availableParallelism 8 단독 측정에서 같은 55개는
+분리 전 TAP 76.649초, 분리 후 44.236초였다(약 42% 감소). 양쪽 실패·skip·cancel 0이며 build는
+제외한 비교다. 단일 환경 측정이고 전체 suite 속도 개선율이나 다른 환경의 성능 보장은 아니다.
+분리 전 Windows 세 테스트의 시간은 각각 49.847초, 12.483초, 11.022초였다.
+
+```powershell
+# 분리 전: 원본 55개
+node --test dist/replay/officialMarketCalendarRedirectChainBoundary.test.js
+# 분리 후: 같은 52 + 1 + 1 + 1개
+node --test dist/replay/officialMarketCalendarRedirectChainBoundary.test.js dist/replay/officialMarketCalendarPublicationPackageWriter.test.js dist/replay/officialMarketCalendarPublicationPackageIdentity.test.js dist/replay/officialMarketCalendarPublicationActivationBoundary.test.js
+```
+
+테스트만 이동하므로 runtime artifact migration은 없다. Rollback은 깨끗한 checkout에서 build하거나
+해당 rollback으로 소스가 사라진 신규 3개 test와 fixture의 compiled artifact만 확인해 정리해야 한다.
+TypeScript는 삭제된 source의 오래된 dist 파일을 자동 제거하지 않는다. 사용자 데이터나 전체 dist를
+삭제하는 절차가 아니며, source와 compiled test가 섞여 중복 실행되지 않게 해야 한다.
+
 ### 검증 프로필 호환성
 
 기존 `check`는 전체 검증이고 `check:changed`는 영향 검증이라는 의미를 유지한다. 새 runner는 기존
