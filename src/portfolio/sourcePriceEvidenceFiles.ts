@@ -598,9 +598,9 @@ async function acquireExclusiveLock(input: {
   timeoutMs: number;
   retryDelayMs: number;
 }): Promise<() => Promise<void>> {
-  const deadline = Date.now() + input.timeoutMs;
+  const deadline = performance.now() + input.timeoutMs;
   while (true) {
-    if (Date.now() >= deadline) {
+    if (performance.now() >= deadline) {
       throw new Error("source price evidence repository lock is unavailable");
     }
     try {
@@ -630,7 +630,7 @@ async function acquireExclusiveLock(input: {
       if (!isRetryableLockContention(error)) {
         throw error;
       }
-      const remainingMs = deadline - Date.now();
+      const remainingMs = deadline - performance.now();
       if (remainingMs <= 0) {
         throw new Error("source price evidence repository lock is unavailable");
       }

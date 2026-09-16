@@ -577,6 +577,34 @@ test("source price evidence origin is sampled after delayed record fsync", async
   });
 });
 
+test("source price lock contention stays bounded with frozen and backwards wall clocks", async () => {
+  await withTemporaryDirectory(async (baseDir) => {
+    const repository = new SourcePriceEvidenceFileRepository(baseDir);
+    await repository.withDurableVerifiedHistory(async () => {
+      for (const mode of ["frozen", "backwards"]) {
+        const script = `
+          import assert from "node:assert/strict";
+          import { SourcePriceEvidenceFileRepository } from "./dist/portfolio/sourcePriceEvidenceFiles.js";
+          let wall = Date.now();
+          Date.now = () => process.argv[2] === "backwards" ? (wall -= 1000) : wall;
+          await assert.rejects(new SourcePriceEvidenceFileRepository(process.argv[1],
+            { lockTimeoutMs: 40, lockRetryDelayMs: 5 }).readAll(), /lock is unavailable/);
+        `;
+        await new Promise<void>((resolve, reject) => {
+          // A regression must fail this test, not leave the test runner in an infinite retry loop.
+          const child = spawn(process.execPath, ["--input-type=module", "--eval", script, baseDir, mode],
+            { cwd: process.cwd(), stdio: ["ignore", "ignore", "pipe"], windowsHide: true, timeout: 10_000 });
+          let stderr = "";
+          child.stderr.setEncoding("utf8"); child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+          child.once("error", reject);
+          child.once("close", (code, signal) => code === 0 ? resolve() : reject(new Error(stderr || `clock child failed: ${code}/${signal}`)));
+        });
+      }
+    });
+    assert.deepEqual(await repository.readAll(), []);
+  });
+});
+
 function durableEntry(
   record: unknown,
   appendedAt: string,
