@@ -132,12 +132,17 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.withLock(() => this.appendUnderLock(candidate));
   }
 
-  /** Concrete source binding, with price -> FX -> sizing -> event -> plan -> policy -> activation lock order.
-   * New append and exact retry match marks/FX, pending plan progress/gross and the active policy.
-   * External trust/freshness, conversion lineage and reservation/fill/Risk authority remain separate gates.
+  /** Concrete sources: price -> FX -> sizing -> event -> plan -> policy -> activation -> Risk -> fill.
+   * New append and exact retry bind pending progress and persisted execution origins, including terminal plans.
+   * Rule authority, reservation/accounting authority, external trust and conversion lineage remain separate gates.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
+    // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
+    const [{ bindSnapshotPendingExecutionOrigins }, { PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
+      { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation }] = await Promise.all([
+      import("./snapshotPendingExecutionBinding.js"), import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js")
+    ]);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
     return withStoredMarkPrices(baseDir, candidate, options, (prices) => withStoredFxRates(baseDir, candidate, options,
       () => this.withLock(() => withStoredPendingPlanActionProgress({ baseDir, portfolioId: candidate.portfolioId, asOf: candidate.asOf }, async (progress) => {
@@ -152,10 +157,24 @@ export class PortfolioSizingSnapshotFileRepository {
             if (Date.parse(candidate.asOf) < Date.parse(active.activation.effectiveFrom) || Date.parse(candidate.asOf) > Date.parse(observedAt)) {
               throw new Error("sizing snapshot cutoff is outside the observed active policy interval");
             }
-            await verifyDependencies();
-            const snapshot = await this.appendUnderLock(candidate);
-            await verifyDependencies();
-            return snapshot;
+            return new PortfolioActionRiskDecisionFileRepository(baseDir, options).withDurableVerifiedHistory(async (risks) => {
+              const riskObservation = getHeldPortfolioActionRiskDecisionObservation(risks);
+              if (Date.parse(riskObservation.observedAt) < Date.parse(observedAt)) throw new Error("sizing snapshot Risk observation clock moved backwards");
+              return new PaperFillExecutionFileRepository(baseDir, options).withDurableVerifiedHistory(async (fills) => {
+                if (Date.parse(getHeldPaperFillExecutionObservation(fills).observedAt) < Date.parse(riskObservation.observedAt)) {
+                  throw new Error("sizing snapshot fill observation clock moved backwards");
+                }
+                const bindings = bindSnapshotPendingExecutionOrigins(progress, risks, fills, prices);
+                if (bindings.some(({ event, fillOrigin }) => fillOrigin.completion !== null &&
+                  Date.parse(fillOrigin.completion.completedAt) >= Date.parse(event.asOf))) {
+                  throw new Error("sizing snapshot fill completion was unavailable before its execution event");
+                }
+                await verifyDependencies();
+                const snapshot = await this.appendUnderLock(candidate);
+                await verifyDependencies();
+                return snapshot;
+              });
+            });
           });
         });
       });
@@ -210,13 +229,12 @@ export class PortfolioSizingSnapshotFileRepository {
 
 /** Holds the actual price writer lock through destination persistence; never accepts caller histories. */
 async function withStoredMarkPrices<T>(baseDir: string, snapshot: PortfolioSizingSnapshot,
-  options: PortfolioSizingSnapshotFileRepositoryOptions, operation: (history: VerifiedSourcePriceEvidenceHistory | null) => Promise<T>): Promise<T> {
+  options: PortfolioSizingSnapshotFileRepositoryOptions, operation: (history: VerifiedSourcePriceEvidenceHistory) => Promise<T>): Promise<T> {
   const marks = snapshot.valuationInputs.filter((input) => input.kind === "mark_price");
-  // Pending quantity targets may need prices even without positions. Acquire before later plan locks.
-  if (marks.length === 0 && snapshot.pendingActionInputs.length === 0) return operation(null);
+  // Terminal plans may contain executions even without positions or pending inputs. Always observe this source.
   return new SourcePriceEvidenceFileRepository(baseDir, options).withDurableVerifiedHistory(async (history) => {
     const cutoff = Date.parse(snapshot.asOf);
-    if (cutoff > Date.parse(getDurableSourcePriceEvidenceObservation(history).observedAt)) {
+    if ((marks.length > 0 || snapshot.pendingActionInputs.length > 0) && cutoff > Date.parse(getDurableSourcePriceEvidenceObservation(history).observedAt)) {
       throw new Error("sizing snapshot mark cutoff is after its price observation");
     }
     for (const mark of marks) {
