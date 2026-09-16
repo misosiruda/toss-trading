@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
-import { ManualAssignmentFileRepository, getDurableManualAssignmentObservation, manualAssignmentObservationSchema,
+import { ManualAssignmentFileRepository, assertDurableManualAssignmentSource, getDurableManualAssignmentObservation, manualAssignmentObservationSchema,
   resolveObservedManualAssignmentHistory, type VerifiedManualAssignmentHistory } from "./manualAssignmentFiles.js";
 import { parseManualOpeningCapacityReservationRecord, resolveManualOpeningCapacityReservationBinding,
   type ManualOpeningCapacityReservationRecord } from "./manualOpeningCapacityReservation.js";
-import { PortfolioSizingSnapshotFileRepository, getDurablePortfolioSizingSnapshotObservation, portfolioSizingSnapshotObservationSchema,
+import { PortfolioSizingSnapshotFileRepository, assertDurablePortfolioSizingSnapshotSource, getDurablePortfolioSizingSnapshotObservation, portfolioSizingSnapshotObservationSchema,
   resolveObservedPortfolioSizingSnapshotHistory, type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
@@ -33,13 +33,14 @@ export interface VerifiedManualCapacityReservationHistory {
   readonly origins: readonly VerifiedManualCapacityReservationOrigin[];
   readonly generationHash: string | null;
 }
-const observations = new WeakMap<VerifiedManualCapacityReservationHistory, string>();
+const observations = new WeakMap<VerifiedManualCapacityReservationHistory, { observedAt: string; verifySources: () => void }>();
 
 /** Actual source locks and the reservation lock are held only during this observation's callback. */
 export function getDurableManualCapacityReservationObservation(history: VerifiedManualCapacityReservationHistory): string {
-  const observedAt = observations.get(history);
-  if (observedAt === undefined) throw new Error("manual capacity history lacks a durable observation lease");
-  return observedAt;
+  const observation = observations.get(history);
+  if (observation === undefined) throw new Error("manual capacity history lacks a durable observation lease");
+  observation.verifySources();
+  return observation.observedAt;
 }
 
 export function createManualOpeningCapacityReservationPaths(baseDir: string) {
@@ -50,10 +51,12 @@ export function createManualOpeningCapacityReservationPaths(baseDir: string) {
 
 /** Source-bound immutable records, not current capacity allocation or an atomic mandate transaction. */
 export class ManualOpeningCapacityReservationFileRepository {
+  private readonly baseDir: string;
   private readonly paths: ReturnType<typeof createManualOpeningCapacityReservationPaths>;
   private readonly options: { lockTimeoutMs: number; lockRetryDelayMs: number };
-  constructor(private readonly baseDir: string, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
-    this.paths = createManualOpeningCapacityReservationPaths(baseDir);
+  constructor(baseDir: string, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+    this.baseDir = resolve(baseDir);
+    this.paths = createManualOpeningCapacityReservationPaths(this.baseDir);
     this.options = { lockTimeoutMs: positiveInteger(options.lockTimeoutMs ?? 5000),
       lockRetryDelayMs: positiveInteger(options.lockRetryDelayMs ?? 10) };
   }
@@ -64,12 +67,31 @@ export class ManualOpeningCapacityReservationFileRepository {
 
   /** Manual -> snapshot -> reservation. Consumers must reuse the supplied histories, never re-enter their stores. */
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedManualCapacityReservationHistory) => Promise<T>): Promise<T> {
-    return this.withSources((manual, snapshots) => this.withLock(async () => {
+    return this.withSources((manual, snapshots) => this.withDurableVerifiedHistoryFromSources(manual, snapshots, operation));
+  }
+
+  /** Reuses live manual -> snapshot leases from this directory; acquires only the reservation lock.
+   * Callers must await this operation inside both source callbacks. No append or allocation capability is issued.
+   */
+  async withDurableVerifiedHistoryFromSources<T>(manual: VerifiedManualAssignmentHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory,
+    operation: (history: VerifiedManualCapacityReservationHistory) => Promise<T>): Promise<T> {
+    const verifySources = () => {
+      assertDurableManualAssignmentSource(manual, this.baseDir);
+      assertDurablePortfolioSizingSnapshotSource(snapshots, this.baseDir);
+    };
+    verifySources();
+    return this.withLock(async () => {
+      verifySources(); // Sources may have expired while waiting for this writer lock.
       const { history, observedAt } = await this.readUnderLock(manual, snapshots);
-      observations.set(history, observedAt);
-      try { return await operation(history); }
+      verifySources();
+      if (Date.parse(observedAt) < Math.max(Date.parse(getDurableManualAssignmentObservation(manual).observedAt),
+        Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt))) {
+        throw new Error("manual capacity shared source observation clock moved backwards");
+      }
+      observations.set(history, { observedAt, verifySources });
+      try { const result = await operation(history); verifySources(); return result; }
       finally { observations.delete(history); }
-    }));
+    });
   }
 
   async append(value: unknown): Promise<VerifiedManualCapacityReservationOrigin> {

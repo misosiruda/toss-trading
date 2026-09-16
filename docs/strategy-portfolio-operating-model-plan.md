@@ -3872,6 +3872,27 @@ Source와 destination의 파일 관측은 실제 bytes/descriptor/path identity�
 두 예약 variant와 retry/restart, 동시 exact retry, pending/entry/marker/fsync/remove 실패,
 source lock 유지, 관측 중 rewrite, frozen wall clock의 abandoned lock을 검증한다.
 
+수동 예약의 `withDurableVerifiedHistoryFromSources`는 이미 획득한 manual → snapshot의 실제
+durable lease를 받아 reservation lock만 획득하는 조회 API다. 일반 조회도 같은 내부 경로를 사용한다.
+각 source repository는 생성 시 절대 경로를 고정하고, callback 동안만 존재하는 private WeakMap에
+발급 객체와 source 경로를 연결한다. 동일 bytes의 다른 디렉터리 관측, 복사 객체, 종료된 관측은
+거절한다. `.`/`..`는 정규화하지만 다른 symlink·대소문자 alias를 같은 source로 승격하지 않는다.
+이는 configured path 결속이며 OS 외부 writer의 임의 파일 교체를 막는 capability sandbox가 아니다.
+
+호출자는 두 source callback 안에서 이 조회를 반드시 await해야 한다. Reservation lock 대기 전후,
+파일 관측 뒤, consumer 정상 반환 전과 종속 observation getter에서 원본 lease 수명을 재검증한다.
+원본 callback이 먼저 끝나면 아직 실행 중인 종속 callback의 관측도 즉시 무효이며 정상 성공을
+반환하지 않는다. 예약 관측 시각이 어느 원본 관측 시각보다 앞서면 fail-closed한다. 기존 전체 pair,
+source prefix, UTF-8, pending barrier와 descriptor/fsync 검사는 그대로 재사용한다.
+
+실제 원본·예약을 이용한 테스트는 경로/수명 경계, 원본 lock 유지, consumer 실패 후 재사용,
+lock 대기·I/O 도중 원본 종료, 시계 역행, 손상/pending 파일 보존과 populated history 동일성을
+검증한다. 이 API는 append 재진입, 예약 할당/소비 권한 또는 current publisher wiring을 제공하지
+않는다. Public observation·artifact schema는 유지하며 migration은 없다. 상대 경로는 생성 시
+고정되므로 생성 후 process cwd 변경으로 저장소 위치가 이동하지 않는다. Rollback 전 신규 API
+consumer를 함께 중지/되돌려야 하며 데이터는 보존한다. 새로운 경로·종속 수명 검증은 rollback하면
+사라지므로 이를 전제로 하는 consumer만 남겨 두면 안 된다.
+
 이 저장소는 opt-in source-bound record 보존이며 기존 mandate/Risk/runner에 연결하지 않는다.
 Shared capacity event 저장·projection/CAS, manual event/예약/mandate activation의 원자 commit과
 policy/evidence/sizing/current portfolio 연결은 후속이다. 기존 artifact 변환은 없고 rollback 시

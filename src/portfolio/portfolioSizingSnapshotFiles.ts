@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
@@ -36,6 +36,15 @@ export interface VerifiedPortfolioSizingSnapshotHistory {
   snapshots: readonly PortfolioSizingSnapshot[];
 }
 const durableSnapshotObservations = new WeakMap<VerifiedPortfolioSizingSnapshotHistory, PortfolioSizingSnapshotObservation>();
+const durableSnapshotSourcePaths = new WeakMap<VerifiedPortfolioSizingSnapshotHistory, string>();
+
+/** Only the live lease of this configured source can be shared with a dependent repository. */
+export function assertDurablePortfolioSizingSnapshotSource(history: VerifiedPortfolioSizingSnapshotHistory, baseDir: string): void {
+  getDurablePortfolioSizingSnapshotObservation(history);
+  if (durableSnapshotSourcePaths.get(history) !== createPortfolioSizingSnapshotPaths(resolve(baseDir)).recordsPath) {
+    throw new Error("portfolio sizing snapshot lease belongs to a different source path");
+  }
+}
 
 /** Only a live repository-issued lease proves this source observation. */
 export function getDurablePortfolioSizingSnapshotObservation(history: VerifiedPortfolioSizingSnapshotHistory): PortfolioSizingSnapshotObservation {
@@ -80,7 +89,7 @@ export class PortfolioSizingSnapshotFileRepository {
     baseDir: string,
     options: PortfolioSizingSnapshotFileRepositoryOptions = {}
   ) {
-    const paths = createPortfolioSizingSnapshotPaths(baseDir);
+    const paths = createPortfolioSizingSnapshotPaths(resolve(baseDir));
     this.recordsPath = paths.recordsPath;
     this.lockPath = paths.lockPath;
     this.lockTimeoutMs = positiveInteger(
@@ -106,10 +115,12 @@ export class PortfolioSizingSnapshotFileRepository {
         recordCount: snapshots.length, recordsHash: hashCanonicalPayload(snapshots), observedAt
       });
       durableSnapshotObservations.set(history, observation);
+      durableSnapshotSourcePaths.set(history, this.recordsPath);
       try {
         return await operation(history);
       } finally {
         durableSnapshotObservations.delete(history);
+        durableSnapshotSourcePaths.delete(history);
       }
     });
   }
