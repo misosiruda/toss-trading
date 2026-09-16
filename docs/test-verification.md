@@ -98,6 +98,45 @@ skip으로 속도를 얻었다고 주장하지 않는다. 단일 측정은 환�
 총 시간은 97.425초, 영향 단계는 분석 비용을 포함해 74.053초다. 이전 단일 파일 측정에는
 build/quality가 포함되지 않았으므로 211.686초와 97.425초를 같은 범위의 수치로 비교하지 않는다.
 
+## Opening capacity 통합 테스트의 파일 단위 분리
+
+`storedSnapshotOpeningCapacity.test.ts`의 23개 테스트를 다음 5개 파일로 나눈다.
+
+| 파일 | 책임 | 테스트 수 |
+| --- | --- | --- |
+| `storedSnapshotOpeningCapacity.test.ts` | occupancy, 예약과 보유 slot 집계 | 4 |
+| `storedSnapshotOpeningCapacityPolicy.test.ts` | 활성 정책, 관측 도중 정책 변경 | 3 |
+| `storedSnapshotOpeningCapacityIntegrity.test.ts` | 원본 무결성, 중복, overflow, strict 입력 | 6 |
+| `storedSnapshotOpeningBudget.test.ts` | 공유 현금, 예약 차감, max band와 정수 경계 | 6 |
+| `storedBucketOpeningCapacityStates.test.ts` | bucket state payload 및 재시작 persistence | 4 |
+
+공통 type/function 8개는 `storedSnapshotOpeningCapacityTestFixtures.ts`로 이동한다.
+분리 전후 TypeScript AST statement를 대조해 23개 test 호출의 이름·본문·반복 조합·assertion과
+8개 helper 구현이 동일함을 확인했다. Helper의 export와 import 연결만 변경하며 fixture import는
+테스트를 등록하지 않는다. Production 코드, 테스트 runner/선택 임계값, timeout과 Risk gate는 바꾸지 않는다.
+
+Node test runner의 기존 파일별 프로세스 격리를 사용한다. 파일 안의 테스트는 계속 직렬이며
+`Date` mock과 repository prototype mock은 다른 파일로 전파되지 않는다. 기존 fixture의
+`mkdtemp` 경로 격리와 `finally`의 timer reset/cleanup을 유지한다.
+
+2026-09-16 Windows x64 / Node v22.15.0 / availableParallelism 8에서 원본 23개 단독 실행은
+138.418초, 분리된 같은 23개는 44.781초였다(TAP duration, 약 68% 감소). 둘 다 실패·skip·cancel 0이다.
+Build 시간을 제외한 동일 테스트 집합 비교이며 단일 환경 측정이다. 전체 suite 또는 다른 환경의
+속도 개선율을 이 값으로 주장하지 않는다.
+
+```powershell
+# 분리 전 main의 원본 파일: 23개
+node --test dist/portfolio/storedSnapshotOpeningCapacity.test.js
+# 분리 후 동일 집합: 4 + 3 + 6 + 6 + 4개
+node --test dist/portfolio/storedSnapshotOpeningCapacity.test.js dist/portfolio/storedSnapshotOpeningCapacityPolicy.test.js dist/portfolio/storedSnapshotOpeningCapacityIntegrity.test.js dist/portfolio/storedSnapshotOpeningBudget.test.js dist/portfolio/storedBucketOpeningCapacityStates.test.js
+```
+
+원래 파일은 occupancy 4개를 계속 실행하므로 기존 compiled 파일이 전체 23개를 중복 등록하지 않는다.
+Rollback에는 데이터 변환이 없지만 TypeScript는 삭제된 source의 compiled 파일을 자동 제거하지 않는다.
+분리 PR을 되돌릴 때는 깨끗한 checkout에서 build하거나 해당 rollback으로 사라진 신규 4개 test 및
+fixture의 compiled artifact만 정확히 확인해 정리해야 한다. 전체 `dist`나 사용자 데이터를 삭제하는
+절차가 아니다. 새 fixture 변경은 영향 분석에서 이를 사용하는 5개 테스트 파일을 모두 선택한다.
+
 ## 호환성·롤백
 
 ### Windows 활성화 저장소 잠금 경합
