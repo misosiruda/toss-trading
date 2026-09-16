@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
@@ -36,6 +36,15 @@ export interface VerifiedManualAssignmentHistory {
   readonly events: readonly ManualAssignmentEvent[];
 }
 const durableObservations = new WeakMap<VerifiedManualAssignmentHistory, ManualAssignmentObservation>();
+const durableSourcePaths = new WeakMap<VerifiedManualAssignmentHistory, string>();
+
+/** Reuse requires the configured concrete source, not identical bytes from another directory. */
+export function assertDurableManualAssignmentSource(history: VerifiedManualAssignmentHistory, baseDir: string): void {
+  getDurableManualAssignmentObservation(history);
+  if (durableSourcePaths.get(history) !== createManualAssignmentPaths(resolve(baseDir)).eventsPath) {
+    throw new Error("manual assignment lease belongs to a different source path");
+  }
+}
 
 /** Only a live repository-issued observation; this does not authorize opening capacity. */
 export function getDurableManualAssignmentObservation(history: VerifiedManualAssignmentHistory): ManualAssignmentObservation {
@@ -77,7 +86,7 @@ export class ManualAssignmentFileRepository {
     baseDir: string,
     options: ManualAssignmentFileRepositoryOptions = {}
   ) {
-    const paths = createManualAssignmentPaths(baseDir);
+    const paths = createManualAssignmentPaths(resolve(baseDir));
     this.eventsPath = paths.eventsPath;
     this.lockPath = paths.lockPath;
     this.lockTimeoutMs = positiveInteger(
@@ -101,10 +110,12 @@ export class ManualAssignmentFileRepository {
       const history = Object.freeze({ events });
       durableObservations.set(history, Object.freeze({ eventCount: events.length,
         eventsHash: hashCanonicalPayload(events), observedAt }));
+      durableSourcePaths.set(history, this.eventsPath);
       try {
         return await operation(history);
       } finally {
         durableObservations.delete(history);
+        durableSourcePaths.delete(history);
       }
     });
   }

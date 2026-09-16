@@ -306,6 +306,25 @@ test("manual capacity abandoned locks time out with frozen wall clock and initia
   });
 });
 
+test("manual capacity reuses populated manual and snapshot leases without source lock reentry", async () => {
+  await temporary(async (dir) => {
+    const repo = new ManualOpeningCapacityReservationFileRepository(dir, { lockTimeoutMs: 60, lockRetryDelayMs: 3 });
+    const original = await repo.append(await seed(dir));
+    const before = await readFile(createManualOpeningCapacityReservationPaths(dir).recordsPath);
+    await new ManualAssignmentFileRepository(dir).withDurableVerifiedHistory((manualHistory) =>
+      new PortfolioSizingSnapshotFileRepository(dir).withDurableVerifiedHistory(async (snapshots) => {
+        const escaped = await repo.withDurableVerifiedHistoryFromSources(manualHistory, snapshots, async (history) => {
+          assert.deepEqual(history.origins, [original]);
+          assert.ok(getDurableManualCapacityReservationObservation(history));
+          return history;
+        });
+        assert.throws(() => getDurableManualCapacityReservationObservation(escaped), /durable observation lease/);
+      }));
+    assert.deepEqual(await readFile(createManualOpeningCapacityReservationPaths(dir).recordsPath), before);
+    assert.deepEqual(await repo.readAll(), [original]);
+  });
+});
+
 function snapshot(version = "v1", portfolioId = "paper-portfolio") {
   return createPortfolioSizingSnapshot({ portfolioId, portfolioVersion: version, policyHash: HASH, asOf: AT,
     virtualPortfolio: { portfolioId, cashKrw: 1000, positions: [], updatedAt: AT }, valuationInputs: [], pendingActionInputs: [],
