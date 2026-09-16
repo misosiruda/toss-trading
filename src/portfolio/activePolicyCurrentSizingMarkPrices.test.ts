@@ -15,6 +15,8 @@ import { policyFixture, storePolicyFixture } from "./portfolioActionRiskDecision
 import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
 import { createSourcePriceEvidencePaths, SourcePriceEvidenceFileRepository } from "./sourcePriceEvidenceFiles.js";
+import { createSourceFxEvidenceRecord } from "./sourceFxEvidence.js";
+import { SourceFxEvidenceFileRepository } from "./sourceFxEvidenceFiles.js";
 
 const TIME = Date.parse("2026-09-02T00:00:00.000Z");
 const OBSERVED = "2026-09-01T23:59:00.000Z";
@@ -39,8 +41,13 @@ async function setup(baseDir: string, market: Market) {
   await storePolicyFixture(baseDir, policy);
   const valuationInputs: PortfolioValuationInput[] = [{ kind: "mark_price", market, symbol, priceKrw: 10,
     evidenceRef: record.evidenceRef, evidenceAsOf: OBSERVED }];
-  if (market === "US") valuationInputs.push({ kind: "fx_rate", baseCurrency: "USD", quoteCurrency: "KRW", rate: 1400,
-    evidenceRef: "synthetic-fx-not-authenticated-here", evidenceAsOf: OBSERVED });
+  if (market === "US") {
+    const fx = createSourceFxEvidenceRecord({ schemaVersion: "source_fx_evidence.v1", sourceContractId: "synthetic-fx.v1",
+      baseCurrency: "USD", quoteCurrency: "KRW", rate: 1400, observedAt: OBSERVED, createdAt: OBSERVED, sourceRefs: ["synthetic-fx"] });
+    await new SourceFxEvidenceFileRepository(baseDir, options).append(fx);
+    valuationInputs.push({ kind: "fx_rate", baseCurrency: "USD", quoteCurrency: "KRW", rate: fx.rate,
+      evidenceRef: fx.evidenceRef, evidenceAsOf: OBSERVED });
+  }
   const request = { baseDir, portfolioPath, policyHash: policy.policy.policyHash, asOf: new Date(TIME + 50).toISOString(),
     valuationInputs, pendingActionInputs: [], ...createPortfolioExposureSnapshot({ virtualNetWorthKrw: 120, cashKrw: 100,
       bucketExposureKrw: { intraday: 20, swing: 0, short_term: 0, long_term: 0, hedge: 0 },

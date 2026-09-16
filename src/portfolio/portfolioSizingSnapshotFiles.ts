@@ -13,6 +13,8 @@ import { RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFi
 import { withDurablePolicyDependencies } from "./runtimePolicyDependencyGeneration.js";
 import { SourcePriceEvidenceFileRepository, getDurableSourcePriceEvidenceObservation,
   resolveVerifiedSourcePriceEvidenceOrigin } from "./sourcePriceEvidenceFiles.js";
+import { SourceFxEvidenceFileRepository, getDurableSourceFxEvidenceObservation,
+  resolveVerifiedSourceFxEvidenceOrigin } from "./sourceFxEvidenceFiles.js";
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -128,14 +130,15 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.withLock(() => this.appendUnderLock(candidate));
   }
 
-  /** Concrete source binding, with price -> sizing -> policy -> activation lock order.
-   * Both new append and exact retry must match stored mark prices and the currently active policy.
-   * FX provenance, price freshness/source trust and pending authority remain separate gates.
+  /** Concrete source binding, with price -> FX -> sizing -> policy -> activation lock order.
+   * Both new append and exact retry must match stored marks/FX and the currently active policy.
+   * External source trust/freshness, mark conversion lineage and pending authority remain separate gates.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
-    return withStoredMarkPrices(baseDir, candidate, options, () => this.withLock(() => withDurablePolicyDependencies(baseDir, async (dependencies, verifyDependencies) => {
+    return withStoredMarkPrices(baseDir, candidate, options, () => withStoredFxRates(baseDir, candidate, options,
+      () => this.withLock(() => withDurablePolicyDependencies(baseDir, async (dependencies, verifyDependencies) => {
       // Do not carry a policy/dependency generation across the destination lock wait.
       return new RuntimePortfolioPolicyFileRepository(baseDir, dependencies.repository, options)
         .withDurablePolicyGeneration(async (policies) => {
@@ -151,7 +154,7 @@ export class PortfolioSizingSnapshotFileRepository {
             return snapshot;
           });
         });
-    })));
+    }))));
   }
 
   private async appendUnderLock(candidate: PortfolioSizingSnapshot): Promise<PortfolioSizingSnapshot> {
@@ -219,6 +222,28 @@ async function withStoredMarkPrices<T>(baseDir: string, snapshot: PortfolioSizin
       }
       if ([price.observedAt, price.createdAt, origin.appendedAt].some((instant) => Date.parse(instant) > cutoff)) {
         throw new Error("sizing snapshot mark source was unavailable at its cutoff");
+      }
+    }
+    return operation();
+  });
+}
+
+/** FX is already represented by KRW marks: compare conversion evidence, never multiply the mark again. */
+async function withStoredFxRates<T>(baseDir: string, snapshot: PortfolioSizingSnapshot,
+  options: PortfolioSizingSnapshotFileRepositoryOptions, operation: () => Promise<T>): Promise<T> {
+  const rates = snapshot.valuationInputs.filter((input) => input.kind === "fx_rate");
+  if (rates.length === 0) return operation();
+  return new SourceFxEvidenceFileRepository(baseDir, options).withDurableVerifiedHistory(async (history) => {
+    const cutoff = Date.parse(snapshot.asOf);
+    if (cutoff > Date.parse(getDurableSourceFxEvidenceObservation(history).observedAt)) {
+      throw new Error("sizing snapshot FX cutoff is after its source observation");
+    }
+    for (const rate of rates) {
+      const origin = resolveVerifiedSourceFxEvidenceOrigin(history, rate.evidenceRef), record = origin.record;
+      if (record.baseCurrency !== rate.baseCurrency || record.quoteCurrency !== rate.quoteCurrency || record.rate !== rate.rate ||
+        Date.parse(record.observedAt) !== Date.parse(rate.evidenceAsOf)) throw new Error("sizing snapshot FX differs from stored evidence");
+      if ([record.observedAt, record.createdAt, origin.appendedAt].some((instant) => Date.parse(instant) > cutoff)) {
+        throw new Error("sizing snapshot FX source was unavailable at its cutoff");
       }
     }
     return operation();
