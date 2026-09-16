@@ -17,6 +17,19 @@ const inputSchema = portfolioSizingSnapshotSchema.omit({ portfolioSnapshotId: tr
  */
 export async function appendCurrentPortfolioSizingSnapshot(value: z.input<typeof inputSchema>,
   options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}) {
+  return publish(value, options, false);
+}
+
+/** Also binds publication to the actual active policy, holding sizing -> policy -> activation locks through fsync.
+ * The result still does not authorize pending reservations, Risk or current execution.
+ */
+export async function appendPolicyBoundCurrentPortfolioSizingSnapshot(value: z.input<typeof inputSchema>,
+  options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}) {
+  return publish(value, options, true);
+}
+
+async function publish(value: z.input<typeof inputSchema>,
+  options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1], requireActivePolicy: boolean) {
   const input = inputSchema.parse(value);
   if (!isDeepStrictEqual(input, value)) throw new Error("current sizing snapshot input must already be canonical");
   const baseDir = resolve(input.baseDir), portfolioPath = resolve(input.portfolioPath);
@@ -30,6 +43,6 @@ export async function appendCurrentPortfolioSizingSnapshot(value: z.input<typeof
       exposureSnapshot: input.exposureSnapshot, exposureSnapshotHash: input.exposureSnapshotHash });
     resolvePortfolioSizingSnapshot(snapshot);
     // Hold the source portfolio lock through destination append/fsync/exact retry.
-    return snapshots.append(snapshot);
+    return requireActivePolicy ? snapshots.appendForActivePolicy(snapshot) : snapshots.append(snapshot);
   });
 }

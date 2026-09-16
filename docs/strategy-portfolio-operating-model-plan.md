@@ -5911,6 +5911,39 @@ Snapshot 저장 실패는 오류와 남은 bytes를 보존하되 portfolio를 �
 소유권 확인 후 해제하며 snapshot의 partial/corrupt source는 기존 reader가 fail-closed한다. 새 API를
 중지하는 코드 rollback이 가능하고 기존 JSON/schema/reader migration이나 artifact 삭제는 없다.
 
+`appendPolicyBoundCurrentPortfolioSizingSnapshot`은 같은 실제 잔고/revision publisher에 저장된
+정책 원본 검증을 추가한 경로다. Sizing 잠금을 얻은 뒤 실제 dependency/policy/activation 파일을 읽어
+잠금 대기 중 정책 원본의 부분 append 실패도 거절한다. 이후 정책 저장소의
+`withDurablePolicyGeneration`으로 실제 정책 이력을 잠금 안에서 다시 읽고 fsync하며 portfolio → sizing
+snapshot → policy → activation 순서로 잠금을 유지해 저장 및 exact retry를 완료한다. Policy 잠금은
+activation 잠금 대기 및 destination 저장 동안에도 유지하므로 중간의 정책 append 실패로 원본이
+손상될 수 있는 cooperative writer gap을 남기지 않는다. Callback에서 같은 policy 저장소를 재진입하거나
+activation → policy 역순으로 잠금을 획득하지 않는다. Sizing 저장소의
+`appendForActivePolicy`는 activation 이력을 잠금 안에서 다시 읽고 fsync한 관측 시각의 활성 정책과
+입력 `policyHash`를 비교한다. 평가 cutoff는 그 activation의 `effectiveFrom` 이상, 관측 시각 이하여야
+한다. 정책 부재·종료·교체·손상은 거절하며 동일 hash의 정책이 다시 활성화돼도 이전 epoch의 cutoff는
+수락하지 않는다. 사전 로드 이후 activation이 바뀌어도 재검증하며 새 정책 원본이 없는 경우 추정하지 않는다.
+
+Dependency 7종은 `withDurablePolicyDependencies`가 실제 descriptor에서 읽고 fsync한 bytes로
+기존 독립 hash/lineage 검증을 수행한다. 신규 저장과 exact retry의 destination fsync 전후에
+원본 bytes, 파일 identity/크기/수정 시각/link 수 및 부재 상태를 재검증한다. 잠금 대기 중 부분 append,
+저장 중 삭제·동일 내용 파일 교체·정상 추가·없던 파일 생성을 관측하면 성공을 반환하지 않는다.
+잘못된 UTF-8, 마지막 줄 개행 누락, symbolic link 및 hard link도 거절하고 blank line/CRLF는 유지한다.
+Dependency 전용 writer 잠금은 아니며 비협력 writer를 차단하거나 미래의 원본 상태를 보증하지 않는다.
+저장 후 재검증 실패는 이미 쓴 immutable snapshot을 삭제하지 않는다. 일반 reader의 snapshot 존재는
+정책 결속 성공 receipt가 아니므로 실행 권한으로 해석하지 않으며 재시도도 원본을 다시 검증한다.
+파일 읽기/fsync/close 오류를 전파하고 descriptor를 해제한다. Windows directory sync EPERM 예외는
+기존과 같으며 전원 장애 수준의 추가 보장은 없다. Schema 변경이나 자동 복구·원본 수정은 없다.
+
+이 경로는 실제 정책과 snapshot의 저장 시점 결속이며 일반 append/read 및 기존 publisher의 의미는
+바꾸지 않는다. 저장 schema에 activation receipt를 추가하지 않으므로 과거 디스크 존재 시각이나
+현재 실행 권한의 증거로 재사용할 수 없다. 활성 정책은 잠금 안의 관측 시각 기준이며 이미 기록된
+future-effective 전이가 이후 도래하는 것을 멈추지는 않는다. 가격/pending 원본 권한, 공용 예약,
+최종 Risk 및 다중 bucket scheduler 연결은 별도 검증이 필요하다. 저장 실패 시 부분 destination을
+보존하고 원본 portfolio/activation을 변경하지 않으며 소유한 원본 잠금을 해제한다. 활성 정책 잠금의
+추가 대기·timeout 및 긴 이력 검증 비용은 운영 관측 대상이고 장기 부하 성능은 아직 측정하지 않았다.
+새 publisher 사용을 중지하는 코드 rollback이 가능하며 기존 artifact 삭제나 migration은 없다.
+
 새 JSON 임시 파일을 먼저 sync한 뒤 journal append/fsync와 부모 디렉터리 sync, JSON rename/sync 순으로
 반영한다. Journal 쓰기 시작 이후 오류는 일반 write에서도 lock을 복구 장벽으로 남기며, prior JSON이
 남아 있어도 자동 retry하지 않는다. Journal과 JSON의 전체 자동 roll-forward/rollback은 후속이다.
