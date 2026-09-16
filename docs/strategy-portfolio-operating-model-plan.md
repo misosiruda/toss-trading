@@ -4920,7 +4920,7 @@ Rollback은 신규 조회 consumer를 중단하고 코드만 되돌리며 기존
 
 `appendPolicyBoundCurrentPortfolioSizingSnapshot`와 `appendForActivePolicy`는 신규 저장과 exact
 retry 모두 실제 잠긴 plan/event 이력의 cutoff prefix와 pending 입력을 대조한다. 잠금 순서는
-portfolio(현재 잔고 publisher) → price → FX(입력이 있으면) → sizing → event → plan → policy
+portfolio(현재 잔고 publisher) → price → FX(입력이 있으면) → sizing → event → plan → mandate → policy
 → activation → Risk → fill이다. 원본 잠금은 destination fsync까지 유지한다. 보유 position이나
 pending 입력이 없어도 종료된 계획의 실행 기록이 있을 수 있으므로 실제 가격 이력을 읽는다.
 Pending 입력이 빈 배열이어도 plan/event 전체를 읽어 누락을 거절한다.
@@ -4961,6 +4961,27 @@ candidate/Risk의 미검증 플래그를 해제하지 않는다. 새 저장 형�
 없으므로 신규 consumer를 중단하고 코드만 rollback하며 append-only 원본을 수정하지 않는다.
 
 #### Snapshot pending 계산에 사용된 체결·Risk 원본 연결
+
+Policy-bound current publisher는 plan 뒤, policy 앞에서 실제 mandate record/event 저장소의
+`withDurableVerifiedHistory`를 획득한다. 두 파일 전체를 검증·fsync한 동일 lease를 destination
+신규 저장·exact retry 완료까지 유지한다. Mandate 관측이 plan 관측보다, activation 관측이 mandate
+관측보다 이르거나 mandate record/event 생성이 관측보다 미래이면 거절한다. 기존 Risk writer의
+snapshot → mandate → policy/activation 순서를 역전하지 않는다.
+
+Pending mandate action은 원래 plan의 policy/portfolio/market/symbol과 pending cutoff의 생명주기를
+대조한다. 이전 정책의 미완료 계획을 현재 정책으로 바꾸지 않는다. BUY는 active open-or-increase
+mandate만 허용하고 manual/selector의 예약 ID/hash를 pending 입력과 비교한다. SELL에는
+review_required와 classify_existing_reduce_only를 허용하며 legacy reduce-only action에 mandate를
+합성하지 않는다. Terminal plan을 포함한 모든 execution의 실제 Risk 결정은 결정 시점 mandate,
+bucket과 BUY 권한을 재검증한다. Risk에 mandate receipt가 있으면 관측 prefix hash/count와 해당
+event identity도 대조한다. 후속 정상 retirement는 과거 Risk 시점의 상태를 바꾸지 않는다.
+
+이 연결은 reservation **참조** 대조이며 실제 발급·소비 ledger나 사용 가능한 예약 잔액을 인증하지
+않는다. Mandate 자체의 assignment 원본, 과거 디스크 존재, Risk 수치 규칙과 resulting accounting도
+별도 gate다. Receipt 없는 과거 Risk에 과거 관측 증거를 합성하지 않는다. Historical resolver,
+일반 snapshot append/read, JSONL 형식과 scheduler는 변경하지 않는다. Caller-only mandate 참조는
+강화된 publisher에서 거절하며 rollback은 consumer 중지 후 코드 복구로 수행한다. 원본 삭제나
+자동 migration은 없다. 협력 writer 잠금만 배제하고 비협력 외부 파일 수정은 지원하지 않는다.
 
 Risk 및 paper fill repository의 `withDurableVerifiedHistory`는 실제 writer 잠금을 callback
 종료까지 유지한다. Plan/event 원본에서 사용하는 descriptor-bound reader를 재사용해 bytes·경로
@@ -5996,7 +6017,7 @@ Snapshot 저장 실패는 오류와 남은 bytes를 보존하되 portfolio를 �
 정책 원본 검증을 추가한 경로다. Sizing 잠금을 얻은 뒤 실제 dependency/policy/activation 파일을 읽어
 잠금 대기 중 정책 원본의 부분 append 실패도 거절한다. 이후 정책 저장소의
 `withDurablePolicyGeneration`으로 실제 정책 이력을 잠금 안에서 다시 읽고 fsync하며 portfolio → price
-(보유 mark가 있는 경우) → FX(valuation에 FX가 있는 경우) → sizing snapshot → policy → activation 순서로
+→ FX(valuation에 FX가 있는 경우) → sizing snapshot → event → plan → mandate → policy → activation → Risk → fill 순서로
 잠금을 유지해 저장 및 exact retry를 완료한다. Policy 잠금은
 activation 잠금 대기 및 destination 저장 동안에도 유지하므로 중간의 정책 append 실패로 원본이
 손상될 수 있는 cooperative writer gap을 남기지 않는다. Callback에서 같은 policy 저장소를 재진입하거나

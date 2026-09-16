@@ -13,6 +13,9 @@ import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js"
 import { createPortfolioSizingSnapshotPaths, PortfolioSizingSnapshotFileRepository } from "./portfolioSizingSnapshotFiles.js";
 import { canonicalizePendingPortfolioActionInputs, pendingActionExposureTotals, type PendingPortfolioActionInput } from "./portfolioSizingInputs.js";
 import { policyFixture, storePolicyFixture } from "./portfolioActionRiskDecisionTestFixtures.js";
+import { createInvestmentMandateRecord, createInvestmentMandateEvent, type InvestmentMandateRecord } from "./investmentMandate.js";
+import { InvestmentMandateFileRepository } from "./investmentMandateFiles.js";
+import { scheduleBoundaryRefFor } from "./runtimePolicyContracts.js";
 import { createRebalancePlanRecord, hashRebalanceExecutionTarget, type RebalanceExecutionTarget, type RebalancePlanRecord } from "./rebalancePlan.js";
 import { createRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { RebalancePlanFileRepository } from "./rebalancePlanFiles.js";
@@ -21,7 +24,9 @@ import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
 import { SourcePriceEvidenceFileRepository } from "./sourcePriceEvidenceFiles.js";
 
-interface Tweaks { risk?: Partial<Parameters<typeof createPortfolioActionRiskDecision>[0]>; unbound?: boolean; completion?: boolean }
+interface Tweaks { risk?: Partial<Parameters<typeof createPortfolioActionRiskDecision>[0]>; unbound?: boolean; completion?: boolean;
+  mandate?: Partial<Pick<InvestmentMandateRecord, "bucket" | "portfolioId" | "market" | "symbol" | "policyHash" | "validFrom" | "expiresAt">>;
+  reduceOnly?: boolean; selector?: boolean }
 
 export const T = Date.parse("2026-09-02T00:00:00.000Z"), at = (offset: number) => new Date(T + offset).toISOString();
 export const H = (value: string) => hashCanonicalPayload({ synthetic: value });
@@ -39,6 +44,24 @@ async function seed(baseDir: string, kind: Kind, context: TestContext, tweaks: T
   const price = await prices.append(createSourcePriceEvidenceRecord({ sourceContractId: "synthetic-pending.v1", market: "KR", symbol: "SYNTH",
     priceField: "last_price", priceKrw: 100, observedAt: at(0), createdAt: at(0), sourceRefs: ["synthetic-price"] }));
   const side = kind.endsWith("buy") ? "BUY" : "SELL";
+  const mandates = new InvestmentMandateFileRepository(baseDir, options);
+  const mandate = await mandates.appendRecord(createInvestmentMandateRecord({ portfolioId: policy.policy.portfolioId,
+    policyHash: H("prior-policy"), market: "KR", symbol: "SYNTH", bucket: "swing", asOf: at(0), createdAt: at(0),
+    evidenceAsOf: at(0), validFrom: at(0), targetWeightRatio: 0.1, minWeightRatio: 0.05, maxWeightRatio: 0.2,
+    maximumOpeningNotionalKrw: tweaks.reduceOnly ? 0 : 400, reasonCodes: ["synthetic"], evidenceRefs: ["synthetic"],
+    reviewCadence: { mode: "scheduled", boundaryRefs: [scheduleBoundaryRefFor(policy.records.scheduleBoundaries[0]!)] }, reviewAfter: at(1000),
+    ...(tweaks.selector ? { assignmentSource: "deterministic_selector" as const, selectionRequestId: "synthetic-request",
+      candidateAssignmentId: "synthetic-assignment", candidateAssignmentSetId: "synthetic-set", candidateAssignmentSetHash: H("set"),
+      selectedRank: 1, openingCapacityReservationId: "synthetic-unverified", openingCapacityReservationHash: H("reservation"),
+      reservedSlotOrdinal: 0, reservedMaximumNotionalKrw: 400, scoringModelVersion: "synthetic-v1", selectionScore: 1 }
+      : tweaks.reduceOnly ? { assignmentSource: "manual_policy" as const, manualAuthorizationScope: "classify_existing_reduce_only" as const,
+        manualAssignmentEventId: "synthetic-manual" }
+      : { assignmentSource: "manual_policy" as const, manualAuthorizationScope: "open_or_increase" as const, manualAssignmentEventId: "synthetic-manual",
+        capacityReservation: { manualCapacityReservationId: "synthetic-unverified", manualCapacityReservationHash: H("reservation"),
+          reservedMaximumNotionalKrw: 400, reservationKind: "new_position" as const, reservedSlotOrdinal: 0 } }), ...tweaks.mandate }));
+  const activation = await mandates.appendEvent(createInvestmentMandateEvent({ mandateId: mandate.mandateId, mandateHash: mandate.mandateHash,
+    portfolioId: mandate.portfolioId, policyHash: mandate.policyHash, market: mandate.market, symbol: mandate.symbol, bucket: mandate.bucket,
+    eventType: "activated", asOf: mandate.validFrom, createdAt: mandate.validFrom, reasonCodes: ["synthetic"] }));
   const target: RebalanceExecutionTarget = kind === "fractional_buy" ? { targetKind: "fractional_buy_notional", targetNotionalKrw: 100 }
     : kind === "fractional_sell" ? { targetKind: "fractional_sell_quantity", targetQuantity: 0.3, referencePriceKrw: 100,
       markedTargetNotionalKrw: 30, priceEvidenceRef: price.evidenceRef }
@@ -50,7 +73,7 @@ async function seed(baseDir: string, kind: Kind, context: TestContext, tweaks: T
     portfolioVersion: "synthetic-v1", portfolioSnapshotHash: H("old-snapshot"), policyHash: H("prior-policy"), evidenceCutoffAt: at(12),
     createdAt: at(15), triggerRef: "synthetic-trigger", phase: side === "BUY" ? "buy" : "sell",
     actions: [{ actionId: "synthetic-action", actionSequence: 0, market: "KR", symbol: "SYNTH", lineageKind: "mandate", side,
-      mandateId: "synthetic-mandate", executionTarget: target, maximumNotionalKrw: 400, reasonCodes: ["synthetic"] }] }));
+      mandateId: mandate.mandateId, executionTarget: target, maximumNotionalKrw: 400, reasonCodes: ["synthetic"] }] }));
   const events = new RebalancePlanEventFileRepository(baseDir, plans, options);
   context.mock.timers.setTime(T + 20); const preview = await events.append(event(plan, "previewed", undefined, 20));
   context.mock.timers.setTime(T + 30); const approved = await events.append(event(plan, "approved", preview, 30));
@@ -104,7 +127,7 @@ async function seed(baseDir: string, kind: Kind, context: TestContext, tweaks: T
   const pending: PendingPortfolioActionInput = side === "BUY" ? { ...common, side, openingCapacityReservationId: "synthetic-unverified", openingCapacityReservationHash: H("reservation") }
     : { ...common, side, remainingQuantity: kind === "fractional_sell" ? 0.2 : 2, priceEvidenceRef: price.evidenceRef };
   context.mock.timers.setTime(T + 100);
-  return { baseDir, portfolioPath, policy, plans, events, plan, lastEvent, pending, prices, price, risks, fills, risk, paperFill,
+  return { baseDir, portfolioPath, policy, plans, events, plan, lastEvent, pending, prices, price, risks, fills, risk, paperFill, mandates, mandate, activation,
     records: createPortfolioSizingSnapshotPaths(baseDir).recordsPath, snapshots: new PortfolioSizingSnapshotFileRepository(baseDir, options) };
 }
 export function request(state: State, pending: readonly PendingPortfolioActionInput[] = [state.pending], offset = 50) {
