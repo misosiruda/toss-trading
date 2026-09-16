@@ -4920,10 +4920,10 @@ Rollback은 신규 조회 consumer를 중단하고 코드만 되돌리며 기존
 
 `appendPolicyBoundCurrentPortfolioSizingSnapshot`와 `appendForActivePolicy`는 신규 저장과 exact
 retry 모두 실제 잠긴 plan/event 이력의 cutoff prefix와 pending 입력을 대조한다. 잠금 순서는
-portfolio(현재 잔고 publisher) → price(보유 mark 또는 pending 입력이 있으면) → FX(입력이 있으면)
-→ sizing → event → plan → policy → activation이다. Plan/event 잠금과 필요한 가격 원본은
-destination fsync까지 유지한다. 보유 position이 없어도 pending 수량 목표가 있으면 실제 가격
-이력을 읽으며, pending 입력이 빈 배열이어도 plan/event 전체를 읽어 누락을 거절한다.
+portfolio(현재 잔고 publisher) → price → FX(입력이 있으면) → sizing → event → plan → policy
+→ activation → Risk → fill이다. 원본 잠금은 destination fsync까지 유지한다. 보유 position이나
+pending 입력이 없어도 종료된 계획의 실행 기록이 있을 수 있으므로 실제 가격 이력을 읽는다.
+Pending 입력이 빈 배열이어도 plan/event 전체를 읽어 누락을 거절한다.
 
 공통 `bindSnapshotPendingPlanProgress`는 historical resolver와 publisher의 exact membership,
 plan/event/target hash, 잔여 수량 및 gross 금액 비교를 공유한다. Fractional BUY는 남은 금액 목표,
@@ -4931,7 +4931,8 @@ whole-share BUY는 계획 원본 가격, SELL은 명시적 저장 가격과 남�
 기존 `append`와 `appendCurrentPortfolioSizingSnapshot`의 historical 계약 및 JSONL schema는 유지한다.
 Policy-bound 경로에서 caller-only pending, 누락·추가·손상 source는 더 이상 저장·재시도할 수 없다.
 정상 cutoff 이후 event는 해당 과거 prefix를 바꾸지 않으며 이 결과가 현재 실행 허가를 뜻하지 않는다.
-실제 reservation/fill/Risk 원본, 외부 가격 trust/freshness와 분류별 exposure 최종 차감은 별도 gate다.
+실제 reservation, Risk 규칙 권한, resulting accounting, 외부 가격 trust/freshness와 분류별
+exposure 최종 차감은 별도 gate다. 저장된 fill/Risk 원본 대조는 아래 연결을 사용한다.
 Rollback은 강화된 publisher consumer를 중단하고 코드만 되돌리며 기존 snapshot을 변환하지 않는다.
 
 `resolveStoredSnapshotPendingActions`는 caller의 pending array 대신 실제 immutable snapshot을
@@ -4970,9 +4971,21 @@ identity·stat·UTF-8 및 fsync를 검증하고, 모든 record의 commit과 fill
 만료된다. 기존 origin 조회 권한은 historical 설명 용도로 유지된다. 두 lock의 경합 timeout은
 monotonic clock을 사용하며 artifact에 기록하는 시각은 기존 wall clock이다.
 
-이 원본 잠금 API는 snapshot publisher와 아직 연결되지 않았고, 자체적으로 actual Risk 규칙 재평가,
-reservation 또는 결과 portfolio accounting 권한을 발급하지 않는다. Schema/기존 append contract
-변경은 없으며 rollback은 신규 consumer 사용 중단과 코드 복구로 수행한다. 원본 데이터를 변환하지 않는다.
+Policy-bound current snapshot publisher는 activation 안쪽에서 Risk → fill 잠금을 획득하고
+snapshot 신규 저장·exact retry의 destination fsync가 끝날 때까지 유지한다. Risk 관측은 activation
+관측보다, fill 관측은 Risk 관측보다 이전이면 거절한다. 공통 `bindSnapshotPendingExecutionOrigins`는
+historical resolver와 동일한 persisted execution 대조를 수행하며, terminal plan과 cutoff prefix의
+모든 실행을 포함한다. Fill에 저장된 Risk receipt, 실제 가격 원본, pre-state·누계·cap 및 predecessor
+commit 순서를 검증하고 위조·누락·손상된 이력으로 pending 금액을 줄일 수 없게 한다.
+Fill v3에 완료 증거가 있으면 그 completedAt도 execution event의 asOf보다 엄격히 이전이어야
+하며, 동일 밀리초·이후 완료는 신규 snapshot 및 exact retry에서 거절한다. 기존 historical
+resolver의 조회 결과와 v2 fill의 계약은 유지한다.
+
+이 연결은 actual Risk 규칙 재평가, reservation 또는 결과 portfolio accounting 권한을 발급하지
+않는다. 잠금을 따르는 repository writer만 배제하며 외부 파일 변경을 통제하거나 삭제된 완전한
+history suffix의 존재를 증명하지 않는다. Schema와 기존 historical append/조회 contract는 유지하며,
+강화된 경로는 commit 없는 legacy Risk/fill 원본을 거절한다. Rollback은 신규 consumer 사용 중단과
+코드 복구로 수행하고 원본 데이터를 변환하지 않는다. 기존 Risk 경로의 미검증 flag를 해제하지 않는다.
 
 `resolveStoredSnapshotPendingExecutionOrigins`는 실제 snapshot pending 대조 결과에 포함된 모든
 plan prefix의 execution_applied를 실제 저장 Risk 결정·paper fill·source price에 연결한다.
