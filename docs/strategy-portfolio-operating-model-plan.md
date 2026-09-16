@@ -3952,6 +3952,20 @@ FX rate는 이미 KRW로 정규화된 `priceKrw`의
 conversion provenance이므로 이 분할에서 mark에 다시 곱하지 않는다. plan/fill/reservation chain
 replay와 append-only snapshot/request persistence는 후속 분할 전까지 구현 완료로 간주하지 않는다.
 
+FX 원본 연결의 선행 계약으로 `SourceFxEvidenceRecord`의 `source_fx_evidence.v1` strict schema를 제공한다.
+현재 valuation/replay 범위와 같은 USD → KRW 방향만 지원하고, 역방향 rate의 자동 역수 변환이나 다른
+currency pair를 합성하지 않는다. Semantic hash는 schemaVersion/sourceContractId/baseCurrency/
+quoteCurrency/rate/observedAt/sourceRefs 전체를 포함하며 evidenceRef는 `source_fx_evidence` prefix와
+hash로 파생한다. 자신의 ref/hash와 ingestion metadata인 createdAt만 hash에서 제외하고,
+createdAt ≥ observedAt을 검증한다. createdAt은 durable commit 또는 과거 가용 시각의 증거가 아니다.
+생성 함수는 sourceRefs 순서만 canonical 정렬하고, 저장 parser는 순서·중복·전체 payload hash·ID를
+독립 재검증한다. Unknown field, 비정상 Unicode/공백 identifier, 잘못된 offset-qualified 시각,
+비양수·비유한 rate와 price-domain ref는 거절한다. 결과와 provenance 배열은 immutable이다.
+이 계약은 선언된 conversion evidence이며 source 신뢰, freshness, 실제 외부 조회, 저장 원본 또는
+snapshot 결속을 보장하지 않는다. 전용 durable FX 저장소 및 policy-bound current publisher 연결은
+후속이며 기존 FX fixture parser, valuation input/schema, snapshot 파일을 자동 변환하지 않는다.
+기존 소비자가 새 계약을 요구하도록 바꾸지 않아 코드 롤백에 데이터 migration이나 삭제는 없다.
+
 여섯 번째 분할은 valuation/exposure replay를 통과한 snapshot만
 `portfolio-sizing-snapshots.jsonl`에 저장하는 strict append-only repository를 구현한다. append와
 read 모두 complete log의 schema, nested/outer hash 및 valuation/exposure replay를 다시 검증한다.
