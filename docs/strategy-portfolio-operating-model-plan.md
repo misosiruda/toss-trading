@@ -5291,8 +5291,8 @@ Migration 없이 후속 consumer보다 먼저 배포하고 rollback 시 해당 c
 회귀 검증은 실제 수동·selector gross/partial/terminal 및 재조회, 잘못된 계보·상태·receipt·시각,
 누락/손상 원본 보존, 복사·다른 경로·만료된 lease, completion 경계와 실패 후 lock 해제를 다룬다.
 
-Policy-bound current publisher는 최종 capacity callback에서 `bindOpeningCapacityConsumptionOrigins`를
-호출한다. 이미 보유한 source 묶음과 actual plan event/plan·Risk·fill·price를 그대로 전달하며
+Policy-bound current publisher는 최종 capacity callback에서 terminal binder를 통해
+`bindOpeningCapacityConsumptionOrigins`를 호출한다. 이미 보유한 source 묶음과 actual plan event/plan·Risk·fill·price를 그대로 전달하며
 추가 read/fsync/lock 취득은 없다. `withStoredPendingPlanActionProgress`는 callback의 두 번째 인자로
 cutoff로 잘라내기 전 실제 전체 history를 제공한다. 기존 단일 인자 callback은 호환되고 반환 projection
 형식은 불변이며 실제 history lease는 callback 종료 시 폐기된다.
@@ -5305,7 +5305,7 @@ destination/portfolio bytes를 보존한 채 거절한다. 원본 잠금은 최�
 최종 plan/event/Risk/fill/price 잠금 및 callback history의 수명을 확인한다. 이는 결과 portfolio
 accounting의 정확성을 인증하는 테스트가 아니다. 기존 일반 append와 non-policy publisher는 불변이다.
 Schema migration은 없지만 기존 불일치 소비가 발행을 막을 수 있다. 자동 복구 없이 source 오류를
-확인해야 하며 rollback 시 의존 consumer도 함께 되돌린다. Pending 잔액 coverage·release 원본·
+확인해야 하며 rollback 시 의존 consumer도 함께 되돌린다. Pending 잔액 coverage·취소 권한·
 allocator/CAS/원자 accounting·외부 trust·실행 권한은 여전히 후속이다.
 
 `bindOpeningCapacityTerminalOrigins`는 실제 보유 원본에서 종료 mandate에 따른 해제만 결속한다.
@@ -5319,7 +5319,7 @@ asOf/createdAt은 release.asOf 이하여야 하고 capacity predecessor의 실�
 `request_cancelled`는 검증한 해제 목록에 넣지 않고 `unverifiedReleaseEventIds`로 명시적으로 반환한다.
 존재하지 않는 해제를 생성하지 않으며 전체 source를 검증한 뒤에도 unbound 취소 권한은 부여하지 않는다.
 반환값은 동결된 원본 연결 결과이지 새 lease나 해제/재할당/실행 권한이 아니다. 별도 I/O/lock과 저장
-형식 변경은 없고 현재 snapshot publisher 연결은 후속이다. 기존 historical resolver도 바꾸지 않는다.
+형식 변경은 없고 현재 snapshot publisher는 아래처럼 연결한다. 기존 historical resolver도 바꾸지 않는다.
 Mandate event에는 실제 저장 시점 receipt가 없으므로 release 전에 disk에 존재했다는 보장은 여전히
 not_proven이다. Pending coverage, allocator/CAS/원자 accounting, target 충족 해제와 취소 권한도 별도다.
 
@@ -5328,6 +5328,20 @@ active/review_required event·시각 불일치, 잘못된 선행 소비, 손상 
 copied/foreign/expired 관측, 실제 lock 보유와 consumer 실패 후 해제를 확인한다. Migration 없이
 신규 consumer보다 binder를 먼저 배포하고 rollback 시 의존 consumer를 함께 되돌린다. Source integrity
 오류는 자동 복구하거나 journal을 삭제하지 않는다. Live 경로와 frozen execution model은 불변이다.
+
+Policy-bound current publisher의 최종 capacity callback은 `bindOpeningCapacityTerminalOrigins`로
+모든 실제 종료 해제를 검사한다. 선행 소비/root/mandate 검증은 내부에서 유지하며 기존 source와 잠금
+순서를 그대로 사용한다. `unverifiedReleaseEventIds`가 하나라도 있으면 최초 append/exact retry 모두
+저장 전에 fail-closed한다. 취소 원본 계약과 authorization이 없는데 취소된 capacity를 승인하는 것이
+아니라, 해당 source를 가진 발행을 거절하는 경계다. Cutoff 이후/과거 policy의 해제도 제외하지 않는다.
+
+수동·selector의 cutoff 전후 정상 해제, post-cutoff 부분 소비 후 해제, 최초/retry의 원본·시각 불일치와
+미검증 취소 거절 및 source/destination/portfolio 보존을 통합 검증한다. 종료 mandate/capacity 잠금은
+최종 destination fsync까지 유지되고 종료 후 해제된다. 합성 portfolio fixture는 실행과의 accounting
+일치성을 증명하지 않으며 실제 pending coverage·allocator/CAS/원자 accounting·실행 권한도 후속이다.
+일반 append/non-policy current publisher는 불변이다. 저장 형식 migration은 없지만 이전에 허용된
+잘못된 해제/미검증 취소가 policy-bound 발행을 막을 수 있으므로 원본 오류를 확인해야 한다.
+Rollback은 의존 consumer와 함께 수행하며 journal 삭제나 자동 복구를 포함하지 않는다.
 
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
