@@ -150,17 +150,18 @@ export class PortfolioSizingSnapshotFileRepository {
 
   /** Concrete sources: price -> FX -> capacity sources (including sizing) -> event -> plan -> mandate -> policy -> activation -> Risk -> fill -> capacity.
    * New append and exact retry bind pending progress and persisted execution origins, including terminal plans.
-   * Root issuance, bound mandates and actual gross consumption are checked; pending balance, allocation and accounting remain separate gates.
+   * Root issuance, bound mandates, gross consumption and retirement releases are checked; unverified cancellations are rejected.
+   * Pending balance, allocation and accounting remain separate gates.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
     const [{ bindSnapshotPendingExecutionOrigins }, { PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
       { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation }, { bindSnapshotPendingMandateOrigins },
-      { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }, { bindOpeningCapacityConsumptionOrigins },
+      { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }, { bindOpeningCapacityTerminalOrigins },
       { OpeningCapacityReservationEventFileRepository, getDurableOpeningCapacityEventObservedAt }] = await Promise.all([
       import("./snapshotPendingExecutionBinding.js"), import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js"),
-      import("./snapshotPendingMandateBinding.js"), import("./investmentMandateFiles.js"), import("./openingCapacityConsumptionBinding.js"),
+      import("./snapshotPendingMandateBinding.js"), import("./investmentMandateFiles.js"), import("./openingCapacityTerminalBinding.js"),
       import("./openingCapacityReservationEventFiles.js")
     ]);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
@@ -200,8 +201,11 @@ export class PortfolioSizingSnapshotFileRepository {
                   if (Date.parse(getDurableOpeningCapacityEventObservedAt(capacity)) < Date.parse(getHeldPaperFillExecutionObservation(fills).observedAt)) {
                     throw new Error("sizing snapshot capacity observation clock moved backwards");
                   }
-                  bindOpeningCapacityConsumptionOrigins({ baseDir, portfolioId: candidate.portfolioId },
+                  const terminal = bindOpeningCapacityTerminalOrigins({ baseDir, portfolioId: candidate.portfolioId },
                     { ...sources, mandates, events: capacity, planEvents, risks, fills, prices });
+                  if (terminal.unverifiedReleaseEventIds.length > 0) {
+                    throw new Error("sizing snapshot cannot accept unverified request cancellation releases");
+                  }
                   await verifyDependencies();
                   const snapshot = await this.appendUnderLock(candidate);
                   await verifyDependencies();
