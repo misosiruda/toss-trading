@@ -38,7 +38,14 @@ export interface VerifiedSelectorCapacityReservationHistory {
   readonly origins: readonly VerifiedSelectorCapacityReservationOrigin[];
   readonly generationHash: string | null;
 }
-const observations = new WeakMap<VerifiedSelectorCapacityReservationHistory, { observedAt: string; verifySources: () => void }>();
+const observations = new WeakMap<VerifiedSelectorCapacityReservationHistory, { observedAt: string; sourcePath: string; verifySources: () => void }>();
+
+export function assertDurableSelectorCapacityReservationSource(history: VerifiedSelectorCapacityReservationHistory, baseDir: string): void {
+  getDurableSelectorCapacityReservationObservation(history);
+  if (observations.get(history)!.sourcePath !== createSelectorOpeningCapacityReservationPaths(resolve(baseDir)).recordsPath) {
+    throw new Error("selector capacity lease belongs to a different source path");
+  }
+}
 
 /** Actual source locks and the reservation lock are held only during this observation's callback. */
 export function getDurableSelectorCapacityReservationObservation(history: VerifiedSelectorCapacityReservationHistory): string {
@@ -97,7 +104,7 @@ export class SelectorOpeningCapacityReservationFileRepository {
         Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt))) {
         throw new Error("selector capacity shared source observation clock moved backwards");
       }
-      observations.set(history, { observedAt, verifySources });
+      observations.set(history, { observedAt, sourcePath: this.paths.recordsPath, verifySources });
       try { const result = await operation(history); verifySources(); return result; }
       finally { observations.delete(history); }
     });

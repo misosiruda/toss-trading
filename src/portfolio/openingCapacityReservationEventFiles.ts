@@ -30,6 +30,14 @@ export interface VerifiedOpeningCapacityEventHistory {
 }
 const origins = new WeakMap<VerifiedOpeningCapacityEventHistory, ReadonlyMap<string, VerifiedOpeningCapacityEventOrigin>>();
 const observations = new WeakMap<VerifiedOpeningCapacityEventHistory, string>();
+const sourcePaths = new WeakMap<VerifiedOpeningCapacityEventHistory, string>();
+
+export function assertDurableOpeningCapacityEventSource(history: VerifiedOpeningCapacityEventHistory, baseDir: string): void {
+  getDurableOpeningCapacityEventObservedAt(history);
+  if (sourcePaths.get(history) !== createOpeningCapacityReservationEventPaths(resolve(baseDir)).eventsPath) {
+    throw new Error("opening capacity event lease belongs to a different source path");
+  }
+}
 
 /** Storage origin only: does not authenticate the event's manual/selector/mandate/fill source claims. */
 export function resolveStoredOpeningCapacityEventOrigin(history: VerifiedOpeningCapacityEventHistory, eventId: string) {
@@ -74,7 +82,8 @@ export class OpeningCapacityReservationEventFileRepository {
     return this.withLock(async () => {
       const { history, observedAt } = await this.readUnderLock();
       observations.set(history, observedAt);
-      try { return await operation(history); } finally { observations.delete(history); }
+      sourcePaths.set(history, this.paths.eventsPath);
+      try { return await operation(history); } finally { observations.delete(history); sourcePaths.delete(history); }
     });
   }
 
