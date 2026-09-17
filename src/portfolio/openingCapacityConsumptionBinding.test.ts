@@ -106,6 +106,37 @@ for (const [kind, fixture] of [["manual", manualFixture], ["selector", selectorF
       });
     });
   });
+  for (const [label, offset, expected] of [["retroactive retirement", 42, /active investment mandate/],
+    ["future source creation", 300, /mandate source creation follows its observation/]] as const) {
+    test(`held capacity consumption rejects ${kind} ${label} despite an earlier valid receipt`, async (context) => {
+      await fixture(context, { receipt: "valid" }, async (state) => {
+        const repository = new InvestmentMandateFileRepository(state.dir), history = await repository.readSnapshot();
+        context.mock.timers.setTime(START + 100);
+        await repository.appendEvent(mandateEvent(state.manual.mandate, "retired", offset, history.events[0]!.mandateEventId));
+        await assert.rejects(hold(state.dir, async (sources) => bind(query(state.dir), sources)), expected);
+      });
+    });
+  }
+  test(`held capacity consumption rejects ${kind} receipt predating its actual mandate prefix creation`, async (context) => {
+    await fixture(context, { receipt: "valid" }, async ({ dir }) => {
+      const riskPath = createPortfolioActionRiskDecisionPaths(dir).recordsPath;
+      const [entry, marker] = (await readFile(riskPath, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+      const { entryHash: _entryHash, ...oldEntry } = entry, { commitHash: _commitHash, ...oldMarker } = marker;
+      const payload = { ...oldEntry, mandateOrigin: { ...oldEntry.mandateOrigin,
+        observation: { ...oldEntry.mandateOrigin.observation, observedAt: at(40) } } };
+      const entryHash = hashCanonicalPayload(payload), markerPayload = { ...oldMarker, entryHash }, commitHash = hashCanonicalPayload(markerPayload);
+      await writeFile(riskPath, [JSON.stringify({ ...payload, entryHash }), JSON.stringify({ ...markerPayload, commitHash })].join("\n") + "\n");
+      // Preserve the actual fill-to-Risk commit binding so rejection must come from the receipt chronology.
+      const fillPath = createPaperFillExecutionPaths(dir).recordsPath;
+      const [fillEntry, fillMarker] = (await readFile(fillPath, "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+      const { entryHash: _fillHash, ...oldFill } = fillEntry, { commitHash: _fillCommitHash, ...oldFillMarker } = fillMarker;
+      const nextFill = { ...oldFill, riskOrigin: { ...oldFill.riskOrigin, commitHash } }, fillHash = hashCanonicalPayload(nextFill);
+      const nextMarker = { ...oldFillMarker, entryHash: fillHash };
+      await writeFile(fillPath, [JSON.stringify({ ...nextFill, entryHash: fillHash }),
+        JSON.stringify({ ...nextMarker, commitHash: hashCanonicalPayload(nextMarker) })].join("\n") + "\n");
+      await assert.rejects(hold(dir, async (sources) => bind(query(dir), sources)), /Risk mandate receipt predates source creation/);
+    });
+  });
   for (const [label, paths] of [["plan event", createRebalancePlanEventPaths], ["Risk", createPortfolioActionRiskDecisionPaths],
     ["fill", createPaperFillExecutionPaths], ["price", createSourcePriceEvidencePaths]] as const) {
     test(`held capacity consumption rejects ${kind} missing and corrupt ${label} without repairing bytes`, async (context) => {

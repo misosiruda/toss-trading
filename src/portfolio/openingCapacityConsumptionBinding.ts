@@ -34,8 +34,12 @@ export function bindOpeningCapacityConsumptionOrigins(input: Parameters<typeof b
   assertHeldPortfolioActionRiskDecisionSource(risks, input.baseDir);
   assertHeldPaperFillExecutionSource(fills, input.baseDir);
   assertDurableSourcePriceEvidenceSource(prices, input.baseDir);
+  const mandateObservation = getDurableInvestmentMandateObservation(sources.mandates);
+  if ([...sources.mandates.records, ...sources.mandates.events].some((record) => Date.parse(record.createdAt) > Date.parse(mandateObservation.observedAt))) {
+    throw new Error("capacity consumption mandate source creation follows its observation");
+  }
   const times = [getDurableSourcePriceEvidenceObservation(prices).observedAt,
-    getHeldRebalancePlanEventObservation(planEvents).observedAt, getDurableInvestmentMandateObservation(sources.mandates).observedAt,
+    getHeldRebalancePlanEventObservation(planEvents).observedAt, mandateObservation.observedAt,
     getHeldPortfolioActionRiskDecisionObservation(risks).observedAt, getHeldPaperFillExecutionObservation(fills).observedAt,
     getDurableOpeningCapacityEventObservedAt(events)].map(Date.parse);
   if (times.some((time, index) => index > 0 && time < times[index - 1]!)) throw new Error("capacity consumption observation clock moved backwards");
@@ -73,12 +77,17 @@ export function bindOpeningCapacityConsumptionOrigins(input: Parameters<typeof b
     const consumedNotionalKrw = predecessorOrigin.event.remainingReservedNotionalKrw - event.remainingReservedNotionalKrw;
     if (consumedNotionalKrw !== fill.filledNotionalKrw) throw new Error("capacity consumption differs from actual filled notional");
     const riskOrigin = resolveVerifiedPortfolioActionRiskDecisionOrigin(risks, risk.riskDecisionId);
-    const mandateState = validateRiskDecisionMandateState(planState, riskOrigin.mandateOrigin === null ? sources.mandates
-      : resolveObservedInvestmentMandateHistory(sources.mandates, riskOrigin.mandateOrigin.observation));
+    const mandateState = validateRiskDecisionMandateState(planState, sources.mandates);
     if (!isDeepStrictEqual(mandateState.record, mandateBinding.mandate)) throw new Error("capacity consumption Risk mandate source mismatch");
     if (riskOrigin.mandateOrigin !== null) {
       const { observation, ...identity } = riskOrigin.mandateOrigin;
-      if (!isDeepStrictEqual(identity, riskDecisionMandateIdentity(mandateState)) || Date.parse(observation.observedAt) > Date.parse(risk.decidedAt)) {
+      const observed = resolveObservedInvestmentMandateHistory(sources.mandates, observation);
+      if ([...observed.records, ...observed.events].some((record) => Date.parse(record.createdAt) > Date.parse(observation.observedAt))) {
+        throw new Error("capacity consumption Risk mandate receipt predates source creation");
+      }
+      const prior = validateRiskDecisionMandateState(planState, observed);
+      if (!isDeepStrictEqual(identity, riskDecisionMandateIdentity(prior)) ||
+        !isDeepStrictEqual(identity, riskDecisionMandateIdentity(mandateState)) || Date.parse(observation.observedAt) > Date.parse(risk.decidedAt)) {
         throw new Error("capacity consumption Risk mandate receipt mismatch");
       }
     }

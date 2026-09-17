@@ -5270,6 +5270,11 @@ plan commit은 Risk 결정보다, 실제 실행 event commit은 소비 평가보
 Fill completion이 있는 형식은 completion도 실행 event보다 엄격히 먼저여야 한다. 같은 portfolio의
 fill/Risk 재사용을 거절하고, terminal/과거 policy 예약의 소비도 제외하지 않는다.
 
+Mandate 기록·event의 생성 시각은 현재 관측보다 늦을 수 없으며, receipt prefix의 생성 시각도
+receipt 관측보다 늦을 수 없다. 실제 전체 mandate 이력과 receipt prefix에서 각각 Risk 결정 시점의
+상태를 재구성해 같은 identity인지 검사한다. Risk 이후의 정상 retirement는 허용하지만, 뒤늦게
+추가된 소급 retirement로 당시 상태가 충돌하면 과거 receipt만으로 소비를 승인하지 않는다.
+
 이 결속은 release 원본, 결과 position/accounting, 실제 Risk 정책·규칙의 권위, 가격 trust/freshness,
 receipt 없는 Risk의 당시 mandate 가용성, 잔여 pending coverage, allocator/CAS/원자 commit을
 인증하지 않는다. 기존 historical 조회 API와 저장 형식은 불변이며 소비 binder만 추가한다.
