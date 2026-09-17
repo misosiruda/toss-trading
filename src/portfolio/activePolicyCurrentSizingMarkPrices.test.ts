@@ -131,7 +131,8 @@ test("policy-bound current sizing holds the price lock before sizing and through
     syncBuiltinESMExports();
     try { await publish(request, options); await publish(request, options); }
     finally { mock.mock.restore(); syncBuiltinESMExports(); }
-    assert.equal(lockChecks, 2); assert.equal(syncChecks, 2);
+    // The price lease also remains held during retry's pre-append snapshot observation.
+    assert.equal(lockChecks, 2); assert.equal(syncChecks, 3);
     assert.deepEqual(await prices.append(record), record);
   });
 });

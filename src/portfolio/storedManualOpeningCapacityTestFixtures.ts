@@ -103,7 +103,7 @@ function bound(root: OpeningCapacityReservationEvent, mandate: ReturnType<typeof
     mandateId: mandate.mandateId, mandateHash: mandate.mandateHash, asOf: new Date().toISOString(), createdAt: new Date().toISOString(),
     ...patch } as Parameters<typeof createOpeningCapacityReservationEvent>[0]);
 }
-async function seedManual(dir: string, move: (ms: number) => void, increase = false, policyHash = HASH, id = "one") {
+export async function seedManual(dir: string, move: (ms: number) => void, increase = false, policyHash = HASH, id = "one") {
   move(10);
   const record = reservation(id, increase, policyHash), source = manual(id, policyHash);
   await storeReservation(dir, record, source);

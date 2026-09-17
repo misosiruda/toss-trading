@@ -5161,8 +5161,9 @@ getter도 즉시 실패하며 최상위 원본 만료가 모든 하위 관측에
 테스트는 세 단계별 경로/clone/만료 경계, source·destination lock 유지, consumer/lock 대기/I/O 중 만료,
 시계 역행, fsync 실패, corrupt/torn/UTF-8/pending bytes 보존, 원본 만료의 다단계 전파 및 실제
 populated 전체 이력의 동일성을 확인한다. Public observation/entry/commit 형식과 기존 append/seal
-규칙은 유지한다. Current publisher, scheduler, 실제 shared allocator/소비/원자 commit 연결은 후속이며
-이 조회만으로 완료되지 않는다. 설정된 경로 결속은 비협조적인 OS writer를 차단하는 sandbox가 아니다.
+규칙은 유지한다. 이 조회 자체는 current publisher 연결이 아니며 root 검증 연결은 아래 별도 분할이
+담당한다. Scheduler, 실제 shared allocator/소비/원자 commit은 후속이다. 설정된 경로 결속은
+비협조적인 OS writer를 차단하는 sandbox가 아니다.
 
 Migration은 없다. 상대 경로는 repository 생성 시 고정되므로 이후 process cwd가 바뀌어도 source가
 이동하지 않는다. 신규 API consumer보다 repository를 먼저 배포하고 rollback 시 consumer도 함께
@@ -5182,10 +5183,28 @@ ledger version을 확인하고 발급 commit이 root 평가 시각보다 엄격�
 발급은 순서를 증명하지 못하므로 실패한다. Capacity 관측은 두 발급 관측보다 앞설 수 없으며 호출 시
 시계 역행도 거절한다. 이 함수는 동기 검증이며 lock을 새로 취득하거나 artifact를 쓰지 않는다.
 
+현재 policy-bound snapshot 발행 경로도 이 root binder를 사용한다. Portfolio → price → FX 다음에
+manual → request → sizing → input → assignment → manual reservation → selector reservation을 잠그고,
+기존 event → plan → mandate → policy → activation → Risk → fill 뒤 capacity event 잠금을 추가한다.
+Snapshot 저장소는 destination lock을 한 번만 취득하고 private 잠금 내부 관측을 발급해 하위 조회에
+공유한다. 이 관측은 append 전 prefix이며 외부 caller에게 노출하지 않고 발행 작업 종료 시 폐기한다.
+후속 조회는 기존 source-sharing API를 사용하므로 snapshot lock 재진입이 없다.
+
+최초 append와 exact retry 모두 해당 portfolio의 모든 root를 실제 원본에 대조한 다음 destination을
+동기화한다. Pending BUY가 없어도 미발급 root나 손상된 발급 원본을 무시하지 않으며 오래된 policy의
+root도 검증한다. Capacity 관측은 fill 관측보다 앞설 수 없다. 원본·capacity lock은 최종 destination
+fsync까지 유지하고 일반 append/current publisher의 비정책 경로는 바꾸지 않는다. 추가 관측 fsync는
+최종 저장 fsync와 구분하며 기존 최종 policy/dependency 잠금·오류 주입 검증을 유지한다.
+
+이 연결은 root 발행 출처만 확인한다. Pending BUY의 bound mandate/소비/잔여 금액, shared allocator,
+CAS, resulting accounting 및 실행 권한은 아직 연결 완료가 아니다. 기존에 원본 없는 root나 손상된
+미사용 원본 파일을 가진 호출도 이제 fail-closed할 수 있다. 저장 형식 migration은 없고 코드 rollback은
+가능하지만 root 검증 보장이 사라지므로 이 보장에 의존하는 consumer도 함께 되돌려야 한다.
+
 결과는 immutable 값이지 callback 밖에서 사용할 수 있는 새 lease나 실행 권한이 아니다. Caller는
 manual → request → snapshot → input → assignment → manual reservation → selector reservation →
-capacity 순서로 원본을 보유하는 조합 등을 사용하고 같은 저장소를 재진입하지 않는다. Current
-publisher 연결, bound mandate/소비/잔여 금액, 실제 allocator/CAS/원자 commit은 여전히 후속이다.
+capacity 순서로 원본을 보유하는 조합 등을 사용하고 같은 저장소를 재진입하지 않는다. Bound
+mandate/소비/잔여 금액, 실제 allocator/CAS/원자 commit은 여전히 후속이다.
 Migration은 없고 rollback 시 신규 binder consumer도 함께 되돌린다. 테스트는 실제 두 종류의 원본,
 successor/restart, 경로/복사/만료, clock/lock 및 재해시한 잘못된 root claim과 bytes 보존을 확인한다.
 
