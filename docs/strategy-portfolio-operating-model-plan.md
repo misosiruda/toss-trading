@@ -5257,6 +5257,26 @@ rollback 시 새 assertion에 의존하는 consumer도 함께 되돌린다. Jour
 회귀 테스트는 다섯 source의 empty/copied/foreign/expired/historical, consumer 실패, cwd 변경,
 다른 plan repository 주입 및 실제 populated plan/Risk/fill/price 원본을 확인한다.
 
+`bindOpeningCapacityConsumptionOrigins`는 caller가 동시에 보유한 실제 source lease로 모든
+portfolio 소비 event를 결속한다. 기존 root/mandate binder를 내부 호출해 수동·selector 발급 출처를
+재검증하고, plan event(주입된 plan 포함)·Risk·fill·price도 같은 baseDir의 live lease여야 한다.
+가격 → plan → mandate → Risk → fill → capacity 관측 시각의 역행을 거절한다. 별도 I/O나 잠금을
+취득하지 않으며 반환값은 새로운 lease가 아니다. 현재 snapshot 발행 경로 연결은 후속이다.
+
+실제 plan replay의 실행과 선행 상태, fill의 저장된 Risk origin, 실제 가격 원본, BUY mandate 계보,
+bucket/policy/종목을 대조한다. 예약 감소량은 수수료를 포함한 net cash가 아닌 실제 filled gross와
+같아야 한다. Risk의 실제 mandate 상태와 저장된 plan/mandate receipt를 검증하고, 선행 capacity와
+plan commit은 Risk 결정보다, 실제 실행 event commit은 소비 평가보다 엄격히 먼저여야 한다.
+Fill completion이 있는 형식은 completion도 실행 event보다 엄격히 먼저여야 한다. 같은 portfolio의
+fill/Risk 재사용을 거절하고, terminal/과거 policy 예약의 소비도 제외하지 않는다.
+
+이 결속은 release 원본, 결과 position/accounting, 실제 Risk 정책·규칙의 권위, 가격 trust/freshness,
+receipt 없는 Risk의 당시 mandate 가용성, 잔여 pending coverage, allocator/CAS/원자 commit을
+인증하지 않는다. 기존 historical 조회 API와 저장 형식은 불변이며 소비 binder만 추가한다.
+Migration 없이 후속 consumer보다 먼저 배포하고 rollback 시 해당 consumer도 함께 되돌린다.
+회귀 검증은 실제 수동·selector gross/partial/terminal 및 재조회, 잘못된 계보·상태·receipt·시각,
+누락/손상 원본 보존, 복사·다른 경로·만료된 lease, completion 경계와 실패 후 lock 해제를 다룬다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
