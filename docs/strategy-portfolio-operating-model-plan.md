@@ -5208,6 +5208,26 @@ mandate/소비/잔여 금액, 실제 allocator/CAS/원자 commit은 여전히 �
 Migration은 없고 rollback 시 신규 binder consumer도 함께 되돌린다. 테스트는 실제 두 종류의 원본,
 successor/restart, 경로/복사/만료, clock/lock 및 재해시한 잘못된 root claim과 bytes 보존을 확인한다.
 
+후속 `bindOpeningCapacityMandateOrigins`는 root 검증기를 내부에서 호출한 뒤 같은 디렉터리의 실제
+request/input/assignment/mandate 관측을 추가 검증한다. 모든 원본 callback과 선행 snapshot 관측은
+살아 있어야 하며 빈 집합에서도 복사본·다른 경로·만료된 관측을 거절한다. Mandate 저장소의 private
+configured path 결속은 durable callback에서만 유효하고 상대 경로는 생성 시 절대 경로로 고정한다.
+Public observation/record/event 형식은 바꾸지 않는다.
+
+각 bound event는 실제 mandate ID/hash 및 발급 root에 결속한다. 수동은 실제 authorization·전체 예약
+lineage를, selector는 실제 request·전체 selected set·assignment·BUY sizing 입력과 rank/금액/slot/
+정책/종목/비중/증거를 기존 validator로 대조한다. 같은 set 검증 context는 호출 안에서 재사용한다.
+Root commit ≤ mandate createdAt ≤ bound event asOf 및 실제 관측 시각을 검사한다. 이는 저장된
+createdAt의 내용 검증이지 mandate 생성 당시 원본을 보유했다는 새 receipt 증명이 아니다.
+
+함수는 동기식이며 읽기/쓰기나 잠금 취득을 추가하지 않는다. Caller는 기존 source-sharing 순서 뒤
+mandate → capacity를 보유하며 다시 진입하지 않는다. 결과는 immutable 값이며 새 lease가 아니다.
+현재 publisher에는 아직 연결하지 않았고 mandate activation·소비·잔여 금액·실제 sizing/allocator/
+CAS/실행 권한은 검증하지 않는다. Proposed mandate도 내용 검증 대상이며 실행 허가로 승격하지 않는다.
+Migration은 없고 신규 consumer보다 binder/repository를 먼저 배포한다. Rollback은 consumer와 함께
+되돌리며 저장 artifact는 보존한다. 복사/다른 경로/만료, clock/consumer 실패, 실제 수동·selector 및
+increase/restart, 누락·hash·scope·lineage·시각 불일치를 임시 filesystem 테스트로 검증한다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
@@ -32,6 +32,7 @@ export interface InvestmentMandateFileRepositoryOptions {
 const verifiedInvestmentMandateHistories =
   new WeakSet<VerifiedInvestmentMandateHistory>();
 const durableInvestmentMandateObservations = new WeakMap<VerifiedInvestmentMandateHistory, InvestmentMandateObservation>();
+const durableInvestmentMandateSourcePaths = new WeakMap<VerifiedInvestmentMandateHistory, string>();
 
 const observationCountSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).refine((value) => !Object.is(value, -0));
 export const investmentMandateObservationSchema = z.object({
@@ -75,7 +76,7 @@ export class InvestmentMandateFileRepository {
     baseDir: string,
     options: InvestmentMandateFileRepositoryOptions = {}
   ) {
-    const paths = createInvestmentMandatePaths(baseDir);
+    const paths = createInvestmentMandatePaths(resolve(baseDir));
     this.recordsPath = paths.recordsPath;
     this.eventsPath = paths.eventsPath;
     this.lockPath = paths.lockPath;
@@ -125,10 +126,12 @@ export class InvestmentMandateFileRepository {
       });
       verifiedInvestmentMandateHistories.add(history);
       durableInvestmentMandateObservations.set(history, observation);
+      durableInvestmentMandateSourcePaths.set(history, this.recordsPath);
       try {
         return await operation(history);
       } finally {
         durableInvestmentMandateObservations.delete(history);
+        durableInvestmentMandateSourcePaths.delete(history);
         verifiedInvestmentMandateHistories.delete(history);
       }
     });
@@ -278,6 +281,14 @@ export function getDurableInvestmentMandateObservation(history: VerifiedInvestme
   const observation = durableInvestmentMandateObservations.get(history);
   if (observation === undefined) throw new Error("investment mandate history lacks a durable observation lease");
   return observation;
+}
+
+/** Configured source identity and active lease only; not mandate activation or execution authority. */
+export function assertDurableInvestmentMandateSource(history: VerifiedInvestmentMandateHistory, baseDir: string): void {
+  getDurableInvestmentMandateObservation(history);
+  if (durableInvestmentMandateSourcePaths.get(history) !== createInvestmentMandatePaths(resolve(baseDir)).recordsPath) {
+    throw new Error("investment mandate lease belongs to a different source path");
+  }
 }
 
 /** Revalidates a stored observation against a currently locked durable source; never grants a new lease to its prefix. */
