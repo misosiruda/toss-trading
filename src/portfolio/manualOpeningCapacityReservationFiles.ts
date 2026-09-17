@@ -33,7 +33,14 @@ export interface VerifiedManualCapacityReservationHistory {
   readonly origins: readonly VerifiedManualCapacityReservationOrigin[];
   readonly generationHash: string | null;
 }
-const observations = new WeakMap<VerifiedManualCapacityReservationHistory, { observedAt: string; verifySources: () => void }>();
+const observations = new WeakMap<VerifiedManualCapacityReservationHistory, { observedAt: string; sourcePath: string; verifySources: () => void }>();
+
+export function assertDurableManualCapacityReservationSource(history: VerifiedManualCapacityReservationHistory, baseDir: string): void {
+  getDurableManualCapacityReservationObservation(history);
+  if (observations.get(history)!.sourcePath !== createManualOpeningCapacityReservationPaths(resolve(baseDir)).recordsPath) {
+    throw new Error("manual capacity lease belongs to a different source path");
+  }
+}
 
 /** Actual source locks and the reservation lock are held only during this observation's callback. */
 export function getDurableManualCapacityReservationObservation(history: VerifiedManualCapacityReservationHistory): string {
@@ -88,7 +95,7 @@ export class ManualOpeningCapacityReservationFileRepository {
         Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt))) {
         throw new Error("manual capacity shared source observation clock moved backwards");
       }
-      observations.set(history, { observedAt, verifySources });
+      observations.set(history, { observedAt, sourcePath: this.paths.recordsPath, verifySources });
       try { const result = await operation(history); verifySources(); return result; }
       finally { observations.delete(history); }
     });
