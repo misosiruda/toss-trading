@@ -5308,6 +5308,27 @@ Schema migration은 없지만 기존 불일치 소비가 발행을 막을 수 �
 확인해야 하며 rollback 시 의존 consumer도 함께 되돌린다. Pending 잔액 coverage·release 원본·
 allocator/CAS/원자 accounting·외부 trust·실행 권한은 여전히 후속이다.
 
+`bindOpeningCapacityTerminalOrigins`는 실제 보유 원본에서 종료 mandate에 따른 해제만 결속한다.
+내부에서 소비 binder를 먼저 실행하므로 root/mandate와 전체 실제 gross 소비를 생략하거나 caller가
+검증 완료 결과를 대신 주입할 수 없다. 모든 실제 source의 같은 경로/live lease와 관측 시각을 검사한
+뒤 해당 portfolio의 모든 `mandate_terminal` release를 조회한다. 과거 policy와 terminal 예약도 포함한다.
+Bound mandate payload, 실제 retired 상태와 최종 종료 event의 ID/hash를 대조한다. 종료 event의
+asOf/createdAt은 release.asOf 이하여야 하고 capacity predecessor의 실제 commit은 엄격히 앞서야 한다.
+해제 금액은 실제 체결 gross와 대조한 predecessor의 잔여 금액이며 수수료 포함 cash가 아니다.
+
+`request_cancelled`는 검증한 해제 목록에 넣지 않고 `unverifiedReleaseEventIds`로 명시적으로 반환한다.
+존재하지 않는 해제를 생성하지 않으며 전체 source를 검증한 뒤에도 unbound 취소 권한은 부여하지 않는다.
+반환값은 동결된 원본 연결 결과이지 새 lease나 해제/재할당/실행 권한이 아니다. 별도 I/O/lock과 저장
+형식 변경은 없고 현재 snapshot publisher 연결은 후속이다. 기존 historical resolver도 바꾸지 않는다.
+Mandate event에는 실제 저장 시점 receipt가 없으므로 release 전에 disk에 존재했다는 보장은 여전히
+not_proven이다. Pending coverage, allocator/CAS/원자 accounting, target 충족 해제와 취소 권한도 별도다.
+
+임시 filesystem 테스트는 두 원본 종류의 미체결·부분체결 후 해제와 restart, 누락·잘못된 hash·
+active/review_required event·시각 불일치, 잘못된 선행 소비, 손상 원본 보존, 미검증 취소 구분,
+copied/foreign/expired 관측, 실제 lock 보유와 consumer 실패 후 해제를 확인한다. Migration 없이
+신규 consumer보다 binder를 먼저 배포하고 rollback 시 의존 consumer를 함께 되돌린다. Source integrity
+오류는 자동 복구하거나 journal을 삭제하지 않는다. Live 경로와 frozen execution model은 불변이다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
