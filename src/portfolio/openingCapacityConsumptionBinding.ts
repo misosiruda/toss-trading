@@ -1,12 +1,13 @@
 import { isDeepStrictEqual } from "node:util";
-import { getDurableInvestmentMandateObservation, resolveObservedInvestmentMandateHistory } from "./investmentMandateFiles.js";
+import { getDurableInvestmentMandateObservation } from "./investmentMandateFiles.js";
+import { createHeldRiskMandateStateResolver } from "./heldRiskMandateStateIndex.js";
 import { bindOpeningCapacityMandateOrigins, type OpeningCapacityMandateSources } from "./openingCapacityMandateBinding.js";
 import { getDurableOpeningCapacityEventObservedAt, resolveStoredOpeningCapacityEventOrigin } from "./openingCapacityReservationEventFiles.js";
 import { assertHeldPaperFillExecutionSource, getHeldPaperFillExecutionObservation, resolvePersistedPaperFillExecutionOrigin,
   type VerifiedPaperFillExecutionHistory } from "./paperFillExecutionFiles.js";
 import { assertHeldPortfolioActionRiskDecisionSource, getHeldPortfolioActionRiskDecisionObservation, resolveVerifiedPortfolioActionRiskDecisionOrigin,
   type VerifiedPortfolioActionRiskDecisionHistory } from "./portfolioActionRiskDecisionFiles.js";
-import { riskDecisionMandateIdentity, validateRiskDecisionMandateState } from "./portfolioActionRiskDecisionMandateContext.js";
+import { riskDecisionMandateIdentity } from "./portfolioActionRiskDecisionMandateContext.js";
 import { validateRiskDecisionPlanState } from "./portfolioActionRiskDecisionPlanContext.js";
 import type { RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { assertHeldRebalancePlanEventSource, getHeldRebalancePlanEventObservation, resolveDurableRebalancePlanEventObservation,
@@ -35,9 +36,7 @@ export function bindOpeningCapacityConsumptionOrigins(input: Parameters<typeof b
   assertHeldPaperFillExecutionSource(fills, input.baseDir);
   assertDurableSourcePriceEvidenceSource(prices, input.baseDir);
   const mandateObservation = getDurableInvestmentMandateObservation(sources.mandates);
-  if ([...sources.mandates.records, ...sources.mandates.events].some((record) => Date.parse(record.createdAt) > Date.parse(mandateObservation.observedAt))) {
-    throw new Error("capacity consumption mandate source creation follows its observation");
-  }
+  const resolveMandate = createHeldRiskMandateStateResolver(sources.mandates);
   const times = [getDurableSourcePriceEvidenceObservation(prices).observedAt,
     getHeldRebalancePlanEventObservation(planEvents).observedAt, mandateObservation.observedAt,
     getHeldPortfolioActionRiskDecisionObservation(risks).observedAt, getHeldPaperFillExecutionObservation(fills).observedAt,
@@ -77,15 +76,11 @@ export function bindOpeningCapacityConsumptionOrigins(input: Parameters<typeof b
     const consumedNotionalKrw = predecessorOrigin.event.remainingReservedNotionalKrw - event.remainingReservedNotionalKrw;
     if (consumedNotionalKrw !== fill.filledNotionalKrw) throw new Error("capacity consumption differs from actual filled notional");
     const riskOrigin = resolveVerifiedPortfolioActionRiskDecisionOrigin(risks, risk.riskDecisionId);
-    const mandateState = validateRiskDecisionMandateState(planState, sources.mandates);
+    const mandateState = resolveMandate(planState);
     if (!isDeepStrictEqual(mandateState.record, mandateBinding.mandate)) throw new Error("capacity consumption Risk mandate source mismatch");
     if (riskOrigin.mandateOrigin !== null) {
       const { observation, ...identity } = riskOrigin.mandateOrigin;
-      const observed = resolveObservedInvestmentMandateHistory(sources.mandates, observation);
-      if ([...observed.records, ...observed.events].some((record) => Date.parse(record.createdAt) > Date.parse(observation.observedAt))) {
-        throw new Error("capacity consumption Risk mandate receipt predates source creation");
-      }
-      const prior = validateRiskDecisionMandateState(planState, observed);
+      const prior = resolveMandate(planState, observation);
       if (!isDeepStrictEqual(identity, riskDecisionMandateIdentity(prior)) ||
         !isDeepStrictEqual(identity, riskDecisionMandateIdentity(mandateState)) || Date.parse(observation.observedAt) > Date.parse(risk.decidedAt)) {
         throw new Error("capacity consumption Risk mandate receipt mismatch");

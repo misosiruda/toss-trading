@@ -5275,6 +5275,15 @@ receipt 관측보다 늦을 수 없다. 실제 전체 mandate 이력과 receipt 
 상태를 재구성해 같은 identity인지 검사한다. Risk 이후의 정상 retirement는 허용하지만, 뒤늦게
 추가된 소급 retirement로 당시 상태가 충돌하면 과거 receipt만으로 소비를 승인하지 않는다.
 
+소비마다 전체 mandate history를 다시 parse/replay하지 않도록 `createHeldRiskMandateStateResolver`가
+실제 검증된 durable generation을 한 번 인덱싱한다. Canonical array prefix 해시는 기존 canonical
+직렬화를 사용해 원본당 한 번 순회하며, receipt는 count/hash·생성 시각·record/successor 참조 포함
+여부를 O(1)로 확인한다. 종목 scope별 검증된 단조 lifecycle timeline을 이진 탐색하고 mandate/cutoff/
+prefix별 상태를 캐시한다. Cache hit도 원래 lease 수명을 다시 검사하므로 callback 밖에서는 무효다.
+전체 journal의 hash/chain/lifecycle 검증은 repository가 먼저 수행하며 생략하지 않는다. 기존
+historical API는 바꾸지 않는다. Prefix 해시의 기존 방식 동등성, successor/expiry/receipt 경계의
+기존 replay 동등성, 500종목의 10,000개 조회 중 추가 해시 계산 없음과 만료된 resolver를 검증한다.
+
 이 결속은 release 원본, 결과 position/accounting, 실제 Risk 정책·규칙의 권위, 가격 trust/freshness,
 receipt 없는 Risk의 당시 mandate 가용성, 잔여 pending coverage, allocator/CAS/원자 commit을
 인증하지 않는다. 기존 historical 조회 API와 저장 형식은 불변이며 소비 binder만 추가한다.

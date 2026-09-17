@@ -1246,6 +1246,19 @@ export function hashCanonicalPayload(value: unknown): Sha256Hash {
   );
 }
 
+/** Hash every canonical array prefix in one serialization pass, including the empty prefix. */
+export function hashCanonicalArrayPrefixes(values: readonly unknown[]): readonly Sha256Hash[] {
+  const hash = createHash("sha256").update("[");
+  const result: Sha256Hash[] = [sha256HashSchema.parse(`sha256:${hash.copy().update("]").digest("hex")}`)];
+  for (let index = 0; index < values.length; index++) {
+    if (index > 0) hash.update(",");
+    // Array elements use null for values JSON.stringify would omit from an object.
+    hash.update(canonicalJson([values[index]]).slice(1, -1));
+    result.push(sha256HashSchema.parse(`sha256:${hash.copy().update("]").digest("hex")}`));
+  }
+  return Object.freeze(result);
+}
+
 function canonicalJson(value: unknown): string {
   return JSON.stringify(canonicalValue(value));
 }
