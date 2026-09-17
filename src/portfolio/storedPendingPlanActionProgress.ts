@@ -5,7 +5,8 @@ import { calculatePendingPlanActionProgress, PENDING_PLAN_ACTION_PROGRESS_MODEL_
 import { rebalancePlanRecordSchema } from "./rebalancePlan.js";
 import { type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { RebalancePlanEventFileRepository, resolveDurableRebalancePlanEventObservation, resolveDurableRebalancePlanEventObservedAt,
-  resolveVerifiedRebalancePlanEventOrigin, getHeldRebalancePlanEventObservation, type VerifiedRebalancePlanEventHistory } from "./rebalancePlanEventFiles.js";
+  resolveVerifiedRebalancePlanEventOrigin, getHeldRebalancePlanEventObservation, assertHeldRebalancePlanEventSource,
+  type VerifiedRebalancePlanEventHistory } from "./rebalancePlanEventFiles.js";
 import { RebalancePlanFileRepository, type RebalancePlanFileRepositoryOptions } from "./rebalancePlanFiles.js";
 import { compareText, hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
@@ -35,6 +36,18 @@ export async function withStoredPendingPlanActionProgress<T>(value: z.input<type
     getHeldRebalancePlanEventObservation(history);
     return operation(projectHistory(input, history, readStartedAt), history);
   });
+}
+
+/** Rebuilds the cutoff projection from a concrete caller-held event/plan source, without reading or reacquiring locks.
+ * A copied projection or expired/foreign history cannot stand in for the actual source. No new lease is issued.
+ */
+export function projectHeldPendingPlanActionProgress(value: z.input<typeof inputSchema>, history: VerifiedRebalancePlanEventHistory) {
+  const input = inputSchema.parse(value);
+  if (!isDeepStrictEqual(input, value)) throw new Error("held pending plan input must already be canonical");
+  assertHeldRebalancePlanEventSource(history, input.baseDir);
+  const observedAt = Date.parse(getHeldRebalancePlanEventObservation(history).observedAt);
+  if (Date.parse(input.asOf) > observedAt) throw new Error("pending plan cutoff follows source observation");
+  return projectHistory(input, history, observedAt);
 }
 
 function captureRequest(value: z.input<typeof inputSchema>, options: RebalancePlanFileRepositoryOptions) {

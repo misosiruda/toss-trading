@@ -5343,6 +5343,32 @@ Policy-bound current publisher의 최종 capacity callback은 `bindOpeningCapaci
 잘못된 해제/미검증 취소가 policy-bound 발행을 막을 수 있으므로 원본 오류를 확인해야 한다.
 Rollback은 의존 consumer와 함께 수행하며 journal 삭제나 자동 복구를 포함하지 않는다.
 
+`bindHeldSnapshotPendingReservationOrigins`는 실제 보유 source만으로 snapshot의 pending BUY 예약
+소속과 gross 잔액을 재구성한다. 입력 snapshot을 독립 rehash/valuation replay한 뒤 terminal binder로
+모든 root/mandate/소비/종료 원본을 검사하고 미검증 취소를 거절한다. Snapshot 안의 virtualPortfolio나
+현재 정책을 실제 원본으로 인증하는 함수는 아니며 현재 publisher 연결은 후속이다.
+
+`projectHeldPendingPlanActionProgress`는 같은 baseDir의 live event/plan history에서 cutoff projection을
+동기식으로 재계산한다. Historical 반환값·복사·다른 경로·만료된 source와 관측 이후 cutoff는 거절한다.
+기존 historical/보유 callback API의 동작은 그대로이며 추가 reader/lock을 취득하지 않는다. 새 binder는
+이 projection을 사용해 pending 집합·가격 기반 gross·실제 Risk/fill·mandate 상태와 completion 시각을
+대조하므로 caller가 검증 완료 projection/체결 목록을 대신 전달하는 입력은 없다. SELL도 실제 체결
+검증은 유지하지만 opening 예약 대상으로 승격하지 않는다.
+
+Capacity의 실제 commit이 cutoff보다 엄격히 앞선 prefix에서 각 예약 head를 선택한다. 같은 밀리초
+commit은 모호하므로 거절한다. Pending BUY는 원래 plan policy의 실제 bound mandate/예약 ID/hash와
+일치해야 하며 available bound head가 있어야 한다. 각 선행 체결은 같은 예약/head version 이내의
+실제 소비로 결속돼야 하고 소비 commit도 cutoff보다 앞서야 한다. 같은 예약의 미완료 BUY gross를
+BigInt로 합산해 잔액 이하인지 검사한다. 이후 소비/종료는 과거 cutoff의 head를 덮어쓰지 않는다.
+
+반환값은 immutable snapshot/projection/체결·종료·예약 원본과 예약별 합계이며 새 lease가 아니다.
+가격 trust/freshness, 활성 정책, 실제 portfolio state, allocator/CAS/회계·최종 실행 권한과 과거 disk
+가용성 receipt는 인증하지 않는다. 실제 임시 저장소 테스트는 양쪽 원본의 0~3회 체결·과거 policy·
+재시작, 소비 누락/모호한 cutoff, 공유 예약 초과, 나중 체결/종료 이후 과거 잔액, 미검증 취소·unbound,
+가짜 pending 집합/gross/lineage, inactive mandate, SELL completion과 lease/lock 실패 경계를 확인한다.
+기존 publisher와 저장 형식은 불변이며 migration은 없다. 후속 consumer보다 먼저 배포하고 rollback은
+의존 consumer와 함께 수행한다. Source 오류는 자동 복구·삭제하지 않는다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
