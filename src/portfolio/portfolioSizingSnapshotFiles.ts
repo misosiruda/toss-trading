@@ -15,8 +15,8 @@ import { SourcePriceEvidenceFileRepository, getDurableSourcePriceEvidenceObserva
   resolveVerifiedSourcePriceEvidenceOrigin, type VerifiedSourcePriceEvidenceHistory } from "./sourcePriceEvidenceFiles.js";
 import { SourceFxEvidenceFileRepository, getDurableSourceFxEvidenceObservation,
   resolveVerifiedSourceFxEvidenceOrigin } from "./sourceFxEvidenceFiles.js";
-import { withStoredPendingPlanActionProgress } from "./storedPendingPlanActionProgress.js";
-import { bindSnapshotPendingPlanProgress } from "./snapshotPendingPlanBinding.js";
+import { withStoredPendingPlanActionHistory } from "./storedPendingPlanActionProgress.js";
+import { getHeldRebalancePlanEventObservation } from "./rebalancePlanEventFiles.js";
 import type { OpeningCapacityMandateSources } from "./openingCapacityMandateBinding.js";
 
 type CapacityRootSources = Omit<OpeningCapacityMandateSources, "mandates" | "events">;
@@ -150,27 +150,27 @@ export class PortfolioSizingSnapshotFileRepository {
 
   /** Concrete sources: price -> FX -> capacity sources (including sizing) -> event -> plan -> mandate -> policy -> activation -> Risk -> fill -> capacity.
    * New append and exact retry bind pending progress and persisted execution origins, including terminal plans.
-   * Root issuance, bound mandates, gross consumption and retirement releases are checked; unverified cancellations are rejected.
-   * Pending balance, allocation and accounting remain separate gates.
+   * Root issuance, bound mandates, gross consumption, retirement and aggregate pending BUY coverage are checked; unverified cancellations are rejected.
+   * Allocation and accounting remain separate gates. Pending projection is computed once by the final held-source binder.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
-    const [{ bindSnapshotPendingExecutionOrigins }, { PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
-      { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation }, { bindSnapshotPendingMandateOrigins },
-      { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }, { bindOpeningCapacityTerminalOrigins },
+    const [{ PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
+      { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation },
+      { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }, { bindHeldSnapshotPendingReservationOrigins },
       { OpeningCapacityReservationEventFileRepository, getDurableOpeningCapacityEventObservedAt }] = await Promise.all([
-      import("./snapshotPendingExecutionBinding.js"), import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js"),
-      import("./snapshotPendingMandateBinding.js"), import("./investmentMandateFiles.js"), import("./openingCapacityTerminalBinding.js"),
+      import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js"),
+      import("./investmentMandateFiles.js"), import("./heldSnapshotPendingReservationBinding.js"),
       import("./openingCapacityReservationEventFiles.js")
     ]);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
     return withStoredMarkPrices(baseDir, candidate, options, (prices) => withStoredFxRates(baseDir, candidate, options,
-      () => this.withCapacityRootSources((sources) => withStoredPendingPlanActionProgress({ baseDir, portfolioId: candidate.portfolioId, asOf: candidate.asOf }, async (progress, planEvents) => {
-      const pendingBindings = bindSnapshotPendingPlanProgress(candidate, progress, prices);
+      () => this.withCapacityRootSources((sources) => withStoredPendingPlanActionHistory({ baseDir, portfolioId: candidate.portfolioId, asOf: candidate.asOf }, async (planEvents) => {
+      const planObservation = getHeldRebalancePlanEventObservation(planEvents);
       return new InvestmentMandateFileRepository(baseDir, options).withDurableVerifiedHistory(async (mandates) => {
       const mandateObservation = getDurableInvestmentMandateObservation(mandates);
-      if (Date.parse(mandateObservation.observedAt) < Date.parse(progress.assessment.observedAt)) {
+      if (Date.parse(mandateObservation.observedAt) < Date.parse(planObservation.observedAt)) {
         throw new Error("sizing snapshot mandate observation clock moved backwards");
       }
       return withDurablePolicyDependencies(baseDir, async (dependencies, verifyDependencies) => {
@@ -191,21 +191,12 @@ export class PortfolioSizingSnapshotFileRepository {
                 if (Date.parse(getHeldPaperFillExecutionObservation(fills).observedAt) < Date.parse(riskObservation.observedAt)) {
                   throw new Error("sizing snapshot fill observation clock moved backwards");
                 }
-                const bindings = bindSnapshotPendingExecutionOrigins(progress, risks, fills, prices);
-                bindSnapshotPendingMandateOrigins(progress, pendingBindings, bindings, mandates);
-                if (bindings.some(({ event, fillOrigin }) => fillOrigin.completion !== null &&
-                  Date.parse(fillOrigin.completion.completedAt) >= Date.parse(event.asOf))) {
-                  throw new Error("sizing snapshot fill completion was unavailable before its execution event");
-                }
                 return new OpeningCapacityReservationEventFileRepository(baseDir, options).withDurableVerifiedHistory(async (capacity) => {
                   if (Date.parse(getDurableOpeningCapacityEventObservedAt(capacity)) < Date.parse(getHeldPaperFillExecutionObservation(fills).observedAt)) {
                     throw new Error("sizing snapshot capacity observation clock moved backwards");
                   }
-                  const terminal = bindOpeningCapacityTerminalOrigins({ baseDir, portfolioId: candidate.portfolioId },
+                  bindHeldSnapshotPendingReservationOrigins({ baseDir, snapshot: candidate },
                     { ...sources, mandates, events: capacity, planEvents, risks, fills, prices });
-                  if (terminal.unverifiedReleaseEventIds.length > 0) {
-                    throw new Error("sizing snapshot cannot accept unverified request cancellation releases");
-                  }
                   await verifyDependencies();
                   const snapshot = await this.appendUnderLock(candidate);
                   await verifyDependencies();

@@ -93,7 +93,7 @@ for (const kind of ["manual", "selector"] as const) {
         occupiesNewPositionSlot: false, asOf: at(180), createdAt: at(180), releaseReasonCode: "cancelled",
         releaseOrigin: { originKind: "request_cancelled", requestOrManualEventId: "unverified" } }));
       context.mock.timers.setTime(START + 200); const damaged = await fs.readFile(path);
-      await assert.rejects(publish(input, options), /cannot accept unverified request cancellation releases/);
+      await assert.rejects(publish(input, options), /held pending reservation cannot accept unverified cancellation releases/);
       assert.deepEqual(await fs.readFile(records), destination); assert.deepEqual(await fs.readFile(path), damaged);
       assert.deepEqual(await store.readSnapshot(), portfolio);
       await fs.writeFile(path, original); await publish(input, options);

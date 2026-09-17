@@ -41,7 +41,8 @@ test("current sizing revalidates complete mandate record and event sources on ap
 test("current sizing refuses mandate scope expiry future validity and executed Risk bucket mismatches", async (context) => {
   for (const mandate of [{ portfolioId: "other" }, { policyHash: H("other") }, { market: "US" as const }, { symbol: "OTHER" },
     { bucket: "short_term" as const }, { validFrom: at(51) }, { expiresAt: at(50) }]) await fixture(context, "fractional_buy", async (state) => {
-    await assert.rejects(publish(request(state), options), /investment mandate is required|mandate bucket/);
+    await assert.rejects(publish(request(state), options), "validFrom" in mandate || "expiresAt" in mandate
+      ? /investment mandate is required/ : /manual mandate scope or evidence does not match its event/);
     assert.deepEqual(await readSnapshotBytes(state.records), state.initialSnapshotBytes);
   }, { mandate });
 });

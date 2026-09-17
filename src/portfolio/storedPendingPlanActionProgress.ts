@@ -38,6 +38,19 @@ export async function withStoredPendingPlanActionProgress<T>(value: z.input<type
   });
 }
 
+/** Holds complete actual event -> plan sources without calculating or certifying a cutoff projection.
+ * Consumers must project and bind under this callback. No current execution or reservation authority is granted.
+ */
+export async function withStoredPendingPlanActionHistory<T>(value: z.input<typeof inputSchema>,
+  operation: (history: VerifiedRebalancePlanEventHistory) => Promise<T>, options: RebalancePlanFileRepositoryOptions = {}): Promise<T> {
+  const { repository, readStartedAt } = captureRequest(value, options);
+  return repository.withDurableVerifiedHistory(async (history) => {
+    const observedAt = Date.parse(getHeldRebalancePlanEventObservation(history).observedAt);
+    if (observedAt < readStartedAt || Date.now() < observedAt) throw new Error("pending plan observation clock moved backwards");
+    return operation(history);
+  });
+}
+
 /** Rebuilds the cutoff projection from a concrete caller-held event/plan source, without reading or reacquiring locks.
  * A copied projection or expired/foreign history cannot stand in for the actual source. No new lease is issued.
  */

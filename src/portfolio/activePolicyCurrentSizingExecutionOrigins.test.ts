@@ -26,7 +26,7 @@ test("current sizing requires a stored fill completion strictly before its execu
         const payload = { ...completion, completedAt: at(offset) };
         const damaged = [...lines.slice(0, -1), { ...payload, completionHash: hashCanonicalPayload(payload) }].map((line) => JSON.stringify(line)).join("\n") + "\n";
         await fs.writeFile(path, damaged);
-        await assert.rejects(publish(request(state), options), /fill completion was unavailable/);
+        await assert.rejects(publish(request(state), options), /capacity consumption source chronology mismatch/);
         assert.deepEqual(await readSnapshotBytes(state.records), before);
         assert.equal(await fs.readFile(path, "utf8"), damaged);
       }
@@ -68,7 +68,8 @@ test("current sizing checks actual execution Risk scope prior state cap and pred
     { expectedPortfolioSnapshotHash: H("wrong-state") },
     { approvedMaximumFillNotionalKrw: 101, cashAssessment: { side: "BUY" as const, worstCaseNetCashDebitKrw: 40, approvedMaximumNetCashDebitKrw: 101 } },
     { decidedAt: at(29) }, { decidedAt: at(30) }]) await fixture(context, "fractional_buy", async (state) => {
-    await assert.rejects(publish(request(state), options), /scope mismatch|remaining buy target|pre-state mismatch|predates its stored plan predecessor/);
+    await assert.rejects(publish(request(state), options), "decidedAt" in risk
+      ? /capacity consumption source chronology mismatch/ : /scope mismatch|remaining buy target|pre-state mismatch/);
     assert.deepEqual(await readSnapshotBytes(state.records), state.initialSnapshotBytes);
   }, { risk });
 });
