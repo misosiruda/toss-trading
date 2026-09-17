@@ -1,50 +1,16 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import test, { type TestContext } from "node:test";
-import { FileVirtualPortfolioStore } from "../storage/virtualPortfolioFileStore.js";
+import test from "node:test";
 import { appendPolicyBoundCurrentPortfolioSizingSnapshot as publish } from "./currentPortfolioSizingSnapshotFiles.js";
-import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
 import { createPortfolioSizingSnapshotPaths } from "./portfolioSizingSnapshotFiles.js";
-import { policyFixture, storePolicyFixture } from "./portfolioActionRiskDecisionTestFixtures.js";
-import { parseRuntimePortfolioPolicyRecord } from "./runtimePortfolioPolicy.js";
-import { hashCanonicalPayload, hashDerivedId, hashImmutableRecordLineage } from "./runtimePolicyContracts.js";
-import { seedManual, START, PORTFOLIO, at } from "./storedManualOpeningCapacityTestFixtures.js";
+import { START, PORTFOLIO, at } from "./storedManualOpeningCapacityTestFixtures.js";
+import { withCurrentCapacityFixture as fixture, options } from "./currentSizingCapacityTestFixtures.js";
 import { ManualAssignmentFileRepository, createManualAssignmentPaths } from "./manualAssignmentFiles.js";
 import { createManualOpeningCapacityReservationPaths } from "./manualOpeningCapacityReservationFiles.js";
 import { createSelectorOpeningCapacityReservationPaths } from "./selectorOpeningCapacityReservationFiles.js";
 import { createOpeningCapacityReservationEventPaths, OpeningCapacityReservationEventFileRepository } from "./openingCapacityReservationEventFiles.js";
 import { createOpeningCapacityReservationEvent } from "./openingCapacityReservationEvent.js";
-
-const options = { lockTimeoutMs: 90, lockRetryDelayMs: 3 };
-async function fixture(context: TestContext, operation: (state: Awaited<ReturnType<typeof setup>>) => Promise<void>) {
-  const dir = await fs.mkdtemp(join(tmpdir(), "current-sizing-capacity-"));
-  context.mock.timers.enable({ apis: ["Date"], now: START });
-  try { await operation(await setup(dir, context)); }
-  finally { context.mock.timers.reset(); await fs.rm(dir, { recursive: true, force: true }); }
-}
-async function setup(dir: string, context: TestContext) {
-  const root = await seedManual(dir, (ms) => context.mock.timers.setTime(START + ms));
-  context.mock.timers.setTime(START + 100);
-  const fixture = policyFixture();
-  const { runtimePolicyRecordId: _id, policyHash: _hash, lineageHash: _lineage, createdAt, ...old } = fixture.policy;
-  const payload = { ...old, portfolioId: PORTFOLIO }, policyHash = hashCanonicalPayload(payload);
-  const runtimePolicyRecordId = hashDerivedId("runtime_portfolio_policy", policyHash);
-  const policy = parseRuntimePortfolioPolicyRecord({ ...payload, policyHash, runtimePolicyRecordId, createdAt,
-    lineageHash: hashImmutableRecordLineage({ recordType: "runtime_portfolio_policy", recordId: runtimePolicyRecordId,
-      semanticHash: policyHash, createdAt }) });
-  await storePolicyFixture(dir, { ...fixture, policy });
-  const portfolioPath = join(dir, "current-portfolio.json"), store = new FileVirtualPortfolioStore(portfolioPath, options);
-  await store.write({ portfolioId: PORTFOLIO, cashKrw: 1000, positions: [], updatedAt: at(100) });
-  const request = { baseDir: dir, portfolioPath, policyHash, asOf: at(100), valuationInputs: [], pendingActionInputs: [],
-    ...createPortfolioExposureSnapshot({ virtualNetWorthKrw: 1000, cashKrw: 1000,
-      bucketExposureKrw: { hedge: 0, intraday: 0, long_term: 0, short_term: 0, swing: 0 }, symbolExposureKrw: [],
-      marketExposureKrw: { KR: 0, US: 0 }, sectorExposureKrw: {}, countryExposureKrw: {}, currencyExposureKrw: {},
-      pendingBuyExposureKrw: 0, pendingSellExposureKrw: 0 }) };
-  return { dir, root, store, request, records: createPortfolioSizingSnapshotPaths(dir).recordsPath };
-}
 
 test("current sizing binds actual old-policy roots and preserves retry and source bytes without deadlock", async (context) => {
   await fixture(context, async ({ dir, request, records, store }) => {

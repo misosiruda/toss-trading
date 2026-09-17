@@ -20,10 +20,10 @@ export async function appendCurrentPortfolioSizingSnapshot(value: z.input<typeof
   return publish(value, options, false);
 }
 
-/** Binds stored marks/FX, pending progress, mandate/execution origins, reservation roots and active policy through destination fsync.
+/** Binds stored marks/FX, pending progress, mandate/execution origins, reservation roots/bound mandates and active policy through destination fsync.
  * Locks: portfolio -> price -> FX -> manual -> request -> sizing -> input -> assignment -> manual/selector reservation
  * -> event -> plan -> mandate -> policy -> activation -> Risk -> fill -> capacity.
- * Reservation mandate/consumption/balance, allocation, accounting, external trust and current execution remain separate gates.
+ * Reservation consumption/balance, allocation, accounting, external trust and current execution remain separate gates.
  */
 export async function appendPolicyBoundCurrentPortfolioSizingSnapshot(value: z.input<typeof inputSchema>,
   options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}) {
