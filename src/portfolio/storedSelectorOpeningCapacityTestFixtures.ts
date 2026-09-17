@@ -19,7 +19,7 @@ import { HASH, START, PORTFOLIO, AT, at, snapshot, seedCapacityExecutionHistory,
   type Options } from "./storedManualOpeningCapacityTestFixtures.js";
 
 type SelectorOptions = Options & { storeSelectorIssuance?: boolean };
-async function seedSelectorHistory(dir: string, context: TestContext, options: SelectorOptions) {
+export async function seedSelectorReservation(dir: string, context: TestContext, options: SelectorOptions) {
   context.mock.timers.setTime(START + 10);
   const origin = snapshot();
   const request = createBucketSelectionRequest({ cycleId: "selector-cycle", triggerIdentity: "scheduled:boundary", triggerRef: "synthetic",
@@ -77,9 +77,12 @@ async function seedSelectorHistory(dir: string, context: TestContext, options: S
     mandateId: mandate.mandateId, mandateHash: mandate.mandateHash, remainingReservedNotionalKrw: 100, occupiesNewPositionSlot: true,
     capacityLedgerVersion: 2, asOf: at(40), createdAt: at(40) });
   await capacity.append(bound);
-  return seedCapacityExecutionHistory(dir, context, options, { assignment, root, mandate, bound });
+  return { assignment, root, mandate, bound };
 }
 
+async function seedSelectorHistory(dir: string, context: TestContext, options: SelectorOptions) {
+  return seedCapacityExecutionHistory(dir, context, options, await seedSelectorReservation(dir, context, options));
+}
 
 export type SelectorCapacityState = Awaited<ReturnType<typeof seedSelectorHistory>>;
 export async function fixture(context: TestContext, options: SelectorOptions, operation: (state: Awaited<ReturnType<typeof seedSelectorHistory>>) => Promise<void>) {

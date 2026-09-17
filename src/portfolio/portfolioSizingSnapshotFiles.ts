@@ -17,12 +17,9 @@ import { SourceFxEvidenceFileRepository, getDurableSourceFxEvidenceObservation,
   resolveVerifiedSourceFxEvidenceOrigin } from "./sourceFxEvidenceFiles.js";
 import { withStoredPendingPlanActionProgress } from "./storedPendingPlanActionProgress.js";
 import { bindSnapshotPendingPlanProgress } from "./snapshotPendingPlanBinding.js";
-import type { VerifiedManualAssignmentHistory } from "./manualAssignmentFiles.js";
-import type { VerifiedManualCapacityReservationHistory } from "./manualOpeningCapacityReservationFiles.js";
-import type { VerifiedSelectorCapacityReservationHistory } from "./selectorOpeningCapacityReservationFiles.js";
+import type { OpeningCapacityMandateSources } from "./openingCapacityMandateBinding.js";
 
-type CapacityRootSources = { manual: VerifiedManualAssignmentHistory; manualReservations: VerifiedManualCapacityReservationHistory;
-  selectorReservations: VerifiedSelectorCapacityReservationHistory };
+type CapacityRootSources = Omit<OpeningCapacityMandateSources, "mandates" | "events">;
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -153,17 +150,17 @@ export class PortfolioSizingSnapshotFileRepository {
 
   /** Concrete sources: price -> FX -> capacity sources (including sizing) -> event -> plan -> mandate -> policy -> activation -> Risk -> fill -> capacity.
    * New append and exact retry bind pending progress and persisted execution origins, including terminal plans.
-   * Root issuance is bound; mandate/consumption/balance, allocation and accounting authority remain separate gates.
+   * Root issuance and bound mandate content are checked; consumption/balance, allocation and accounting remain separate gates.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
     const [{ bindSnapshotPendingExecutionOrigins }, { PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
       { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation }, { bindSnapshotPendingMandateOrigins },
-      { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }, { bindOpeningCapacityRootOrigins },
+      { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }, { bindOpeningCapacityMandateOrigins },
       { OpeningCapacityReservationEventFileRepository, getDurableOpeningCapacityEventObservedAt }] = await Promise.all([
       import("./snapshotPendingExecutionBinding.js"), import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js"),
-      import("./snapshotPendingMandateBinding.js"), import("./investmentMandateFiles.js"), import("./openingCapacityRootBinding.js"),
+      import("./snapshotPendingMandateBinding.js"), import("./investmentMandateFiles.js"), import("./openingCapacityMandateBinding.js"),
       import("./openingCapacityReservationEventFiles.js")
     ]);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
@@ -203,8 +200,7 @@ export class PortfolioSizingSnapshotFileRepository {
                   if (Date.parse(getDurableOpeningCapacityEventObservedAt(capacity)) < Date.parse(getHeldPaperFillExecutionObservation(fills).observedAt)) {
                     throw new Error("sizing snapshot capacity observation clock moved backwards");
                   }
-                  bindOpeningCapacityRootOrigins({ baseDir, portfolioId: candidate.portfolioId }, sources.manual,
-                    sources.manualReservations, sources.selectorReservations, capacity);
+                  bindOpeningCapacityMandateOrigins({ baseDir, portfolioId: candidate.portfolioId }, { ...sources, mandates, events: capacity });
                   await verifyDependencies();
                   const snapshot = await this.appendUnderLock(candidate);
                   await verifyDependencies();
@@ -237,7 +233,7 @@ export class PortfolioSizingSnapshotFileRepository {
             new CandidateAssignmentFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(inputs, requests, snapshots, (assignments) =>
               new ManualOpeningCapacityReservationFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(manual, snapshots, (manualReservations) =>
                 new SelectorOpeningCapacityReservationFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(assignments, inputs, requests, snapshots,
-                  (selectorReservations) => operation({ manual, manualReservations, selectorReservations })))))))));
+                  (selectorReservations) => operation({ manual, requests, inputs, assignments, manualReservations, selectorReservations })))))))));
   }
 
   private async appendUnderLock(candidate: PortfolioSizingSnapshot): Promise<PortfolioSizingSnapshot> {

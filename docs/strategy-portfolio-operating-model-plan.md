@@ -5196,15 +5196,15 @@ root도 검증한다. Capacity 관측은 fill 관측보다 앞설 수 없다. �
 fsync까지 유지하고 일반 append/current publisher의 비정책 경로는 바꾸지 않는다. 추가 관측 fsync는
 최종 저장 fsync와 구분하며 기존 최종 policy/dependency 잠금·오류 주입 검증을 유지한다.
 
-이 연결은 root 발행 출처만 확인한다. Pending BUY의 bound mandate/소비/잔여 금액, shared allocator,
+이 연결은 root 발행 출처와 bound mandate 내용을 확인한다. Pending BUY의 소비/잔여 금액, shared allocator,
 CAS, resulting accounting 및 실행 권한은 아직 연결 완료가 아니다. 기존에 원본 없는 root나 손상된
 미사용 원본 파일을 가진 호출도 이제 fail-closed할 수 있다. 저장 형식 migration은 없고 코드 rollback은
 가능하지만 root 검증 보장이 사라지므로 이 보장에 의존하는 consumer도 함께 되돌려야 한다.
 
 결과는 immutable 값이지 callback 밖에서 사용할 수 있는 새 lease나 실행 권한이 아니다. Caller는
 manual → request → snapshot → input → assignment → manual reservation → selector reservation →
-capacity 순서로 원본을 보유하는 조합 등을 사용하고 같은 저장소를 재진입하지 않는다. Bound
-mandate/소비/잔여 금액, 실제 allocator/CAS/원자 commit은 여전히 후속이다.
+capacity 순서로 원본을 보유하는 조합 등을 사용하고 같은 저장소를 재진입하지 않는다.
+소비/잔여 금액, 실제 allocator/CAS/원자 commit은 여전히 후속이다.
 Migration은 없고 rollback 시 신규 binder consumer도 함께 되돌린다. 테스트는 실제 두 종류의 원본,
 successor/restart, 경로/복사/만료, clock/lock 및 재해시한 잘못된 root claim과 bytes 보존을 확인한다.
 
@@ -5222,11 +5222,26 @@ createdAt의 내용 검증이지 mandate 생성 당시 원본을 보유했다는
 
 함수는 동기식이며 읽기/쓰기나 잠금 취득을 추가하지 않는다. Caller는 기존 source-sharing 순서 뒤
 mandate → capacity를 보유하며 다시 진입하지 않는다. 결과는 immutable 값이며 새 lease가 아니다.
-현재 publisher에는 아직 연결하지 않았고 mandate activation·소비·잔여 금액·실제 sizing/allocator/
-CAS/실행 권한은 검증하지 않는다. Proposed mandate도 내용 검증 대상이며 실행 허가로 승격하지 않는다.
+Binder 자체는 mandate activation·소비·잔여 금액·실제 sizing/allocator/CAS/실행 권한을 검증하지 않는다.
+Proposed mandate도 내용 검증 대상이며 실행 허가로 승격하지 않는다.
 Migration은 없고 신규 consumer보다 binder/repository를 먼저 배포한다. Rollback은 consumer와 함께
 되돌리며 저장 artifact는 보존한다. 복사/다른 경로/만료, clock/consumer 실패, 실제 수동·selector 및
 increase/restart, 누락·hash·scope·lineage·시각 불일치를 임시 filesystem 테스트로 검증한다.
+
+Policy-bound current publisher는 보유한 request/input/assignment 관측을 private source 묶음에 포함하고
+최종 capacity 관측 안에서 `bindOpeningCapacityMandateOrigins`를 호출한다. 기존 root 검증은 이 함수
+내부에 포함된다. 별도 repository 조회나 추가 lock 취득은 없으며 기존 mandate/정책/Risk/fill 검증을
+유지한다. 최초 append와 exact retry 모두 실제 bound mandate 내용을 재검증하고 원본 잠금을 최종
+destination fsync까지 보유한다. Pending BUY가 없어도 누락/손상/불일치한 bound mandate를 거절한다.
+과거 policy의 root/bound 기록도 제외하지 않는다. 기존 non-policy publisher와 일반 append는 불변이다.
+
+수동·Selector 실제 발급/mandate를 가진 publisher 통합 테스트는 proposed 상태의 내용 검증, 첫 발행/
+retry, source bytes/portfolio revision 보존, missing/corrupt/재해시한 lineage mismatch 및 최종 저장까지
+request/input/assignment/mandate lock 보유를 확인한다. 기존 root 테스트의 setup을 공유 fixture로 옮기고
+Selector fixture의 예약 단계만 분리해 plan/Risk/fill이 없는 조합도 만들며 기존 실행 fixture는 유지한다.
+Schema migration은 없지만 과거에 허용되던 잘못된 bound 기록은 이제 발행을 막을 수 있다. Source
+integrity/lock 오류를 운영에서 확인하고 자동 복구하지 않는다. Rollback 시 이 내용 검증 보장이
+사라지므로 의존 consumer도 함께 되돌린다. 소비·잔액·allocator/원자 commit/accounting은 여전히 후속이다.
 
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
