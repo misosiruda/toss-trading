@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import { z } from "zod";
@@ -39,6 +39,14 @@ export const sourcePriceEvidenceObservationSchema = z.object({
 }).strict();
 export type SourcePriceEvidenceObservation = Readonly<z.infer<typeof sourcePriceEvidenceObservationSchema>>;
 const durableEvidenceObservations = new WeakMap<VerifiedSourcePriceEvidenceHistory, SourcePriceEvidenceObservation>();
+const durableEvidenceSourcePaths = new WeakMap<VerifiedSourcePriceEvidenceHistory, string>();
+
+export function assertDurableSourcePriceEvidenceSource(history: VerifiedSourcePriceEvidenceHistory, baseDir: string): void {
+  getDurableSourcePriceEvidenceObservation(history);
+  if (durableEvidenceSourcePaths.get(history) !== createSourcePriceEvidencePaths(resolve(baseDir)).recordsPath) {
+    throw new Error("source price evidence lease belongs to a different source path");
+  }
+}
 
 /** Only the live repository callback can prove a newly fsynced observation. */
 export function getDurableSourcePriceEvidenceObservation(history: VerifiedSourcePriceEvidenceHistory): SourcePriceEvidenceObservation {
@@ -133,7 +141,7 @@ export class SourcePriceEvidenceFileRepository {
     baseDir: string,
     options: SourcePriceEvidenceFileRepositoryOptions = {}
   ) {
-    const paths = createSourcePriceEvidencePaths(baseDir);
+    const paths = createSourcePriceEvidencePaths(resolve(baseDir));
     this.recordsPath = paths.recordsPath;
     this.lockPath = paths.lockPath;
     this.lockTimeoutMs = positiveInteger(
@@ -160,10 +168,12 @@ export class SourcePriceEvidenceFileRepository {
       const { entries, observedAt } = await readDurableBoundEvidenceSource(this.recordsPath);
       const history = createVerifiedSourcePriceEvidenceHistory(entries);
       durableEvidenceObservations.set(history, Object.freeze({ recordCount: entries.length, entriesHash: hashCanonicalPayload(entries), observedAt }));
+      durableEvidenceSourcePaths.set(history, this.recordsPath);
       try {
         return await operation(history);
       } finally {
         durableEvidenceObservations.delete(history);
+        durableEvidenceSourcePaths.delete(history);
       }
     });
   }

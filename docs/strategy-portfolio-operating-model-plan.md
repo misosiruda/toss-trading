@@ -5243,6 +5243,20 @@ Schema migration은 없지만 과거에 허용되던 잘못된 bound 기록은 �
 integrity/lock 오류를 운영에서 확인하고 자동 복구하지 않는다. Rollback 시 이 내용 검증 보장이
 사라지므로 의존 consumer도 함께 되돌린다. 소비·잔액·allocator/원자 commit/accounting은 여전히 후속이다.
 
+실제 소비 원본 조합의 선행 단계로 plan/plan event/Risk/fill/price repository는 각각 active durable
+관측의 configured path를 private WeakMap에 결속한다. 새 source assertion은 관측 수명과 같은
+baseDir의 source 경로를 검사하고 event assertion은 주입된 plan repository의 경로/수명도 확인한다.
+빈 기록도 복사본·다른 디렉터리·callback 종료/실패 후 관측·일반 historical read로 대체할 수 없다.
+Public observation/record/entry/commit 형식은 불변이며 assertion 자체는 I/O나 잠금을 추가하지 않는다.
+
+상대 baseDir는 repository 생성 시 절대 경로로 고정한다. 이후 process cwd가 바뀌어도 실제 읽기와
+assertion 대상이 이동하지 않는다. 기존 consumer는 새로운 assertion을 아직 호출하지 않으며 실제
+capacity 소비 binder/current publisher 연결은 후속이다. 같은 source라는 확인은 Risk 정책·외부 가격
+trust·원자 회계·실행 권한을 부여하지 않는다. Migration 없이 consumer보다 repository를 먼저 배포하고,
+rollback 시 새 assertion에 의존하는 consumer도 함께 되돌린다. Journal bytes는 변환/삭제하지 않는다.
+회귀 테스트는 다섯 source의 empty/copied/foreign/expired/historical, consumer 실패, cwd 변경,
+다른 plan repository 주입 및 실제 populated plan/Risk/fill/price 원본을 확인한다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.

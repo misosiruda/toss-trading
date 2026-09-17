@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
@@ -29,6 +29,14 @@ const markerSchema = z.object({
 }).strict();
 type ParsedEntry = VerifiedRebalancePlanOrigin;
 const heldObservations = new WeakMap<VerifiedRebalancePlanHistory, Readonly<{ observedAt: string; entriesHash: string; recordCount: number }>>();
+const heldSourcePaths = new WeakMap<VerifiedRebalancePlanHistory, string>();
+
+export function assertHeldRebalancePlanSource(history: VerifiedRebalancePlanHistory, baseDir: string): void {
+  getHeldRebalancePlanObservation(history);
+  if (heldSourcePaths.get(history) !== createRebalancePlanPaths(resolve(baseDir)).recordsPath) {
+    throw new Error("rebalance plan lease belongs to a different source path");
+  }
+}
 
 export function createRebalancePlanPaths(baseDir: string) {
   return { recordsPath: join(baseDir, REBALANCE_PLAN_RECORDS_FILE_NAME), lockPath: join(baseDir, `.${REBALANCE_PLAN_RECORDS_FILE_NAME}.lock`) };
@@ -41,7 +49,7 @@ export class RebalancePlanFileRepository {
   private readonly lockTimeoutMs: number;
   private readonly lockRetryDelayMs: number;
   constructor(baseDir: string, options: RebalancePlanFileRepositoryOptions = {}) {
-    const paths = createRebalancePlanPaths(baseDir);
+    const paths = createRebalancePlanPaths(resolve(baseDir));
     this.recordsPath = paths.recordsPath;
     this.lockPath = paths.lockPath;
     this.lockTimeoutMs = positiveInteger(options.lockTimeoutMs ?? 5_000);
@@ -72,7 +80,8 @@ export class RebalancePlanFileRepository {
         throw new Error("rebalance plan observation clock precedes commit");
       }
       heldObservations.set(history, Object.freeze({ observedAt, entriesHash: hashCanonicalPayload(entries), recordCount: entries.length }));
-      try { return await operation(history); } finally { heldObservations.delete(history); }
+      heldSourcePaths.set(history, this.recordsPath);
+      try { return await operation(history); } finally { heldSourcePaths.delete(history); heldObservations.delete(history); }
     });
   }
 
