@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 import { parseRebalancePlanEvent, type RebalancePlanEvent } from "./rebalancePlanEvent.js";
 import { replayRebalancePlanEvents } from "./rebalancePlanEventReplay.js";
-import { RebalancePlanFileRepository, getHeldRebalancePlanObservation, resolveVerifiedRebalancePlanOrigin, type VerifiedRebalancePlanHistory } from "./rebalancePlanFiles.js";
+import { RebalancePlanFileRepository, assertHeldRebalancePlanSource, getHeldRebalancePlanObservation, resolveVerifiedRebalancePlanOrigin, type VerifiedRebalancePlanHistory } from "./rebalancePlanFiles.js";
 import { readDurableRebalanceSource } from "./rebalanceDurableSource.js";
 
 export const REBALANCE_PLAN_EVENTS_FILE_NAME = "rebalance-plan-events.jsonl";
@@ -41,6 +41,16 @@ const markerSchema = z.object({
 const heldObservations = new WeakMap<VerifiedRebalancePlanEventHistory, Readonly<{
   observedAt: string; planEntriesHash: string; planRecordCount: number; eventGenerationHash: string | null; eventCount: number
 }>>();
+const heldSourcePaths = new WeakMap<VerifiedRebalancePlanEventHistory, string>();
+
+/** Both the event journal and its injected plan repository must be this directory's active sources. */
+export function assertHeldRebalancePlanEventSource(history: VerifiedRebalancePlanEventHistory, baseDir: string): void {
+  getHeldRebalancePlanEventObservation(history);
+  if (heldSourcePaths.get(history) !== createRebalancePlanEventPaths(resolve(baseDir)).eventsPath) {
+    throw new Error("rebalance event lease belongs to a different source path");
+  }
+  assertHeldRebalancePlanSource(histories.get(history)!.plans, baseDir);
+}
 
 export function createRebalancePlanEventPaths(baseDir: string) {
   return { eventsPath: join(baseDir, REBALANCE_PLAN_EVENTS_FILE_NAME), lockPath: join(baseDir, `.${REBALANCE_PLAN_EVENTS_FILE_NAME}.lock`) };
@@ -54,7 +64,7 @@ export class RebalancePlanEventFileRepository {
   private readonly lockRetryDelayMs: number;
   constructor(baseDir: string, private readonly plans: RebalancePlanFileRepository,
     options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
-    const paths = createRebalancePlanEventPaths(baseDir);
+    const paths = createRebalancePlanEventPaths(resolve(baseDir));
     this.eventsPath = paths.eventsPath;
     this.lockPath = paths.lockPath;
     this.lockTimeoutMs = positiveInteger(options.lockTimeoutMs ?? 5_000);
@@ -89,7 +99,8 @@ export class RebalancePlanEventFileRepository {
       histories.get(history)!.observedAt = observedAt;
       heldObservations.set(history, Object.freeze({ observedAt, planEntriesHash: planObservation.entriesHash,
         planRecordCount: planObservation.recordCount, eventGenerationHash: history.generationHash, eventCount: history.events.length }));
-      try { return await operation(history); } finally { heldObservations.delete(history); }
+      heldSourcePaths.set(history, this.eventsPath);
+      try { return await operation(history); } finally { heldSourcePaths.delete(history); heldObservations.delete(history); }
     }));
   }
 

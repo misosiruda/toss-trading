@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readDurableRebalanceSource } from "./rebalanceDurableSource.js";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import { z } from "zod";
@@ -57,6 +57,14 @@ export interface VerifiedPortfolioActionRiskDecisionHistory {
 const heldRiskObservations = new WeakMap<VerifiedPortfolioActionRiskDecisionHistory, Readonly<{
   observedAt: string; recordCount: number; recordsHash: string; sourceGenerationHash: string | null
 }>>();
+const heldRiskSourcePaths = new WeakMap<VerifiedPortfolioActionRiskDecisionHistory, string>();
+
+export function assertHeldPortfolioActionRiskDecisionSource(history: VerifiedPortfolioActionRiskDecisionHistory, baseDir: string): void {
+  getHeldPortfolioActionRiskDecisionObservation(history);
+  if (heldRiskSourcePaths.get(history) !== createPortfolioActionRiskDecisionPaths(resolve(baseDir)).recordsPath) {
+    throw new Error("Risk lease belongs to a different source path");
+  }
+}
 
 /** Callback-scoped source possession only, not approval policy/rule or execution authority. */
 export function getHeldPortfolioActionRiskDecisionObservation(history: VerifiedPortfolioActionRiskDecisionHistory) {
@@ -206,7 +214,7 @@ export class PortfolioActionRiskDecisionFileRepository {
     baseDir: string,
     options: PortfolioActionRiskDecisionFileRepositoryOptions = {}
   ) {
-    const paths = createPortfolioActionRiskDecisionPaths(baseDir);
+    const paths = createPortfolioActionRiskDecisionPaths(resolve(baseDir));
     this.recordsPath = paths.recordsPath;
     this.lockPath = paths.lockPath;
     this.lockTimeoutMs = positiveInteger(
@@ -239,7 +247,8 @@ export class PortfolioActionRiskDecisionFileRepository {
       }
       heldRiskObservations.set(history, Object.freeze({ observedAt, recordCount: history.records.length,
         recordsHash: hashCanonicalPayload(history.records), sourceGenerationHash: metadata.lastEntryHash }));
-      try { return await operation(history); } finally { heldRiskObservations.delete(history); }
+      heldRiskSourcePaths.set(history, this.recordsPath);
+      try { return await operation(history); } finally { heldRiskSourcePaths.delete(history); heldRiskObservations.delete(history); }
     });
   }
 

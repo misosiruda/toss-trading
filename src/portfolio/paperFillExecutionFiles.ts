@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readDurableRebalanceSource } from "./rebalanceDurableSource.js";
 import { mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 
@@ -83,6 +83,14 @@ export interface VerifiedPaperFillExecutionHistory {
 const heldFillObservations = new WeakMap<VerifiedPaperFillExecutionHistory, Readonly<{
   observedAt: string; recordCount: number; recordsHash: string; sourceGenerationHash: string | null
 }>>();
+const heldFillSourcePaths = new WeakMap<VerifiedPaperFillExecutionHistory, string>();
+
+export function assertHeldPaperFillExecutionSource(history: VerifiedPaperFillExecutionHistory, baseDir: string): void {
+  getHeldPaperFillExecutionObservation(history);
+  if (heldFillSourcePaths.get(history) !== createPaperFillExecutionPaths(resolve(baseDir)).recordsPath) {
+    throw new Error("paper fill lease belongs to a different source path");
+  }
+}
 
 /** Callback-scoped source possession only, not genuine Risk or resulting portfolio authority. */
 export function getHeldPaperFillExecutionObservation(history: VerifiedPaperFillExecutionHistory) {
@@ -112,7 +120,7 @@ export class PaperFillExecutionFileRepository {
     baseDir: string,
     options: PaperFillExecutionFileRepositoryOptions = {}
   ) {
-    const paths = createPaperFillExecutionPaths(baseDir);
+    const paths = createPaperFillExecutionPaths(resolve(baseDir));
     this.recordsPath = paths.recordsPath;
     this.lockPath = paths.lockPath;
     this.lockTimeoutMs = positiveInteger(
@@ -143,7 +151,8 @@ export class PaperFillExecutionFileRepository {
       if (times.some((time) => Date.parse(time) > Date.parse(observedAt))) throw new Error("paper fill source observation clock precedes commit or completion");
       heldFillObservations.set(history, Object.freeze({ observedAt, recordCount: history.records.length,
         recordsHash: hashCanonicalPayload(history.records), sourceGenerationHash: metadata.lastEntryHash }));
-      try { return await operation(history); } finally { heldFillObservations.delete(history); }
+      heldFillSourcePaths.set(history, this.recordsPath);
+      try { return await operation(history); } finally { heldFillSourcePaths.delete(history); heldFillObservations.delete(history); }
     });
   }
 
