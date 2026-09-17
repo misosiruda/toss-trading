@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { createOpeningCapacityReservationEventPaths } from "./openingCapacityReservationEventFiles.js";
 import test from "node:test";
 import { appendPolicyBoundCurrentPortfolioSizingSnapshot as publish } from "./currentPortfolioSizingSnapshotFiles.js";
-import { fixture, request, event, options, T, at, H } from "./currentSizingPendingTestFixtures.js";
+import { fixture, request, event, options, T, at, H, readSnapshotBytes } from "./currentSizingPendingTestFixtures.js";
 import { createInvestmentMandateEvent } from "./investmentMandate.js";
 import { createInvestmentMandatePaths } from "./investmentMandateFiles.js";
 
@@ -25,12 +25,11 @@ test("current sizing revalidates complete mandate record and event sources on ap
     const path = createInvestmentMandatePaths(state.baseDir)[source], original = await fs.readFile(path);
     for (const retry of [false, true]) {
       if (retry) await publish(request(state), options);
-      const before = retry ? await fs.readFile(state.records) : null;
+      const before = await readSnapshotBytes(state.records);
       for (const damaged of [Buffer.from(""), Buffer.concat([original, Buffer.from("{\n")]), original.subarray(0, original.length - 1)]) {
         await fs.writeFile(path, damaged);
         await assert.rejects(publish(request(state), options));
-        if (before === null) await assert.rejects(fs.readFile(state.records), { code: "ENOENT" });
-        else assert.deepEqual(await fs.readFile(state.records), before);
+        assert.deepEqual(await readSnapshotBytes(state.records), before);
         assert.deepEqual(await fs.readFile(path), damaged);
       }
       await fs.writeFile(path, original);
@@ -43,7 +42,7 @@ test("current sizing refuses mandate scope expiry future validity and executed R
   for (const mandate of [{ portfolioId: "other" }, { policyHash: H("other") }, { market: "US" as const }, { symbol: "OTHER" },
     { bucket: "short_term" as const }, { validFrom: at(51) }, { expiresAt: at(50) }]) await fixture(context, "fractional_buy", async (state) => {
     await assert.rejects(publish(request(state), options), /investment mandate is required|mandate bucket/);
-    await assert.rejects(fs.readFile(state.records), { code: "ENOENT" });
+    assert.deepEqual(await readSnapshotBytes(state.records), state.initialSnapshotBytes);
   }, { mandate });
 });
 

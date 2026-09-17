@@ -12,7 +12,7 @@ import { pendingActionExposureTotals } from "./portfolioSizingInputs.js";
 import { createRebalancePlanPaths } from "./rebalancePlanFiles.js";
 import { createRebalancePlanEventPaths } from "./rebalancePlanEventFiles.js";
 import { createSourcePriceEvidenceRecord } from "./sourcePriceEvidence.js";
-import { fixture, request, event, options, T, at, H } from "./currentSizingPendingTestFixtures.js";
+import { fixture, request, event, options, T, at, H, readSnapshotBytes } from "./currentSizingPendingTestFixtures.js";
 
 test("policy-bound current sizing binds partial pending progress for every target kind including earlier policy plans", async (context) => {
   for (const kind of ["fractional_buy", "fractional_sell", "whole_buy", "whole_sell"] as const) await fixture(context, kind, async (state) => {
@@ -20,7 +20,7 @@ test("policy-bound current sizing binds partial pending progress for every targe
     assert.deepEqual(result.pendingActionInputs, [state.pending]);
     assert.notEqual(state.plan.policyHash, result.policyHash);
     assert.deepEqual(await publish(request(state), options), result);
-    assert.equal((await new PortfolioSizingSnapshotFileRepository(state.baseDir).readAll()).length, 1);
+    assert.equal((await new PortfolioSizingSnapshotFileRepository(state.baseDir).readAll()).length, state.initialSnapshotCount + 1);
   });
 });
 
@@ -30,7 +30,7 @@ test("policy-bound current sizing rejects omitted extra substituted and mismatch
     for (const pending of [[], [state.pending, wrong], [wrong], [{ ...state.pending, planHash: H("wrong") }],
       [{ ...state.pending, planEventHash: H("wrong") }], [{ ...state.pending, actionExecutionTargetHash: H("wrong") }]]) {
       await assert.rejects(publish(request(state, pending), options), /snapshot pending/);
-      await assert.rejects(fs.readFile(state.records), { code: "ENOENT" });
+      assert.deepEqual(await readSnapshotBytes(state.records), state.initialSnapshotBytes);
     }
     // Legacy publisher still accepts independently valid historical inputs without source-origin binding.
     assert.equal((await publishUnbound(request(state, []), options)).pendingActionInputs.length, 0);
@@ -55,7 +55,7 @@ test("policy-bound current sizing compares remaining target or quantity gross in
     if (state.pending.side === "SELL") {
       await assert.rejects(publish(request(state, [{ ...state.pending, remainingQuantity: 0.1 }]), options), /remaining quantity/);
     }
-    await assert.rejects(fs.readFile(state.records), { code: "ENOENT" });
+    assert.deepEqual(await readSnapshotBytes(state.records), state.initialSnapshotBytes);
   });
 });
 

@@ -5369,6 +5369,17 @@ BigInt로 합산해 잔액 이하인지 검사한다. 이후 소비/종료는 �
 기존 publisher와 저장 형식은 불변이며 migration은 없다. 후속 consumer보다 먼저 배포하고 rollback은
 의존 consumer와 함께 수행한다. Source 오류는 자동 복구·삭제하지 않는다.
 
+Current pending 테스트의 opening BUY fixture는 placeholder 예약 대신 실제 수동/selector 발급 원본을
+저장한다. `currentSizingPendingCapacityTestFixtures.ts`는 source snapshot과 manual event 또는
+request/input/assignment set을 먼저 생성하고 400 KRW 예약을 발급한다. 공통 fixture가 root 이후
+mandate와 bound event, 기존 plan/Risk/fill 이후 실제 gross 소비를 저장한다. Fractional BUY는
+잔액 360/pending 60, whole BUY는 잔액 300/pending 200으로 historical 예약 resolver에서도 검증된다.
+Source snapshot이 destination journal에 이미 존재하므로 최초 발행 실패도 기존 bytes 보존으로
+검사하고 exact retry의 record 수는 초기 source snapshot 수를 포함한다. SELL/reduce-only는 새
+opening 예약을 만들지 않는다. 이 변경은 테스트 데이터와 보존 assertion의 보강이며 production
+publisher 연결·검증 규칙·저장 형식은 바꾸지 않는다. 합성 원본은 실제 portfolio 회계, allocator,
+manual evidence sizing 또는 외부 가격 trust를 증명하지 않는다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
