@@ -23,7 +23,8 @@ export async function appendCurrentPortfolioSizingSnapshot(value: z.input<typeof
 /** Binds stored marks/FX, pending progress, mandate/execution origins, reservation roots/bound mandates/consumption/retirement and active policy through destination fsync.
  * Locks: portfolio -> price -> FX -> manual -> request -> sizing -> input -> assignment -> manual/selector reservation
  * -> event -> plan -> mandate -> policy -> activation -> Risk -> fill -> capacity.
- * Unverified cancellation releases are rejected. Pending balance, allocation, accounting, external trust and current execution remain separate gates.
+ * Pending BUY membership, prior consumption and aggregate gross coverage are checked. Unverified cancellation releases are rejected.
+ * Allocation, accounting, external trust and current execution remain separate gates.
  */
 export async function appendPolicyBoundCurrentPortfolioSizingSnapshot(value: z.input<typeof inputSchema>,
   options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}) {
