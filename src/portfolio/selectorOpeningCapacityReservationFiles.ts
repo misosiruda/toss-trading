@@ -4,13 +4,13 @@ import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
-import { getDurableBucketSelectionRequestObservation, bucketSelectionRequestObservationSchema,
+import { assertDurableBucketSelectionRequestSource, getDurableBucketSelectionRequestObservation, bucketSelectionRequestObservationSchema,
   resolveObservedBucketSelectionRequestHistory, type VerifiedBucketSelectionRequestHistory } from "./bucketSelectionRequestFiles.js";
-import { CandidateAssignmentFileRepository, getDurableCandidateAssignmentObservation, type VerifiedCandidateAssignmentHistory } from "./candidateAssignmentFiles.js";
-import { getDurableCandidateSizingInputObservation, type VerifiedCandidateSizingInputHistory } from "./candidateSizingInputFiles.js";
+import { CandidateAssignmentFileRepository, assertDurableCandidateAssignmentSource, getDurableCandidateAssignmentObservation, type VerifiedCandidateAssignmentHistory } from "./candidateAssignmentFiles.js";
+import { assertDurableCandidateSizingInputSource, getDurableCandidateSizingInputObservation, type VerifiedCandidateSizingInputHistory } from "./candidateSizingInputFiles.js";
 import { resolveCandidateAssignmentSizingBinding } from "./candidateAssignment.js";
 import { parseSelectorOpeningCapacityReservationRecord, type SelectorOpeningCapacityReservationRecord } from "./selectorOpeningCapacityReservation.js";
-import { getDurablePortfolioSizingSnapshotObservation, portfolioSizingSnapshotObservationSchema,
+import { assertDurablePortfolioSizingSnapshotSource, getDurablePortfolioSizingSnapshotObservation, portfolioSizingSnapshotObservationSchema,
   resolveObservedPortfolioSizingSnapshotHistory, type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
@@ -38,13 +38,14 @@ export interface VerifiedSelectorCapacityReservationHistory {
   readonly origins: readonly VerifiedSelectorCapacityReservationOrigin[];
   readonly generationHash: string | null;
 }
-const observations = new WeakMap<VerifiedSelectorCapacityReservationHistory, string>();
+const observations = new WeakMap<VerifiedSelectorCapacityReservationHistory, { observedAt: string; verifySources: () => void }>();
 
 /** Actual source locks and the reservation lock are held only during this observation's callback. */
 export function getDurableSelectorCapacityReservationObservation(history: VerifiedSelectorCapacityReservationHistory): string {
-  const observedAt = observations.get(history);
-  if (observedAt === undefined) throw new Error("selector capacity history lacks a durable observation lease");
-  return observedAt;
+  const observation = observations.get(history);
+  if (observation === undefined) throw new Error("selector capacity history lacks a durable observation lease");
+  observation.verifySources();
+  return observation.observedAt;
 }
 
 export function createSelectorOpeningCapacityReservationPaths(baseDir: string) {
@@ -71,12 +72,35 @@ export class SelectorOpeningCapacityReservationFileRepository {
 
   /** Request -> snapshot -> sizing -> assignment -> reservation. Consumers must not re-enter these stores. */
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedSelectorCapacityReservationHistory) => Promise<T>): Promise<T> {
-    return this.withSources((sources) => this.withLock(async () => {
+    return new CandidateAssignmentFileRepository(this.baseDir, this.options).withDurableVerifiedHistory((assignments, inputs, requests, snapshots) =>
+      this.withDurableVerifiedHistoryFromSources(assignments, inputs, requests, snapshots, operation));
+  }
+
+  /** Await inside all source callbacks. Only the reservation lock is acquired; no write or allocation authority is issued. */
+  async withDurableVerifiedHistoryFromSources<T>(assignments: VerifiedCandidateAssignmentHistory, inputs: VerifiedCandidateSizingInputHistory,
+    requests: VerifiedBucketSelectionRequestHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory,
+    operation: (history: VerifiedSelectorCapacityReservationHistory) => Promise<T>): Promise<T> {
+    const verifySources = () => {
+      assertDurableCandidateAssignmentSource(assignments, this.baseDir);
+      assertDurableCandidateSizingInputSource(inputs, this.baseDir);
+      assertDurableBucketSelectionRequestSource(requests, this.baseDir);
+      assertDurablePortfolioSizingSnapshotSource(snapshots, this.baseDir);
+    };
+    verifySources();
+    return this.withLock(async () => {
+      verifySources();
+      const sources = { assignments, inputs, requests, snapshots, index: createSourceIndex(assignments, inputs) };
       const { history, observedAt } = await this.readUnderLock(sources);
-      observations.set(history, observedAt);
-      try { return await operation(history); }
+      verifySources();
+      if (Date.parse(observedAt) < Math.max(Date.parse(getDurableCandidateAssignmentObservation(assignments)),
+        Date.parse(getDurableCandidateSizingInputObservation(inputs)), Date.parse(getDurableBucketSelectionRequestObservation(requests).observedAt),
+        Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt))) {
+        throw new Error("selector capacity shared source observation clock moved backwards");
+      }
+      observations.set(history, { observedAt, verifySources });
+      try { const result = await operation(history); verifySources(); return result; }
       finally { observations.delete(history); }
-    }));
+    });
   }
 
   async append(value: unknown): Promise<VerifiedSelectorCapacityReservationOrigin> {

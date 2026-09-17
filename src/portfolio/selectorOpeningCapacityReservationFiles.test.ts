@@ -288,6 +288,24 @@ test("selector issuance rejects source rewrites during durable observation and r
   });
 });
 
+test("selector issuance reuses populated request snapshot input and assignment leases without lock reentry", async (context) => {
+  await fixture(context, async ({ dir, record }) => {
+    const repo = new Repository(dir, { lockTimeoutMs: 70, lockRetryDelayMs: 3 }), original = await repo.append(record);
+    const before = await readFile(paths(dir).recordsPath);
+    await new BucketSelectionRequestFileRepository(dir).withDurableVerifiedHistory((requests) =>
+      new PortfolioSizingSnapshotFileRepository(dir).withDurableVerifiedHistory((snapshots) =>
+        new CandidateSizingInputFileRepository(dir).withDurableVerifiedHistoryFromSources(requests, snapshots, (inputs) =>
+          new CandidateAssignmentFileRepository(dir).withDurableVerifiedHistoryFromSources(inputs, requests, snapshots, async (assignments) => {
+            const escaped = await repo.withDurableVerifiedHistoryFromSources(assignments, inputs, requests, snapshots, async (history) => {
+              assert.deepEqual(history.origins, [original]); assert.ok(observation(history)); return history;
+            });
+            assert.throws(() => observation(escaped), /durable observation lease/);
+          }))));
+    assert.deepEqual(await readFile(paths(dir).recordsPath), before);
+    assert.deepEqual(await new Repository(dir).readAll(), [original]);
+  });
+});
+
 async function fixture(context: TestContext, operation: (input: { dir: string; record: SelectorOpeningCapacityReservationRecord;
   request: Awaited<ReturnType<BucketSelectionRequestFileRepository["resolveById"]>> }) => Promise<void>) {
   await storedFixture(context, { count: 0, storeSelectorIssuance: false }, async (state) => {
