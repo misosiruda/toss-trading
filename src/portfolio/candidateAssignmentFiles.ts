@@ -4,15 +4,16 @@ import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
-import { bucketSelectionRequestObservationSchema, getDurableBucketSelectionRequestObservation,
+import { bucketSelectionRequestObservationSchema, assertDurableBucketSelectionRequestSource, getDurableBucketSelectionRequestObservation,
   resolveObservedBucketSelectionRequestHistory, type VerifiedBucketSelectionRequestHistory } from "./bucketSelectionRequestFiles.js";
 import { candidateAssignmentSchema, parseCandidateAssignment, resolveCandidateAssignmentSizingBinding, type CandidateAssignment } from "./candidateAssignment.js";
 import { createCandidateAssignmentSetRecord, parseCandidateAssignmentSetRecord, resolveCandidateAssignmentSetBinding,
   type CandidateAssignmentSetRecord } from "./candidateAssignmentSet.js";
-import { CandidateSizingInputFileRepository, getDurableCandidateSizingInputObservation,
+import { CandidateSizingInputFileRepository, assertDurableCandidateSizingInputSource, getDurableCandidateSizingInputObservation,
   type VerifiedCandidateSizingInputHistory } from "./candidateSizingInputFiles.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
-import { type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
+import { assertDurablePortfolioSizingSnapshotSource, getDurablePortfolioSizingSnapshotObservation,
+  type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
 
 export const CANDIDATE_ASSIGNMENT_RECORDS_FILE_NAME = "candidate-assignment-records.jsonl";
 const sourceSchema = z.object({ requestObservation: bucketSelectionRequestObservationSchema,
@@ -32,11 +33,18 @@ export interface VerifiedCandidateAssignmentHistory {
   readonly origins: readonly VerifiedCandidateAssignmentOrigin[];
   readonly generationHash: string | null;
 }
-const observations = new WeakMap<VerifiedCandidateAssignmentHistory, string>();
+const observations = new WeakMap<VerifiedCandidateAssignmentHistory, { observedAt: string; sourcePath: string; verifySources: () => void }>();
 export function getDurableCandidateAssignmentObservation(history: VerifiedCandidateAssignmentHistory): string {
-  const observedAt = observations.get(history);
-  if (observedAt === undefined) throw new Error("candidate assignment history lacks a durable observation lease");
-  return observedAt;
+  const observation = observations.get(history);
+  if (observation === undefined) throw new Error("candidate assignment history lacks a durable observation lease");
+  observation.verifySources();
+  return observation.observedAt;
+}
+export function assertDurableCandidateAssignmentSource(history: VerifiedCandidateAssignmentHistory, baseDir: string): void {
+  getDurableCandidateAssignmentObservation(history);
+  if (observations.get(history)!.sourcePath !== createCandidateAssignmentPaths(resolve(baseDir)).recordsPath) {
+    throw new Error("candidate assignment lease belongs to a different source path");
+  }
 }
 export function createCandidateAssignmentPaths(baseDir: string) {
   return { recordsPath: join(baseDir, CANDIDATE_ASSIGNMENT_RECORDS_FILE_NAME),
@@ -60,11 +68,31 @@ export class CandidateAssignmentFileRepository {
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedCandidateAssignmentHistory,
     inputs: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory,
     snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
-    return this.withSources((inputs, requests, snapshots) => this.withLock(async () => {
+    return this.withSources((inputs, requests, snapshots) => this.withDurableVerifiedHistoryFromSources(inputs, requests, snapshots, operation));
+  }
+  /** Reuses this directory's live request -> snapshot -> sizing input sources; never re-enters them. */
+  async withDurableVerifiedHistoryFromSources<T>(inputs: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory,
+    snapshots: VerifiedPortfolioSizingSnapshotHistory, operation: (history: VerifiedCandidateAssignmentHistory,
+      inputs: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory,
+      snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
+    const verifySources = () => {
+      assertDurableCandidateSizingInputSource(inputs, this.baseDir);
+      assertDurableBucketSelectionRequestSource(requests, this.baseDir);
+      assertDurablePortfolioSizingSnapshotSource(snapshots, this.baseDir);
+    };
+    verifySources();
+    return this.withLock(async () => {
+      verifySources();
       const { history, observedAt } = await this.readUnderLock(inputs, requests);
-      observations.set(history, observedAt);
-      try { return await operation(history, inputs, requests, snapshots); } finally { observations.delete(history); }
-    }));
+      verifySources();
+      if (Date.parse(observedAt) < Math.max(Date.parse(getDurableCandidateSizingInputObservation(inputs)),
+        Date.parse(getDurableBucketSelectionRequestObservation(requests).observedAt), Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt))) {
+        throw new Error("candidate assignment shared source observation clock moved backwards");
+      }
+      observations.set(history, { observedAt, sourcePath: this.paths.recordsPath, verifySources });
+      try { const result = await operation(history, inputs, requests, snapshots); verifySources(); return result; }
+      finally { observations.delete(history); }
+    });
   }
   async appendAssignment(value: unknown): Promise<VerifiedCandidateAssignmentOrigin & { kind: "assignment" }> {
     const record = parseCandidateAssignment(value);

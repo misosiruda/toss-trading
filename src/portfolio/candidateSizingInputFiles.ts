@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { sha256HashSchema } from "../domain/schemas.js";
-import { BucketSelectionRequestFileRepository, getDurableBucketSelectionRequestObservation, bucketSelectionRequestObservationSchema,
+import { BucketSelectionRequestFileRepository, assertDurableBucketSelectionRequestSource, getDurableBucketSelectionRequestObservation, bucketSelectionRequestObservationSchema,
   resolveObservedBucketSelectionRequestHistory, type VerifiedBucketSelectionRequestHistory } from "./bucketSelectionRequestFiles.js";
 import { parseCandidateSizingInputRecord, resolveCandidateSizingInputRequestBinding,
   type CandidateSizingInputRecord } from "./candidateSizingInput.js";
-import { PortfolioSizingSnapshotFileRepository, getDurablePortfolioSizingSnapshotObservation, portfolioSizingSnapshotObservationSchema,
+import { PortfolioSizingSnapshotFileRepository, assertDurablePortfolioSizingSnapshotSource, getDurablePortfolioSizingSnapshotObservation, portfolioSizingSnapshotObservationSchema,
   resolveObservedPortfolioSizingSnapshotHistory, type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
 import { hashCanonicalPayload, offsetQualifiedIsoDateTimeSchema } from "./runtimePolicyContracts.js";
 
@@ -33,13 +33,21 @@ export interface VerifiedCandidateSizingInputHistory {
   readonly origins: readonly VerifiedCandidateSizingInputOrigin[];
   readonly generationHash: string | null;
 }
-const observations = new WeakMap<VerifiedCandidateSizingInputHistory, string>();
+const observations = new WeakMap<VerifiedCandidateSizingInputHistory, { observedAt: string; sourcePath: string; verifySources: () => void }>();
 
 /** Actual source locks and the input lock are held only during this observation's callback. */
 export function getDurableCandidateSizingInputObservation(history: VerifiedCandidateSizingInputHistory): string {
-  const observedAt = observations.get(history);
-  if (observedAt === undefined) throw new Error("candidate sizing input history lacks a durable observation lease");
-  return observedAt;
+  const observation = observations.get(history);
+  if (observation === undefined) throw new Error("candidate sizing input history lacks a durable observation lease");
+  observation.verifySources();
+  return observation.observedAt;
+}
+
+export function assertDurableCandidateSizingInputSource(history: VerifiedCandidateSizingInputHistory, baseDir: string): void {
+  getDurableCandidateSizingInputObservation(history);
+  if (observations.get(history)!.sourcePath !== createCandidateSizingInputPaths(resolve(baseDir)).recordsPath) {
+    throw new Error("candidate sizing input lease belongs to a different source path");
+  }
 }
 
 export function createCandidateSizingInputPaths(baseDir: string) {
@@ -50,10 +58,12 @@ export function createCandidateSizingInputPaths(baseDir: string) {
 
 /** Source-bound immutable records, not evaluated features, sizing, eligibility or current capacity allocation. */
 export class CandidateSizingInputFileRepository {
+  private readonly baseDir: string;
   private readonly paths: ReturnType<typeof createCandidateSizingInputPaths>;
   private readonly options: { lockTimeoutMs: number; lockRetryDelayMs: number };
-  constructor(private readonly baseDir: string, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
-    this.paths = createCandidateSizingInputPaths(baseDir);
+  constructor(baseDir: string, options: { lockTimeoutMs?: number; lockRetryDelayMs?: number } = {}) {
+    this.baseDir = resolve(baseDir);
+    this.paths = createCandidateSizingInputPaths(this.baseDir);
     this.options = { lockTimeoutMs: positiveInteger(options.lockTimeoutMs ?? 5000),
       lockRetryDelayMs: positiveInteger(options.lockRetryDelayMs ?? 10) };
   }
@@ -65,12 +75,30 @@ export class CandidateSizingInputFileRepository {
   /** Request -> snapshot -> sizing input. The second argument shares the existing request lease, without re-entering its lock. */
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory,
     snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
-    return this.withSources((requests, snapshots) => this.withLock(async () => {
+    return this.withSources((requests, snapshots) => this.withDurableVerifiedHistoryFromSources(requests, snapshots, operation));
+  }
+
+  /** Await inside the live request -> snapshot callbacks; only the input lock is acquired. */
+  async withDurableVerifiedHistoryFromSources<T>(requests: VerifiedBucketSelectionRequestHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory,
+    operation: (history: VerifiedCandidateSizingInputHistory, requests: VerifiedBucketSelectionRequestHistory,
+      snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
+    const verifySources = () => {
+      assertDurableBucketSelectionRequestSource(requests, this.baseDir);
+      assertDurablePortfolioSizingSnapshotSource(snapshots, this.baseDir);
+    };
+    verifySources();
+    return this.withLock(async () => {
+      verifySources();
       const { history, observedAt } = await this.readUnderLock(requests, snapshots);
-      observations.set(history, observedAt);
-      try { return await operation(history, requests, snapshots); }
+      verifySources();
+      if (Date.parse(observedAt) < Math.max(Date.parse(getDurableBucketSelectionRequestObservation(requests).observedAt),
+        Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt))) {
+        throw new Error("candidate sizing input shared source observation clock moved backwards");
+      }
+      observations.set(history, { observedAt, sourcePath: this.paths.recordsPath, verifySources });
+      try { const result = await operation(history, requests, snapshots); verifySources(); return result; }
       finally { observations.delete(history); }
-    }));
+    });
   }
 
   async append(value: unknown): Promise<VerifiedCandidateSizingInputOrigin> {

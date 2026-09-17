@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
@@ -30,6 +30,15 @@ export interface VerifiedBucketSelectionRequestHistory {
   readonly requests: readonly BucketSelectionRequest[];
 }
 const durableObservations = new WeakMap<VerifiedBucketSelectionRequestHistory, BucketSelectionRequestObservation>();
+const durableSourcePaths = new WeakMap<VerifiedBucketSelectionRequestHistory, string>();
+
+/** Reuse requires the live observation of the configured source, not identical foreign bytes. */
+export function assertDurableBucketSelectionRequestSource(history: VerifiedBucketSelectionRequestHistory, baseDir: string): void {
+  getDurableBucketSelectionRequestObservation(history);
+  if (durableSourcePaths.get(history) !== createBucketSelectionRequestPaths(resolve(baseDir)).recordsPath) {
+    throw new Error("bucket selection request lease belongs to a different source path");
+  }
+}
 
 /** Live source observation only, not trigger/policy/gap/capacity or candidate eligibility authority. */
 export function getDurableBucketSelectionRequestObservation(history: VerifiedBucketSelectionRequestHistory): BucketSelectionRequestObservation {
@@ -72,7 +81,7 @@ export class BucketSelectionRequestFileRepository {
     baseDir: string,
     options: BucketSelectionRequestFileRepositoryOptions = {}
   ) {
-    const paths = createBucketSelectionRequestPaths(baseDir);
+    const paths = createBucketSelectionRequestPaths(resolve(baseDir));
     this.recordsPath = paths.recordsPath;
     this.lockPath = paths.lockPath;
     this.lockTimeoutMs = positiveInteger(
@@ -96,10 +105,12 @@ export class BucketSelectionRequestFileRepository {
       const history = Object.freeze({ requests });
       durableObservations.set(history, Object.freeze({ requestCount: requests.length,
         requestsHash: hashCanonicalPayload(requests), observedAt }));
+      durableSourcePaths.set(history, this.recordsPath);
       try {
         return await operation(history);
       } finally {
         durableObservations.delete(history);
+        durableSourcePaths.delete(history);
       }
     });
   }

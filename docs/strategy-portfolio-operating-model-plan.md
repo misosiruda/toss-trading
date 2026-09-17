@@ -5144,6 +5144,31 @@ commit hash를 재대조하고, exact selected allocation·BUY sizing·현재 sn
 순서로 source 잠금을 commit까지 보유하고 callback 안에서 같은 저장소를 재진입하지 않는다.
 Durable observation은 repository 발급 객체의 callback lifetime에만 유효하며 복사본·종료된 lease는 거절한다.
 
+원본 공유 조회 분할은 sizing input, assignment, selector reservation 각각에
+`withDurableVerifiedHistoryFromSources`를 제공한다. 이미 보유한 request → snapshot → input →
+assignment를 재취득하지 않고 해당 단계의 destination lock만 취득한다. 기존 일반 조회도 이 경로를
+사용한다. Request repository는 생성 시 절대 경로를 고정하고 발급 history와 경로를 private WeakMap에
+연결하며, input/assignment 관측도 자신의 경로와 상위 원본 수명 검증 함수를 보존한다. 같은 bytes라도
+다른 디렉터리의 관측, 복사 객체 또는 종료된 관측은 거절한다. `.`/`..`만 정규화하고 다른 symlink나
+대소문자 alias를 같은 configured source로 추정하지 않는다.
+
+각 단계는 lock 대기 전후, 원본 파일 관측 뒤, consumer 정상 반환 전 및 observation getter에서
+상위 lease를 재검증한다. 상위 callback이 먼저 종료되면 아직 실행 중인 input/assignment/reservation의
+getter도 즉시 실패하며 최상위 원본 만료가 모든 하위 관측에 전파된다. 예약/결과 관측 시각이 어느
+상위 원본 관측보다 앞서면 fail-closed한다. Caller는 모든 원본 callback 안에서 후속 조회를 await하고
+기존 잠금 순서를 지켜야 한다. 이 API는 재진입 append나 write/할당 권한을 제공하지 않는다.
+
+테스트는 세 단계별 경로/clone/만료 경계, source·destination lock 유지, consumer/lock 대기/I/O 중 만료,
+시계 역행, fsync 실패, corrupt/torn/UTF-8/pending bytes 보존, 원본 만료의 다단계 전파 및 실제
+populated 전체 이력의 동일성을 확인한다. Public observation/entry/commit 형식과 기존 append/seal
+규칙은 유지한다. Current publisher, scheduler, 실제 shared allocator/소비/원자 commit 연결은 후속이며
+이 조회만으로 완료되지 않는다. 설정된 경로 결속은 비협조적인 OS writer를 차단하는 sandbox가 아니다.
+
+Migration은 없다. 상대 경로는 repository 생성 시 고정되므로 이후 process cwd가 바뀌어도 source가
+이동하지 않는다. 신규 API consumer보다 repository를 먼저 배포하고 rollback 시 consumer도 함께
+중지/되돌린다. Artifact는 보존한다. Rollback으로 경로·종속 lease 수명 검증이 사라지는 점과 기존
+일반 조회에 추가된 관측 시각 역행 거절을 고려해야 한다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
