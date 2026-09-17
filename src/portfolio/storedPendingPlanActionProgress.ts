@@ -24,15 +24,16 @@ export async function resolveStoredPendingPlanActionProgress(value: z.input<type
   return projectHistory(input, history, readStartedAt);
 }
 
-/** Keeps concrete event -> plan writer locks through consumption. Results escaping the callback are historical only.
+/** Keeps concrete event -> plan writer locks through consumption. The second argument is the complete actual held history,
+ * not the cutoff-filtered projection. Its lease is revoked on callback exit. Escaping results are historical only.
  * This is not reservation, fill/Risk, portfolio or current execution authority.
  */
 export async function withStoredPendingPlanActionProgress<T>(value: z.input<typeof inputSchema>,
-  operation: (result: ReturnType<typeof projectHistory>) => Promise<T>, options: RebalancePlanFileRepositoryOptions = {}): Promise<T> {
+  operation: (result: ReturnType<typeof projectHistory>, history: VerifiedRebalancePlanEventHistory) => Promise<T>, options: RebalancePlanFileRepositoryOptions = {}): Promise<T> {
   const { input, repository, readStartedAt } = captureRequest(value, options);
   return repository.withDurableVerifiedHistory(async (history) => {
     getHeldRebalancePlanEventObservation(history);
-    return operation(projectHistory(input, history, readStartedAt));
+    return operation(projectHistory(input, history, readStartedAt), history);
   });
 }
 

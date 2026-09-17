@@ -5196,7 +5196,7 @@ root도 검증한다. Capacity 관측은 fill 관측보다 앞설 수 없다. �
 fsync까지 유지하고 일반 append/current publisher의 비정책 경로는 바꾸지 않는다. 추가 관측 fsync는
 최종 저장 fsync와 구분하며 기존 최종 policy/dependency 잠금·오류 주입 검증을 유지한다.
 
-이 연결은 root 발행 출처와 bound mandate 내용을 확인한다. Pending BUY의 소비/잔여 금액, shared allocator,
+이 연결은 root 발행 출처와 bound mandate 내용을 확인하며 후속 소비 결속도 아래에 연결한다. Pending BUY의 잔여 금액, shared allocator,
 CAS, resulting accounting 및 실행 권한은 아직 연결 완료가 아니다. 기존에 원본 없는 root나 손상된
 미사용 원본 파일을 가진 호출도 이제 fail-closed할 수 있다. 저장 형식 migration은 없고 코드 rollback은
 가능하지만 root 검증 보장이 사라지므로 이 보장에 의존하는 consumer도 함께 되돌려야 한다.
@@ -5204,7 +5204,7 @@ CAS, resulting accounting 및 실행 권한은 아직 연결 완료가 아니다
 결과는 immutable 값이지 callback 밖에서 사용할 수 있는 새 lease나 실행 권한이 아니다. Caller는
 manual → request → snapshot → input → assignment → manual reservation → selector reservation →
 capacity 순서로 원본을 보유하는 조합 등을 사용하고 같은 저장소를 재진입하지 않는다.
-소비/잔여 금액, 실제 allocator/CAS/원자 commit은 여전히 후속이다.
+Root binder만으로 소비/잔여 금액이나 실제 allocator/CAS/원자 commit을 인증하지 않는다.
 Migration은 없고 rollback 시 신규 binder consumer도 함께 되돌린다. 테스트는 실제 두 종류의 원본,
 successor/restart, 경로/복사/만료, clock/lock 및 재해시한 잘못된 root claim과 bytes 보존을 확인한다.
 
@@ -5229,7 +5229,7 @@ Migration은 없고 신규 consumer보다 binder/repository를 먼저 배포한�
 increase/restart, 누락·hash·scope·lineage·시각 불일치를 임시 filesystem 테스트로 검증한다.
 
 Policy-bound current publisher는 보유한 request/input/assignment 관측을 private source 묶음에 포함하고
-최종 capacity 관측 안에서 `bindOpeningCapacityMandateOrigins`를 호출한다. 기존 root 검증은 이 함수
+최종 capacity 관측 안에서 소비 binder를 통해 `bindOpeningCapacityMandateOrigins`를 호출한다. 기존 root 검증도
 내부에 포함된다. 별도 repository 조회나 추가 lock 취득은 없으며 기존 mandate/정책/Risk/fill 검증을
 유지한다. 최초 append와 exact retry 모두 실제 bound mandate 내용을 재검증하고 원본 잠금을 최종
 destination fsync까지 보유한다. Pending BUY가 없어도 누락/손상/불일치한 bound mandate를 거절한다.
@@ -5241,7 +5241,7 @@ request/input/assignment/mandate lock 보유를 확인한다. 기존 root 테스
 Selector fixture의 예약 단계만 분리해 plan/Risk/fill이 없는 조합도 만들며 기존 실행 fixture는 유지한다.
 Schema migration은 없지만 과거에 허용되던 잘못된 bound 기록은 이제 발행을 막을 수 있다. Source
 integrity/lock 오류를 운영에서 확인하고 자동 복구하지 않는다. Rollback 시 이 내용 검증 보장이
-사라지므로 의존 consumer도 함께 되돌린다. 소비·잔액·allocator/원자 commit/accounting은 여전히 후속이다.
+사라지므로 의존 consumer도 함께 되돌린다. 잔액·allocator/원자 commit/accounting은 여전히 후속이다.
 
 실제 소비 원본 조합의 선행 단계로 plan/plan event/Risk/fill/price repository는 각각 active durable
 관측의 configured path를 private WeakMap에 결속한다. 새 source assertion은 관측 수명과 같은
@@ -5250,8 +5250,8 @@ baseDir의 source 경로를 검사하고 event assertion은 주입된 plan repos
 Public observation/record/entry/commit 형식은 불변이며 assertion 자체는 I/O나 잠금을 추가하지 않는다.
 
 상대 baseDir는 repository 생성 시 절대 경로로 고정한다. 이후 process cwd가 바뀌어도 실제 읽기와
-assertion 대상이 이동하지 않는다. 기존 consumer는 새로운 assertion을 아직 호출하지 않으며 실제
-capacity 소비 binder/current publisher 연결은 후속이다. 같은 source라는 확인은 Risk 정책·외부 가격
+assertion 대상이 이동하지 않는다. 실제 capacity 소비 binder와 current publisher가 아래의 조합에서
+이 assertion을 사용한다. 같은 source라는 확인은 Risk 정책·외부 가격
 trust·원자 회계·실행 권한을 부여하지 않는다. Migration 없이 consumer보다 repository를 먼저 배포하고,
 rollback 시 새 assertion에 의존하는 consumer도 함께 되돌린다. Journal bytes는 변환/삭제하지 않는다.
 회귀 테스트는 다섯 source의 empty/copied/foreign/expired/historical, consumer 실패, cwd 변경,
@@ -5261,7 +5261,7 @@ rollback 시 새 assertion에 의존하는 consumer도 함께 되돌린다. Jour
 portfolio 소비 event를 결속한다. 기존 root/mandate binder를 내부 호출해 수동·selector 발급 출처를
 재검증하고, plan event(주입된 plan 포함)·Risk·fill·price도 같은 baseDir의 live lease여야 한다.
 가격 → plan → mandate → Risk → fill → capacity 관측 시각의 역행을 거절한다. 별도 I/O나 잠금을
-취득하지 않으며 반환값은 새로운 lease가 아니다. 현재 snapshot 발행 경로 연결은 후속이다.
+취득하지 않으며 반환값은 새로운 lease가 아니다. 현재 snapshot 발행 경로는 아래처럼 연결한다.
 
 실제 plan replay의 실행과 선행 상태, fill의 저장된 Risk origin, 실제 가격 원본, BUY mandate 계보,
 bucket/policy/종목을 대조한다. 예약 감소량은 수수료를 포함한 net cash가 아닌 실제 filled gross와
@@ -5286,10 +5286,27 @@ historical API는 바꾸지 않는다. Prefix 해시의 기존 방식 동등성,
 
 이 결속은 release 원본, 결과 position/accounting, 실제 Risk 정책·규칙의 권위, 가격 trust/freshness,
 receipt 없는 Risk의 당시 mandate 가용성, 잔여 pending coverage, allocator/CAS/원자 commit을
-인증하지 않는다. 기존 historical 조회 API와 저장 형식은 불변이며 소비 binder만 추가한다.
+인증하지 않는다. 기존 historical 조회 API와 저장 형식은 불변이다.
 Migration 없이 후속 consumer보다 먼저 배포하고 rollback 시 해당 consumer도 함께 되돌린다.
 회귀 검증은 실제 수동·selector gross/partial/terminal 및 재조회, 잘못된 계보·상태·receipt·시각,
 누락/손상 원본 보존, 복사·다른 경로·만료된 lease, completion 경계와 실패 후 lock 해제를 다룬다.
+
+Policy-bound current publisher는 최종 capacity callback에서 `bindOpeningCapacityConsumptionOrigins`를
+호출한다. 이미 보유한 source 묶음과 actual plan event/plan·Risk·fill·price를 그대로 전달하며
+추가 read/fsync/lock 취득은 없다. `withStoredPendingPlanActionProgress`는 callback의 두 번째 인자로
+cutoff로 잘라내기 전 실제 전체 history를 제공한다. 기존 단일 인자 callback은 호환되고 반환 projection
+형식은 불변이며 실제 history lease는 callback 종료 시 폐기된다.
+
+최초 발행과 exact retry 모두 모든 actual 소비를 검증한 뒤 destination을 저장한다. Snapshot cutoff
+이후의 실제 실행도 전체 history로 결속하므로 cutoff-filtered pending projection으로 대체하지 않는다.
+Terminal/과거 policy의 소비도 검사한다. 잘못된 gross 차감이나 실제 실행 없는 소비는 source와
+destination/portfolio bytes를 보존한 채 거절한다. 원본 잠금은 최종 append/retry fsync까지 유지한다.
+통합 테스트는 수동·selector terminal 소비의 cutoff 전후 발행·retry, post-cutoff 잘못된 소비 거절,
+최종 plan/event/Risk/fill/price 잠금 및 callback history의 수명을 확인한다. 이는 결과 portfolio
+accounting의 정확성을 인증하는 테스트가 아니다. 기존 일반 append와 non-policy publisher는 불변이다.
+Schema migration은 없지만 기존 불일치 소비가 발행을 막을 수 있다. 자동 복구 없이 source 오류를
+확인해야 하며 rollback 시 의존 consumer도 함께 되돌린다. Pending 잔액 coverage·release 원본·
+allocator/CAS/원자 accounting·외부 trust·실행 권한은 여전히 후속이다.
 
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
