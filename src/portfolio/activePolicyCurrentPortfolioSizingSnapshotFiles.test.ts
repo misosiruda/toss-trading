@@ -13,6 +13,7 @@ import { createRuntimePortfolioPolicyActivationPaths, RuntimePortfolioPolicyActi
 import { createRuntimePortfolioPolicyPaths, RuntimePortfolioPolicyFileRepository } from "./runtimePortfolioPolicyFiles.js";
 import { createImmutablePolicyDependencyPaths } from "./runtimePolicyDependencyFiles.js";
 import { withDurablePolicyDependencies } from "./runtimePolicyDependencyGeneration.js";
+import { createOpeningCapacityReservationEventPaths } from "./openingCapacityReservationEventFiles.js";
 
 const START = "2026-09-01T00:00:00.000Z";
 const CUTOFF = "2026-09-02T00:00:00.000Z";
@@ -109,11 +110,13 @@ test("active-policy current sizing requires actual complete activation and depen
 
 test("active-policy current sizing holds portfolio, policy and activation locks through destination fsync and retry", async (context) => {
   await fixture(context, async ({ baseDir, request, records, activations, retirement, store, policy }) => {
-    const original = fs.open; let checked = 0;
+    const original = fs.open; let checked = 0, finalPhase = false;
     const policies = new RuntimePortfolioPolicyFileRepository(baseDir, policy.dependencies, options);
     const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      if (args[0] === createPortfolioSizingSnapshotPaths(baseDir).lockPath && args[1] === "wx") finalPhase = false;
       const handle = await original(...args);
-      if (args[0] === records && (args[1] === "a" || args[1] === "r+")) {
+      if (args[0] === createOpeningCapacityReservationEventPaths(baseDir).lockPath && args[1] === "wx") finalPhase = true;
+      if (args[0] === records && finalPhase && (args[1] === "a" || args[1] === "r+")) {
         const sync = handle.sync.bind(handle);
         context.mock.method(handle, "sync", async () => {
           await assert.rejects(activations.appendRetired(retirement), /lock/);
@@ -252,10 +255,11 @@ test("active-policy current sizing captures inputs and propagates exact-retry sy
       pending = publish(request); request.policyHash = `sha256:${"e".repeat(64)}`;
     });
     const snapshot = await pending, before = await fs.readFile(records);
-    const original = fs.open, failure = new Error("synthetic retry sync failure");
+    const original = fs.open, failure = new Error("synthetic retry sync failure"); let finalPhase = false;
     const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
       const handle = await original(...args);
-      if (args[0] === records && args[1] === "r+") context.mock.method(handle, "sync", async () => { throw failure; });
+      if (args[0] === createOpeningCapacityReservationEventPaths(request.baseDir).lockPath && args[1] === "wx") finalPhase = true;
+      if (args[0] === records && finalPhase && args[1] === "r+") context.mock.method(handle, "sync", async () => { throw failure; });
       return handle;
     });
     syncBuiltinESMExports();
@@ -289,10 +293,11 @@ test("active-policy current sizing detects dependency mutation during new and re
     await fixture(context, async ({ baseDir, request, records, store }) => {
       if (retry) await publish(request, options);
       const paths = createImmutablePolicyDependencyPaths(baseDir), path = paths.riskParameters;
-      const originalBytes = await fs.readFile(path), original = fs.open; let changed = false;
+      const originalBytes = await fs.readFile(path), original = fs.open; let changed = false, finalPhase = false;
       const mock = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
         const handle = await original(...args);
-        if (args[0] === records && args[1] === (retry ? "r+" : "a")) {
+        if (args[0] === createOpeningCapacityReservationEventPaths(baseDir).lockPath && args[1] === "wx") finalPhase = true;
+        if (args[0] === records && finalPhase && args[1] === (retry ? "r+" : "a")) {
           const sync = handle.sync.bind(handle);
           context.mock.method(handle, "sync", async () => {
             await sync(); changed = true;

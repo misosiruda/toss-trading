@@ -17,6 +17,12 @@ import { SourceFxEvidenceFileRepository, getDurableSourceFxEvidenceObservation,
   resolveVerifiedSourceFxEvidenceOrigin } from "./sourceFxEvidenceFiles.js";
 import { withStoredPendingPlanActionProgress } from "./storedPendingPlanActionProgress.js";
 import { bindSnapshotPendingPlanProgress } from "./snapshotPendingPlanBinding.js";
+import type { VerifiedManualAssignmentHistory } from "./manualAssignmentFiles.js";
+import type { VerifiedManualCapacityReservationHistory } from "./manualOpeningCapacityReservationFiles.js";
+import type { VerifiedSelectorCapacityReservationHistory } from "./selectorOpeningCapacityReservationFiles.js";
+
+type CapacityRootSources = { manual: VerifiedManualAssignmentHistory; manualReservations: VerifiedManualCapacityReservationHistory;
+  selectorReservations: VerifiedSelectorCapacityReservationHistory };
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -108,7 +114,10 @@ export class PortfolioSizingSnapshotFileRepository {
 
   /** Holds the source lock through the consumer; failure never promotes an unflushed generation. */
   async withDurableVerifiedHistory<T>(operation: (history: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
-    return this.withLock(async () => {
+    return this.withLock(() => this.withDurableHistoryUnderLock(operation));
+  }
+
+  private async withDurableHistoryUnderLock<T>(operation: (history: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
       const { snapshots, observedAt } = await readDurableBoundSnapshotSource(this.recordsPath);
       const history = Object.freeze({ snapshots });
       const observation = Object.freeze({
@@ -122,7 +131,6 @@ export class PortfolioSizingSnapshotFileRepository {
         durableSnapshotObservations.delete(history);
         durableSnapshotSourcePaths.delete(history);
       }
-    });
   }
 
   async resolveById(
@@ -143,22 +151,24 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.withLock(() => this.appendUnderLock(candidate));
   }
 
-  /** Concrete sources: price -> FX -> sizing -> event -> plan -> mandate -> policy -> activation -> Risk -> fill.
+  /** Concrete sources: price -> FX -> capacity sources (including sizing) -> event -> plan -> mandate -> policy -> activation -> Risk -> fill -> capacity.
    * New append and exact retry bind pending progress and persisted execution origins, including terminal plans.
-   * Rule authority, reservation/accounting authority, external trust and conversion lineage remain separate gates.
+   * Root issuance is bound; mandate/consumption/balance, allocation and accounting authority remain separate gates.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
     const [{ bindSnapshotPendingExecutionOrigins }, { PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
       { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation }, { bindSnapshotPendingMandateOrigins },
-      { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }] = await Promise.all([
+      { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }, { bindOpeningCapacityRootOrigins },
+      { OpeningCapacityReservationEventFileRepository, getDurableOpeningCapacityEventObservedAt }] = await Promise.all([
       import("./snapshotPendingExecutionBinding.js"), import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js"),
-      import("./snapshotPendingMandateBinding.js"), import("./investmentMandateFiles.js")
+      import("./snapshotPendingMandateBinding.js"), import("./investmentMandateFiles.js"), import("./openingCapacityRootBinding.js"),
+      import("./openingCapacityReservationEventFiles.js")
     ]);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
     return withStoredMarkPrices(baseDir, candidate, options, (prices) => withStoredFxRates(baseDir, candidate, options,
-      () => this.withLock(() => withStoredPendingPlanActionProgress({ baseDir, portfolioId: candidate.portfolioId, asOf: candidate.asOf }, async (progress) => {
+      () => this.withCapacityRootSources((sources) => withStoredPendingPlanActionProgress({ baseDir, portfolioId: candidate.portfolioId, asOf: candidate.asOf }, async (progress) => {
       const pendingBindings = bindSnapshotPendingPlanProgress(candidate, progress, prices);
       return new InvestmentMandateFileRepository(baseDir, options).withDurableVerifiedHistory(async (mandates) => {
       const mandateObservation = getDurableInvestmentMandateObservation(mandates);
@@ -189,10 +199,17 @@ export class PortfolioSizingSnapshotFileRepository {
                   Date.parse(fillOrigin.completion.completedAt) >= Date.parse(event.asOf))) {
                   throw new Error("sizing snapshot fill completion was unavailable before its execution event");
                 }
-                await verifyDependencies();
-                const snapshot = await this.appendUnderLock(candidate);
-                await verifyDependencies();
-                return snapshot;
+                return new OpeningCapacityReservationEventFileRepository(baseDir, options).withDurableVerifiedHistory(async (capacity) => {
+                  if (Date.parse(getDurableOpeningCapacityEventObservedAt(capacity)) < Date.parse(getHeldPaperFillExecutionObservation(fills).observedAt)) {
+                    throw new Error("sizing snapshot capacity observation clock moved backwards");
+                  }
+                  bindOpeningCapacityRootOrigins({ baseDir, portfolioId: candidate.portfolioId }, sources.manual,
+                    sources.manualReservations, sources.selectorReservations, capacity);
+                  await verifyDependencies();
+                  const snapshot = await this.appendUnderLock(candidate);
+                  await verifyDependencies();
+                  return snapshot;
+                });
               });
             });
           });
@@ -200,6 +217,27 @@ export class PortfolioSizingSnapshotFileRepository {
       });
       });
     }, options))));
+  }
+
+  /** Owns the destination lock once and shares only its pre-append history with dependent readers.
+   * This private lease cannot escape to a caller that could reuse a stale generation after append.
+   */
+  private async withCapacityRootSources<T>(operation: (sources: CapacityRootSources) => Promise<T>): Promise<T> {
+    const baseDir = dirname(this.recordsPath), options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
+    const [{ ManualAssignmentFileRepository }, { BucketSelectionRequestFileRepository }, { CandidateSizingInputFileRepository },
+      { CandidateAssignmentFileRepository }, { ManualOpeningCapacityReservationFileRepository },
+      { SelectorOpeningCapacityReservationFileRepository }] = await Promise.all([
+      import("./manualAssignmentFiles.js"), import("./bucketSelectionRequestFiles.js"), import("./candidateSizingInputFiles.js"),
+      import("./candidateAssignmentFiles.js"), import("./manualOpeningCapacityReservationFiles.js"), import("./selectorOpeningCapacityReservationFiles.js")
+    ]);
+    return new ManualAssignmentFileRepository(baseDir, options).withDurableVerifiedHistory((manual) =>
+      new BucketSelectionRequestFileRepository(baseDir, options).withDurableVerifiedHistory((requests) =>
+        this.withLock(() => this.withDurableHistoryUnderLock((snapshots) =>
+          new CandidateSizingInputFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(requests, snapshots, (inputs) =>
+            new CandidateAssignmentFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(inputs, requests, snapshots, (assignments) =>
+              new ManualOpeningCapacityReservationFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(manual, snapshots, (manualReservations) =>
+                new SelectorOpeningCapacityReservationFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(assignments, inputs, requests, snapshots,
+                  (selectorReservations) => operation({ manual, manualReservations, selectorReservations })))))))));
   }
 
   private async appendUnderLock(candidate: PortfolioSizingSnapshot): Promise<PortfolioSizingSnapshot> {

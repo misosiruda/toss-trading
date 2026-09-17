@@ -98,7 +98,8 @@ test("policy-bound current sizing holds price then FX before sizing and through 
     }); syncBuiltinESMExports();
     try { await publish(request, options); observePublisherFxLock = true; await publish(request, options); }
     finally { mock.mock.restore(); syncBuiltinESMExports(); }
-    assert.equal(orderChecks, 2); assert.equal(lockChecks, 2); assert.equal(syncChecks, 2);
+    // New append, retry's pre-append source observation, and final exact-retry sync.
+    assert.equal(orderChecks, 2); assert.equal(lockChecks, 2); assert.equal(syncChecks, 3);
     assert.deepEqual(await rates.append(fx), fx); assert.deepEqual(await prices.append(price), price);
   });
 });

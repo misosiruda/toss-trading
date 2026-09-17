@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
+import { createOpeningCapacityReservationEventPaths } from "./openingCapacityReservationEventFiles.js";
 import test from "node:test";
 import { appendPolicyBoundCurrentPortfolioSizingSnapshot as publish } from "./currentPortfolioSizingSnapshotFiles.js";
 import { fixture, request, event, options, T, at, H } from "./currentSizingPendingTestFixtures.js";
@@ -98,10 +99,11 @@ test("current sizing evaluates mandate lifecycle at snapshot cutoff even when th
 
 test("current sizing holds the mandate writer lock through destination append and exact retry", async (context) => {
   await fixture(context, "whole_buy", async (state) => {
-    const original = fs.open; let checks = 0, inspect = true;
+    const original = fs.open; let checks = 0, inspect = true, finalPhase = false;
     const hook = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
       const handle = await original(...args);
-      if (args[0] === state.records && ["a", "r+"].includes(String(args[1]))) {
+      if (args[0] === createOpeningCapacityReservationEventPaths(state.baseDir).lockPath && args[1] === "wx") finalPhase = true;
+      if (args[0] === state.records && finalPhase && ["a", "r+"].includes(String(args[1]))) {
         const sync = handle.sync.bind(handle);
         context.mock.method(handle, "sync", async () => {
           await sync(); if (!inspect) return; inspect = false; checks++;
@@ -111,7 +113,7 @@ test("current sizing holds the mandate writer lock through destination append an
       }
       return handle;
     }); syncBuiltinESMExports();
-    try { const first = await publish(request(state), options); inspect = true; assert.deepEqual(await publish(request(state), options), first); }
+    try { const first = await publish(request(state), options); inspect = true; finalPhase = false; assert.deepEqual(await publish(request(state), options), first); }
     finally { hook.mock.restore(); syncBuiltinESMExports(); }
     assert.equal(checks, 2);
     await state.mandates.appendRecord(state.mandate); await state.mandates.appendEvent(state.activation);

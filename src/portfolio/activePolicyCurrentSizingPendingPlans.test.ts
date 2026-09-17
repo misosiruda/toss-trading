@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
+import { createOpeningCapacityReservationEventPaths } from "./openingCapacityReservationEventFiles.js";
 import test from "node:test";
 import { FileVirtualPortfolioStore } from "../storage/virtualPortfolioFileStore.js";
 import { appendPolicyBoundCurrentPortfolioSizingSnapshot as publish,
@@ -76,10 +77,11 @@ test("policy-bound current sizing uses stored SELL revaluation and rejects missi
 
 test("policy-bound current sizing keeps plan and event writers excluded through append and retry fsync", async (context) => {
   await fixture(context, "whole_buy", async (state) => {
-    const original = fs.open; let checks = 0, inspect = true;
+    const original = fs.open; let checks = 0, inspect = true, finalPhase = false;
     const hook = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
       const handle = await original(...args);
-      if (args[0] === state.records && ["a", "r+"].includes(String(args[1]))) {
+      if (args[0] === createOpeningCapacityReservationEventPaths(state.baseDir).lockPath && args[1] === "wx") finalPhase = true;
+      if (args[0] === state.records && finalPhase && ["a", "r+"].includes(String(args[1]))) {
         const sync = handle.sync.bind(handle);
         context.mock.method(handle, "sync", async () => {
           await sync(); if (!inspect) return; inspect = false; checks++;
@@ -89,7 +91,7 @@ test("policy-bound current sizing keeps plan and event writers excluded through 
       }
       return handle;
     }); syncBuiltinESMExports();
-    try { const first = await publish(request(state), options); inspect = true; assert.deepEqual(await publish(request(state), options), first); }
+    try { const first = await publish(request(state), options); inspect = true; finalPhase = false; assert.deepEqual(await publish(request(state), options), first); }
     finally { hook.mock.restore(); syncBuiltinESMExports(); }
     assert.equal(checks, 2);
     await state.plans.append(state.plan);
