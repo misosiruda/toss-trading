@@ -5,7 +5,7 @@ import { createOpeningCapacityReservationEventPaths } from "./openingCapacityRes
 import test from "node:test";
 import { FileVirtualPortfolioStore } from "../storage/virtualPortfolioFileStore.js";
 import { appendPolicyBoundCurrentPortfolioSizingSnapshot as publish } from "./currentPortfolioSizingSnapshotFiles.js";
-import { fixture, request, event, options, T, at, H } from "./currentSizingPendingTestFixtures.js";
+import { fixture, request, event, options, T, at, H, readSnapshotBytes } from "./currentSizingPendingTestFixtures.js";
 import { createPaperFillExecutionPaths } from "./paperFillExecutionFiles.js";
 import { createPortfolioActionRiskDecisionPaths } from "./portfolioActionRiskDecisionFiles.js";
 import { createPortfolioExposureSnapshot } from "./portfolioExposureSnapshot.js";
@@ -21,14 +21,13 @@ test("current sizing requires a stored fill completion strictly before its execu
     assert.equal(completion.schemaVersion, "paper_fill_execution_completion.v1");
     for (const retry of [false, true]) {
       if (retry) await publish(request(state), options);
-      const before = retry ? await fs.readFile(state.records) : null;
+      const before = await readSnapshotBytes(state.records);
       for (const offset of [40, 41, 100]) {
         const payload = { ...completion, completedAt: at(offset) };
         const damaged = [...lines.slice(0, -1), { ...payload, completionHash: hashCanonicalPayload(payload) }].map((line) => JSON.stringify(line)).join("\n") + "\n";
         await fs.writeFile(path, damaged);
         await assert.rejects(publish(request(state), options), /fill completion was unavailable/);
-        if (before === null) await assert.rejects(fs.readFile(state.records), { code: "ENOENT" });
-        else assert.deepEqual(await fs.readFile(state.records), before);
+        assert.deepEqual(await readSnapshotBytes(state.records), before);
         assert.equal(await fs.readFile(path, "utf8"), damaged);
       }
       await fs.writeFile(path, original);
@@ -44,12 +43,11 @@ test("current sizing rejects missing or corrupt execution sources before append 
     const original = await fs.readFile(path);
     for (const retry of [false, true]) {
       if (retry) await publish(request(state), options);
-      const before = retry ? await fs.readFile(state.records) : null;
+      const before = await readSnapshotBytes(state.records);
       for (const damaged of [Buffer.from(""), Buffer.concat([original, Buffer.from("{\n")]), original.subarray(0, original.length - 1)]) {
         await fs.writeFile(path, damaged);
         await assert.rejects(publish(request(state), options));
-        if (before === null) await assert.rejects(fs.readFile(state.records), { code: "ENOENT" });
-        else assert.deepEqual(await fs.readFile(state.records), before);
+        assert.deepEqual(await readSnapshotBytes(state.records), before);
         assert.deepEqual(await fs.readFile(path), damaged);
       }
       await fs.writeFile(path, original);
@@ -61,7 +59,7 @@ test("current sizing rejects missing or corrupt execution sources before append 
 test("current sizing refuses fill records lacking persisted Risk origin", async (context) => {
   await fixture(context, "whole_buy", async (state) => {
     await assert.rejects(publish(request(state), options), /risk origin persisted with the fill/);
-    await assert.rejects(fs.readFile(state.records), { code: "ENOENT" });
+    assert.deepEqual(await readSnapshotBytes(state.records), state.initialSnapshotBytes);
   }, { unbound: true });
 });
 
@@ -71,7 +69,7 @@ test("current sizing checks actual execution Risk scope prior state cap and pred
     { approvedMaximumFillNotionalKrw: 101, cashAssessment: { side: "BUY" as const, worstCaseNetCashDebitKrw: 40, approvedMaximumNetCashDebitKrw: 101 } },
     { decidedAt: at(29) }, { decidedAt: at(30) }]) await fixture(context, "fractional_buy", async (state) => {
     await assert.rejects(publish(request(state), options), /scope mismatch|remaining buy target|pre-state mismatch|predates its stored plan predecessor/);
-    await assert.rejects(fs.readFile(state.records), { code: "ENOENT" });
+    assert.deepEqual(await readSnapshotBytes(state.records), state.initialSnapshotBytes);
   }, { risk });
 });
 
@@ -139,7 +137,7 @@ test("current sizing rejects backwards Risk or fill observation before destinati
     }); syncBuiltinESMExports();
     try { await assert.rejects(publish(request(state), options), /observation clock moved backwards/); }
     finally { hook.mock.restore(); syncBuiltinESMExports(); context.mock.timers.setTime(T + 100); }
-    await assert.rejects(fs.readFile(state.records), { code: "ENOENT" });
+    assert.deepEqual(await readSnapshotBytes(state.records), state.initialSnapshotBytes);
     await publish(request(state), options);
   });
 });
