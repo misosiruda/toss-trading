@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createFundamentalEvidenceRecord, parseFundamentalEvidenceRecord } from "./fundamentalEvidenceSource.js";
+import { FundamentalEvidenceFileRepository } from "./fundamentalEvidenceFiles.js";
+import fs from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const input = { sourceContractId: "credential-free-fundamental.v1" as const, issuerId: "issuer-a", symbol: "ABC", fiscalPeriod: "FY2025",
   observedAt: "2026-01-01T00:00:00.000Z", sourceUri: "https://example.test/abc/fy2025", sourceDocumentHash: `sha256:${"a".repeat(64)}`,
@@ -16,4 +20,13 @@ test("fundamental evidence rejects future observations, duplicate metrics and un
   const row = input.metrics[0]!;
   assert.throws(() => createFundamentalEvidenceRecord({ ...input, metrics: [row, row], createdAt: "2026-01-02T00:00:00.000Z" }), /duplicate/);
   assert.throws(() => createFundamentalEvidenceRecord({ ...input, quality: "unavailable", createdAt: "2026-01-02T00:00:00.000Z" }), /unavailable/);
+});
+test("fundamental evidence repository persists exact retries and replays the journal", async () => {
+  const dir = await fs.mkdtemp(join(tmpdir(), "fundamental-evidence-"));
+  try {
+    const repo = new FundamentalEvidenceFileRepository(dir);
+    const record = await repo.append({ ...input, createdAt: "2026-01-02T00:00:00.000Z" });
+    assert.deepEqual(await repo.append({ ...input, createdAt: "2026-01-02T00:00:00.000Z" }), record);
+    assert.deepEqual(await new FundamentalEvidenceFileRepository(dir).readAll(), [record]);
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
