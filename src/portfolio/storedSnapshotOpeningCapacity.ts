@@ -5,10 +5,11 @@ import { type OpeningCapacityReservationEvent } from "./openingCapacityReservati
 import { OpeningCapacityReservationEventFileRepository, getDurableOpeningCapacityEventObservedAt,
   resolveStoredOpeningCapacityEventOrigin } from "./openingCapacityReservationEventFiles.js";
 import { portfolioSizingSnapshotSchema } from "./portfolioSizingSnapshot.js";
-import { hashCanonicalPayload, type StrategyBucket } from "./runtimePolicyContracts.js";
+import { hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { resolveActiveRuntimePortfolioPolicyAsOf } from "./runtimePortfolioPolicyActivation.js";
 import { readStoredRuntimePortfolioPolicyActivationSnapshot } from "./runtimePortfolioPolicyActivationFiles.js";
 import { resolveStoredSnapshotPendingReservationOrigins } from "./storedSnapshotPendingReservationOrigins.js";
+import { projectSnapshotOpeningOccupancy } from "./snapshotOpeningCapacityProjection.js";
 
 const inputSchema = z.object({ baseDir: z.string().min(1),
   portfolioSnapshotId: portfolioSizingSnapshotSchema.shape.portfolioSnapshotId }).strict();
@@ -34,13 +35,6 @@ export async function resolveStoredSnapshotOpeningCapacity(value: z.input<typeof
   if (activePolicy.policy.strategyBuckets.some((bucket) => bucket.openingCapacityPolicy === undefined)) {
     throw new Error("snapshot opening capacity requires explicit policy limits for every bucket");
   }
-  const positions = new Map<string, StrategyBucket>();
-  for (const position of snapshot.virtualPortfolio.positions) {
-    if (!position.strategyBucket) throw new Error("snapshot opening capacity contains unassigned holdings");
-    const key = instrumentKey(position);
-    if (positions.has(key)) throw new Error("snapshot opening capacity repeats a held instrument across buckets");
-    positions.set(key, position.strategyBucket);
-  }
   const roots = new Map(sources.manual.fills.mandates.manualRoots.bindings.map((binding) => [reservationKey(binding.event), {
     instrument: instrumentKey(binding.manualAssignmentEvent),
     slotOrdinal: binding.reservation.reservationKind === "new_position" ? binding.reservation.reservedSlotOrdinal : null
@@ -63,8 +57,7 @@ export async function resolveStoredSnapshotOpeningCapacity(value: z.input<typeof
     if (Date.parse(observedAt) < Date.parse(sources.assessment.eventObservedAt) || Date.now() < Date.parse(observedAt)) {
       throw new Error("snapshot opening capacity observation clock moved backwards");
     }
-    const cutoff = Date.parse(snapshot.asOf), heads = new Map<string, OpeningCapacityReservationEvent>();
-    const policyVersions = new Map<StrategyBucket, number>(), policyLastReservations = new Map<StrategyBucket, string>();
+    const cutoff = Date.parse(snapshot.asOf), selectedEvents: OpeningCapacityReservationEvent[] = [];
     const unverified = new Set(sources.assessment.unverifiedCapacityEventIds);
     for (const event of history.events) {
       if (event.portfolioId !== snapshot.portfolioId) continue;
@@ -74,50 +67,17 @@ export async function resolveStoredSnapshotOpeningCapacity(value: z.input<typeof
       if (unverified.has(event.capacityReservationEventId) && !(event.eventType === "reserved" && roots.has(reservationKey(event)))) {
         throw new Error("snapshot opening capacity event lacks a verified source");
       }
-      heads.set(reservationKey(event), event);
-      if (event.policyHash === activePolicy.policy.policyHash) {
-        policyVersions.set(event.bucket, event.capacityLedgerVersion);
-        if (event.eventType === "reserved") policyLastReservations.set(event.bucket, event.reservationId);
-      }
+      selectedEvents.push(event);
     }
-    const buckets = activePolicy.policy.strategyBuckets.map((policy) => ({ bucket: policy.bucket,
-      capacityLedgerVersion: policyVersions.get(policy.bucket) ?? 0,
-      ...(policyLastReservations.has(policy.bucket) ? { lastReservationRecordId: policyLastReservations.get(policy.bucket)! } : {}),
-      maximumPositionCount: policy.openingCapacityPolicy!.maximumPositionCount,
-      activePositionCount: [...positions.values()].filter((bucket) => bucket === policy.bucket).length,
-      pendingReservationCount: 0, mandateBoundUnusedSlotCount: 0, reserved: 0n, pending: 0n }));
-    const slots = new Set<string>(), reservedInstruments = new Set<string>();
-    for (const [key, head] of heads) {
-      const root = roots.get(key);
-      if (!root) throw new Error("snapshot opening capacity root is missing from actual sources");
-      const bucket = buckets.find((item) => item.bucket === head.bucket)!;
-      bucket.reserved += BigInt(head.remainingReservedNotionalKrw);
-      bucket.pending += pendingByReservation.get(key) ?? 0n;
-      if (!head.occupiesNewPositionSlot) continue;
-      const slot = JSON.stringify([head.policyHash, head.bucket, root.slotOrdinal]);
-      if (root.slotOrdinal === null || slots.has(slot)) throw new Error("snapshot opening capacity repeats an occupied slot ordinal");
-      slots.add(slot);
-      if (positions.has(root.instrument) || reservedInstruments.has(root.instrument)) throw new Error("snapshot opening capacity repeats a new-position instrument");
-      reservedInstruments.add(root.instrument);
-      // An order consumes its existing reservation, not a second slot or a second notional reserve.
-      if (head.eventType === "reserved" || pendingByReservation.has(key)) bucket.pendingReservationCount += 1;
-      else bucket.mandateBoundUnusedSlotCount += 1;
-    }
-    const capacities = Object.freeze(buckets.map(({ reserved, pending, ...bucket }) => {
-      if (reserved > BigInt(Number.MAX_SAFE_INTEGER) || pending > reserved) throw new Error("snapshot opening capacity reserved totals are unsafe");
-      return Object.freeze({ ...bucket, availableSlots: Math.max(0, bucket.maximumPositionCount - bucket.activePositionCount -
-        bucket.pendingReservationCount - bucket.mandateBoundUnusedSlotCount), reservedOpeningNotionalKrw: Number(reserved),
-        pendingBuyNotionalKrw: Number(pending), unsubmittedReservedNotionalKrw: Number(reserved - pending) });
-    }));
-    const totalReserved = capacities.reduce((sum, bucket) => sum + BigInt(bucket.reservedOpeningNotionalKrw), 0n);
-    if (totalReserved > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("snapshot opening capacity portfolio reserved total is unsafe");
+    const { capacities, totalReservedOpeningNotionalKrw } = projectSnapshotOpeningOccupancy(snapshot, activePolicy.policy,
+      roots, selectedEvents, pendingByReservation);
     const assessment = Object.freeze({ verificationScope: "stored_snapshot_opening_occupancy_only" as const,
       portfolioSnapshotId: snapshot.portfolioSnapshotId, portfolioSnapshotHash: snapshot.portfolioSnapshotHash, policyHash: snapshot.policyHash,
       asOf: snapshot.asOf, policyGenerationHash, sourceAssessmentHash: sources.assessmentHash,
       eventGenerationHash: history.generationHash, observedAt, capacitiesHash: hashCanonicalPayload(capacities),
       accountingAndResultingStateAuthority: "not_verified" as const, currentLedgerAndCasAuthority: "not_verified" as const,
       historicalDiskAvailability: "not_proven" as const, currentExecutionAuthority: "not_granted" as const });
-    return Object.freeze({ activePolicy, sources, capacities, totalReservedOpeningNotionalKrw: Number(totalReserved),
+    return Object.freeze({ activePolicy, sources, capacities, totalReservedOpeningNotionalKrw,
       assessment, assessmentHash: hashCanonicalPayload(assessment) });
   });
   // Cover policy changes at either side of the final event observation without nesting policy locks inside the event lease.

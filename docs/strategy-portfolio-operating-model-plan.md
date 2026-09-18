@@ -5403,6 +5403,30 @@ bytes를 보존한다. 공유 예약 합계가 잔액과 같으면 허용하고 
 발행을 막을 수 있으므로 해당 원본 오류를 확인해야 한다. Rollback은 이 연결과 후속 consumer를
 함께 되돌리며 journal 삭제·변환을 포함하지 않는다. 일반 append/non-policy publisher는 불변이다.
 
+`bindHeldSnapshotOpeningCapacity`는 실제 보유 reservation/pending 원본으로 supplied policy의 bucket별
+슬롯 점유와 gross 예약 합계를 재계산한다. 정책 내용은 독립 rehash하고 portfolio/hash/생성 시각이
+snapshot과 일치하는지 확인하지만 실제 활성 정책임을 인증하지 않는다. `policyActivationAuthority`와
+`actualPortfolioAndValuationAuthority`는 `not_verified`, 실행 권한은 `not_granted`다. 현재 publisher나
+capacity document CAS에 연결하지 않으며 별도 I/O·lock·write·lease를 만들지 않는다.
+
+내부에서 held pending binder를 실행하므로 root/mandate/소비/종료와 pending 집합·잔액 원본을 caller가
+검증 완료 목록으로 대신 전달할 수 없다. 실제 commit이 cutoff보다 앞선 event prefix만 점유 계산에
+사용하며 나중 이력의 무결성도 선행 binder에서 검사한다. 모든 bucket의 명시적 opening capacity
+policy를 요구하고 legacy 한도는 합성하지 않는다. 과거 policy의 남은 예약도 현재 점유에 포함하지만
+ledger version/last reservation은 전달한 policy의 event epoch만 반영한다.
+
+`projectSnapshotOpeningOccupancy`는 역사적 resolver와 held binder가 공유하는 동기식 산술 함수다.
+원본 인증·재해시·cutoff 선택·pending coverage는 각 caller가 먼저 수행해야 하며 이 함수 자체는
+검증 증거/할당 권한이 아니다. 보유 종목, 미제출 bound 슬롯과 pending 예약을 구분하고 pending은
+기존 예약의 슬롯/금액에 한 번만 포함한다. 미분류/중복 보유분·중복 슬롯/신규 종목·unsafe 합계를
+거절하며 과점유 슬롯은 0으로 자른다. 기존 historical generation 재확인과 assessment 형식은 유지한다.
+
+실제 filesystem 테스트는 수동/selector의 0~3회 체결과 과거 cutoff를 기존 historical 결과와 대조하고
+복사/다른 경로/만료된 source, hash/정책 한도/시각 오류, 비활성 supplied policy의 비권한 경계,
+중복 슬롯/종목, increase 예약·과점유, 손상 bytes 보존·시계 역행·consumer 실패 후 lock 해제를 확인한다.
+정책 활성화·실제 portfolio 회계·현재 공유 allocator/CAS·외부 가격 trust는 별도다. 저장 형식 변경이나
+migration은 없으며 rollback은 새 consumer와 함께 수행하고 기존 journal을 변환·삭제하지 않는다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
