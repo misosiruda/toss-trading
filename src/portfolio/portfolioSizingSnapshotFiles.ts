@@ -167,9 +167,21 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.appendForActivePolicySources(value, true);
   }
 
+  /** Runs a trusted internal consumer before releasing source locks. Snapshot publication is already durable;
+   * consumer failure is propagated but cannot roll back that snapshot or arbitrary consumer writes.
+   */
+  async withPublishedOpeningBudgetForActivePolicy<T>(value: unknown,
+    operation: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>): Promise<T> {
+    if (typeof operation !== "function") throw new Error("opening budget consumer must be a function");
+    return this.appendForActivePolicySources(value, true, operation);
+  }
+
   private appendForActivePolicySources(value: unknown, openingBudgetRequired: false): Promise<PortfolioSizingSnapshot>;
   private appendForActivePolicySources(value: unknown, openingBudgetRequired: true): Promise<OpeningBudgetBoundSizingPublication>;
-  private async appendForActivePolicySources(value: unknown, openingBudgetRequired: boolean): Promise<PortfolioSizingSnapshot | OpeningBudgetBoundSizingPublication> {
+  private appendForActivePolicySources<T>(value: unknown, openingBudgetRequired: true,
+    operation: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>): Promise<T>;
+  private async appendForActivePolicySources<T>(value: unknown, openingBudgetRequired: boolean,
+    operation?: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>): Promise<PortfolioSizingSnapshot | OpeningBudgetBoundSizingPublication | T> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
     const [{ PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
@@ -221,7 +233,12 @@ export class PortfolioSizingSnapshotFileRepository {
                   await verifyDependencies();
                   const snapshot = await this.appendUnderLock(candidate);
                   await verifyDependencies();
-                  return openingBudget === null ? snapshot : Object.freeze({ snapshot, openingBudget });
+                  if (openingBudget === null) return snapshot;
+                  const publication = Object.freeze({ snapshot, openingBudget });
+                  if (!operation) return publication;
+                  const result = await operation(publication);
+                  await verifyDependencies();
+                  return result;
                 });
               });
             });
