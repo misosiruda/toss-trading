@@ -11,23 +11,24 @@ import { assertHeldPaperFillExecutionSource, getHeldPaperFillExecutionObservatio
 const querySchema = portfolioSizingSnapshotSchema.pick({ portfolioId: true, asOf: true }).extend({ baseDir: z.string().min(1) }).strict();
 type Sources = { events: VerifiedOpeningCapacityEventHistory; planEvents: VerifiedRebalancePlanEventHistory; fills: VerifiedPaperFillExecutionHistory };
 
-/** Rejects a cutoff that excludes any observed portfolio plan, plan event, fill/completion or capacity commit.
- * Actual source identity/path/lifetime is mandatory. No I/O, new lease, economic reconciliation, freshness or allocation authority.
- * Origin binding remains the publisher's separate prerequisite; a timestamp check never authenticates business claims.
+/** Checks recorded-time coverage of the complete source generation that is durably observed NOW under writer locks.
+ * Marker timestamps can precede marker fsync. Passing NEVER proves durable availability at the historical cutoff.
+ * Actual source identity/path/lifetime is mandatory. No I/O, new lease, reconciliation, freshness or allocation authority.
+ * Business origin binding and any historical availability proof remain separate prerequisites.
  */
-export function assertHeldCurrentOpeningProjectionFrontier(value: z.input<typeof querySchema>, sources: Sources): void {
+export function assertHeldOpeningRecordedTimeCoverage(value: z.input<typeof querySchema>, sources: Sources): void {
   const input = querySchema.parse(value);
-  if (!isDeepStrictEqual(input, value)) throw new Error("current opening frontier input must already be canonical");
+  if (!isDeepStrictEqual(input, value)) throw new Error("opening recorded-time coverage input must already be canonical");
   assertDurableOpeningCapacityEventSource(sources.events, input.baseDir);
   assertHeldRebalancePlanEventSource(sources.planEvents, input.baseDir);
   assertHeldPaperFillExecutionSource(sources.fills, input.baseDir);
   const observed = [getHeldRebalancePlanEventObservation(sources.planEvents).observedAt,
     getHeldPaperFillExecutionObservation(sources.fills).observedAt, getDurableOpeningCapacityEventObservedAt(sources.events)].map(Date.parse);
   const cutoff = Date.parse(input.asOf), latestObservation = Math.max(...observed);
-  if (Date.now() < latestObservation) throw new Error("current opening frontier observation clock moved backwards");
-  if (cutoff > latestObservation) throw new Error("current opening frontier cutoff follows source observation");
+  if (Date.now() < latestObservation) throw new Error("opening recorded-time coverage observation clock moved backwards");
+  if (cutoff > latestObservation) throw new Error("opening recorded-time coverage cutoff follows source observation");
   const requireBefore = (time: string, source: string) => {
-    if (Date.parse(time) >= cutoff) throw new Error(`current opening frontier excludes or coincides with ${source}`);
+    if (Date.parse(time) >= cutoff) throw new Error(`opening recorded-time coverage excludes or coincides with ${source}`);
   };
   for (const origin of resolveHeldRebalancePlanOrigins(sources.planEvents, input.baseDir)) {
     if (origin.record.portfolioId === input.portfolioId) requireBefore(origin.appendedAt, "plan commit");

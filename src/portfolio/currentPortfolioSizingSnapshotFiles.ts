@@ -55,7 +55,8 @@ export async function appendOpeningBudgetBoundCurrentPortfolioSizingSnapshot(val
   return publish(value, options, "opening-budget");
 }
 
-/** Internal composition boundary. All observed portfolio plan/fill/capacity commits must strictly precede the cutoff.
+/** Internal composition boundary. All observed portfolio plan/fill/capacity RECORDED times must precede the cutoff.
+ * This is coverage of the generation observed now, NEVER proof of durable availability at the historical cutoff.
  * The callback runs after durable snapshot publication, with portfolio and all source locks held.
  * Never call a source-lock-taking repository inside it. Consumer writes are not atomically rolled back on failure.
  * Captured publication contents remain readable after exit, but their held identity is revoked in finally.
@@ -65,7 +66,7 @@ export async function withPublishedCurrentOpeningBudget<T>(value: z.input<typeof
   options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}): Promise<T> {
   if (typeof operation !== "function") throw new Error("current opening budget consumer must be a function");
   return withCurrentPortfolio(value, options, (snapshot, repository, paths) =>
-    repository.withPublishedOpeningBudgetAtCurrentFrontier(snapshot, async (publication) => {
+    repository.withPublishedOpeningBudgetForRecordedTimeCoverage(snapshot, async (publication) => {
       const observedAt = Date.parse(publication.openingBudget.occupancy.assessment.observedAt);
       heldPublications.set(publication, Object.freeze({ ...paths, observedAt }));
       try {

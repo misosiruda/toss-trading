@@ -5466,7 +5466,7 @@ migration은 없다. Rollback은 새 진입점 consumer와 함께 수행하며 �
 않는다. 공용 allocator/CAS와 전체 회계 원자성은 여전히 후속이고 최종 수용 기준은 완료로 표시하지 않는다.
 
 `withPublishedCurrentOpeningBudget`는 동일 발행 경로의 source 잠금을 후속 내부 callback 종료까지
-유지한다. Repository의 current-frontier 경로는 아래 저장 시점 검사 뒤 snapshot append/retry fsync와
+유지한다. Repository의 recorded-time coverage 경로는 아래 기록 시각 검사 뒤 snapshot append/retry fsync와
 dependency 확인을 거쳐 callback을 실행하고 정상 반환 후 dependency를 다시 확인한다. Actual portfolio
 잠금은 current wrapper가 계속 소유한다. 기존 append API의 반환과 저장 형식은 불변이다.
 
@@ -5475,7 +5475,7 @@ dependency 확인을 거쳐 callback을 실행하고 정상 반환 후 dependenc
 일반 append 반환값과 callback 정상/예외 종료 후 값은 거절한다. Scope는 finally에서 폐기하며
 새 callback 중에도 이전 객체가 다시 유효해지지 않는다. 원본 내용은 이후 읽을 수 있지만 scope
 검사를 통과하지 못하므로 후속 현재 상태 저장의 보유 증거로 사용할 수 없다. Scope identity 검사
-자체는 cutoff 완전성 검사가 아니다. Current publisher는 아래 plan/fill/capacity 저장 frontier를
+자체는 cutoff 완전성 검사가 아니다. Current publisher는 아래 plan/fill/capacity 기록 시각 coverage를
 별도로 검사하며 정책/증거 freshness와 현재 할당 가능성은 후속 consumer의 별도 gate다.
 
 이는 trusted internal composition 경계이며 source lock을 다시 취득하는 repository를 callback
@@ -5514,10 +5514,10 @@ projection이며 source 변경이 없는 최신 할당 승인이 아니다. Read
 발급하지 않는다. Allocation/최신성 gate/전체 회계 원자성은 후속이다. Migration은 없고 새 consumer와
 함께 코드 rollback하며 정상 기존 schema 문서는 historical reader로 계속 확인할 수 있다.
 
-현재 callback 발행은 `withPublishedOpeningBudgetAtCurrentFrontier`를 거쳐 snapshot 저장/exact retry
-전에 `assertHeldCurrentOpeningProjectionFrontier`를 실행한다. 대상 portfolio의 실제 plan 전체
-(event 없는 plan 포함), plan event, paper fill/완료 marker, capacity event의 저장 시각이 cutoff보다
-엄격히 앞서야 한다. Record 자체가 과거 createdAt을 담아도 실제 commit이 cutoff 이후이면 거절한다.
+현재 callback 발행은 `withPublishedOpeningBudgetForRecordedTimeCoverage`를 거쳐 snapshot 저장/exact retry
+전에 `assertHeldOpeningRecordedTimeCoverage`를 실행한다. 대상 portfolio의 실제 plan 전체
+(event 없는 plan 포함), plan event, paper fill/완료 marker, capacity event에 기록된 시각이 cutoff보다
+엄격히 앞서야 한다. Record 자체가 과거 createdAt을 담아도 marker 시각이 cutoff 이후이면 거절한다.
 같은 millisecond는 선후관계가 모호하므로 거절한다. 다른 portfolio의 정상 이력은 이 cutoff 검사에서
 제외하지만 전체 journal 구조 검증은 기존 저장소가 먼저 수행한다. Empty source도 실제 경로·callback
 수명 확인을 생략하지 않으며 copied/foreign/expired source와 관측 시계 역행은 거절한다.
@@ -5528,13 +5528,21 @@ snapshot/document write 전에 거절한다. 새 cutoff로 재평가하고 정�
 Detached `appendOpeningBudgetBoundCurrentPortfolioSizingSnapshot` 및 일반 historical reader/refresh와
 `withPublishedOpeningBudgetForActivePolicy`는 과거 cutoff 재생 의미를 유지한다.
 
-검사 범위는 위 projection journal의 저장 frontier이며 모든 business source의 freshness나 실제
-portfolio 회계 반영을 증명하지 않는다. Fill이 cutoff보다 앞서 있다는 사실만으로 portfolio 반영,
+검사 범위는 지금 잠금 아래 durable하게 관측한 전체 journal의 **기록 시각 coverage**다. Marker의
+`committedAt`은 해당 marker fsync 전에, fill의 `completedAt`은 completion line fsync 전에 정해질 수
+있으므로 이 값으로 **과거 cutoff의 durable availability를 인증하지 않는다**. Marker fsync가 cutoff를
+넘어도 기록 자체는 현재 관측한 generation에 포함돼 계산 대상이며, 결과의 `historicalDiskAvailability`
+값은 계속 `not_proven`이다. 과거 가용성 인증이 필요한 consumer는 별도의 post-fsync availability
+receipt 계약이 없으면 승인하면 안 된다. 이 PR은 그러한 receipt나 historical approval을 발급하지 않는다.
+
+모든 business source의 freshness나 실제 portfolio 회계 반영도 증명하지 않는다. Fill의 기록 시각이
+cutoff보다 앞서 있다는 사실만으로 portfolio 반영,
 capacity consumption 또는 mandate/selection eligibility가 완료됐다고 판단하면 안 된다. 활성 정책,
 root/mandate/consumption/pending 결속은 기존 publisher가 별도로 계속 검증하며, selection evidence
 freshness·allocator·원자 회계·실행 승인은 후속이다. Persistent schema는 변경하지 않고 consumer와
 함께 코드 rollback한다. Actual journal 경계·orphan fill·독립 completion marker·event 없는 plan 및
-현재 발행/문서 retry의 bytes 보존을 테스트하며 최종 수용 기준 완료를 주장하지 않는다.
+현재 발행/문서 retry의 bytes 보존을 테스트한다. 실제 marker fsync를 cutoff 뒤로 지연하는 테스트도
+historical availability가 `not_proven`으로 남음을 확인하며 최종 수용 기준 완료를 주장하지 않는다.
 
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는

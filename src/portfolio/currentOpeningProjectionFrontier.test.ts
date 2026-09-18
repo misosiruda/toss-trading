@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { assertHeldCurrentOpeningProjectionFrontier as check } from "./currentOpeningProjectionFrontier.js";
+import { assertHeldOpeningRecordedTimeCoverage as check } from "./currentOpeningProjectionFrontier.js";
 import { RebalancePlanEventFileRepository, createRebalancePlanEventPaths } from "./rebalancePlanEventFiles.js";
 import { RebalancePlanFileRepository } from "./rebalancePlanFiles.js";
 import { PaperFillExecutionFileRepository, createPaperFillExecutionPaths } from "./paperFillExecutionFiles.js";
