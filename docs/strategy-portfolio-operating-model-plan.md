@@ -5585,6 +5585,11 @@ callback이 먼저 반환해도 시작한 write가 끝나기 전에는 lock을 �
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
 Torn line, hash/chain/receipt mismatch, duplicate issuance, 손상 suffix와 관측 중 파일 변경은 fail-closed다.
+
+Selector reservation repository도 실제 request/snapshot/sizing/assignment source lease를 재사용하는
+내부 append session을 제공할 수 있다. 이 session은 reservation lock을 재진입하지 않고 generation과
+source lease를 append 경계마다 재검증한다. 이는 selector issuance의 allocator 적법성이나 mandate/event
+원자 발행 권한을 부여하지 않으며, publisher composition 연결은 별도 단계다.
 Journal bytes는 UTF-8 decode/encode 왕복이 정확히 일치해야 하며 malformed byte의 대체 문자 변환으로
 JSON/hash가 우연히 같아지는 경우도 거절한다. 올바르게 인코딩된 U+FFFD 식별자는 계속 허용한다.
 Pending barrier는 entry/marker 중단 시 남겨 자동 재시도나 읽기가 불완전한 기록을 성공으로 간주하지 않게 한다.
