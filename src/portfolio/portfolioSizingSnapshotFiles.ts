@@ -23,6 +23,8 @@ import type { bindHeldSnapshotOpeningBudget } from "./heldSnapshotOpeningBudget.
 type CapacityRootSources = Omit<OpeningCapacityMandateSources, "mandates" | "events">;
 export type OpeningBudgetBoundSizingPublication = Readonly<{ snapshot: PortfolioSizingSnapshot;
   openingBudget: ReturnType<typeof bindHeldSnapshotOpeningBudget> }>;
+type OpeningBudgetConsumer<T> = (publication: OpeningBudgetBoundSizingPublication,
+  snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>;
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -167,11 +169,12 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.appendForActivePolicySources(value, true);
   }
 
-  /** Runs a trusted internal consumer before releasing source locks. Snapshot publication is already durable;
+  /** Runs a trusted internal consumer with the actual post-publication snapshot source, without reacquiring its lock.
+   * Snapshot publication is already durable;
    * consumer failure is propagated but cannot roll back that snapshot or arbitrary consumer writes.
    */
   async withPublishedOpeningBudgetForActivePolicy<T>(value: unknown,
-    operation: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>): Promise<T> {
+    operation: OpeningBudgetConsumer<T>): Promise<T> {
     if (typeof operation !== "function") throw new Error("opening budget consumer must be a function");
     return this.appendForActivePolicySources(value, true, operation);
   }
@@ -180,7 +183,7 @@ export class PortfolioSizingSnapshotFileRepository {
    * Marker times precede their fsync: this NEVER proves durable availability at cutoff, reconciliation or allocation approval.
    */
   async withPublishedOpeningBudgetForRecordedTimeCoverage<T>(value: unknown,
-    operation: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>): Promise<T> {
+    operation: OpeningBudgetConsumer<T>): Promise<T> {
     if (typeof operation !== "function") throw new Error("opening budget consumer must be a function");
     return this.appendForActivePolicySources(value, true, operation, true);
   }
@@ -188,9 +191,9 @@ export class PortfolioSizingSnapshotFileRepository {
   private appendForActivePolicySources(value: unknown, openingBudgetRequired: false): Promise<PortfolioSizingSnapshot>;
   private appendForActivePolicySources(value: unknown, openingBudgetRequired: true): Promise<OpeningBudgetBoundSizingPublication>;
   private appendForActivePolicySources<T>(value: unknown, openingBudgetRequired: true,
-    operation: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>, recordedTimeCoverageRequired?: boolean): Promise<T>;
+    operation: OpeningBudgetConsumer<T>, recordedTimeCoverageRequired?: boolean): Promise<T>;
   private async appendForActivePolicySources<T>(value: unknown, openingBudgetRequired: boolean,
-    operation?: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>, recordedTimeCoverageRequired = false): Promise<PortfolioSizingSnapshot | OpeningBudgetBoundSizingPublication | T> {
+    operation?: OpeningBudgetConsumer<T>, recordedTimeCoverageRequired = false): Promise<PortfolioSizingSnapshot | OpeningBudgetBoundSizingPublication | T> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
     const [{ PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
@@ -205,7 +208,7 @@ export class PortfolioSizingSnapshotFileRepository {
     ]);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
     return withStoredMarkPrices(baseDir, candidate, options, (prices) => withStoredFxRates(baseDir, candidate, options,
-      () => this.withCapacityRootSources((sources) => withStoredPendingPlanActionHistory({ baseDir, portfolioId: candidate.portfolioId, asOf: candidate.asOf }, async (planEvents) => {
+      () => this.withCapacityRootSources((sources, previousSnapshots) => withStoredPendingPlanActionHistory({ baseDir, portfolioId: candidate.portfolioId, asOf: candidate.asOf }, async (planEvents) => {
       const planObservation = getHeldRebalancePlanEventObservation(planEvents);
       return new InvestmentMandateFileRepository(baseDir, options).withDurableVerifiedHistory(async (mandates) => {
       const mandateObservation = getDurableInvestmentMandateObservation(mandates);
@@ -247,9 +250,7 @@ export class PortfolioSizingSnapshotFileRepository {
                   if (openingBudget === null) return snapshot;
                   const publication = Object.freeze({ snapshot, openingBudget });
                   if (!operation) return publication;
-                  const result = await operation(publication);
-                  await verifyDependencies();
-                  return result;
+                  return this.withPublishedSnapshotSource(publication, previousSnapshots, operation, verifyDependencies);
                 });
               });
             });
@@ -260,10 +261,29 @@ export class PortfolioSizingSnapshotFileRepository {
     }, options))));
   }
 
+  /** The original source remains a private prefix for existing issuance receipts. Only a newly flushed full generation escapes. */
+  private async withPublishedSnapshotSource<T>(publication: OpeningBudgetBoundSizingPublication,
+    previous: VerifiedPortfolioSizingSnapshotHistory, operation: OpeningBudgetConsumer<T>, verifyDependencies: () => Promise<void>): Promise<T> {
+    const expected = previous.snapshots.some((item) => item.portfolioSnapshotId === publication.snapshot.portfolioSnapshotId)
+      ? previous.snapshots : [...previous.snapshots, publication.snapshot];
+    return this.withDurableHistoryUnderLock(async (snapshots) => {
+      if (!isDeepStrictEqual(snapshots.snapshots, expected)) throw new Error("published snapshot source differs from the owned append generation");
+      const observedAt = Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt);
+      if (observedAt < Date.parse(publication.openingBudget.occupancy.assessment.observedAt) || Date.now() < observedAt) {
+        throw new Error("published snapshot source observation clock moved backwards");
+      }
+      const result = await operation(publication, snapshots);
+      await verifyDependencies();
+      if (Date.now() < observedAt) throw new Error("published snapshot source observation clock moved backwards");
+      return result;
+    });
+  }
+
   /** Owns the destination lock once and shares only its pre-append history with dependent readers.
    * This private lease cannot escape to a caller that could reuse a stale generation after append.
    */
-  private async withCapacityRootSources<T>(operation: (sources: CapacityRootSources) => Promise<T>): Promise<T> {
+  private async withCapacityRootSources<T>(operation: (sources: CapacityRootSources,
+    snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
     const baseDir = dirname(this.recordsPath), options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
     const [{ ManualAssignmentFileRepository }, { BucketSelectionRequestFileRepository }, { CandidateSizingInputFileRepository },
       { CandidateAssignmentFileRepository }, { ManualOpeningCapacityReservationFileRepository },
@@ -278,7 +298,7 @@ export class PortfolioSizingSnapshotFileRepository {
             new CandidateAssignmentFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(inputs, requests, snapshots, (assignments) =>
               new ManualOpeningCapacityReservationFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(manual, snapshots, (manualReservations) =>
                 new SelectorOpeningCapacityReservationFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(assignments, inputs, requests, snapshots,
-                  (selectorReservations) => operation({ manual, requests, inputs, assignments, manualReservations, selectorReservations })))))))));
+                  (selectorReservations) => operation({ manual, requests, inputs, assignments, manualReservations, selectorReservations }, snapshots)))))))));
   }
 
   private async appendUnderLock(candidate: PortfolioSizingSnapshot): Promise<PortfolioSizingSnapshot> {

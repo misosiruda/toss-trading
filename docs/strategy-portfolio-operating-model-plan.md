@@ -5544,6 +5544,27 @@ freshness·allocator·원자 회계·실행 승인은 후속이다. Persistent s
 현재 발행/문서 retry의 bytes 보존을 테스트한다. 실제 marker fsync를 cutoff 뒤로 지연하는 테스트도
 historical availability가 `not_proven`으로 남음을 확인하며 최종 수용 기준 완료를 주장하지 않는다.
 
+Opening publication callback의 두 번째 인자는 새 snapshot을 포함한 실제
+`VerifiedPortfolioSizingSnapshotHistory`다. Publisher가 이미 소유한 snapshot lock 아래 append/exact
+retry 뒤 파일을 다시 읽고 rehash·valuation replay·fsync·descriptor/path 재검증을 수행한다. 이 전체
+generation은 발행 전 이력에 실제 새 snapshot 하나를 추가한 값(또는 exact retry의 동일 이력)과
+일치해야 한다. 다른 snapshot의 삭제·교체·추가를 새 source로 승인하지 않는다. 이전 이력은 기존
+issuance receipt 검증용 private prefix로만 유지하고 소비자에게 새 이력을 전달한다.
+
+기존 인자 하나만 받는 callback은 그대로 동작하며 standalone append의 반환/저장 형식은 불변이다.
+소비자는 source repository를 재진입하지 않고 이 실제 이력의 관측/hash와 source 인증기를 사용한다.
+새 source 관측은 capacity 관측보다 빠를 수 없고, current publication scope의 시계 기준도 이 나중
+관측을 사용한다. 정상/예외 종료 후 source lease와 current scope는 폐기하며 내용만 historical로
+읽을 수 있다. 복사/다른 경로/만료 source는 후속 source 인증을 통과하지 못한다.
+
+발행 뒤 재읽기/fsync/generation 검사 실패는 consumer를 호출하지 않지만 이미 저장된 snapshot은
+남을 수 있다. 예상과 다른 파일 bytes를 자동 복구하거나 삭제하지 않는다. 소비자 실패도 기존
+snapshot/임의 consumer write를 rollback하지 않는다. 실제 테스트는 새 generation·exact retry,
+잠금/수명·consumer 실패·발행 후 fsync 실패·유효한 snapshot만 남긴 prefix 삭제·나중 관측 시계
+역행을 검증한다. 이 연결은 snapshot 원본 전달이며 reservation write capability, allocator, 과거
+cutoff의 durable availability나 원자 회계 승인이 아니다. Schema migration 없이 consumer와 함께
+코드를 rollback하며 정상 journal은 보존한다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
