@@ -5427,6 +5427,25 @@ ledger version/last reservation은 전달한 policy의 event epoch만 반영한�
 정책 활성화·실제 portfolio 회계·현재 공유 allocator/CAS·외부 가격 trust는 별도다. 저장 형식 변경이나
 migration은 없으며 rollback은 새 consumer와 함께 수행하고 기존 journal을 변환·삭제하지 않는다.
 
+`bindHeldSnapshotOpeningBudget`는 held occupancy의 전체 실제 원본 검증을 내부에서 실행한 뒤
+예약 차감 공용 현금과 bucket max-band 상한을 계산한다. Caller가 계산한 occupancy나 면제 예약
+목록을 주입하지 않는다. `projectSnapshotOpeningBudget`의 산술을 기존 historical resolver와 공유하며
+기존 historical assessment와 저장 형식은 유지한다. 공통 함수 자체는 인증기가 아니다.
+
+Pending BUY는 이미 예약 gross에 포함되므로 두 번 차감하지 않는다. 미제출 reserved/bound 금액도
+현금과 band에서 차감하고 pending SELL의 예상 대금은 더하지 않는다. Cash reserve는 기존 정책의
+minimum/target 규칙을 유지하며 max band는 canonical decimal을 사용해 KRW 아래로 자른다.
+부족한 현금/band는 0으로 자르고 BigInt 합계로 overcommit을 판정한다. 각 bucket의 현금 상한은
+하나의 pool을 공유하므로 여러 bucket에서 독립적으로 사용할 수 있는 예산이 아니다. Slot이 0이어도
+금액 상한은 별도 값이며 selectionTrigger/최종 sizing/할당 허용을 의미하지 않는다.
+
+새 결과는 supplied policy와 supplied portfolio 내용에 대한 계산일 뿐 활성 정책/실제 현재 상태,
+회계·shared ledger CAS·실행 권한은 인증하지 않는다. I/O·lock·write·새 lease와 current publisher
+연결은 추가하지 않는다. 실제 source lease, gross fill 0~3회, unbound/bound 예약, 공유 현금,
+safe integer·decimal floor·과점유 경계를 테스트하며 historical 결과와 대조한다. 손상 원본은
+수정하지 않고 실패하며 재시작 재계산은 동일하다. Migration은 없고 새 consumer와 함께 코드로
+rollback하며 원본 journal 삭제·변환은 하지 않는다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
