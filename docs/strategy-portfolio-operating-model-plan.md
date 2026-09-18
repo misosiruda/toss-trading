@@ -6708,7 +6708,8 @@ Rollback은 모든 writer를 중지하고 intent/plan/receipt/log/revision/JSON�
 fiscal period, 관측 시각, 원문 URI와 문서 hash, metric period를 canonical payload에 결속하고,
 evidence ref/hash를 파생한다. 외부 네트워크 호출이나 provider 권위 승격은 하지 않으며,
 `unavailable` 상태는 evidence로 저장하지 않는다. 실제 공식 provider adapter와 license/계정
-검토는 별도 owner 판단 단계로 남긴다.
+검토는 별도 owner 판단 단계로 남긴다. `FundamentalEvidenceFileRepository`는 이 envelope를
+credential-free append-only JSONL artifact로 저장하고 exact retry/replay만 제공한다.
 
 ## 14. 테스트 전략
 
