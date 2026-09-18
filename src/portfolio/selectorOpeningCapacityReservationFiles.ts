@@ -120,7 +120,7 @@ export class SelectorOpeningCapacityReservationFileRepository {
 
   async withAppendSessionFromSources<T>(assignments: VerifiedCandidateAssignmentHistory, inputs: VerifiedCandidateSizingInputHistory,
     requests: VerifiedBucketSelectionRequestHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory,
-    operation: (session: SelectorCapacityAppendSession) => Promise<T>): Promise<T> {
+    operation: (session: SelectorCapacityAppendSession, history: VerifiedSelectorCapacityReservationHistory) => Promise<T>): Promise<T> {
     if (typeof operation !== "function") throw new Error("selector capacity append session consumer must be a function");
     const sources: Sources = { assignments, inputs, requests, snapshots, index: createSourceIndex(assignments, inputs) };
     const verifySources = () => {
@@ -132,8 +132,9 @@ export class SelectorOpeningCapacityReservationFileRepository {
     verifySources();
     return this.withLock(async () => {
       verifySources();
-      const { history } = await this.readUnderLock(sources);
+      const { history, observedAt } = await this.readUnderLock(sources);
       verifySources();
+      observations.set(history, { observedAt, sourcePath: this.paths.recordsPath, verifySources });
       let active = true;
       let expectedGeneration = history.generationHash;
       let failed: unknown;
@@ -153,9 +154,9 @@ export class SelectorOpeningCapacityReservationFileRepository {
           return origin;
         } catch (error) { failed = error; throw error; }
       } });
-      try { return await operation(session); }
+      try { return await operation(session, history); }
       catch (error) { failed = error; throw error; }
-      finally { active = false; verifySources(); }
+      finally { active = false; verifySources(); observations.delete(history); }
     });
   }
 
