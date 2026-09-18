@@ -38,6 +38,9 @@ export interface VerifiedSelectorCapacityReservationHistory {
   readonly origins: readonly VerifiedSelectorCapacityReservationOrigin[];
   readonly generationHash: string | null;
 }
+export interface SelectorCapacityAppendSession {
+  append(value: unknown): Promise<VerifiedSelectorCapacityReservationOrigin>;
+}
 const observations = new WeakMap<VerifiedSelectorCapacityReservationHistory, { observedAt: string; sourcePath: string; verifySources: () => void }>();
 
 export function assertDurableSelectorCapacityReservationSource(history: VerifiedSelectorCapacityReservationHistory, baseDir: string): void {
@@ -112,8 +115,54 @@ export class SelectorOpeningCapacityReservationFileRepository {
 
   async append(value: unknown): Promise<VerifiedSelectorCapacityReservationOrigin> {
     const record = parseSelectorOpeningCapacityReservationRecord(value);
-    return this.withSources((sources) => this.withLock(async () => {
+    return this.withSources((sources) => this.withLock(() => this.appendUnderLock(record, sources)));
+  }
+
+  async withAppendSessionFromSources<T>(assignments: VerifiedCandidateAssignmentHistory, inputs: VerifiedCandidateSizingInputHistory,
+    requests: VerifiedBucketSelectionRequestHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory,
+    operation: (session: SelectorCapacityAppendSession) => Promise<T>): Promise<T> {
+    if (typeof operation !== "function") throw new Error("selector capacity append session consumer must be a function");
+    const sources: Sources = { assignments, inputs, requests, snapshots, index: createSourceIndex(assignments, inputs) };
+    const verifySources = () => {
+      assertDurableCandidateAssignmentSource(assignments, this.baseDir);
+      assertDurableCandidateSizingInputSource(inputs, this.baseDir);
+      assertDurableBucketSelectionRequestSource(requests, this.baseDir);
+      assertDurablePortfolioSizingSnapshotSource(snapshots, this.baseDir);
+    };
+    verifySources();
+    return this.withLock(async () => {
+      verifySources();
       const { history } = await this.readUnderLock(sources);
+      verifySources();
+      let active = true;
+      let expectedGeneration = history.generationHash;
+      let failed: unknown;
+      const session: SelectorCapacityAppendSession = Object.freeze({ append: async (value: unknown) => {
+        if (!active) throw new Error("selector capacity append session has expired");
+        if (failed) throw failed;
+        try {
+          verifySources();
+          const record = parseSelectorOpeningCapacityReservationRecord(value);
+          const origin = await this.appendUnderLock(record, sources, (current) => {
+            verifySources();
+            if (current.generationHash !== expectedGeneration) {
+              throw new Error("selector capacity append session generation changed unexpectedly");
+            }
+          });
+          if (!history.origins.some((item) => item.record.selectorCapacityReservationId === record.selectorCapacityReservationId)) expectedGeneration = origin.commitHash;
+          return origin;
+        } catch (error) { failed = error; throw error; }
+      } });
+      try { return await operation(session); }
+      catch (error) { failed = error; throw error; }
+      finally { active = false; verifySources(); }
+    });
+  }
+
+  private async appendUnderLock(record: SelectorOpeningCapacityReservationRecord, sources: Sources,
+    before?: (history: VerifiedSelectorCapacityReservationHistory) => void): Promise<VerifiedSelectorCapacityReservationOrigin> {
+      const { history } = await this.readUnderLock(sources);
+      before?.(history);
       const existing = history.origins.find((item) => item.record.selectorCapacityReservationId === record.selectorCapacityReservationId);
       if (existing !== undefined) {
         if (!isDeepStrictEqual(existing.record, record)) throw new Error("selector capacity reservation ID collision");
@@ -132,20 +181,22 @@ export class SelectorOpeningCapacityReservationFileRepository {
       const entryHash = hashCanonicalPayload(payload);
       // An interrupted entry/marker write remains fail-closed, even when a complete line is visible.
       const pending = await open(this.paths.pendingPath, "wx");
-      try { await pending.writeFile(`${JSON.stringify({ entryHash })}\n`); await pending.sync(); }
+      try { before?.(history); await pending.writeFile(`${JSON.stringify({ entryHash })}\n`); await pending.sync(); }
       finally { await pending.close(); }
       await syncDirectory(dirname(this.paths.pendingPath));
+      before?.(history);
       await appendLine(this.paths.recordsPath, { ...payload, entryHash });
       const committedAt = new Date().toISOString();
       if (Date.parse(committedAt) < Date.parse(appendStartedAt)) throw new Error("selector capacity commit clock moved backwards");
       const marker = { schemaVersion: "selector_capacity_reservation_commit.v1" as const, entryHash, committedAt };
       const commitHash = hashCanonicalPayload(marker);
+      before?.(history);
       await appendLine(this.paths.recordsPath, { ...marker, commitHash });
       if (Date.now() < Date.parse(committedAt)) throw new Error("selector capacity flush clock moved backwards");
       await unlink(this.paths.pendingPath);
       await syncDirectory(dirname(this.paths.pendingPath));
+      before?.(history);
       return Object.freeze({ record, source, appendStartedAt, committedAt, entryHash, commitHash });
-    }));
   }
 
   private withSources<T>(operation: (sources: Sources) => Promise<T>): Promise<T> {
