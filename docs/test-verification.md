@@ -139,6 +139,20 @@ fixture의 compiled artifact만 정확히 확인해 정리해야 한다. 전체 
 
 ## 호환성·롤백
 
+### Snapshot 저장소 잠금의 wall clock 독립성
+
+발행 후 source 테스트에서 Date가 고정된 채 snapshot lock 재진입을 기다리면 기존
+`Date.now()` deadline이 만료되지 않는 문제를 재현했다. Snapshot 저장소의 잠금 대기 deadline과
+남은 시간만 `performance.now()`로 계산한다. Wall clock 정지·역행 때문에 대기가 늘어나거나
+앞으로 이동해 즉시 timeout되는 것을 막으며, default timeout·재시도 오류 종류·잠금 소유권 및
+실제 observation/정책 timestamp 계약은 변경하지 않는다.
+
+`portfolioSizingSnapshotLockClock.test.ts`는 정지/역행 시 기존 lock 보존과 timeout, 일시 경합 중
+전진 시계 점프, durable observation의 wall timestamp 유지를 검증한다. 정지/역행 회귀 테스트는
+2초 watchdog으로 테스트 clock만 복원해 무한 대기 대신 실패하며 제품 timeout을 완화하지 않는다.
+Migration 없이 코드 rollback 가능하지만 wall clock 의존 대기 문제가 다시 나타난다. 자동 stale
+lock 삭제·복구, 전체 suite 재시도 또는 성능 개선율 보장은 추가하지 않는다.
+
 ### Windows 활성화 저장소 잠금 경합
 
 전체 검증의 `activation file repository serializes exact retries across processes`에서
