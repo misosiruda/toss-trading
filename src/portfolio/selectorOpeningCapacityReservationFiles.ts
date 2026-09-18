@@ -134,6 +134,11 @@ export class SelectorOpeningCapacityReservationFileRepository {
       verifySources();
       const { history, observedAt } = await this.readUnderLock(sources);
       verifySources();
+      if (Date.parse(observedAt) < Math.max(Date.parse(getDurableCandidateAssignmentObservation(assignments)),
+        Date.parse(getDurableCandidateSizingInputObservation(inputs)), Date.parse(getDurableBucketSelectionRequestObservation(requests).observedAt),
+        Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt))) {
+        throw new Error("selector capacity append session source observation clock moved backwards");
+      }
       observations.set(history, { observedAt, sourcePath: this.paths.recordsPath, verifySources });
       let active = true, accepting = true;
       let expectedGeneration = history.generationHash;
