@@ -39,7 +39,7 @@ export interface VerifiedSelectorCapacityReservationHistory {
   readonly generationHash: string | null;
 }
 export interface SelectorCapacityAppendSession {
-  append(value: unknown): Promise<VerifiedSelectorCapacityReservationOrigin>;
+  append(value: unknown, snapshots?: VerifiedPortfolioSizingSnapshotHistory): Promise<VerifiedSelectorCapacityReservationOrigin>;
 }
 const observations = new WeakMap<VerifiedSelectorCapacityReservationHistory, { observedAt: string; sourcePath: string; verifySources: () => void }>();
 
@@ -120,7 +120,7 @@ export class SelectorOpeningCapacityReservationFileRepository {
 
   async withAppendSessionFromSources<T>(assignments: VerifiedCandidateAssignmentHistory, inputs: VerifiedCandidateSizingInputHistory,
     requests: VerifiedBucketSelectionRequestHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory,
-    operation: (session: SelectorCapacityAppendSession) => Promise<T>): Promise<T> {
+    operation: (session: SelectorCapacityAppendSession, history: VerifiedSelectorCapacityReservationHistory) => Promise<T>): Promise<T> {
     if (typeof operation !== "function") throw new Error("selector capacity append session consumer must be a function");
     const sources: Sources = { assignments, inputs, requests, snapshots, index: createSourceIndex(assignments, inputs) };
     const verifySources = () => {
@@ -132,30 +132,47 @@ export class SelectorOpeningCapacityReservationFileRepository {
     verifySources();
     return this.withLock(async () => {
       verifySources();
-      const { history } = await this.readUnderLock(sources);
+      const { history, observedAt } = await this.readUnderLock(sources);
       verifySources();
-      let active = true;
+      if (Date.parse(observedAt) < Math.max(Date.parse(getDurableCandidateAssignmentObservation(assignments)),
+        Date.parse(getDurableCandidateSizingInputObservation(inputs)), Date.parse(getDurableBucketSelectionRequestObservation(requests).observedAt),
+        Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt))) {
+        throw new Error("selector capacity append session source observation clock moved backwards");
+      }
+      observations.set(history, { observedAt, sourcePath: this.paths.recordsPath, verifySources });
+      let active = true, accepting = true;
       let expectedGeneration = history.generationHash;
       let failed: unknown;
-      const session: SelectorCapacityAppendSession = Object.freeze({ append: async (value: unknown) => {
-        if (!active) throw new Error("selector capacity append session has expired");
-        if (failed) throw failed;
-        try {
+      let pending: Promise<VerifiedSelectorCapacityReservationOrigin> | undefined;
+      const session: SelectorCapacityAppendSession = Object.freeze({ append: (value: unknown, currentSnapshots = snapshots) => {
+        if (!accepting || !active) return Promise.reject(new Error("selector capacity append session has expired"));
+        if (pending) return Promise.reject(new Error("selector capacity append session already has an in-flight write"));
+        if (failed) return Promise.reject(failed);
+        const task = (async () => {
           verifySources();
+          assertDurablePortfolioSizingSnapshotSource(currentSnapshots, this.baseDir);
+          resolveObservedPortfolioSizingSnapshotHistory(currentSnapshots, getDurablePortfolioSizingSnapshotObservation(snapshots));
           const record = parseSelectorOpeningCapacityReservationRecord(value);
-          const origin = await this.appendUnderLock(record, sources, (current) => {
+          const currentSources = currentSnapshots === snapshots ? sources : { ...sources, snapshots: currentSnapshots };
+          const origin = await this.appendUnderLock(record, currentSources, (current) => {
             verifySources();
-            if (current.generationHash !== expectedGeneration) {
-              throw new Error("selector capacity append session generation changed unexpectedly");
-            }
+            assertDurablePortfolioSizingSnapshotSource(currentSnapshots, this.baseDir);
+            if (current.generationHash !== expectedGeneration) throw new Error("selector capacity append session generation changed unexpectedly");
           });
           if (!history.origins.some((item) => item.record.selectorCapacityReservationId === record.selectorCapacityReservationId)) expectedGeneration = origin.commitHash;
           return origin;
-        } catch (error) { failed = error; throw error; }
+        })();
+        pending = task;
+        void task.then(() => { pending = undefined; }, (error: unknown) => { failed = error; pending = undefined; });
+        return task;
       } });
-      try { return await operation(session); }
+      try { return await operation(session, history); }
       catch (error) { failed = error; throw error; }
-      finally { active = false; verifySources(); }
+      finally {
+        accepting = false;
+        try { if (pending) await pending; verifySources(); if (failed) throw failed; }
+        finally { active = false; observations.delete(history); }
+      }
     });
   }
 
