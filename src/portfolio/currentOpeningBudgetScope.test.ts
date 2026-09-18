@@ -18,8 +18,12 @@ for (const kind of ["manual", "selector"] as const) {
       const detached = await publish(request, options), before = await fs.readFile(records), original = await store.readSnapshot();
       assert.throws(() => assertHeld(detached, paths), /active publication scope/);
       let escaped!: OpeningBudgetBoundSizingPublication;
-      const result = await consume(request, async (publication) => {
+      let sessions!: { manualSession: { append: Function }; selectorSession: { append: Function } };
+      const result = await consume(request, async (publication, _snapshots, suppliedSessions) => {
+        sessions = suppliedSessions!;
         escaped = publication; assertHeld(publication, paths);
+        assert.equal(typeof sessions.manualSession.append, "function");
+        assert.equal(typeof sessions.selectorSession.append, "function");
         assert.equal(publication.snapshot.portfolioVersion, original.revisionHash);
         assert.throws(() => assertHeld({ ...publication }, paths), /active publication scope/);
         assert.throws(() => assertHeld(structuredClone(publication), paths), /active publication scope/);
@@ -33,6 +37,7 @@ for (const kind of ["manual", "selector"] as const) {
         return "consumer-result";
       }, options);
       assert.equal(result, "consumer-result"); assert.throws(() => assertHeld(escaped, paths), /active publication scope/);
+      assert.ok(sessions.manualSession && sessions.selectorSession);
       assert.deepEqual(await fs.readFile(records), before); assert.deepEqual(await store.readSnapshot(), original);
       await consume(request, async (fresh) => { assertHeld(fresh, paths); assert.throws(() => assertHeld(escaped, paths), /active publication scope/); }, options);
     }, kind, true);

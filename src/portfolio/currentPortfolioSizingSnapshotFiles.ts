@@ -7,6 +7,8 @@ import { PortfolioSizingSnapshotFileRepository, getDurablePortfolioSizingSnapsho
   type OpeningBudgetBoundSizingPublication, type VerifiedPortfolioSizingSnapshotHistory } from "./portfolioSizingSnapshotFiles.js";
 import type { PortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { resolvePortfolioSizingSnapshot } from "./portfolioSizingSnapshotResolver.js";
+import type { ManualCapacityAppendSession } from "./manualOpeningCapacityReservationFiles.js";
+import type { SelectorCapacityAppendSession } from "./selectorOpeningCapacityReservationFiles.js";
 
 export const currentPortfolioSizingSnapshotInputSchema = portfolioSizingSnapshotSchema.omit({ portfolioSnapshotId: true, portfolioSnapshotHash: true,
   portfolioId: true, portfolioVersion: true, virtualPortfolio: true }).extend({
@@ -63,16 +65,17 @@ export async function appendOpeningBudgetBoundCurrentPortfolioSizingSnapshot(val
  * Captured publication contents remain readable after exit, but their held identity is revoked in finally.
  */
 export async function withPublishedCurrentOpeningBudget<T>(value: z.input<typeof inputSchema>,
-  operation: (publication: OpeningBudgetBoundSizingPublication, snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>,
+  operation: (publication: OpeningBudgetBoundSizingPublication, snapshots: VerifiedPortfolioSizingSnapshotHistory,
+    sessions?: { manualSession: ManualCapacityAppendSession; selectorSession: SelectorCapacityAppendSession }) => Promise<T>,
   options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}): Promise<T> {
   if (typeof operation !== "function") throw new Error("current opening budget consumer must be a function");
   return withCurrentPortfolio(value, options, (snapshot, repository, paths) =>
-    repository.withPublishedOpeningBudgetForRecordedTimeCoverage(snapshot, async (publication, snapshots) => {
+    repository.withPublishedOpeningBudgetForRecordedTimeCoverage(snapshot, async (publication, snapshots, sessions) => {
       const observedAt = Date.parse(getDurablePortfolioSizingSnapshotObservation(snapshots).observedAt);
       heldPublications.set(publication, Object.freeze({ ...paths, observedAt }));
       try {
         assertHeldCurrentOpeningBudget(publication, paths);
-        const result = await operation(publication, snapshots);
+        const result = await operation(publication, snapshots, sessions);
         assertHeldCurrentOpeningBudget(publication, paths);
         return result;
       } finally { heldPublications.delete(publication); }
