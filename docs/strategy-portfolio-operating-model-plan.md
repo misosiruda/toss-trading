@@ -5566,6 +5566,22 @@ cutoff의 durable availability나 원자 회계 승인이 아니다. Schema migr
 코드를 rollback하며 정상 journal은 보존한다.
 
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
+수동 예약 repository의 내부 `withAppendSessionFromSources`는 실제 활성 manual/snapshot lease를
+인증하고 reservation lock을 한 번 소유한 callback 안에서 append를 수행한다. 호출자가 제공한
+배열·복사·외부 경로·만료 source는 허용하지 않는다. 세션의 append는 겹쳐 실행할 수 없고,
+각 append 직전의 실제 commit generation이 세션 시작 이력과 자신의 성공한 append 결과에서
+벗어나면 유효한 짧은 prefix여도 거절하며 bytes를 자동 복구하지 않는다.
+callback이 먼저 반환해도 시작한 write가 끝나기 전에는 lock을 풀지 않는다. Write 실패를 callback이
+잡아도 세션 전체는 실패하며 종료 후 캡처한 append 함수는 만료된다. Consumer 실패는 이미 durable한
+예약을 rollback하지 않고, journal write 실패의 pending barrier는 명시적 복구용으로 보존한다.
+
+선행 snapshot prefix를 포함한 나중의 실제 snapshot source를 전달하는 내부 계약도 갖지만,
+현재 publisher의 예약 source reader를 이 writer session으로 연결하는 composition은 후속이다.
+이 primitive는 기존 source-bound journal 저장 규칙만 재사용한다. 반복 authorization/slot 배정의
+적법성, active selection evidence/freshness, 공용 capacity CAS, mandate/event 원자 발행이나 매수
+승인을 부여하지 않는다. 단위 fixture의 추가 journal record를 실제 allocator 승인으로 해석하지 않는다.
+저장 schema 변경 없이 호출 consumer와 함께 코드 rollback하며 기존 journal bytes는 보존한다.
+
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
 Torn line, hash/chain/receipt mismatch, duplicate issuance, 손상 suffix와 관측 중 파일 변경은 fail-closed다.
