@@ -328,6 +328,27 @@ test("selector append session reuses actual source leases and expires after call
   });
 });
 
+test("selector append session drains an unawaited write and rejects overlap", async (context) => {
+  await fixture(context, async ({ dir, record }) => {
+    const repo = new Repository(dir, { lockTimeoutMs: 70, lockRetryDelayMs: 3 });
+    let pending!: Promise<unknown>;
+    await new BucketSelectionRequestFileRepository(dir).withDurableVerifiedHistory(async (requests) => {
+      await new PortfolioSizingSnapshotFileRepository(dir).withDurableVerifiedHistory(async (snapshots) => {
+        await new CandidateSizingInputFileRepository(dir).withDurableVerifiedHistoryFromSources(requests, snapshots, async (inputs) => {
+          await new CandidateAssignmentFileRepository(dir).withDurableVerifiedHistoryFromSources(inputs, requests, snapshots, async (assignments) => {
+            await repo.withAppendSessionFromSources(assignments, inputs, requests, snapshots, async (session) => {
+              pending = session.append(record);
+              await assert.rejects(session.append(record), /in-flight write/);
+            });
+          });
+        });
+      });
+    });
+    await pending;
+    assert.equal((await repo.readAll()).length, 1);
+  });
+});
+
 async function fixture(context: TestContext, operation: (input: { dir: string; record: SelectorOpeningCapacityReservationRecord;
   request: Awaited<ReturnType<BucketSelectionRequestFileRepository["resolveById"]>> }) => Promise<void>) {
   await storedFixture(context, { count: 0, storeSelectorIssuance: false }, async (state) => {
