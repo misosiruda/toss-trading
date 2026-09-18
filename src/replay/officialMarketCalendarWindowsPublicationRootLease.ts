@@ -89,7 +89,10 @@ export async function createOfficialMarketCalendarWindowsPublicationRootLease(
         child.kill();
         return false;
       }
-      return inputCompleted && !stdinFailed && code === 0 &&
+      // The helper may consume RELEASE, acknowledge it and exit before Node completes
+      // stdin.end's callback (ERR_STREAM_DESTROYED). Its receipt and normal exit prove
+      // release; an input failure while it is still running is killed above and cannot pass.
+      return !stdinFailed && code === 0 &&
         stdout.split(/\r?\n/u).includes("PUBLICATION_ROOT_LEASE_RELEASED");
     }
   });

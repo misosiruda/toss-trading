@@ -153,6 +153,22 @@ fixture의 compiled artifact만 정확히 확인해 정리해야 한다. 전체 
 Migration 없이 코드 rollback 가능하지만 wall clock 의존 대기 문제가 다시 나타난다. 자동 stale
 lock 삭제·복구, 전체 suite 재시도 또는 성능 개선율 보장은 추가하지 않는다.
 
+### Windows 캘린더 root lease 해제 응답 순서
+
+전체 검증에서 calendar publication writer의 namespace/root lease 해제가 간헐적으로 실패했다.
+진단 실행에서 실제 helper가 `PUBLICATION_ROOT_LEASE_RELEASED`와 exit 0을 먼저 반환한 뒤
+Node의 `stdin.end` callback이 `ERR_STREAM_DESTROYED`를 반환하는 순서를 확인했다. 로컬 입력
+완료 callback만으로 이 정상 해제를 실패 처리하지 않고, 동일 helper의 정확한 해제 응답·exit 0·
+stdin error 부재를 요구한다. 입력 실패 당시 아직 실행 중인 helper는 기존처럼 종료시키므로
+응답 없는 실패·비정상 종료·signal 종료를 성공으로 승격하지 않는다.
+
+`officialMarketCalendarRootLeaseReleaseOrdering.test.ts`는 이 순서와 응답 누락, exit 1,
+signal, 조기 입력 실패 및 stdin error를 결정적으로 검증한다. 실제 Windows root replacement
+차단 및 package publication 테스트도 유지한다. Timeout, OS 잠금 정책, directory fsync 또는
+evidence 신뢰 조건은 완화하지 않는다. Schema migration 없이 코드 rollback 가능하지만 이
+응답 순서의 false failure가 재발할 수 있다. 다른 staging/pinned helper에 대한 원인 확정이나
+변경은 포함하지 않는다.
+
 ### Windows 활성화 저장소 잠금 경합
 
 전체 검증의 `activation file repository serializes exact retries across processes`에서
