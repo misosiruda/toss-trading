@@ -17,21 +17,7 @@ export class FundamentalEvidenceFileRepository {
   private readonly paths: ReturnType<typeof createFundamentalEvidencePaths>;
   constructor(baseDir: string) { this.paths = createFundamentalEvidencePaths(baseDir); }
   async readAll(): Promise<readonly FundamentalEvidenceRecord[]> {
-    return this.withLock(async () => {
-      let raw: string; try { raw = await readFile(this.paths.recordsPath, "utf8"); } catch (error) { if (isCode(error, "ENOENT")) return []; throw error; }
-      if (raw && !raw.endsWith("\n")) throw new Error("fundamental evidence journal has a torn final line");
-      const lines = raw ? raw.trimEnd().split("\n") : []; if (lines.length % 2) throw new Error("fundamental evidence journal has an incomplete pair");
-      const records: FundamentalEvidenceRecord[] = []; let generation: string | null = null;
-      for (let i = 0; i < lines.length; i += 2) {
-        const value: unknown = JSON.parse(lines[i]!); const entry = entrySchema.parse(value); const record = parseFundamentalEvidenceRecord(entry.record);
-        const { entryHash, ...payload } = entry;
-        if (!isDeepStrictEqual(value, entry) || entryHash !== hashCanonicalPayload(payload) || entry.previousCommitHash !== generation) throw new Error("fundamental evidence entry hash or predecessor mismatch");
-        const markerValue: unknown = JSON.parse(lines[i + 1]!); const marker = commitSchema.parse(markerValue); const { commitHash, ...markerPayload } = marker;
-        if (!isDeepStrictEqual(markerValue, marker) || marker.entryHash !== entryHash || commitHash !== hashCanonicalPayload(markerPayload)) throw new Error("fundamental evidence commit hash mismatch");
-        records.push(record); generation = marker.commitHash;
-      }
-      return records;
-    });
+    return this.withLock(() => this.readAllUnlocked());
   }
   async append(value: FundamentalEvidencePayload & { createdAt: string }): Promise<FundamentalEvidenceRecord> {
     const record = createFundamentalEvidenceRecord(value);
@@ -49,7 +35,21 @@ export class FundamentalEvidenceFileRepository {
       return record;
     });
   }
-  private async readAllUnlocked(): Promise<readonly FundamentalEvidenceRecord[]> { try { const raw = await readFile(this.paths.recordsPath, "utf8"); if (!raw) return []; return raw.trimEnd().split("\n").filter(Boolean).filter((_, i) => i % 2 === 0).map((line) => parseFundamentalEvidenceRecord((JSON.parse(line) as { record: unknown }).record)); } catch (error) { if (isCode(error, "ENOENT")) return []; throw error; } }
+  private async readAllUnlocked(): Promise<readonly FundamentalEvidenceRecord[]> {
+    let raw: string; try { raw = await readFile(this.paths.recordsPath, "utf8"); } catch (error) { if (isCode(error, "ENOENT")) return []; throw error; }
+    if (raw && !raw.endsWith("\n")) throw new Error("fundamental evidence journal has a torn final line");
+    const lines = raw ? raw.trimEnd().split("\n") : []; if (lines.length % 2) throw new Error("fundamental evidence journal has an incomplete pair");
+    const records: FundamentalEvidenceRecord[] = []; let generation: string | null = null;
+    for (let i = 0; i < lines.length; i += 2) {
+      const value: unknown = JSON.parse(lines[i]!); const entry = entrySchema.parse(value); const record = parseFundamentalEvidenceRecord(entry.record);
+      const { entryHash, ...payload } = entry;
+      if (!isDeepStrictEqual(value, entry) || entryHash !== hashCanonicalPayload(payload) || entry.previousCommitHash !== generation) throw new Error("fundamental evidence entry hash or predecessor mismatch");
+      const markerValue: unknown = JSON.parse(lines[i + 1]!); const marker = commitSchema.parse(markerValue); const { commitHash, ...markerPayload } = marker;
+      if (!isDeepStrictEqual(markerValue, marker) || marker.entryHash !== entryHash || commitHash !== hashCanonicalPayload(markerPayload)) throw new Error("fundamental evidence commit hash mismatch");
+      records.push(record); generation = marker.commitHash;
+    }
+    return records;
+  }
   private async lastCommitHash(): Promise<string | null> { try { const raw = await readFile(this.paths.recordsPath, "utf8"); if (!raw.trim()) return null; const lines = raw.trimEnd().split("\n"); return commitSchema.parse(JSON.parse(lines.at(-1)!)).commitHash; } catch (error) { if (isCode(error, "ENOENT")) return null; throw error; } }
   private async withLock<T>(operation: () => Promise<T>): Promise<T> { await mkdir(dirname(this.paths.recordsPath), { recursive: true }); let handle; try { handle = await open(this.paths.lockPath, "wx"); } catch (error) { throw new Error("fundamental evidence repository lock is unavailable", { cause: error }); } try { return await operation(); } finally { await handle.close(); await unlink(this.paths.lockPath).catch(() => undefined); } }
 }
