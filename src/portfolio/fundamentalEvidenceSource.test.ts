@@ -30,3 +30,13 @@ test("fundamental evidence repository persists exact retries and replays the jou
     assert.deepEqual(await new FundamentalEvidenceFileRepository(dir).readAll(), [record]);
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
+test("fundamental evidence repository rejects a torn or rehashed journal", async () => {
+  const dir = await fs.mkdtemp(join(tmpdir(), "fundamental-evidence-corrupt-"));
+  try {
+    const repo = new FundamentalEvidenceFileRepository(dir);
+    await repo.append({ ...input, createdAt: "2026-01-02T00:00:00.000Z" });
+    const path = join(dir, "fundamental-evidence-records.jsonl"); const bytes = await fs.readFile(path);
+    await fs.writeFile(path, bytes.subarray(0, -1));
+    await assert.rejects(new FundamentalEvidenceFileRepository(dir).readAll(), /torn/);
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
