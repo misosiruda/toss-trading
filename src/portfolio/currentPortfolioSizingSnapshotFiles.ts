@@ -3,7 +3,8 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { FileVirtualPortfolioStore } from "../storage/virtualPortfolioFileStore.js";
 import { createPortfolioSizingSnapshot, portfolioSizingSnapshotSchema } from "./portfolioSizingSnapshot.js";
-import { PortfolioSizingSnapshotFileRepository } from "./portfolioSizingSnapshotFiles.js";
+import { PortfolioSizingSnapshotFileRepository, type OpeningBudgetBoundSizingPublication } from "./portfolioSizingSnapshotFiles.js";
+import type { PortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { resolvePortfolioSizingSnapshot } from "./portfolioSizingSnapshotResolver.js";
 
 const inputSchema = portfolioSizingSnapshotSchema.omit({ portfolioSnapshotId: true, portfolioSnapshotHash: true,
@@ -17,7 +18,7 @@ const inputSchema = portfolioSizingSnapshotSchema.omit({ portfolioSnapshotId: tr
  */
 export async function appendCurrentPortfolioSizingSnapshot(value: z.input<typeof inputSchema>,
   options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}) {
-  return publish(value, options, false);
+  return publish(value, options, "unbound");
 }
 
 /** Binds stored marks/FX, pending progress, mandate/execution origins, reservation roots/bound mandates/consumption/retirement and active policy through destination fsync.
@@ -28,11 +29,23 @@ export async function appendCurrentPortfolioSizingSnapshot(value: z.input<typeof
  */
 export async function appendPolicyBoundCurrentPortfolioSizingSnapshot(value: z.input<typeof inputSchema>,
   options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}) {
-  return publish(value, options, true);
+  return publish(value, options, "policy");
 }
 
+/** Publishes and computes opening bounds while the actual portfolio, active policy and all reservation sources remain locked.
+ * Requires explicit opening limits. Returns detached observations, not an allocation, execution or accounting authority.
+ */
+export async function appendOpeningBudgetBoundCurrentPortfolioSizingSnapshot(value: z.input<typeof inputSchema>,
+  options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1] = {}) {
+  return publish(value, options, "opening-budget");
+}
+
+function publish(value: z.input<typeof inputSchema>, options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1],
+  mode: "unbound" | "policy"): Promise<PortfolioSizingSnapshot>;
+function publish(value: z.input<typeof inputSchema>, options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1],
+  mode: "opening-budget"): Promise<OpeningBudgetBoundSizingPublication>;
 async function publish(value: z.input<typeof inputSchema>,
-  options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1], requireActivePolicy: boolean) {
+  options: ConstructorParameters<typeof FileVirtualPortfolioStore>[1], mode: "unbound" | "policy" | "opening-budget") {
   const input = inputSchema.parse(value);
   if (!isDeepStrictEqual(input, value)) throw new Error("current sizing snapshot input must already be canonical");
   const baseDir = resolve(input.baseDir), portfolioPath = resolve(input.portfolioPath);
@@ -46,6 +59,7 @@ async function publish(value: z.input<typeof inputSchema>,
       exposureSnapshot: input.exposureSnapshot, exposureSnapshotHash: input.exposureSnapshotHash });
     resolvePortfolioSizingSnapshot(snapshot);
     // Hold the source portfolio lock through destination append/fsync/exact retry.
-    return requireActivePolicy ? snapshots.appendForActivePolicy(snapshot) : snapshots.append(snapshot);
+    if (mode === "opening-budget") return snapshots.appendWithOpeningBudgetForActivePolicy(snapshot);
+    return mode === "policy" ? snapshots.appendForActivePolicy(snapshot) : snapshots.append(snapshot);
   });
 }
