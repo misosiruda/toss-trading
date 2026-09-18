@@ -176,22 +176,31 @@ export class PortfolioSizingSnapshotFileRepository {
     return this.appendForActivePolicySources(value, true, operation);
   }
 
+  /** Require the cutoff to cover recorded timestamps in the complete source generation observed NOW.
+   * Marker times precede their fsync: this NEVER proves durable availability at cutoff, reconciliation or allocation approval.
+   */
+  async withPublishedOpeningBudgetForRecordedTimeCoverage<T>(value: unknown,
+    operation: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>): Promise<T> {
+    if (typeof operation !== "function") throw new Error("opening budget consumer must be a function");
+    return this.appendForActivePolicySources(value, true, operation, true);
+  }
+
   private appendForActivePolicySources(value: unknown, openingBudgetRequired: false): Promise<PortfolioSizingSnapshot>;
   private appendForActivePolicySources(value: unknown, openingBudgetRequired: true): Promise<OpeningBudgetBoundSizingPublication>;
   private appendForActivePolicySources<T>(value: unknown, openingBudgetRequired: true,
-    operation: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>): Promise<T>;
+    operation: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>, recordedTimeCoverageRequired?: boolean): Promise<T>;
   private async appendForActivePolicySources<T>(value: unknown, openingBudgetRequired: boolean,
-    operation?: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>): Promise<PortfolioSizingSnapshot | OpeningBudgetBoundSizingPublication | T> {
+    operation?: (publication: OpeningBudgetBoundSizingPublication) => Promise<T>, recordedTimeCoverageRequired = false): Promise<PortfolioSizingSnapshot | OpeningBudgetBoundSizingPublication | T> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
     const [{ PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
       { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation },
       { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }, { bindHeldSnapshotPendingReservationOrigins },
-      { bindHeldSnapshotOpeningBudget },
+      { bindHeldSnapshotOpeningBudget }, { assertHeldOpeningRecordedTimeCoverage },
       { OpeningCapacityReservationEventFileRepository, getDurableOpeningCapacityEventObservedAt }] = await Promise.all([
       import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js"),
       import("./investmentMandateFiles.js"), import("./heldSnapshotPendingReservationBinding.js"),
-      import("./heldSnapshotOpeningBudget.js"),
+      import("./heldSnapshotOpeningBudget.js"), import("./currentOpeningProjectionFrontier.js"),
       import("./openingCapacityReservationEventFiles.js")
     ]);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
@@ -230,6 +239,8 @@ export class PortfolioSizingSnapshotFileRepository {
                   const openingBudget = openingBudgetRequired
                     ? bindHeldSnapshotOpeningBudget({ baseDir, snapshot: candidate, policy: active.policy }, heldSources) : null;
                   if (openingBudget === null) bindHeldSnapshotPendingReservationOrigins({ baseDir, snapshot: candidate }, heldSources);
+                  if (recordedTimeCoverageRequired) assertHeldOpeningRecordedTimeCoverage({ baseDir,
+                    portfolioId: candidate.portfolioId, asOf: candidate.asOf }, heldSources);
                   await verifyDependencies();
                   const snapshot = await this.appendUnderLock(candidate);
                   await verifyDependencies();

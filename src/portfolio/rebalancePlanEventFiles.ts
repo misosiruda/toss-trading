@@ -205,6 +205,13 @@ export function getHeldRebalancePlanEventObservation(history: VerifiedRebalanceP
   return observation;
 }
 
+/** Includes plans without events, from the actual still-held plan repository. Returned origins are not new leases. */
+export function resolveHeldRebalancePlanOrigins(history: VerifiedRebalancePlanEventHistory, baseDir: string) {
+  assertHeldRebalancePlanEventSource(history, baseDir);
+  const plans = histories.get(history)!.plans;
+  return Object.freeze(plans.records.map((record) => resolveVerifiedRebalancePlanOrigin(plans, record.planId)));
+}
+
 /** A verified historical observation, not a claim of current generation or execution authority. */
 export function resolveVerifiedRebalancePlanEventOrigin(history: VerifiedRebalancePlanEventHistory, eventId: string): VerifiedRebalancePlanEventOrigin {
   const metadata = histories.get(history);
