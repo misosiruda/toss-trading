@@ -5486,6 +5486,34 @@ snapshot의 cutoff 이후 event가 없다는 증명은 아니다. Cutoff prefix�
 객체/경로/수명, source 손상 시 callback 미호출·bytes 보존, consumer 및 시계 오류 뒤 폐기·재시도를
 검증한다. 영구 artifact/schema migration은 없고 후속 consumer와 함께 코드 rollback한다.
 
+`BucketOpeningCapacityStateFileRepository.refreshFromCurrentPublication`은 문서 잠금을 먼저 취득하고
+기존 문서를 historical replay로 확인한 뒤 current publication callback을 실행한다. Actual portfolio·
+policy·reservation source 잠금이 유지된 callback에서 전체 bucket payload를 재계산하고 document CAS와
+temporary file fsync/rename을 수행한다. 일반 historical `refresh`/`readVerifiedSnapshot`은 유지한다.
+두 계산 경로는 `projectBucketOpeningCapacityStates`의 payload 조립을 공유하며 이 helper 자체는
+source 인증기가 아니다. 기존 schema/ID/hash/정렬 및 다른 portfolio 항목 보존 규칙은 불변이다.
+
+Strict 입력은 `{snapshotInput, expectedDocumentHash}`이며 baseDir는 repository가 소유한다.
+Snapshot 입력은 current publisher의 동일 schema에서 baseDir만 제외하고 await 전에 캡처한다.
+Caller state/budget/source scope나 baseDir override는 허용하지 않는다. 실제 current scope와
+문서 소유권을 확인하고, 동일 문서는 원래 expected hash가 이전 값이어도 fsync 후 반환한다.
+변경 문서는 expected hash가 일치해야 하고 asOf가 이전 항목보다 엄격히 증가해야 한다. 같은
+cutoff의 portfolio ABA replacement와 시간 역행은 거절한다. 갱신 전체가 같은 문서 잠금으로
+직렬화되므로 동시 exact retry는 수렴하고 서로 다른 CAS 경쟁은 하나만 성공한다.
+
+Snapshot publication이 document CAS보다 먼저이므로 CAS 실패 시 immutable snapshot은 남을 수
+있지만 기존 capacity 문서는 유지된다. Temporary file fsync 실패는 rename 전에 기존 bytes를
+보존하며 정상 재시도로 수렴한다. Rename 뒤 동기화/소유권/시계/dependency 실패는 이미 새 문서가
+보일 수 있으므로 전체 rollback이나 다중 artifact atomic commit을 주장하지 않는다. 결과 오류 시
+자동 삭제하지 않고 실제 문서/source 검증과 exact retry 또는 명시적 복구를 사용한다.
+
+실제 테스트는 수동/selector의 historical 결과·재시작·기존 refresh 호환성, stale CAS의 snapshot
+잔존과 문서 보존, 같은 시각 ABA, concurrent exact/competing CAS, 입력 캡처, 문서/portfolio/source
+잠금 유지, pre-rename 실패와 원본/문서 손상 bytes 보존을 확인한다. 저장된 문서는 여전히 cutoff
+projection이며 source 변경이 없는 최신 할당 승인이 아니다. Read-only replay도 current lease를
+발급하지 않는다. Allocation/최신성 gate/전체 회계 원자성은 후속이다. Migration은 없고 새 consumer와
+함께 코드 rollback하며 정상 기존 schema 문서는 historical reader로 계속 확인할 수 있다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
