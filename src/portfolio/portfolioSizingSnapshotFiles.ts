@@ -18,8 +18,11 @@ import { SourceFxEvidenceFileRepository, getDurableSourceFxEvidenceObservation,
 import { withStoredPendingPlanActionHistory } from "./storedPendingPlanActionProgress.js";
 import { getHeldRebalancePlanEventObservation } from "./rebalancePlanEventFiles.js";
 import type { OpeningCapacityMandateSources } from "./openingCapacityMandateBinding.js";
+import type { bindHeldSnapshotOpeningBudget } from "./heldSnapshotOpeningBudget.js";
 
 type CapacityRootSources = Omit<OpeningCapacityMandateSources, "mandates" | "events">;
+export type OpeningBudgetBoundSizingPublication = Readonly<{ snapshot: PortfolioSizingSnapshot;
+  openingBudget: ReturnType<typeof bindHeldSnapshotOpeningBudget> }>;
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -154,14 +157,29 @@ export class PortfolioSizingSnapshotFileRepository {
    * Allocation and accounting remain separate gates. Pending projection is computed once by the final held-source binder.
    */
   async appendForActivePolicy(value: unknown): Promise<PortfolioSizingSnapshot> {
+    return this.appendForActivePolicySources(value, false);
+  }
+
+  /** Requires explicit opening limits and computes reservation-adjusted bounds under the same source locks as publication.
+   * Returned bounds are observations, not a retained lease or allocation/CAS approval. This repository alone does not bind the actual portfolio.
+   */
+  async appendWithOpeningBudgetForActivePolicy(value: unknown): Promise<OpeningBudgetBoundSizingPublication> {
+    return this.appendForActivePolicySources(value, true);
+  }
+
+  private appendForActivePolicySources(value: unknown, openingBudgetRequired: false): Promise<PortfolioSizingSnapshot>;
+  private appendForActivePolicySources(value: unknown, openingBudgetRequired: true): Promise<OpeningBudgetBoundSizingPublication>;
+  private async appendForActivePolicySources(value: unknown, openingBudgetRequired: boolean): Promise<PortfolioSizingSnapshot | OpeningBudgetBoundSizingPublication> {
     const candidate = cloneResolvedSnapshot(value), baseDir = dirname(this.recordsPath);
     // Risk schemas depend on this module's observation contract. Load consumers after module initialization.
     const [{ PortfolioActionRiskDecisionFileRepository, getHeldPortfolioActionRiskDecisionObservation },
       { PaperFillExecutionFileRepository, getHeldPaperFillExecutionObservation },
       { InvestmentMandateFileRepository, getDurableInvestmentMandateObservation }, { bindHeldSnapshotPendingReservationOrigins },
+      { bindHeldSnapshotOpeningBudget },
       { OpeningCapacityReservationEventFileRepository, getDurableOpeningCapacityEventObservedAt }] = await Promise.all([
       import("./portfolioActionRiskDecisionFiles.js"), import("./paperFillExecutionFiles.js"),
       import("./investmentMandateFiles.js"), import("./heldSnapshotPendingReservationBinding.js"),
+      import("./heldSnapshotOpeningBudget.js"),
       import("./openingCapacityReservationEventFiles.js")
     ]);
     const options = { lockTimeoutMs: this.lockTimeoutMs, lockRetryDelayMs: this.lockRetryDelayMs };
@@ -195,12 +213,15 @@ export class PortfolioSizingSnapshotFileRepository {
                   if (Date.parse(getDurableOpeningCapacityEventObservedAt(capacity)) < Date.parse(getHeldPaperFillExecutionObservation(fills).observedAt)) {
                     throw new Error("sizing snapshot capacity observation clock moved backwards");
                   }
-                  bindHeldSnapshotPendingReservationOrigins({ baseDir, snapshot: candidate },
-                    { ...sources, mandates, events: capacity, planEvents, risks, fills, prices });
+                  const heldSources = { ...sources, mandates, events: capacity, planEvents, risks, fills, prices };
+                  // Each branch validates pending/terminal sources once; never trust an externally calculated budget.
+                  const openingBudget = openingBudgetRequired
+                    ? bindHeldSnapshotOpeningBudget({ baseDir, snapshot: candidate, policy: active.policy }, heldSources) : null;
+                  if (openingBudget === null) bindHeldSnapshotPendingReservationOrigins({ baseDir, snapshot: candidate }, heldSources);
                   await verifyDependencies();
                   const snapshot = await this.appendUnderLock(candidate);
                   await verifyDependencies();
-                  return snapshot;
+                  return openingBudget === null ? snapshot : Object.freeze({ snapshot, openingBudget });
                 });
               });
             });

@@ -5446,6 +5446,25 @@ safe integer·decimal floor·과점유 경계를 테스트하며 historical 결�
 수정하지 않고 실패하며 재시작 재계산은 동일하다. Migration은 없고 새 consumer와 함께 코드로
 rollback하며 원본 journal 삭제·변환은 하지 않는다.
 
+`appendOpeningBudgetBoundCurrentPortfolioSizingSnapshot`는 실제 journaled portfolio revision과
+현재 활성 정책을 기존 source lock 순서로 결속하고, 같은 callback에서 held budget을 계산한 뒤
+snapshot append 또는 exact-retry fsync까지 잠금을 유지한다. 신규 repository 경로
+`appendWithOpeningBudgetForActivePolicy`는 actual active policy를 내부 조회하며 supplied budget이나
+policy를 caller가 주입하지 못한다. Pending/terminal 검증은 budget 내부에서 한 번만 수행한다.
+
+결과는 `{snapshot, openingBudget}`이며 반환 뒤에는 잠금이 해제된 관측 결과다. 향후 할당 시점의
+lease/CAS 승인이나 accounting/실행 권한이 아니다. Repository 단독 호출은 실제 portfolio 인증이
+아니며 current wrapper가 그 잠금을 소유한다. 하위 budget assessment의 비권한 범위는 그대로다.
+기존 current/policy-bound API의 반환 snapshot 형식과 legacy 정책 동작은 유지한다. 새 진입점만
+모든 bucket의 명시적 opening 한도를 요구하며 legacy 한도를 합성하지 않는다. Cash/band 과점유는
+계산 결과로 반환하며 관측 발행 자체를 신규 매수 승인으로 취급하지 않는다.
+
+수동/selector 실제 저장소 테스트는 current revision·정책 hash·historical 계산 일치, exact retry,
+legacy 호환성, caller override·정책/예약 손상 거절과 bytes 보존, 첫 발행/재시도 fsync 중 portfolio·
+price·activation·capacity 잠금 유지, retry fsync 실패 전파와 해제를 확인한다. 저장 schema 변화나
+migration은 없다. Rollback은 새 진입점 consumer와 함께 수행하며 기존 snapshot journal을 삭제하지
+않는다. 공용 allocator/CAS와 전체 회계 원자성은 여전히 후속이고 최종 수용 기준은 완료로 표시하지 않는다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
