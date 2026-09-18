@@ -5465,6 +5465,27 @@ price·activation·capacity 잠금 유지, retry fsync 실패 전파와 해제�
 migration은 없다. Rollback은 새 진입점 consumer와 함께 수행하며 기존 snapshot journal을 삭제하지
 않는다. 공용 allocator/CAS와 전체 회계 원자성은 여전히 후속이고 최종 수용 기준은 완료로 표시하지 않는다.
 
+`withPublishedCurrentOpeningBudget`는 동일 발행 경로의 source 잠금을 후속 내부 callback 종료까지
+유지한다. Repository의 `withPublishedOpeningBudgetForActivePolicy`는 snapshot append/retry fsync와
+dependency 확인 뒤 callback을 실행하고 정상 반환 후 dependency를 다시 확인한다. Actual portfolio
+잠금은 current wrapper가 계속 소유한다. 기존 append API의 반환과 저장 형식은 불변이다.
+
+`assertHeldCurrentOpeningBudget`는 current wrapper가 발급한 실제 callback 객체를 private WeakMap으로
+인증하고 baseDir/portfolioPath와 관측 후 시계 역행을 검사한다. 복사·structured clone·다른 경로,
+일반 append 반환값과 callback 정상/예외 종료 후 값은 거절한다. Scope는 finally에서 폐기하며
+새 callback 중에도 이전 객체가 다시 유효해지지 않는다. 원본 내용은 이후 읽을 수 있지만 scope
+검사를 통과하지 못하므로 후속 현재 상태 저장의 보유 증거로 사용할 수 없다. 유효한 scope도
+snapshot의 cutoff 이후 event가 없다는 증명은 아니다. Cutoff prefix와 최신 source 전체의 차이,
+정책/증거 freshness 및 현재 할당 가능성은 후속 consumer가 별도 gate로 검증해야 한다.
+
+이는 trusted internal composition 경계이며 source lock을 다시 취득하는 repository를 callback
+안에서 호출하면 안 된다. Snapshot은 callback 시작 전에 durable하므로 consumer 실패가 기존
+발행이나 임의 consumer write를 rollback하지 않는다. 실패는 전파하고 정확한 snapshot retry와
+명시적 복구를 사용해야 한다. 소비자 commit·공유 ledger CAS·allocation·전체 회계 transaction은
+아직 연결하지 않는다. 실제 테스트는 async callback 중 portfolio/price/activation/capacity 잠금,
+객체/경로/수명, source 손상 시 callback 미호출·bytes 보존, consumer 및 시계 오류 뒤 폐기·재시도를
+검증한다. 영구 artifact/schema migration은 없고 후속 consumer와 함께 코드 rollback한다.
+
 같은 ID의 exact retry는 전체 원본과 journal 검증 후 기존 origin을 반환하며 새 pair를 쓰지 않는다.
 CreatedAt이 달라진 같은 ID는 collision이고, 새 ID를 만들어도 이미 발급된 candidateAssignmentId는
 재사용할 수 없다. 이 unique issuance는 실제 shared slot unique/CAS 또는 activation을 대신하지 않는다.
