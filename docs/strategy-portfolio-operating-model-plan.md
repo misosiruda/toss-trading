@@ -6704,6 +6704,12 @@ Rollback은 모든 writer를 중지하고 intent/plan/receipt/log/revision/JSON�
 - credential, 비용, 라이선스 또는 외부 계정 설정이 필요하면 owner 판단 후 진행
 - source가 준비되기 전에는 long-term quality를 가격 데이터만으로 확정하지 않음
 
+이번 단계에서는 `credential-free-fundamental.v1` immutable envelope만 추가한다. issuer/symbol/
+fiscal period, 관측 시각, 원문 URI와 문서 hash, metric period를 canonical payload에 결속하고,
+evidence ref/hash를 파생한다. 외부 네트워크 호출이나 provider 권위 승격은 하지 않으며,
+`unavailable` 상태는 evidence로 저장하지 않는다. 실제 공식 provider adapter와 license/계정
+검토는 별도 owner 판단 단계로 남긴다.
+
 ## 14. 테스트 전략
 
 ### Contract 및 invariant
