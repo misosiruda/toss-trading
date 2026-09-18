@@ -33,6 +33,10 @@ export interface VerifiedManualCapacityReservationHistory {
   readonly origins: readonly VerifiedManualCapacityReservationOrigin[];
   readonly generationHash: string | null;
 }
+/** Trusted journal composition only: no slot allocation, policy eligibility or transaction authority. */
+export interface ManualCapacityAppendSession {
+  append(value: unknown, snapshots?: VerifiedPortfolioSizingSnapshotHistory): Promise<VerifiedManualCapacityReservationOrigin>;
+}
 const observations = new WeakMap<VerifiedManualCapacityReservationHistory, { observedAt: string; sourcePath: string; verifySources: () => void }>();
 
 export function assertDurableManualCapacityReservationSource(history: VerifiedManualCapacityReservationHistory, baseDir: string): void {
@@ -103,8 +107,85 @@ export class ManualOpeningCapacityReservationFileRepository {
 
   async append(value: unknown): Promise<VerifiedManualCapacityReservationOrigin> {
     const record = parseManualOpeningCapacityReservationRecord(value);
-    return this.withSources((manual, snapshots) => this.withLock(async () => {
+    return this.withSources((manual, snapshots) => this.withLock(() => this.appendUnderLock(record, manual, snapshots, () => {})));
+  }
+
+  /** Reuses actual manual/snapshot sources and owns the reservation lock through all in-flight writes.
+   * A later actual snapshot lease may extend the original prefix (for post-publication composition).
+   * This primitive never updates the shared capacity document or grants allocation/execution approval.
+   */
+  async withAppendSessionFromSources<T>(manual: VerifiedManualAssignmentHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory,
+    operation: (session: ManualCapacityAppendSession) => Promise<T>): Promise<T> {
+    if (typeof operation !== "function") throw new Error("manual capacity append session consumer must be a function");
+    const verifySources = () => {
+      assertDurableManualAssignmentSource(manual, this.baseDir);
+      assertDurablePortfolioSizingSnapshotSource(snapshots, this.baseDir);
+    };
+    verifySources();
+    const prefix = getDurablePortfolioSizingSnapshotObservation(snapshots);
+    return this.withLock(async () => {
+      verifySources();
+      const { history, observedAt } = await this.readUnderLock(manual, snapshots);
+      verifySources();
+      const sessionAt = Date.parse(observedAt);
+      if (sessionAt < Math.max(Date.parse(prefix.observedAt), Date.parse(getDurableManualAssignmentObservation(manual).observedAt))) {
+        throw new Error("manual capacity append session clock moved backwards");
+      }
+      let active = true, accepting = true, failed = false, failure: unknown;
+      let expectedGeneration = history.generationHash, clockFloor = sessionAt;
+      const knownIds = new Set(history.origins.map((origin) => origin.record.manualCapacityReservationId));
+      let pending: Promise<VerifiedManualCapacityReservationOrigin> | undefined;
+      const verify = (current: VerifiedPortfolioSizingSnapshotHistory) => {
+        if (!active) throw new Error("manual capacity append session has expired");
+        verifySources();
+        assertDurablePortfolioSizingSnapshotSource(current, this.baseDir);
+        resolveObservedPortfolioSizingSnapshotHistory(current, prefix);
+        const currentFloor = Math.max(clockFloor, Date.parse(getDurablePortfolioSizingSnapshotObservation(current).observedAt));
+        if (Date.now() < currentFloor) {
+          throw new Error("manual capacity append session clock moved backwards");
+        }
+        clockFloor = currentFloor;
+      };
+      const session: ManualCapacityAppendSession = Object.freeze({ append: (value: unknown, current = snapshots) => {
+        if (!accepting || !active) return Promise.reject(new Error("manual capacity append session has expired"));
+        if (pending) return Promise.reject(new Error("manual capacity append session already has an in-flight write"));
+        if (failed) return Promise.reject(failure);
+        const task = (async () => {
+          verify(current);
+          const record = parseManualOpeningCapacityReservationRecord(value);
+          const origin = await this.appendUnderLock(record, manual, current, () => verify(current), (actual) => {
+            if (actual.generationHash !== expectedGeneration) throw new Error("manual capacity append session generation changed unexpectedly");
+          });
+          if (!knownIds.has(record.manualCapacityReservationId)) {
+            knownIds.add(record.manualCapacityReservationId); expectedGeneration = origin.commitHash;
+          }
+          return origin;
+        })();
+        pending = task;
+        void task.then(() => { pending = undefined; }, (error: unknown) => { failed = true; failure = error; pending = undefined; });
+        return task;
+      } });
+      try {
+        verify(snapshots);
+        return await operation(session);
+      } finally {
+        accepting = false;
+        try {
+          if (pending) await pending;
+          verify(snapshots);
+          if (failed) throw failure;
+        } finally { active = false; }
+      }
+    });
+  }
+
+  private async appendUnderLock(record: ManualOpeningCapacityReservationRecord, manual: VerifiedManualAssignmentHistory,
+    snapshots: VerifiedPortfolioSizingSnapshotHistory, verify: () => void,
+    verifyHistory: (history: VerifiedManualCapacityReservationHistory) => void = () => {}): Promise<VerifiedManualCapacityReservationOrigin> {
+      verify();
       const { history } = await this.readUnderLock(manual, snapshots);
+      verify();
+      verifyHistory(history);
       const existing = history.origins.find((item) => item.record.manualCapacityReservationId === record.manualCapacityReservationId);
       if (existing !== undefined) {
         if (!isDeepStrictEqual(existing.record, record)) throw new Error("manual capacity reservation ID collision");
@@ -121,20 +202,23 @@ export class ManualOpeningCapacityReservationFileRepository {
       const entryHash = hashCanonicalPayload(payload);
       // An interrupted entry/marker write remains fail-closed, even when a complete line is visible.
       const pending = await open(this.paths.pendingPath, "wx");
-      try { await pending.writeFile(`${JSON.stringify({ entryHash })}\n`); await pending.sync(); }
+      try { verify(); await pending.writeFile(`${JSON.stringify({ entryHash })}\n`); await pending.sync(); }
       finally { await pending.close(); }
       await syncDirectory(dirname(this.paths.pendingPath));
+      verify();
       await appendLine(this.paths.recordsPath, { ...payload, entryHash });
+      verify();
       const committedAt = new Date().toISOString();
       if (Date.parse(committedAt) < Date.parse(appendStartedAt)) throw new Error("manual capacity commit clock moved backwards");
       const marker = { schemaVersion: "manual_capacity_reservation_commit.v1" as const, entryHash, committedAt };
       const commitHash = hashCanonicalPayload(marker);
       await appendLine(this.paths.recordsPath, { ...marker, commitHash });
+      verify();
       if (Date.now() < Date.parse(committedAt)) throw new Error("manual capacity flush clock moved backwards");
       await unlink(this.paths.pendingPath);
       await syncDirectory(dirname(this.paths.pendingPath));
+      verify();
       return Object.freeze({ record, source, appendStartedAt, committedAt, entryHash, commitHash });
-    }));
   }
 
   private withSources<T>(operation: (manual: VerifiedManualAssignmentHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>): Promise<T> {
