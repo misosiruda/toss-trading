@@ -7,10 +7,11 @@ import { PortfolioSizingSnapshotFileRepository, type OpeningBudgetBoundSizingPub
 import type { PortfolioSizingSnapshot } from "./portfolioSizingSnapshot.js";
 import { resolvePortfolioSizingSnapshot } from "./portfolioSizingSnapshotResolver.js";
 
-const inputSchema = portfolioSizingSnapshotSchema.omit({ portfolioSnapshotId: true, portfolioSnapshotHash: true,
+export const currentPortfolioSizingSnapshotInputSchema = portfolioSizingSnapshotSchema.omit({ portfolioSnapshotId: true, portfolioSnapshotHash: true,
   portfolioId: true, portfolioVersion: true, virtualPortfolio: true }).extend({
   baseDir: z.string().min(1), portfolioPath: z.string().min(1)
 }).strict();
+const inputSchema = currentPortfolioSizingSnapshotInputSchema;
 const scopePaths = z.object({ baseDir: z.string().min(1), portfolioPath: z.string().min(1) }).strict();
 const heldPublications = new WeakMap<OpeningBudgetBoundSizingPublication, Readonly<{ baseDir: string; portfolioPath: string; observedAt: number }>>();
 

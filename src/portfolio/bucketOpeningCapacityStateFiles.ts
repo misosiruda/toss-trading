@@ -7,12 +7,17 @@ import { sha256HashSchema } from "../domain/schemas.js";
 import { portfolioSizingSnapshotSchema } from "./portfolioSizingSnapshot.js";
 import { compareText, hashCanonicalPayload } from "./runtimePolicyContracts.js";
 import { resolveStoredBucketOpeningCapacityStates } from "./storedBucketOpeningCapacityStates.js";
+import { projectBucketOpeningCapacityStates } from "./bucketOpeningCapacityStateProjection.js";
+import { assertHeldCurrentOpeningBudget, currentPortfolioSizingSnapshotInputSchema,
+  withPublishedCurrentOpeningBudget } from "./currentPortfolioSizingSnapshotFiles.js";
 
 export const BUCKET_OPENING_CAPACITY_STATE_FILE_NAME = "bucket-opening-capacity-state.json";
 type Projection = Awaited<ReturnType<typeof resolveStoredBucketOpeningCapacityStates>>["projection"];
 type Options = { lockTimeoutMs?: number; lockRetryDelayMs?: number };
 const snapshotQuery = z.object({ portfolioSnapshotId: portfolioSizingSnapshotSchema.shape.portfolioSnapshotId }).strict();
 const refreshSchema = snapshotQuery.extend({ expectedDocumentHash: sha256HashSchema.nullable() }).strict();
+const currentRefreshSchema = z.object({ snapshotInput: currentPortfolioSizingSnapshotInputSchema.omit({ baseDir: true }),
+  expectedDocumentHash: sha256HashSchema.nullable() }).strict();
 const documentSchema = z.object({ schemaVersion: z.literal("bucket_opening_capacity_state_document.v1"),
   projections: z.array(z.unknown()).min(1), documentHash: sha256HashSchema }).strict();
 export interface StoredBucketOpeningCapacityDocument {
@@ -26,7 +31,8 @@ export function createBucketOpeningCapacityStatePaths(baseDir: string) {
     lockPath: join(baseDir, `.${BUCKET_OPENING_CAPACITY_STATE_FILE_NAME}.lock`) };
 }
 
-/** Whole-document projection CAS only. No latest-portfolio, source lease, allocation or execution authority.
+/** Whole-document projection CAS only. Current-publication refresh holds actual portfolio/source locks through storage;
+ * historical refresh does not. Neither grants latest-cutoff completeness, allocation or execution authority.
  * Serializes cooperating repository processes, not out-of-band filesystem writers. Recovery requires all
  * readers/writers to be stopped; ownership checks detect observed corruption, not an atomic takeover fence.
  */
@@ -71,6 +77,36 @@ export class BucketOpeningCapacityStateFileRepository {
       await assertOwned();
       await writeSnapshot(this.paths.statePath, next);
       return next;
+    });
+  }
+
+  /** Acquires the document lock before the actual current portfolio/source locks. Never invoke inside a source callback.
+   * Snapshot publication precedes document CAS: failure can leave a durable immutable snapshot, not an allocation.
+   * Cutoff completeness/freshness and final allocation/transaction gates remain separate.
+   */
+  async refreshFromCurrentPublication(value: z.input<typeof currentRefreshSchema>): Promise<StoredBucketOpeningCapacityDocument> {
+    const input = currentRefreshSchema.parse(value);
+    if (!isDeepStrictEqual(value, input)) throw new Error("current opening capacity refresh must already be canonical");
+    const paths = Object.freeze({ baseDir: this.baseDir, portfolioPath: resolve(input.snapshotInput.portfolioPath) });
+    return this.withLock(async (assertOwned) => {
+      const stored = await this.readStored();
+      return withPublishedCurrentOpeningBudget({ ...input.snapshotInput, baseDir: this.baseDir }, async (publication) => {
+        assertHeldCurrentOpeningBudget(publication, paths);
+        const current = projectBucketOpeningCapacityStates(publication.snapshot, publication.openingBudget.occupancy.policy, publication.openingBudget);
+        const previous = stored?.projections.find((item) => item.portfolioId === current.portfolioId);
+        const next = makeDocument([...(stored?.projections.filter((item) => item.portfolioId !== current.portfolioId) ?? []), current]);
+        if (stored !== null && isDeepStrictEqual(stored, next)) {
+          await assertOwned(); await syncFile(this.paths.statePath); assertHeldCurrentOpeningBudget(publication, paths); return stored;
+        }
+        if ((stored?.documentHash ?? null) !== input.expectedDocumentHash) throw new Error("opening capacity document CAS mismatch");
+        if (previous !== undefined && Date.parse(current.asOf) <= Date.parse(previous.asOf)) {
+          throw new Error("opening capacity snapshot must advance; older or ambiguous same-time replacements are forbidden");
+        }
+        await assertOwned(); assertHeldCurrentOpeningBudget(publication, paths);
+        await writeSnapshot(this.paths.statePath, next);
+        assertHeldCurrentOpeningBudget(publication, paths); await assertOwned();
+        return next;
+      }, this.options);
     });
   }
 
