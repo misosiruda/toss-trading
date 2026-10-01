@@ -11,7 +11,7 @@
 
 - 기준 main: `d9818e74fdf932588ebecce5eecc2525baa6421f` (2026-10-01 원격 확인)
 - 작업 branch: `docs/personal-investment-trainer-structure`
-- 상태: 구현 전 설계. 최종 진행 상태와 검증 결과는 PR 설명에 기록한다.
+- 상태: 설계 범위의 문서 이동과 로컬 검증 완료. 원격 push/PR 게시 전 검토 단계
 - PR788의 source 변경과 미병합 테스트는 별도 checkout에 보존하며 이 PR에 포함하지 않는다.
 
 ## 포함 범위
@@ -59,14 +59,14 @@ CLI와 테스트가 읽는 실행 입력이므로 기존 root 경로에 유지�
 
 ## 수용 기준
 
-- [ ] `DOCSYS-01`: 제품 목적/현재 상태/실행/다음 계획에 각각 명확한 진입점이 있음
-- [ ] `DOCSYS-02`: 문서가 실제 역할별 폴더에 있고 각 폴더의 선택 기준이 명확함
-- [ ] `DOCSYS-03`: main 구현, 미병합 PR 관찰, 제안, 과거 결과가 구분됨
-- [ ] `DOCSYS-04`: 기존 안전 계약, 실험 값, 단계·수용 기준 식별자와 history가 보존됨
-- [ ] `DOCSYS-05`: 이동한 Markdown의 상대 링크/anchor, rule/script 경로와 예시가 정상임
-- [ ] `DOCSYS-06`: MCP tool 목록 검사와 runtime JSON fixture 경로가 유지됨
-- [ ] `DOCSYS-07`: PR788 source·untracked 테스트 및 production behavior가 포함되지 않음
-- [ ] `DOCSYS-08`: 최종 검증 결과와 미실행 범위를 기록하고 변경 내용이 PR 설계 범위와 일치함
+- [x] `DOCSYS-01`: 제품 목적/현재 상태/실행/다음 계획에 각각 명확한 진입점이 있음
+- [x] `DOCSYS-02`: 문서가 실제 역할별 폴더에 있고 각 폴더의 선택 기준이 명확함
+- [x] `DOCSYS-03`: main 구현, 미병합 PR 관찰, 제안, 과거 결과가 구분됨
+- [x] `DOCSYS-04`: 기존 안전 계약, 실험 값, 단계·수용 기준 식별자와 history가 보존됨
+- [x] `DOCSYS-05`: 이동한 Markdown의 상대 링크/anchor, rule/script 경로와 예시가 정상임
+- [x] `DOCSYS-06`: MCP tool 목록 검사와 runtime JSON fixture 경로가 유지됨
+- [x] `DOCSYS-07`: PR788 source·untracked 테스트 및 production behavior가 포함되지 않음
+- [x] `DOCSYS-08`: 최종 검증 결과와 미실행 범위를 기록하고 변경 내용이 PR 설계 범위와 일치함
 
 ## 검증 계획
 
@@ -81,6 +81,8 @@ CLI와 테스트가 읽는 실행 입력이므로 기존 root 경로에 유지�
 ## 이전 경로와 새 경로 대응
 
 이전 경로는 이 PR 이전의 위치다. 새 위치가 정본이며 파일명과 기존 heading을 유지한다.
+업무절차 정정으로 바뀐 maintenance 정책의 `Small-PR 및 Review 루프` heading은 예외이며,
+새 `기능 PR 설계와 Review 루프` 앞에 이전 `small-pr-및-review-루프` anchor alias를 보존한다.
 이전 repository 경로는 이 표와 Git history로 추적한다. 기존 commit에 고정된 URL은 유지되지만,
 옛 `main/docs/...` bookmark를 새 URL로 자동 redirect하지는 않는다. 무분별한 root stub을 남겨
 두 정본을 만들지 않는다. 고정 review payload 안의 원래 경로는 provenance로 보존한다.
@@ -154,3 +156,26 @@ CLI와 테스트가 읽는 실행 입력이므로 기존 root 경로에 유지�
 | `docs/chatgpt-review/historical-replay-progress-snapshot-2026-06-12-1553-kst.json` | [docs/archive/chatgpt-review/historical-replay-progress-snapshot-2026-06-12-1553-kst.json](../../docs/archive/chatgpt-review/historical-replay-progress-snapshot-2026-06-12-1553-kst.json) |
 | `docs/chatgpt-review/chatgpt-analysis-raw-2026-06-12.md` | [docs/archive/chatgpt-review/chatgpt-analysis-raw-2026-06-12.md](../../docs/archive/chatgpt-review/chatgpt-analysis-raw-2026-06-12.md) |
 | `docs/chatgpt-review/chatgpt-review-prompt-2026-06-12.md` | [docs/archive/chatgpt-review/chatgpt-review-prompt-2026-06-12.md](../../docs/archive/chatgpt-review/chatgpt-review-prompt-2026-06-12.md) |
+
+## 최종 검증 기록 (2026-10-01)
+
+- `git diff --check`: 통과
+- 전체 tracked Markdown 79개: 로컬 링크 422개와 heading anchor 누락 없음
+- 외부 URL 17개는 로컬 경로 검사의 범위 밖
+- 이동 파일 67개: 초기 제품/현재상태 정정 커밋을 기준으로 58개는 경로·링크 변환 외 동일
+- 고정 review payload 5개: 원격 main 원본 bytes 동일
+- 나머지 4개: archive 탐색/banner와 사용자 지시에 따른 PR 업무절차 변경을 별도 검토
+- universe JSON 4개 및 기존 포트폴리오 최종 수용 기준 12개 보존
+- `src/`, `apps/`, `dashboard/`, schema, package/lockfile, TypeScript config 변경 없음
+- 문서 밖 변경은 `AGENTS.md` 문서 포인터와 `scripts/qualityGate.mjs`의 문서 경로·오류 label만 해당
+- `npm run check:review -- --base-ref origin/main`: 통과
+  - build 및 실제 quality gate 통과
+  - tooling tests: 23 통과
+  - 변경 영향 분석이 script·archive JSON 경로 이동을 감지하여 445개 test file 전체로 fallback
+  - Node tests: 4,026개 중 3,993 통과, 33 skip, 실패/취소 0
+  - skip에는 Windows 전용·플랫폼 조건 테스트가 포함되며 해당 환경의 통과로 주장하지 않음
+- 독립 정적 검토: 문서 보존·경로·안전 경계에 차단 finding 없음. 변경된 maintenance heading의 기존 anchor alias 보완
+
+전체 suite 이후 추가된 변경은 이 검증 기록·수용 체크와 문서 anchor alias뿐이다. 해당 변경에 대해
+로컬 링크/anchor, 내용 보존, diff 및 실제 quality gate를 다시 확인한다. 실행 domain code나 검증 설정은 바뀌지 않았다.
+UI E2E, 별도 투자 simulation, 외부 AI/데이터 호출, credential 설정과 원격 게시를 수행하지 않았다.
