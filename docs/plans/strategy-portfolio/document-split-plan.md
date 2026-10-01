@@ -43,14 +43,14 @@
 
 ## 수용 기준
 
-- [ ] `SPOM-DOC-01`: 목표, 계약, 현재 상태, 이력, 검증에 각각 하나의 정본이 있음
-- [ ] `SPOM-DOC-02`: 원문 전체의 비어 있지 않은 행과 코드 블록이 구간 대응으로 보존됨
-- [ ] `SPOM-DOC-03`: 과거 부재 설명과 main 구현·미병합 PR·제안이 명시적으로 구분됨
-- [ ] `SPOM-DOC-04`: 내부 PR 단계명 및 최종 12개 기준의 문장·순서·미완료 상태가 보존됨
-- [ ] `SPOM-DOC-05`: 기존 진입점의 모든 heading anchor와 local file/anchor 참조가 유효함
-- [ ] `SPOM-DOC-06`: 식별자·숫자·실패/복구/권한 한계 및 rollback 계약이 변경되지 않음
-- [ ] `SPOM-DOC-07`: docs Markdown 외 변경이 없고 기존 runtime/fixture/보호 정책은 동일함
-- [ ] `SPOM-DOC-08`: 해당 repo 검증과 독립 정적 검토 결과 및 남은 절차를 사실대로 기록함
+- [x] `SPOM-DOC-01`: 목표, 계약, 현재 상태, 이력, 검증에 각각 하나의 정본이 있음
+- [x] `SPOM-DOC-02`: 원문 전체의 비어 있지 않은 행과 코드 블록이 구간 대응으로 보존됨
+- [x] `SPOM-DOC-03`: 과거 부재 설명과 main 구현·미병합 PR·제안이 명시적으로 구분됨
+- [x] `SPOM-DOC-04`: 내부 PR 단계명 및 최종 12개 기준의 문장·순서·미완료 상태가 보존됨
+- [x] `SPOM-DOC-05`: 기존 진입점의 모든 heading anchor와 local file/anchor 참조가 유효함
+- [x] `SPOM-DOC-06`: 식별자·숫자·실패/복구/권한 한계 및 rollback 계약이 변경되지 않음
+- [x] `SPOM-DOC-07`: docs Markdown 외 변경이 없고 기존 runtime/fixture/보호 정책은 동일함
+- [x] `SPOM-DOC-08`: 해당 repo 검증과 독립 정적 검토 결과 및 남은 절차를 사실대로 기록함
 
 ## 검증 방법
 
@@ -62,3 +62,31 @@
 - 독립 검토: 안전 계약 보존, 역사/현행 분리, 미구현 항목·권한 오인과 링크/매핑 검사
 - 최종 병합은 current-head review, 필수 GitHub check와 전체 `npm run check` 조건을 유지
 - 이전 PR의 review 예외를 이 PR에 자동 적용하지 않는다. 절차가 막히면 승인 정책을 변경하지 않고 보고한다.
+
+## 구현·검증 기록 (2026-10-02 KST)
+
+- 기준 `main`: `8eede864a26143ac91a912671d7f98bd222632e0`; 새 독립 checkout에서 작업
+- 원문 6,918행 전체: 40개 연속 구간의 SHA-256·내용 및 단일 위치 대응 통과
+- 상대 링크 재기준화와 최종 AC ID 외 원문 내용 변경 없음; code fence/문단 분할 없음
+- 이전 heading anchor 61개 유지. 진입점의 세부 heading 안내는 새 정본의 해당 heading에 직접 연결
+- 최종 `SPOM-AC-01`~`SPOM-AC-12`: 문장·순서·12개 미완료 상태 동일
+- 전체 repo Markdown 89개, 상대 링크/anchor 862개 검사 통과; 외부 URL 21개는 로컬 검사 범위 밖
+- 변경 18개 경로 모두 `docs/` Markdown. Production, test/fixture, 설정·의존성 및 승인/검증 정책 diff 없음
+- `git diff --check`: 통과
+- `npm run check:review`: 통과 (Node v24.19.0, Linux)
+  - build/quality gate 통과, tooling tests 23 통과
+  - 변경 영향 분석: `changed=18 mode=none tests=0`, documentation-only
+  - 애플리케이션 전체 suite 통과로 해석하지 않음
+- 의존성 준비: 첫 `npm ci`는 기본 cache 경로 부재로 실패. 전용 cache 재시도는 실행 도구 취소로 완료 미확인
+  - 동일 lockfile SHA-256 및 설치된 95개 package version을 대조한 기존 의존성을 새 checkout으로 복사해 검증
+  - 기존 checkout에는 쓰지 않았고 lockfile/의존성 변경은 없음
+- 독립 정적 검토: 원문 보존·원본 source·안전 경계·링크에서 차단 finding 없음
+  - 깊은 heading이 넓은 구간 시작으로 가던 가독성 finding은 정확한 heading anchor 안내로 보완
+  - 분리 전 파일의 앞/뒤를 가리키던 프로젝트 개요 문구를 이력·현재 상태 정본 링크로 교체
+  - 별도 재검토에서 1,123개 비문서 파일의 bytes 불변과 main source 근거를 확인
+
+별도 UI E2E, simulation, Codex CLI, 외부 AI/데이터 호출, 실제 거래는 실행하지 않았다.
+이 기록 시점에는 최종 병합용 전체 `npm run check`와 원격 current-head Codex review/필수 check의
+완료 증거가 없다. 이후 검증·게시 상태는 해당 원격 PR에 별도로 기록한다.
+이전 GitHub PR #789의 review 예외를 적용하거나 repository 보호·승인 정책을 변경하지 않는다.
+Draft PR 게시와 병합 준비 상태는 별도 원격 확인 결과로 판단하며, 문서 수용 완료를 merge 승인으로 쓰지 않는다.

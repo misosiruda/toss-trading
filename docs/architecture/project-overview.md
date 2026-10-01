@@ -89,7 +89,8 @@ PR788의 변경은 내부 연결 단계이며, chronology/lifetime 검토가 남
 quality 판정을 제공하지 않는다.
 
 [전략 포트폴리오 계획](../plans/strategy-portfolio-operating-model-plan.md)의 [최종 수용 기준 12개](../plans/strategy-portfolio/validation-and-acceptance.md#16-최종-수용-기준)는
-관찰 시점에 전부 미체크다. 앞부분의 초기 기준선과 뒤쪽의 최신 구현 기록을 구분해야 한다.
+관찰 시점에 전부 미체크다. [과거 기준선·구현 이력](../archive/strategy-portfolio-operating-model-history.md)과
+[현재 main 구현·남은 연결](strategy-portfolio-implementation-status.md)을 구분해서 읽는다.
 현재 Trainer MVP가 이 모든 확장을 먼저 완료해야 하는지는 별도 제품 범위 결정이다.
 
 ## 연구 결과를 해석하는 기준

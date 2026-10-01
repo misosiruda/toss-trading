@@ -47,7 +47,7 @@ live `TradingSignal`, live `OrderIntent`, broker mutation은 범위에 포함하
 
 ## 2. 문제 정의
 
-[이 절의 정본으로 이동](../archive/strategy-portfolio-operating-model-history.md#spom-source-31-60)
+[이 절의 정본으로 이동](../archive/strategy-portfolio-operating-model-history.md#2-문제-정의)
 
 <a id="spom-source-61-85"></a>
 <!-- spom-source:61-85 sha256:c2ea8a6a12e0c709387bc62d08e08f05325a331b6fe7ac19dad64dbc2eef9a40 -->
@@ -81,7 +81,7 @@ live `TradingSignal`, live `OrderIntent`, broker mutation은 범위에 포함하
 
 ## 4. 현재 구현 기준선
 
-[이 절의 정본으로 이동](../archive/strategy-portfolio-operating-model-history.md#spom-source-86-126)
+[이 절의 정본으로 이동](../archive/strategy-portfolio-operating-model-history.md#4-현재-구현-기준선)
 
 <a id="spom-source-127-167"></a>
 <!-- spom-source:127-167 sha256:1d4fa5a2afd21bdac25e4fc49fc510c9eaf9114b8966cbdbb1b7c2bb0765b71b -->
@@ -131,204 +131,204 @@ strict schema, version, parser, migration과 negative test를 함께 작성한�
 
 ### 6.1 `PortfolioPolicyActivationEvent`
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/policy-lifecycle.md#spom-source-168-590)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/policy-lifecycle.md#61-portfoliopolicyactivationevent)
 
 ### 6.2 `StrategyBucketPolicy`
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/policy-lifecycle.md#spom-source-168-590)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/policy-lifecycle.md#62-strategybucketpolicy)
 
 ### 6.3 `InvestmentMandate`
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/mandate-state.md#spom-source-591-1480)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/mandate-state.md#63-investmentmandate)
 
 ### 6.4 `PositionStrategyState`
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/mandate-state.md#spom-source-591-1480)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/mandate-state.md#64-positionstrategystate)
 
 ### 6.5 `BucketRiskState`
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/mandate-state.md#spom-source-591-1480)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/mandate-state.md#65-bucketriskstate)
 
 ### 6.6 `PortfolioSizingSnapshot`, `BucketSelectionRequest`와 `CandidateAssignment`
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-1481-1870)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#66-portfoliosizingsnapshot-bucketselectionrequest와-candidateassignment)
 
 #### Selector mandate와 supplied assignment/set 연결
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-1481-1870)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#selector-mandate와-supplied-assignmentset-연결)
 
 ### 6.7 `RebalancePlanRecord`와 `RebalancePlanEvent`
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#spom-source-1871-2336)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#67-rebalanceplanrecord와-rebalanceplanevent)
 
 ## 7. Bucket별 종목 선택 정책
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-2337-2722)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#7-bucket별-종목-선택-정책)
 
 ### 7.1 Evidence 단계
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-2337-2722)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#71-evidence-단계)
 
 ### 7.2 Score와 sizing 분리
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-2337-2722)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#72-score와-sizing-분리)
 
 #### 초기 notional의 버전 정책과 원본 재생
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-2337-2722)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#초기-notional의-버전-정책과-원본-재생)
 
 #### 초기 금액 기준 실행 비용 재계산
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-2337-2722)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#초기-금액-기준-실행-비용-재계산)
 
 #### 비용 포함 현금 상한에 맞춘 초기 금액 축소
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-2337-2722)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#비용-포함-현금-상한에-맞춘-초기-금액-축소)
 
 ## 8. Portfolio gap과 리밸런싱
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#spom-source-2723-3032)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#8-portfolio-gap과-리밸런싱)
 
 ### 8.1 Gap 계산
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#spom-source-2723-3032)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#81-gap-계산)
 
 ### 8.2 결정 우선순위
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#spom-source-2723-3032)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#82-결정-우선순위)
 
 ### 8.3 Idempotency와 동시성
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#spom-source-2723-3032)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#83-idempotency와-동시성)
 
 ## 9. Multi-bucket orchestration
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#spom-source-2723-3032)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/rebalance-risk-fill.md#9-multi-bucket-orchestration)
 
 ## 10. Policy lifecycle과 저장 artifact
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/policy-lifecycle.md#spom-source-3033-3098)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/policy-lifecycle.md#10-policy-lifecycle과-저장-artifact)
 
 ## 11. API와 Dashboard 계획
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-3099-3141)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#11-api와-dashboard-계획)
 
 ### 11.1 Local Operations API
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-3099-3141)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#111-local-operations-api)
 
 ### 11.2 Dashboard
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-3099-3141)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#112-dashboard)
 
 ## 12. Historical replay와 검증 정책
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-3142-3154)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#12-historical-replay와-검증-정책)
 
 ## 13. 구현 순서
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-3155-3168)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#13-구현-순서)
 
 ### PR 1. Runtime policy contract와 activation lineage
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-3155-3168)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#pr-1-runtime-policy-contract와-activation-lineage)
 
 ### PR 2. Active policy 기반 portfolio compliance
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-3255-3276)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#pr-2-active-policy-기반-portfolio-compliance)
 
 ### PR 3. `InvestmentMandate`와 position strategy state
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-3309-3323)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#pr-3-investmentmandate와-position-strategy-state)
 
 ### PR 4. `PortfolioGapAnalyzer`
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-3915-3922)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#pr-4-portfoliogapanalyzer)
 
 ### PR 5. Bucket candidate selector contract
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-4405-4415)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#pr-5-bucket-candidate-selector-contract)
 
 #### 후보 assignment와 요청 단위 budget 결과 계약
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-4461-5616)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#후보-assignment와-요청-단위-budget-결과-계약)
 
 #### 후보 결과의 실제 원본 저장과 요청별 단일 확정
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-4461-5616)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#후보-결과의-실제-원본-저장과-요청별-단일-확정)
 
 #### 대기 action의 실제 계획 진행 이력 연결
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-4461-5616)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#대기-action의-실제-계획-진행-이력-연결)
 
 #### Snapshot pending 목록과 계획·잔여 gross 금액 대조
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-4461-5616)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#snapshot-pending-목록과-계획잔여-gross-금액-대조)
 
 #### Snapshot pending 계산에 사용된 체결·Risk 원본 연결
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-4461-5616)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#snapshot-pending-계산에-사용된-체결risk-원본-연결)
 
 #### Snapshot pending BUY의 실제 예약 원본 및 잔액 연결
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-4461-5616)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#snapshot-pending-buy의-실제-예약-원본-및-잔액-연결)
 
 #### Selector opening reservation 발급 기록 계약
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-4461-5616)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#selector-opening-reservation-발급-기록-계약)
 
 #### Selector opening reservation 발급 원본 저장
 
-[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#spom-source-4461-5616)
+[이 절의 정본으로 이동](../contracts/strategy-portfolio/selection-sizing-reservation.md#selector-opening-reservation-발급-원본-저장)
 
 ### PR 6. Rebalance preview planner
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-5617-5629)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#pr-6-rebalance-preview-planner)
 
 ### PR 7. Shared portfolio multi-bucket paper orchestrator
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-6433-6434)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#pr-7-shared-portfolio-multi-bucket-paper-orchestrator)
 
 ### PR 8. Integrated replay와 운영 화면
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-6688-6719)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#pr-8-integrated-replay와-운영-화면)
 
 ### 후속 단계. Fundamental evidence source
 
-[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#spom-source-6688-6719)
+[이 절의 정본으로 이동](strategy-portfolio/implementation-stages.md#후속-단계-fundamental-evidence-source)
 
 ## 14. 테스트 전략
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-6727-6918)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#14-테스트-전략)
 
 ### Contract 및 invariant
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-6727-6918)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#contract-및-invariant)
 
 ### Gap 및 sizing
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-6727-6918)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#gap-및-sizing)
 
 ### Bucket risk state
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-6727-6918)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#bucket-risk-state)
 
 ### Cadence 및 exit
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-6727-6918)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#cadence-및-exit)
 
 ### 실패 및 복구
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-6727-6918)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#실패-및-복구)
 
 ### Safety
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-6727-6918)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#safety)
 
 ## 15. 호환성과 롤백
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-6727-6918)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#15-호환성과-롤백)
 
 ## 16. 최종 수용 기준
 
-[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#spom-source-6727-6918)
+[이 절의 정본으로 이동](strategy-portfolio/validation-and-acceptance.md#16-최종-수용-기준)
