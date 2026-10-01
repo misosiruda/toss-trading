@@ -14,7 +14,7 @@ docs/chatgpt-review/chatgpt-analysis-raw-2026-06-12.md
 docs/chatgpt-review/chatgpt-review-prompt-2026-06-12.md
 docs/chatgpt-review/historical-replay-log-summary-2026-06-12-1553-kst.json
 docs/chatgpt-review/historical-replay-progress-snapshot-2026-06-12-1553-kst.json
-docs/historical-replay-diagnostic-brief.md
+docs/research/results/historical-replay-diagnostic-brief.md
 ```
 
 ## 결론

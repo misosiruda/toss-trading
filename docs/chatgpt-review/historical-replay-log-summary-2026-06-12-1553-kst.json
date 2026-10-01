@@ -1,7 +1,7 @@
 {
   "source": {
     "rawProgressSnapshot": "docs/chatgpt-review/historical-replay-progress-snapshot-2026-06-12-1553-kst.json",
-    "diagnosticBrief": "docs/historical-replay-diagnostic-brief.md",
+    "diagnosticBrief": "docs/research/results/historical-replay-diagnostic-brief.md",
     "dataDir": "data/replay-2026-04-12-2026-06-12",
     "capturedAtKst": "2026-06-12 15:53"
   },

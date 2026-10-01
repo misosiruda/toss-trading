@@ -1,6 +1,6 @@
 # Strategy Bucket Validation Research 결과
 
-이 문서는 [Strategy Bucket Validation Protocol](strategy-bucket-validation-protocol.md)과 [실행 runbook](runbooks/strategy-bucket-validation-runbook.md)에 따라 2026-07-13에 수행한 paper-only deterministic research matrix 결과를 기록한다.
+이 문서는 [Strategy Bucket Validation Protocol](../protocols/strategy-bucket-validation-protocol.md)과 [실행 runbook](../../runbooks/strategy-bucket-validation-runbook.md)에 따라 2026-07-13에 수행한 paper-only deterministic research matrix 결과를 기록한다.
 
 이 결과는 특정 종목 판단, 투자 조언, 성과 보장, live trading signal이 아니다. generated replay artifact는 `data/` 아래에만 보관하며 PR에는 포함하지 않는다.
 

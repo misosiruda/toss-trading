@@ -6,9 +6,9 @@
 
 ## 검증 배경
 
-[Short-Term Liquidity Stress Validation 결과](../short-term-liquidity-stress-results.md)의 기존 3개 scenario는 liquidity execution fixture gate를 충족했다. 그러나 partial fill 11건과 9건이 모두 `UNKNOWN` strategy bucket에 귀속됐고 `short_term` bucket partial fill은 0이었다.
+[Short-Term Liquidity Stress Validation 결과](../research/results/short-term-liquidity-stress-results.md)의 기존 3개 scenario는 liquidity execution fixture gate를 충족했다. 그러나 partial fill 11건과 9건이 모두 `UNKNOWN` strategy bucket에 귀속됐고 `short_term` bucket partial fill은 0이었다.
 
-[Strategy Preset Candidate Scope Audit](../strategy-preset-candidate-scope-audit.md)에 따라 preset과 candidate universe가 별도 contract임을 확인했고, 이후 deterministic backend와 CLI에 explicit candidate scope가 추가됐다. 따라서 기존 broad run을 strategy evidence로 재해석하지 않고 같은 liquidity scenario를 `short_term` candidate로 제한해 새 artifact로 실행해야 한다.
+[Strategy Preset Candidate Scope Audit](../research/results/strategy-preset-candidate-scope-audit.md)에 따라 preset과 candidate universe가 별도 contract임을 확인했고, 이후 deterministic backend와 CLI에 explicit candidate scope가 추가됐다. 따라서 기존 broad run을 strategy evidence로 재해석하지 않고 같은 liquidity scenario를 `short_term` candidate로 제한해 새 artifact로 실행해야 한다.
 
 ## 검증 질문
 

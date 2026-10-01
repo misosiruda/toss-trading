@@ -16,10 +16,10 @@
 ## 기준 문서와 현재 상태
 
 - [Validation Role-Local Regime Replay Selection 계획](validation-role-regime-replay-selection-plan.md)
-- [Validation Role-Regime Replay Smoke 결과](../validation-role-regime-replay-smoke-results.md)
-- [Sharpe Statistical Validation Contract](../sharpe-statistical-validation-contract.md)
-- [Strategy Bucket Validation Protocol](../strategy-bucket-validation-protocol.md)
-- [Validation Split Role-Local Regime Feasibility 결과](../validation-split-regime-feasibility-results.md)
+- [Validation Role-Regime Replay Smoke 결과](../research/results/validation-role-regime-replay-smoke-results.md)
+- [Sharpe Statistical Validation Contract](../research/protocols/sharpe-statistical-validation-contract.md)
+- [Strategy Bucket Validation Protocol](../research/protocols/strategy-bucket-validation-protocol.md)
+- [Validation Split Role-Local Regime Feasibility 결과](../research/results/validation-split-regime-feasibility-results.md)
 
 현재 smoke의 count는 다음과 같다.
 
@@ -86,7 +86,7 @@ Hash mismatch, partial provenance, mixed input 또는 count conflict가 있으�
 현재 feasibility minimum 1은 실행 가능성 확인 기준일 뿐 통계적 일반화 기준이 아니다. Candidate가 하나뿐인 cell은 `ROLE_REGIME_SINGLE_CANDIDATE`를 유지하고 해당 regime의 반복성을 판정하지 않는다.
 
 Evidence expansion preflight의 role-regime capacity floor는
-[Validation Role-Regime Evidence Expansion Target 정책](../validation-role-regime-evidence-expansion-target-policy.md)에서
+[Validation Role-Regime Evidence Expansion Target 정책](../research/protocols/validation-role-regime-evidence-expansion-target-policy.md)에서
 cell별 8로 사전 고정한다. 네 cell을 모두 충족하면 role별 32개가 되어 기존
 role minimum 30과 모순되지 않는다.
 

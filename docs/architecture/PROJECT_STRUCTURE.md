@@ -625,7 +625,7 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `src/replay/officialMarketCalendarNetworkResponseFreshness.ts`
 - `docs/contracts/official-token-auth-design.md`
 - `docs/contracts/official-toss-open-api-adapter-design.md`
-- `docs/replay-calendar-fx-contract.md`
+- `docs/research/protocols/replay-calendar-fx-contract.md`
 
 필수 확인:
 
@@ -649,7 +649,7 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `src/replay/officialBrokerObservedCalendarCoverageProbe.ts`
 - `docs/contracts/official-token-auth-design.md`
 - `docs/contracts/official-toss-open-api-adapter-design.md`
-- `docs/replay-calendar-fx-contract.md`
+- `docs/research/protocols/replay-calendar-fx-contract.md`
 
 필수 확인:
 
@@ -676,7 +676,7 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `src/replay/officialBrokerObservedCalendarEphemeralObservation.ts`
 - `docs/contracts/official-token-auth-design.md`
 - `docs/contracts/official-toss-open-api-adapter-design.md`
-- `docs/replay-calendar-fx-contract.md`
+- `docs/research/protocols/replay-calendar-fx-contract.md`
 
 필수 확인:
 
@@ -855,7 +855,7 @@ provider safe default와 문서 drift 검사는 유지된다. 상세 절차는 [
 - [trading-runtime.md](../contracts/trading-runtime.md)
 - [risk-policy.md](../contracts/risk-policy.md)
 - [historical-replay.md](../runbooks/historical-replay.md)
-- [quant-research-paper-simulation-review.md](../quant-research-paper-simulation-review.md)
+- [quant-research-paper-simulation-review.md](../research/reviews/quant-research-paper-simulation-review.md)
 - [quant-research-paper-simulation-plan.md](../plans/quant-research-paper-simulation-plan.md)
 - [nextjs-dashboard-architecture-plan.md](../plans/nextjs-dashboard-architecture-plan.md)
 - [mcp-tools.md](../contracts/mcp-tools.md)

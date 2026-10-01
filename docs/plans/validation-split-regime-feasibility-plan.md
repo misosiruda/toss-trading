@@ -6,7 +6,7 @@
 
 ## 배경
 
-[Strategy Bucket Validation Research 결과](../strategy-bucket-validation-research-results.md)는 fixed validation assignment 9개가 bull 7, mixed 2에 편중되고 bear와 sideways가 없음을 기록했다. [Short-Term Scoped Liquidity Stress Validation 결과](../short-term-scoped-liquidity-stress-results.md)에서는 partial fill이 세 role에 나타났지만 fail-closed no-fill 47건과 50건이 train에만 발생해 execution fixture를 `inconclusive`로 판정했다.
+[Strategy Bucket Validation Research 결과](../research/results/strategy-bucket-validation-research-results.md)는 fixed validation assignment 9개가 bull 7, mixed 2에 편중되고 bear와 sideways가 없음을 기록했다. [Short-Term Scoped Liquidity Stress Validation 결과](../research/results/short-term-scoped-liquidity-stress-results.md)에서는 partial fill이 세 role에 나타났지만 fail-closed no-fill 47건과 50건이 train에만 발생해 execution fixture를 `inconclusive`로 판정했다.
 
 현재 `historicalBatchReplay` CLI는 `--validation-splits-path`를 읽으면 출력상의 effective sampling mode를 `fixed_range`로 기록한다. Workflow의 `selectBatchReplayWindow()`도 validation assignment가 있으면 role 전체 범위를 즉시 선택하고 `balanced_regime` branch를 실행하지 않는다. 따라서 현재 artifact만으로는 다음을 구분할 수 없다.
 
@@ -338,7 +338,7 @@ Unavailable target regime은 다른 regime으로 자동 대체하지 않는다. 
 
 Generated artifact writer는 filesystem 단위로 분리했다. Source parser는 snapshot JSONL의 missing/empty/corrupt 상태와 universe, coverage, validation split, calendar fixture source의 schema를 fail-closed로 검증한다. `historical:validation:regime-feasibility` CLI는 계획에 고정한 source/config/output option만 허용하고 parser, deterministic builder, exclusive writer를 연결한다.
 
-실제 source preflight 결과는 [Validation Split Role-Local Regime Feasibility 결과](../validation-split-regime-feasibility-results.md)에 기록한다. 고정 minimum 1 기준 artifact는 `available`이지만 observed-session calendar fixture의 독립성 한계와 regime별 최소 candidate 편중을 유지한 채 해석한다.
+실제 source preflight 결과는 [Validation Split Role-Local Regime Feasibility 결과](../research/results/validation-split-regime-feasibility-results.md)에 기록한다. 고정 minimum 1 기준 artifact는 `available`이지만 observed-session calendar fixture의 독립성 한계와 regime별 최소 candidate 편중을 유지한 채 해석한다.
 
 ## 테스트 요구사항
 

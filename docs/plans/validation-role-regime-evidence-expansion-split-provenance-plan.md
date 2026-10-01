@@ -154,7 +154,7 @@ fixture에서는 distinct split hash를 유지하면서 incremental unique evide
 검증하는 회귀 테스트로 이 해석을 고정한다.
 
 4단계 입력은
-[Evidence Expansion Source 사전 등록](../validation-role-regime-evidence-expansion-source-preregistration.md)에서
+[Evidence Expansion Source 사전 등록](../research/protocols/validation-role-regime-evidence-expansion-source-preregistration.md)에서
 결과 확인 전에 고정했다. Yahoo daily와 `global-paper-broad-v1` universe를
 사용하는 2013-01-01부터 2022-12-31 KST까지의 expansion source, 기존
 global-broad coverage minimum, non-overlapping 40/40/40개월 단일

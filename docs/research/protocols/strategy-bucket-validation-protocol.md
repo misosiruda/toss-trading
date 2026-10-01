@@ -6,7 +6,7 @@
 
 이 문서는 실거래 기능 구현 계획이 아니다. live order, broker mutation, raw `codex exec`, raw `tossctl`, natural language order, `place_order` surface는 범위에 포함하지 않는다. AI decision provider는 direction/evidence proposal만 제공하며 final sizing과 gate는 deterministic backend와 Risk Engine이 담당한다.
 
-구체적인 replay/report 명령과 bucket별 실행 matrix는 [strategy-bucket-validation-runbook.md](runbooks/strategy-bucket-validation-runbook.md)를 따른다.
+구체적인 replay/report 명령과 bucket별 실행 matrix는 [strategy-bucket-validation-runbook.md](../../runbooks/strategy-bucket-validation-runbook.md)를 따른다.
 
 ## 기준 소스
 
@@ -18,8 +18,8 @@
 | Strategy replay preset | `src/replay/strategyReplayPreset.ts` | preset별 window, cadence, decision call budget, risk profile, exit policy |
 | Bucket test validation | `src/api/strategyBucketTestValidation.ts` | paper-only config validation, bucket policy 존재 여부, provider mode gate |
 | Historical replay guide | `docs/runbooks/historical-replay.md` | batch replay command, preset, cost, validation split, report artifact |
-| Sharpe validation | `docs/sharpe-statistical-validation-contract.md` | sample size, confidence interval, Lo-style adjustment, PSR, DSR warning |
-| CPCV/PBO validation | `docs/cpcv-pbo-validation-contract.md` | selection overfitting, split matrix, sampled/full CPCV/PBO warning |
+| Sharpe validation | `docs/research/protocols/sharpe-statistical-validation-contract.md` | sample size, confidence interval, Lo-style adjustment, PSR, DSR warning |
+| CPCV/PBO validation | `docs/research/protocols/cpcv-pbo-validation-contract.md` | selection overfitting, split matrix, sampled/full CPCV/PBO warning |
 | RH milestone | `docs/plans/research-hardening-milestone-plan.md` | calendar/FX, lifecycle, market impact, Sharpe, CPCV/PBO, Triple Barrier 상태 |
 | Dashboard lab | `apps/dashboard/README.md` | read-only validation lab, strategy test lab, risk trace, cost warning |
 
@@ -109,7 +109,7 @@ POST /paper/simulations/strategy-bucket-tests/validate
 
 ### 3. Preset별 batch replay 실행
 
-`--strategy-preset`은 bucket별 cadence/risk/exit configuration을 분리하지만 현재 candidate universe를 bucket으로 제한하지 않는다. Bucket-specific candidate validation은 [Strategy Preset Candidate Scope Audit](strategy-preset-candidate-scope-audit.md)의 명시적 scope contract가 구현되기 전까지 `inconclusive`로 해석한다. 같은 data, universe, calendar, cost, split 조건의 preset 반복 실행만으로 bucket candidate가 격리됐다고 간주하지 않는다.
+`--strategy-preset`은 bucket별 cadence/risk/exit configuration을 분리하지만 현재 candidate universe를 bucket으로 제한하지 않는다. Bucket-specific candidate validation은 [Strategy Preset Candidate Scope Audit](../results/strategy-preset-candidate-scope-audit.md)의 명시적 scope contract가 구현되기 전까지 `inconclusive`로 해석한다. 같은 data, universe, calendar, cost, split 조건의 preset 반복 실행만으로 bucket candidate가 격리됐다고 간주하지 않는다.
 
 ```powershell
 npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2023-01-2026-05-global-broad-yahoo-daily --output-dir data/batch-replay --batch-id batch-<preset>-validation-001 --seed bucket-validation-001 --runs 16 --random-window-from 2023-01-01T00:00:00+09:00 --random-window-to 2026-05-31T23:59:59.999+09:00 --strategy-preset <preset> --universe-path docs/historical-universe.global-broad.json --window-sampling balanced_regime --target-regimes "bull,bear,sideways,mixed"

@@ -73,17 +73,17 @@
 
 ### 연구 계약·확장 계획
 
-- [Quant Research Plan](plans/quant-research-paper-simulation-plan.md), [Review](quant-research-paper-simulation-review.md)
-- [Research Hardening](plans/research-hardening-milestone-plan.md), [bucket validation protocol](strategy-bucket-validation-protocol.md)
-- [calendar/FX contract](replay-calendar-fx-contract.md), [official calendar acquisition](plans/official-market-calendar-source-acquisition-plan.md)
-- [Sharpe validation](sharpe-statistical-validation-contract.md), [CPCV/PBO](cpcv-pbo-validation-contract.md), [triple barrier](triple-barrier-label-contract.md)
+- [Quant Research Plan](plans/quant-research-paper-simulation-plan.md), [Review](research/reviews/quant-research-paper-simulation-review.md)
+- [Research Hardening](plans/research-hardening-milestone-plan.md), [bucket validation protocol](research/protocols/strategy-bucket-validation-protocol.md)
+- [calendar/FX contract](research/protocols/replay-calendar-fx-contract.md), [official calendar acquisition](plans/official-market-calendar-source-acquisition-plan.md)
+- [Sharpe validation](research/protocols/sharpe-statistical-validation-contract.md), [CPCV/PBO](research/protocols/cpcv-pbo-validation-contract.md), [triple barrier](research/protocols/triple-barrier-label-contract.md)
 - [split/regime feasibility](plans/validation-split-regime-feasibility-plan.md), [role/regime replay selection](plans/validation-role-regime-replay-selection-plan.md), [statistical readiness](plans/validation-role-regime-statistical-readiness-plan.md)
-- Evidence expansion: [source preregistration](validation-role-regime-evidence-expansion-source-preregistration.md), [split provenance](plans/validation-role-regime-evidence-expansion-split-provenance-plan.md), [target policy](validation-role-regime-evidence-expansion-target-policy.md), [preflight](plans/validation-role-regime-evidence-expansion-preflight-plan.md)
+- Evidence expansion: [source preregistration](research/protocols/validation-role-regime-evidence-expansion-source-preregistration.md), [split provenance](plans/validation-role-regime-evidence-expansion-split-provenance-plan.md), [target policy](research/protocols/validation-role-regime-evidence-expansion-target-policy.md), [preflight](plans/validation-role-regime-evidence-expansion-preflight-plan.md)
 - Liquidity stress: [일반 계획](plans/short-term-liquidity-stress-validation-plan.md), [범위 제한 계획](plans/short-term-scoped-liquidity-stress-validation-plan.md)
 
 ### 고정 실험 결과·참고 자료
 
-- `*-results.md`, [candidate scope audit](strategy-preset-candidate-scope-audit.md), [replay diagnostic brief](historical-replay-diagnostic-brief.md)는 해당 실험의 입력·제약과 함께 보존한다.
+- `*-results.md`, [candidate scope audit](research/results/strategy-preset-candidate-scope-audit.md), [replay diagnostic brief](research/results/historical-replay-diagnostic-brief.md)는 해당 실험의 입력·제약과 함께 보존한다.
 - [chatgpt-review](chatgpt-review/README.md)는 과거 외부 검토용 묶음이다. 원문·요약·진행 snapshot을 현재 정본으로 승격하지 않는다.
 - `historical-universe*.json`은 실행·테스트 입력으로도 쓰인다. 단순 문서 첨부나 archive 대상으로 취급하지 않는다.
 

@@ -88,7 +88,7 @@ flowchart TD
 
 범위:
 
-- `docs/quant-research-paper-simulation-review.md`
+- `docs/research/reviews/quant-research-paper-simulation-review.md`
 - `docs/plans/quant-research-paper-simulation-plan.md`
 - `docs/contracts/risk-policy.md`
 - `docs/runbooks/historical-replay.md`
@@ -698,7 +698,7 @@ Report 구획:
 작업 전:
 
 - [ ] `AGENTS.md` 확인
-- [ ] `docs/quant-research-paper-simulation-review.md` 확인
+- [ ] `docs/research/reviews/quant-research-paper-simulation-review.md` 확인
 - [ ] 관련 milestone 범위 확인
 - [ ] `git status --short` 확인
 - [ ] live trading surface가 필요 없는지 확인

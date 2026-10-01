@@ -1,6 +1,6 @@
 # Short-Term Liquidity Stress Validation 결과
 
-이 문서는 [Short-Term Liquidity Stress Validation 계획](plans/short-term-liquidity-stress-validation-plan.md)에 사전 고정한 3개 scenario의 paper-only deterministic replay 결과를 기록한다.
+이 문서는 [Short-Term Liquidity Stress Validation 계획](../../plans/short-term-liquidity-stress-validation-plan.md)에 사전 고정한 3개 scenario의 paper-only deterministic replay 결과를 기록한다.
 
 이 결과는 특정 종목 판단, 투자 조언, 성과 보장 또는 live trading signal이 아니다. Generated artifact는 `data/batch-replay/` 아래에만 보관하며 PR에는 포함하지 않는다.
 

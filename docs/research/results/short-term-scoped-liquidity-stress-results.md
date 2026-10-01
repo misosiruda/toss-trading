@@ -1,6 +1,6 @@
 # Short-Term Scoped Liquidity Stress Validation 결과
 
-이 문서는 [Short-Term Scoped Liquidity Stress Validation 계획](plans/short-term-scoped-liquidity-stress-validation-plan.md)에 사전 고정한 3개 scenario의 paper-only deterministic replay 결과를 기록한다.
+이 문서는 [Short-Term Scoped Liquidity Stress Validation 계획](../../plans/short-term-scoped-liquidity-stress-validation-plan.md)에 사전 고정한 3개 scenario의 paper-only deterministic replay 결과를 기록한다.
 
 이 결과는 특정 종목 판단, 투자 조언, 성과 보장 또는 live trading signal이 아니다. Generated artifact는 `data/batch-replay/` 아래에만 보관하며 PR에는 포함하지 않는다.
 
@@ -168,7 +168,7 @@ data/batch-replay/short-term-scoped-liquidity-cap-1e-5-min-0_5-20260720-001
 
 ## 다음 검증 조건
 
-- Available `short_term` symbol과 independent validation sample을 늘리기 전에 [Validation Split Role-Local Regime Feasibility 계획](plans/validation-split-regime-feasibility-plan.md)에 따라 split role 내부 candidate, regime coverage와 overlap을 별도 artifact로 확인한다.
+- Available `short_term` symbol과 independent validation sample을 늘리기 전에 [Validation Split Role-Local Regime Feasibility 계획](../../plans/validation-split-regime-feasibility-plan.md)에 따라 split role 내부 candidate, regime coverage와 overlap을 별도 artifact로 확인한다.
 - Bear/sideways와 validation/test no-fill evidence가 없으므로 현재 결과를 해당 role/regime에 일반화하지 않는다.
 - 실제 spread, order book depth, queue position과 unfilled opportunity cost는 별도 evidence와 model contract가 있을 때만 검증한다.
 - Strategy 판정 변경은 liquidity fixture와 분리하고 sample, regime, PBO와 holdout evidence를 충족한 뒤 검토한다.

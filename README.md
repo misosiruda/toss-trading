@@ -218,13 +218,13 @@ Official Toss Open API token auth 설계는 [docs/contracts/official-token-auth-
 Codex CLI paper trading 설계는 [docs/contracts/codex-cli-paper-trading.md](docs/contracts/codex-cli-paper-trading.md)를 참고합니다.
 Historical replay 실행과 안전 경계는 [docs/runbooks/historical-replay.md](docs/runbooks/historical-replay.md)를 참고합니다.
 Codex AI paper run과 batch replay 운영 절차는 [docs/runbooks/ai-paper-trading-runbook.md](docs/runbooks/ai-paper-trading-runbook.md)를 참고합니다.
-퀀트 연구 기반 paper simulation 검토와 개선 TODO는 [docs/quant-research-paper-simulation-review.md](docs/quant-research-paper-simulation-review.md)를 참고합니다.
+퀀트 연구 기반 paper simulation 검토와 개선 TODO는 [docs/research/reviews/quant-research-paper-simulation-review.md](docs/research/reviews/quant-research-paper-simulation-review.md)를 참고합니다.
 퀀트 연구 기반 paper simulation 구현 기획은 [docs/plans/quant-research-paper-simulation-plan.md](docs/plans/quant-research-paper-simulation-plan.md)를 참고합니다.
-Strategy bucket별 검증 질문, 실패 조건, 판정 기준은 [docs/strategy-bucket-validation-protocol.md](docs/strategy-bucket-validation-protocol.md)를 참고합니다.
+Strategy bucket별 검증 질문, 실패 조건, 판정 기준은 [docs/research/protocols/strategy-bucket-validation-protocol.md](docs/research/protocols/strategy-bucket-validation-protocol.md)를 참고합니다.
 Strategy bucket별 replay 실행 matrix와 결과 기록 절차는 [docs/runbooks/strategy-bucket-validation-runbook.md](docs/runbooks/strategy-bucket-validation-runbook.md)를 참고합니다.
-Strategy bucket deterministic smoke 결과와 다음 검증 조건은 [docs/strategy-bucket-validation-smoke-results.md](docs/strategy-bucket-validation-smoke-results.md)를 참고합니다.
+Strategy bucket deterministic smoke 결과와 다음 검증 조건은 [docs/research/results/strategy-bucket-validation-smoke-results.md](docs/research/results/strategy-bucket-validation-smoke-results.md)를 참고합니다.
 Q1\~Q9 이후의 dashboard routing, calendar/FX, universe lifecycle, market impact, Sharpe validation, CPCV/PBO, Triple Barrier 후속 milestone은 [docs/plans/research-hardening-milestone-plan.md](docs/plans/research-hardening-milestone-plan.md)를 참고합니다.
-CPCV/PBO validation contract와 config/report schema 후보는 [docs/cpcv-pbo-validation-contract.md](docs/cpcv-pbo-validation-contract.md)를 참고합니다.
+CPCV/PBO validation contract와 config/report schema 후보는 [docs/research/protocols/cpcv-pbo-validation-contract.md](docs/research/protocols/cpcv-pbo-validation-contract.md)를 참고합니다.
 구현 PR 단위 계획은 [docs/pr-implementation-plan.md](docs/pr-implementation-plan.md)를 참고합니다.
 코드 위치와 책임 경계는 [docs/architecture/PROJECT_STRUCTURE.md](docs/architecture/PROJECT_STRUCTURE.md)를 참고합니다.
 코드 컨벤션과 레이어 규칙은 [docs/runbooks/CODE_CONVENTION.md](docs/runbooks/CODE_CONVENTION.md)를 참고합니다.
