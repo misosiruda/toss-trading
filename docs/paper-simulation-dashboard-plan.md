@@ -346,6 +346,12 @@ Route:
 
 ## API Surface 계획
 
+이 절의 서버 분리안은 초기 계획 기록이다. 현행 구현은 하나의 Local Operations API에서
+조회 route와 guarded paper-only `POST`를 분리하며, `POST /paper/simulations`는 typed
+설정의 historical batch workflow를 시작할 수 있다. 아래 `GET`/`HEAD` 전용 설명을
+현행 서버 전체의 제한으로 적용하지 않는다. 현재 경계는 위 `현재 상태`와
+[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md), `src/api/localOperationsSurface.ts`를 따른다.
+
 기존 `Local Operations API`는 read-only 조회 전용으로 유지한다. 가상 투자 실행을 dashboard에서 시작하려면 별도 surface가 필요하다.
 
 ### Local Operations API

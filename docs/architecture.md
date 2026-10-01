@@ -4,11 +4,19 @@
 
 ## System Goal
 
+현재 제품 목적과 실제 구현 범위는 [프로젝트 개요](project-overview.md)를 기준으로 읽습니다.
+이 문서는 장기 책임 분리와 안전 경계를 설명합니다. 아래 전체 그림에는 미래 live 경로도
+포함되므로 현재 배포된 연결도로 해석하지 않습니다. 실제 `src/order`는 internal synthetic
+dry-run이며 broker order network gateway는 연결되지 않았습니다.
+
 이 아키텍처의 핵심 목표는 실시간 매매 판단과 주문 실행을 결정론적 백엔드에 두고, Codex는 MCP를 통해 운영자가 시스템 상태를 조회하고 설명을 받으며 승인 기반으로 제한적 제어를 수행하도록 만드는 것입니다.
 
 Codex는 분석과 운영 인터페이스로 유용하지만, 실시간 trading loop의 소유자가 되어서는 안 됩니다. 실시간 루프는 latency, repeatability, auditability, failure isolation이 중요하므로 일반 애플리케이션 백엔드처럼 명시적인 코드, 테스트, 로그, 정책으로 제어해야 합니다.
 
 ## High-level Architecture
+
+다음은 목표 설계입니다. 실행 가능한 paper 경로, 독립 계약, 미구현 live 연결의 상태 구분은
+[코드 구조](PROJECT_STRUCTURE.md)와 [공식 adapter 구현 범위](official-toss-open-api-adapter-design.md)를 함께 확인합니다.
 
 ```mermaid
 flowchart LR

@@ -6,6 +6,10 @@
 
 기존 `architecture.md`, `trading-runtime.md`, `risk-policy.md`, `official-toss-open-api-adapter-design.md`, `official-token-auth-design.md`가 시스템 설계와 안전 정책을 설명한다면, 이 문서는 실제 파일과 디렉터리 기준으로 "어디를 수정해야 하는가"를 정리한다.
 
+제품 목적과 전체 구현 상태의 진입점은 [프로젝트 개요](project-overview.md)다. 아래 API/UI
+설명은 2026-10-01, main `d9818e7`의 실제 surface에 맞춰 정정했다. 기존 guarded paper-only
+동작을 설명하며 새 실행 권한이나 live mutation을 승인하지 않는다.
+
 ## 전체 구조
 
 ```text
@@ -17,7 +21,7 @@ toss-trading/
 ├── .github/                   # CODEOWNERS와 PR template
 ├── .codex/                    # Codex MCP 설정 예시
 ├── apps/                      # Next.js dashboard app 등 frontend package
-├── dashboard/                 # read-only local dashboard ES module 정적 파일
+├── dashboard/                 # legacy static compatibility dashboard
 ├── data/                      # 로컬 실행 산출물. Git source of truth 아님
 ├── docs/                      # 아키텍처, 정책, 운영, 리팩토링 문서
 ├── scripts/                   # dependency-free quality gate와 유지보수 스크립트
@@ -43,10 +47,10 @@ toss-trading/
 | `src/storage/` | JSON/JSONL file store, storage path mapping | trading 판단을 하지 않음 |
 | `src/reports/` | paper/historical/batch report 생성 | 투자 조언이나 성과 보장 표현 금지 |
 | `src/analytics/` | regime 분류와 portfolio analytics | 분석 metadata이며 주문 정책으로 자동 승격하지 않음 |
-| `src/portfolio/` | mark-to-market, portfolio 계산 보조 | broker-grade accounting으로 주장하지 않음 |
+| `src/portfolio/` | policy/mandate, valuation, selection/sizing, reservation, Risk/fill 원본 계약·저장·검증 | 전체 운용 연결 완료나 broker-grade accounting으로 주장하지 않음 |
 | `src/scheduler/` | paper run one-shot scheduling gate | OS service나 live loop 설치 금지 |
 | `src/security/` | masking 등 보안 보조 | 계좌번호, token, order ID 원문 노출 금지 |
-| `src/api/` | read-only local operations HTTP API | replay 실행, Codex 실행, order 실행 endpoint 금지 |
+| `src/api/` | 운영 조회와 allowlisted paper simulation/policy/test validation·생성 HTTP API | live/broker mutation, raw command 실행 endpoint 금지 |
 | `src/mcp/` | Codex MCP server와 enabled tool surface | raw `tossctl`, raw `codex exec`, `place_order` 노출 금지 |
 | `src/cli/` | command-line entrypoint와 argument parsing | 정책 자체는 workflow/domain module로 위임 |
 
@@ -59,6 +63,7 @@ flowchart TD
     CLI["src/cli"] --> Workflows["src/workflows"]
     API["src/api"] --> Storage["src/storage"]
     API --> Reports["src/reports"]
+    API -->|"guarded paper simulation only"| Workflows
     MCP["src/mcp"] --> Storage
     Workflows --> Market["src/market"]
     Workflows --> Replay["src/replay"]
@@ -86,7 +91,10 @@ flowchart TD
 - `src/order`는 row 16 전용 internal dry-run 계층이다. `src/workflows`가 먼저
   `LiveRiskEngine`을 통과시킨 typed input만 받고 mock/shadow state에서 종료하며,
   broker transport나 enabled entrypoint를 소유하지 않는다.
-- `src/api`와 `src/mcp`는 운영 조회 surface다. batch/replay/AI 실행을 직접 시작하지 않는다.
+- `src/mcp`의 enabled surface는 운영 조회다. `src/api`의 조회 handler도 실행을 시작하지 않는다.
+- `src/api`의 별도 guarded `POST /paper/simulations`는 allowlisted paper-only batch workflow를
+  시작할 수 있다. 명시적으로 설정된 `codex_paper_only` provider도 backend gate를 통과해야 한다.
+  Policy/test 생성은 별도 guard를 유지하며 strategy test create는 queued record까지만 저장한다.
 - `src/workflows`는 orchestration 계층이다. CLI와 low-level module 사이의 연결을 맡는다.
 
 ## 주요 Entry Point
@@ -94,8 +102,8 @@ flowchart TD
 | 명령 | 진입 파일 | 주요 역할 |
 | --- | --- | --- |
 | `npm run start` | `src/index.ts` | read-only MCP server 시작 |
-| `npm run ops:api` / `npm run dashboard` | `src/cli/localOperationsApi.ts` | read-only local operations API와 dashboard 제공 |
-| `npm run paper:run-once` | `src/cli/paperRunOnce.ts` | mock/static provider 기반 paper run |
+| `npm run ops:api` / `npm run dashboard` | `src/cli/localOperationsApi.ts` | 운영 조회·guarded paper API와 legacy static dashboard 제공 |
+| `npm run paper:run-once` | `src/cli/paperRunOnce.ts` | 일반 모드는 설정으로 허용된 Codex CLI provider, `--dry-run`은 static provider를 사용하는 paper run |
 | `npm run paper:run-from-market-packet` | `src/cli/paperRunFromMarketPacket.ts` | 저장된 market packet 기반 paper run |
 | `npm run paper:scheduler:run` | `src/cli/paperSchedulerRun.ts` | paper run scheduler gate |
 | `npm run paper:report` | `src/cli/paperDailyReport.ts` | daily paper report 생성 |
@@ -493,7 +501,10 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 
 ### Read-only dashboard/API 변경
 
-현재 구현은 `dashboard/`의 정적 HTML/CSS/ES module과 `src/api`의 Local Operations API가 담당한다. `apps/dashboard`는 Next.js 전환을 위한 별도 app skeleton이며, 전략 버킷, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 future Next.js 전환 계획은 [nextjs-dashboard-architecture-plan.md](nextjs-dashboard-architecture-plan.md)를 기준으로 한다.
+현재 운영 UI는 Next.js `apps/dashboard`가 기준이고, `dashboard/`의 정적 HTML/CSS/ES module은
+legacy compatibility surface다. `src/api`는 두 UI가 사용하는 조회와 별도 guarded paper-only
+mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard를 구분한다.
+[dashboard routing policy](dashboard-routing-policy.md)와 [Next.js 계획](nextjs-dashboard-architecture-plan.md)을 함께 확인한다.
 
 수정 후보:
 
@@ -529,8 +540,11 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 
 필수 확인:
 
-- HTTP method는 `GET`/`HEAD`만 허용
-- endpoint가 replay 실행, Codex 실행, 주문 실행을 시작하지 않음
+- 조회 route는 `GET`/`HEAD`만 허용하며 replay/provider 실행을 시작하지 않음
+- allowlisted paper `POST`는 operation header, same-origin/JSON 및 해당 body validation을 유지함
+- Next.js mutation proxy는 intent header·mutation token 검증을 유지함
+- `/paper/simulations`만 해당 paper workflow를 시작하며 strategy-test create/matrix는 queued 기록과 audit까지만 저장함
+- live order, broker mutation, raw `codex exec`/`tossctl` endpoint를 제공하지 않음
 - 응답은 `maskObject`를 통과
 
 ### MCP tool 변경
@@ -773,10 +787,10 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 
 | 위치 | 역할 |
 | --- | --- |
-| `src/api/localOperationsSurface.ts` | read-only HTTP method, Local Operations API route, dashboard ES module/static path 기준 |
+| `src/api/localOperationsSurface.ts` | 조회/guarded paper method·route allowlist와 dashboard static path 기준 |
 | `src/api/localOperationsServer.ts` | HTTP server bootstrap, method guard, dashboard asset/API dispatch |
 | `src/api/localOperationsRouting.ts` | Local Operations API route handler table과 query parameter parsing |
-| `src/api/dashboardViewModels.ts` | Next.js dashboard 전환용 read-only ViewModel 계산 |
+| `src/api/dashboardViewModels.ts` | Next.js dashboard의 read-only ViewModel 계산 |
 | `src/api/localOperationsReaders.ts` | storage/report artifact read-only payload 생성 |
 | `src/api/localOperationsDashboardAssets.ts` | dashboard document/module/static asset 매핑과 응답 |
 | `src/api/localOperationsResponse.ts` | masked JSON response writer |
@@ -804,7 +818,9 @@ Artifact 역할:
 - `*.jsonl`: append-only log입니다. audit event, virtual decision/trade, market packet, historical replay packet/decision/risk/trade/timeline, batch run record처럼 시간 순서 기록을 보존합니다.
 - `*.json`: latest snapshot 또는 generated report입니다. virtual portfolio, replay report/progress/metadata, batch manifest, aggregate report처럼 현재 상태 또는 산출 report를 담습니다.
 - `data/` 아래 파일은 runtime artifact이며 Git source of truth가 아닙니다.
-- Local Operations API는 storage helper가 정의한 path만 read-only로 조회하고, replay/batch/Codex 실행을 시작하지 않습니다.
+- Local Operations API의 reader는 storage helper가 정의한 path를 read-only로 조회합니다.
+  별도 guarded paper simulation create 경로는 typed config를 검증한 뒤 batch replay를 시작할 수 있습니다.
+  일반 조회나 MCP 도구가 실행을 시작하는 것은 아닙니다.
 
 ## 테스트와 검증
 

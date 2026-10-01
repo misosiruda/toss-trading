@@ -1,5 +1,18 @@
 # 전략 포트폴리오 운용 및 버킷 기반 종목 선택 계획
 
+## 읽기 기준
+
+이 문서는 목표 계약과 작은 PR별 구현 기록이 함께 누적된 원문이다. 현재 제품 목적은
+[프로젝트 개요](project-overview.md), 첫 사용자 흐름의 제안은
+[Trainer MVP 제안](trainer-mvp-roadmap.md)을 먼저 읽는다. 이 문서의 안전·저장·복구 계약과
+최종 수용 기준은 그대로 유지한다. 문서 분할은 [문서 정리 계획](README.md)에 제안되어 있다.
+
+구현 기준인 main `d9818e7`에는 publisher-session composition이 아직 포함되지 않았다.
+2026-10-01 별도로 관찰한 미병합 PR788 branch `dd132a3`는 current publication callback에 예약
+append session을 전달하는 변경을 포함하며 chronology/lifetime 검토가 남아 있다. 이 문서 branch에
+PR788 코드 변경은 포함하지 않는다. 뒤쪽의 "publisher composition은 후속" 설명은 main 기준으로 유지한다.
+이 연결을 shared allocator, 원자 mandate 발행 또는 전체 운용 완료로 해석하지 않는다.
+
 ## 1. 문서 목적
 
 이 문서는 paper-only 가상 포트폴리오를 `종목 후보를 먼저 고르는 구조`에서

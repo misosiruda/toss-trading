@@ -1,12 +1,20 @@
 # Toss Trading MCP Backend
 
-이 프로젝트는 개인 브로커리지/트레이딩 백엔드와 Codex MCP 운영 인터페이스를 분리해서 설계하기 위한 문서 중심 프로젝트입니다. 대상 브로커의 primary source는 Toss Securities Open API입니다. 비공식 `tossinvest-cli` fork는 공식 API에 없는 시장 정보 표면을 검토하기 위한 optional read-only intelligence source로만 다룹니다.
+이 프로젝트는 개인 AI 투자 트레이너를 목표로 하는 paper-only 운용·평가 시스템입니다. 개인이 AI 전략과 포트폴리오를 설정하고, 가상 운용 결과와 판단 근거를 검토·개선하는 흐름을 만들고 있습니다. 현재 결정론적 paper trading backend, historical replay, 운영 dashboard와 Codex MCP 인터페이스가 구현되어 있으며, 전체 제품 흐름은 연결 중입니다.
+
+대상 브로커의 primary source는 Toss Securities Open API입니다. 비공식 `tossinvest-cli` fork는 공식 API에 없는 시장 정보 표면을 검토하기 위한 optional read-only intelligence source로만 다룹니다.
 
 > Codex is not the trading engine. Codex is an MCP-based operations interface for inspecting, explaining, and safely controlling a deterministic trading backend.
 
+## 처음 읽는 순서
+
+- 제품 목적과 현재 구현: [프로젝트 개요](docs/project-overview.md)
+- 다음 사용자 흐름의 제안과 미정 사항: [Trainer MVP 제안](docs/trainer-mvp-roadmap.md)
+- 계약·운영·연구 문서 찾기: [문서 안내](docs/README.md)
+
 ## Project Summary
 
-이 저장소의 목표는 "Codex로 자동매매"를 만드는 것이 아닙니다. 목표는 결정론적 트레이딩 백엔드가 시장 데이터 수집, 스크리닝, 전략 평가, 리스크 검증, 주문 라우팅, 체결 추적, 포지션 정합성 확인, 감사 로그를 담당하고, Codex는 MCP를 통해 이를 조회하고 설명하고 제한적으로 제어하는 운영 인터페이스로만 사용하는 구조를 문서화하는 것입니다. 단, 실거래와 분리된 paper trading에서는 Codex CLI를 `virtual_decision` 생성 provider로 사용할 수 있습니다.
+개인 AI 투자 트레이너의 기반에서는 결정론적 백엔드가 데이터 처리, 검증, sizing, Risk, 가상 체결과 감사 기록을 담당하고, AI는 근거에 연결된 paper-only 제안과 설명을 제공합니다. 현재 Codex CLI는 `virtual_decision` 생성 provider로 사용할 수 있으며 MCP는 운영 조회 인터페이스입니다. 장기 아키텍처의 주문 라우팅·체결 추적 책임 분리는 설계 경계이며, 실제 broker 주문 경로가 연결되었다는 뜻은 아닙니다.
 
 초기 단계에서는 실제 브로커 연동이 아니라 `mock` provider를 기준으로 설계합니다. 실거래 기능은 명시적인 사용자 지시, 공식 API adapter 설계, 리스크 정책 테스트, 감사 로그 설계가 갖춰진 뒤에만 검토할 수 있습니다. 비공식 정보 수집 source는 후보 enrichment와 관측성에만 사용하고 주문 실행 경로에는 연결하지 않습니다.
 
@@ -190,6 +198,9 @@ legacy static view의 `/dashboard`는 live trading disabled 상태를 보여주�
 Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재구성하는 기존 정적 dashboard 계획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다. strategy bucket, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 Next.js 전환 계획은 [docs/nextjs-dashboard-architecture-plan.md](docs/nextjs-dashboard-architecture-plan.md)를 참고합니다. 두 계획 모두 실투자 활성화가 아니라 paper-only simulation과 read-only/live-disabled 관제 경계를 유지하는 방향을 다룹니다.
 
 ## Roadmap
+
+현재 제품 방향과 다음 단계의 제안은 [Trainer MVP 제안](docs/trainer-mvp-roadmap.md)을 먼저 읽습니다.
+아래 목록과 기존 roadmap은 backend 기반의 구현 순서·범위를 보존하며 전체 완료 상태를 뜻하지 않습니다.
 
 1. Documentation and architecture
 2. Mock MCP server

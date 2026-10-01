@@ -6,6 +6,17 @@
 
 현재 프로젝트는 paper-only historical replay와 local operations dashboard까지 기능이 넓어졌다. 따라서 리팩토링은 한 번에 코드를 크게 옮기는 방식이 아니라, 문서화된 책임 경계와 테스트를 기준으로 작은 단위로 진행한다.
 
+## 현행 경계와 과거 phase의 해석
+
+이 문서는 여러 시점의 behavior-preserving phase를 보존한다. 초기 phase의 API
+`GET`/`HEAD` 전용 설명과 새 실행 버튼 금지는 당시 변경 범위의 제한이다. 현재 API는
+조회와 별도 guarded paper-only simulation/policy/test `POST`를 제공하고, MCP는 read-only다.
+현재 surface는 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)와
+`src/api/localOperationsSurface.ts`를 확인한다. 기존 allowlist/guard를 보존하는 정정이며
+추가 mutation, raw command 또는 live order를 허용하는 변경이 아니다.
+
+문서 폴더 자체의 단계적 정리는 [문서 안내와 정리 계획](README.md)에 별도로 제안한다.
+
 ## 리팩토링 원칙
 
 1. 문서와 코드 위치를 먼저 고정한다.
@@ -96,7 +107,7 @@ npm run build
 완료 기준:
 
 - path 변경 시 `PROJECT_STRUCTURE.md` 또는 관련 runbook이 갱신된다.
-- local operations API는 계속 `GET`/`HEAD` read-only다.
+- local operations API의 조회 handler는 `GET`/`HEAD` read-only를 유지하고 기존 paper mutation은 별도 allowlist/guard를 유지한다.
 - masking이 유지된다.
 
 ## Phase 3. Workflow Orchestration 분리
@@ -166,7 +177,7 @@ npm run build
 
 목표:
 
-- local operations API, dashboard, MCP tool surface를 read-only로 유지한다.
+- 조회 API와 MCP tool surface의 read-only 경계를 유지하고 dashboard의 기존 paper mutation은 별도 guard로 분리한다.
 - 조회 endpoint와 실행 command를 명확히 분리한다.
 - dashboard가 일부 endpoint 실패에도 가능한 데이터를 표시하는 방식을 유지한다.
 
