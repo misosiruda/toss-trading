@@ -5,7 +5,7 @@
 이 문서는 기존 backend 기반 milestone의 목적과 범위를 보존합니다. 현재 개인 AI 투자
 트레이너 방향과 다음 사용자 흐름은 [프로젝트 개요](../architecture/project-overview.md)와
 [Trainer MVP 제안](trainer-mvp-roadmap.md)을 먼저 읽습니다. 기존 PR 단위의 상세 계획은
-[pr-implementation-plan.md](../pr-implementation-plan.md)에 있습니다. 이 목록의 존재만으로
+[pr-implementation-plan.md](../archive/pr-implementation-plan.md)에 있습니다. 이 목록의 존재만으로
 각 항목이 현재 모두 완료됐거나 다음 작업 순서가 확정됐다고 해석하지 않습니다.
 
 ## Milestone 1: Documentation and Architecture

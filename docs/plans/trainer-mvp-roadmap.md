@@ -158,7 +158,7 @@ Jev 등 추가 scorer의 실험은 이 단계의 필수 조건이 아니다. 채
 
 ## 기존 계획과의 관계
 
-- [기존 roadmap](roadmap.md)과 [PR plan](../pr-implementation-plan.md)은 기존 기반의 순서·이력을 보존한다.
+- [기존 roadmap](roadmap.md)과 [PR plan](../archive/pr-implementation-plan.md)은 기존 기반의 순서·이력을 보존한다.
 - [전략 포트폴리오 계획](strategy-portfolio-operating-model-plan.md)은 장기 multi-bucket 운용 계약을 유지한다.
 - [Research Hardening](research-hardening-milestone-plan.md)과 evidence expansion은 연구 결과의 한계를 판단하는 기준이다.
 - [Next.js 계획](nextjs-dashboard-architecture-plan.md)과 [routing 정책](../architecture/dashboard-routing-policy.md)은 기존 UI 경계를 유지한다.

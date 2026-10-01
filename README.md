@@ -195,7 +195,7 @@ npm --prefix apps/dashboard run dev
 
 legacy static view의 `/dashboard`는 live trading disabled 상태를 보여주는 shell이고, 가상 투자 실험 화면은 `/dashboard/virtual` 아래에 있습니다. 조회 영역은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/replay/report`, `/source/health`, `/market/packets`, `/audit/events`, `/dashboard/view-model/live-readiness`, `/dashboard/view-model/portfolio-compliance`, `/dashboard/view-model/strategy-test-lab`, `/dashboard/view-model/risk-gate-trace`, `/dashboard/view-model/validation-lab`, `/dashboard/view-model/audit` 같은 read-only endpoint를 호출합니다. legacy static view의 `Run 생성`은 same-origin, JSON body, 전용 operation header를 요구하는 guarded `POST /paper/simulations`만 사용하며, 내부적으로 allowlisted paper-only historical batch replay runner에 typed config를 전달합니다. Strategy bucket test create endpoint와 Next.js strategy test lab route handler는 validation을 통과한 설정을 queued record와 audit event로만 저장하며 replay runner를 시작하지 않습니다. live order, raw `codex exec`, raw `tossctl` 실행 endpoint는 노출하지 않습니다. 일부 endpoint 조회가 실패해도 dashboard는 가능한 데이터를 먼저 렌더링하고 실패한 조회 그룹을 상단 상태와 오류 배너에 표시합니다.
 
-Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재구성하는 기존 정적 dashboard 계획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다. strategy bucket, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 Next.js 전환 계획은 [docs/plans/nextjs-dashboard-architecture-plan.md](docs/plans/nextjs-dashboard-architecture-plan.md)를 참고합니다. 두 계획 모두 실투자 활성화가 아니라 paper-only simulation과 read-only/live-disabled 관제 경계를 유지하는 방향을 다룹니다.
+Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재구성하는 기존 정적 dashboard 계획은 [docs/archive/paper-simulation-dashboard-plan.md](docs/archive/paper-simulation-dashboard-plan.md)를 참고합니다. strategy bucket, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 Next.js 전환 계획은 [docs/plans/nextjs-dashboard-architecture-plan.md](docs/plans/nextjs-dashboard-architecture-plan.md)를 참고합니다. 두 계획 모두 실투자 활성화가 아니라 paper-only simulation과 read-only/live-disabled 관제 경계를 유지하는 방향을 다룹니다.
 
 ## Roadmap
 
@@ -225,14 +225,14 @@ Strategy bucket별 replay 실행 matrix와 결과 기록 절차는 [docs/runbook
 Strategy bucket deterministic smoke 결과와 다음 검증 조건은 [docs/research/results/strategy-bucket-validation-smoke-results.md](docs/research/results/strategy-bucket-validation-smoke-results.md)를 참고합니다.
 Q1\~Q9 이후의 dashboard routing, calendar/FX, universe lifecycle, market impact, Sharpe validation, CPCV/PBO, Triple Barrier 후속 milestone은 [docs/plans/research-hardening-milestone-plan.md](docs/plans/research-hardening-milestone-plan.md)를 참고합니다.
 CPCV/PBO validation contract와 config/report schema 후보는 [docs/research/protocols/cpcv-pbo-validation-contract.md](docs/research/protocols/cpcv-pbo-validation-contract.md)를 참고합니다.
-구현 PR 단위 계획은 [docs/pr-implementation-plan.md](docs/pr-implementation-plan.md)를 참고합니다.
+구현 PR 단위 계획은 [docs/archive/pr-implementation-plan.md](docs/archive/pr-implementation-plan.md)를 참고합니다.
 코드 위치와 책임 경계는 [docs/architecture/PROJECT_STRUCTURE.md](docs/architecture/PROJECT_STRUCTURE.md)를 참고합니다.
 코드 컨벤션과 레이어 규칙은 [docs/runbooks/CODE_CONVENTION.md](docs/runbooks/CODE_CONVENTION.md)를 참고합니다.
 Repository access와 public review 보안 절차는 [docs/runbooks/repository-access-security-policy.md](docs/runbooks/repository-access-security-policy.md)를 참고합니다.
 대규모 리팩토링 진행 기준은 [docs/plans/REFACTORING_GUIDE.md](docs/plans/REFACTORING_GUIDE.md)를 참고합니다.
 AI paper-only 투자 판단 프로세스 리팩토링 계획은 [docs/plans/ai-investment-process-refactoring-plan.md](docs/plans/ai-investment-process-refactoring-plan.md)를 참고합니다.
 전략 포트폴리오 정책, 종목별 mandate, bucket 기반 종목 선택과 통합 리밸런싱 계획은 [docs/plans/strategy-portfolio-operating-model-plan.md](docs/plans/strategy-portfolio-operating-model-plan.md)를 참고합니다.
-Paper simulation dashboard 기획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다.
+Paper simulation dashboard 기획은 [docs/archive/paper-simulation-dashboard-plan.md](docs/archive/paper-simulation-dashboard-plan.md)를 참고합니다.
 Next.js 기반 dashboard 전환 기획은 [docs/plans/nextjs-dashboard-architecture-plan.md](docs/plans/nextjs-dashboard-architecture-plan.md)를 참고합니다.
 
 ## License

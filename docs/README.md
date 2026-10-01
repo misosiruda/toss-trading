@@ -13,7 +13,7 @@
 문서 감사 기준은 2026-10-01, 원격과 일치함을 확인한 `main`의 `d9818e7`이다.
 별도로 미병합 PR788의 `dd132a3`를 검토했으며 해당 변경은 이 문서 branch의 코드에 포함하지 않는다.
 이는 코드 관찰 기준이며 배포 상태나 새 테스트 통과 증거가 아니다.
-이번 정리는 문서 진입점과 상태 설명을 보완하고 실제 역할별 폴더로 순차 이동한다.
+이번 정리는 문서 진입점과 상태 설명을 보완하고 실제 역할별 폴더로 이동했다.
 [기능 PR 설계](plans/documentation-system-refactor-plan.md)의 범위와 수용 기준을 따른다.
 
 ## 문서별 책임과 상태 읽는 법
@@ -48,7 +48,7 @@
 - [Architecture](architecture/architecture.md): 장기 책임 분리와 목표 설계
 - [Project Structure](architecture/PROJECT_STRUCTURE.md): 현재 코드 위치
 - [Code Convention](runbooks/CODE_CONVENTION.md), [Refactoring Guide](plans/REFACTORING_GUIDE.md)
-- [기존 Roadmap](plans/roadmap.md), [PR Implementation Plan](pr-implementation-plan.md), [PR Review Log](pr-review-log.md)
+- [기존 Roadmap](plans/roadmap.md), [PR Implementation Plan](archive/pr-implementation-plan.md), [PR Review Log](archive/pr-review-log.md)
 - [AI Process Refactoring Plan](plans/ai-investment-process-refactoring-plan.md)
 - [Portfolio Positioning](architecture/portfolio-positioning.md): 기존 backend engineering 설명
 
@@ -69,7 +69,7 @@
 - [검증 명령과 병합 절차](runbooks/test-verification.md), [maintenance 위임 범위](runbooks/codex-maintenance-delegation-policy.md)
 - [repository access/security](runbooks/repository-access-security-policy.md), [root security policy](../SECURITY.md)
 - [Next.js dashboard](plans/nextjs-dashboard-architecture-plan.md), [dashboard routing](architecture/dashboard-routing-policy.md)
-- [정적 dashboard 초기 계획](paper-simulation-dashboard-plan.md): 과거 제품화 범위와 현행 상태를 분리해 읽음
+- [정적 dashboard 초기 계획](archive/paper-simulation-dashboard-plan.md): 과거 제품화 범위와 현행 상태를 분리해 읽음
 
 ### 연구 계약·확장 계획
 
@@ -84,7 +84,7 @@
 ### 고정 실험 결과·참고 자료
 
 - `*-results.md`, [candidate scope audit](research/results/strategy-preset-candidate-scope-audit.md), [replay diagnostic brief](research/results/historical-replay-diagnostic-brief.md)는 해당 실험의 입력·제약과 함께 보존한다.
-- [chatgpt-review](chatgpt-review/README.md)는 과거 외부 검토용 묶음이다. 원문·요약·진행 snapshot을 현재 정본으로 승격하지 않는다.
+- [chatgpt-review](archive/chatgpt-review/README.md)는 과거 외부 검토용 묶음이다. 원문·요약·진행 snapshot을 현재 정본으로 승격하지 않는다.
 - `historical-universe*.json`은 실행·테스트 입력으로도 쓰인다. 단순 문서 첨부나 archive 대상으로 취급하지 않는다.
 
 ## 왜 정리가 필요한가
@@ -100,29 +100,32 @@
 4. API 전체가 `GET`/`HEAD` 전용이라는 과거 설명과 현재 guarded paper-only `POST`가 충돌한다.
 5. Next.js를 skeleton으로 설명하는 과거 문장과 현재 운영 UI가 공존한다.
 
-이번 변경은 진입점을 추가하고 확인된 오래된 설명을 정정한다. 기존 domain contract의
+이번 변경은 진입점을 추가하고 역할별 폴더링·참조 갱신·확인된 오래된 설명 정정을 수행한다. 기존 domain contract의
 제약을 축약해 버리거나 수백 개의 구현 항목을 완료로 다시 분류하지 않는다.
 
 ## 문서 분류와 이동 원칙
 
-아래 역할별 분류로 문서를 이동한다. 각 이동은 들어오는 링크와 프로그램 소비자 경로를 함께 갱신한다.
+아래 역할별 분류가 현재 구조다. 각 이동은 들어오는 링크와 프로그램 소비자 경로를 함께 갱신했다.
+상세 [이전→새 경로 대응](plans/documentation-system-refactor-plan.md#이전-경로와-새-경로-대응)은 기능 PR 설계에 보존한다.
+기존 commit에 고정된 링크는 유지된다. 옛 main 경로 bookmark의 자동 redirect는 제공하지 않으며
+새 정본 위치는 이 대응표로 찾는다. 고정 review payload의 원래 경로는 당시 provenance로 보존한다.
 
 | 분류 | 책임 | 분류 대상 |
 | --- | --- | --- |
-| `architecture/` | 현재 구조·책임·결정 | 현재 architecture와 구조 지도 |
-| `contracts/` | 도메인 규칙·schema·권한·호환성 | portfolio, risk, evidence, calendar 계약 |
-| `runbooks/` | 실행·운영·복구·검증 | paper, replay, test verification |
-| `plans/` | 활성 목표·단계·미완료 조건 | Trainer MVP, 실제로 진행 중인 domain 계획 |
-| `research/` | 사전 등록·검증 protocol·고정 결과 | regime/evidence expansion, stress results |
-| `archive/` | 대체된 계획·과거 review | 대체 관계가 확인된 과거 PR 계획·review |
+| [architecture/](architecture/README.md) | 제품·현재 구조·책임·결정 | 프로젝트 개요, architecture, 구조 지도 |
+| [contracts/](contracts/README.md) | 실행·안전·권한·호환성 | runtime, Risk, MCP, AI, broker 계약 |
+| [runbooks/](runbooks/README.md) | 실행·운영·복구·검증 | paper, replay, test verification |
+| [plans/](plans/README.md) | 구현 목표·단계·미완료 조건 | Trainer MVP, portfolio, UI와 연구 확장 계획 |
+| [research/](research/README.md) | 사전 등록·검증 protocol·고정 결과 | protocols/, results/, reviews/ |
+| [archive/](archive/README.md) | 과거 계획·review | 초기 PR 기록, 정적 dashboard 초기 계획, 고정 review 묶음 |
 
-### 1단계: 진입점과 설명 정합성
+### 이번 PR에서 정리한 범위
 
 - 세 개의 짧은 문서로 제품 개요, 독서 경로, 다음 단계 제안을 분리한다.
 - 기존 파일명과 계약·실험·완료 기준을 보존한다.
 - stale 문장을 확인된 코드에 맞추되 새 mutation이나 provider 채택을 승인하지 않는다.
 
-### 2단계: 큰 계획의 역할 분리
+### 다음 별도 기능 PR: 큰 계획의 내용 분리
 
 포트폴리오 운영 계획은 분리하는 편이 좋다. 다만 원문을 새 문서 여러 개에 복사하여
 동시에 유지하지 않는다. 각 절의 정본을 하나만 정한 뒤 순차적으로 옮긴다.
@@ -145,7 +148,7 @@
 
 ### 참조를 보존하는 소규모 이동
 
-다음 문서는 프로그램 또는 작업 규칙이 직접 참조하므로 이동 시 소비자도 같은 변경에서 갱신한다.
+다음 문서는 프로그램 또는 작업 규칙이 직접 참조하므로 소비자도 같은 변경에서 갱신했다.
 Universe JSON은 실행 입력이므로 이번 PR에서 위치를 유지한다.
 
 - `docs/contracts/mcp-tools.md`, `docs/contracts/llm-boundary.md`: `scripts/qualityGate.mjs`가 파일과 backtick tool 목록을 검증
@@ -153,7 +156,7 @@ Universe JSON은 실행 입력이므로 이번 PR에서 위치를 유지한다.
 - `docs/runbooks/codex-maintenance-delegation-policy.md`: `AGENTS.md`가 참조
 - `docs/runbooks/test-verification.md`: 유지보수 절차가 참조
 
-이동할 때는 inbound/outbound 링크, heading anchor, README/runbook 명령 예시,
+향후 이동할 때도 inbound/outbound 링크, heading anchor, README/runbook 명령 예시,
 스크립트·테스트의 literal path를 함께 조사한다. 한 책임씩 이동하고 원본→대체 문서 관계를
 남긴다. 실행 fixture의 이동은 문서 전용 변경과 분리한다. 정적 링크 검사에 더해 경로를
 소비하는 검증을 통과한 뒤 이동 완료로 판단한다.

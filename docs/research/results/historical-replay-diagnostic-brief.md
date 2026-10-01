@@ -239,7 +239,7 @@ data/replay-2026-04-12-2026-06-12/historical-replay-progress.json
 
 ## ChatGPT 분석 결과 반영
 
-ChatGPT 외부 검토 결과는 `docs/chatgpt-review/chatgpt-analysis-summary-2026-06-12.md`에 정리했습니다. 원문은 `docs/chatgpt-review/chatgpt-analysis-raw-2026-06-12.md`에 보존했습니다.
+ChatGPT 외부 검토 결과는 `docs/archive/chatgpt-review/chatgpt-analysis-summary-2026-06-12.md`에 정리했습니다. 원문은 `docs/archive/chatgpt-review/chatgpt-analysis-raw-2026-06-12.md`에 보존했습니다.
 
 반영된 핵심 결론:
 

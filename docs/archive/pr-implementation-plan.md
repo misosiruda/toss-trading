@@ -1,5 +1,7 @@
 # PR Implementation Plan
 
+> 이 문서는 초기 PR 단위의 설계·구현 순서와 `Later PRs` 제안을 보존한 과거 계획이다. 모든 항목이 완료됐다는 뜻은 아니다. 현재 제품 목적은 [프로젝트 개요](../architecture/project-overview.md), 진행할 기능의 범위는 [활성 계획](../plans/README.md)과 최신 코드에서 확인한다. 기존 PR 식별자와 미완료 제안은 그대로 보존한다.
+
 > Codex is not the trading engine. PRs must preserve `TRADING_ENABLED=false`, `AI_DECISION_MODE=paper_only`, and read-only-first tool exposure until an explicit later milestone changes the boundary.
 
 ## 원칙
@@ -2355,7 +2357,7 @@
 
 설계 문서:
 
-- [official-toss-open-api-adapter-design.md](contracts/official-toss-open-api-adapter-design.md)
+- [official-toss-open-api-adapter-design.md](../contracts/official-toss-open-api-adapter-design.md)
 
 이 단계는 official API adapter 구현이 아니라, 공식 OpenAPI source of truth, 인증 방식, endpoint category, rate limit, error model, adapter 계층, mock-first 구현 순서, MCP/dashboard 금지 표면을 문서화합니다.
 
@@ -2555,7 +2557,7 @@
 
 설계 문서:
 
-- [official-token-auth-design.md](contracts/official-token-auth-design.md)
+- [official-token-auth-design.md](../contracts/official-token-auth-design.md)
 
 이 단계는 official token auth 구현이 아니라, `POST /oauth2/token`의 OAuth2 Client Credentials 계약, `application/x-www-form-urlencoded` 요청, secret handling, token lifecycle, single-flight, client당 유효 token 1개 제약, 후속 구현 테스트 기준을 문서화합니다.
 

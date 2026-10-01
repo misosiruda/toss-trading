@@ -77,3 +77,80 @@ CLI와 테스트가 읽는 실행 입력이므로 기존 root 경로에 유지�
 - changed-test runner가 경로 소비자 변경으로 추가 검증 또는 전체 fallback을 선택하면 결과를 그대로 기록
 - 명령 수행은 문서/tooling 검증만 대상. simulation, 외부 AI/데이터 호출과 credential 설정은 하지 않음
 - 최종 변경 경로 목록, commit, 기준 main과 독립 검토 결과를 대조한 뒤 게시 여부를 확인
+
+## 이전 경로와 새 경로 대응
+
+이전 경로는 이 PR 이전의 위치다. 새 위치가 정본이며 파일명과 기존 heading을 유지한다.
+이전 repository 경로는 이 표와 Git history로 추적한다. 기존 commit에 고정된 URL은 유지되지만,
+옛 `main/docs/...` bookmark를 새 URL로 자동 redirect하지는 않는다. 무분별한 root stub을 남겨
+두 정본을 만들지 않는다. 고정 review payload 안의 원래 경로는 provenance로 보존한다.
+
+| 이전 경로 | 현재 경로 |
+| --- | --- |
+| `docs/architecture.md` | [docs/architecture/architecture.md](../../docs/architecture/architecture.md) |
+| `docs/PROJECT_STRUCTURE.md` | [docs/architecture/PROJECT_STRUCTURE.md](../../docs/architecture/PROJECT_STRUCTURE.md) |
+| `docs/project-overview.md` | [docs/architecture/project-overview.md](../../docs/architecture/project-overview.md) |
+| `docs/dashboard-routing-policy.md` | [docs/architecture/dashboard-routing-policy.md](../../docs/architecture/dashboard-routing-policy.md) |
+| `docs/portfolio-positioning.md` | [docs/architecture/portfolio-positioning.md](../../docs/architecture/portfolio-positioning.md) |
+| `docs/automation.md` | [docs/contracts/automation.md](../../docs/contracts/automation.md) |
+| `docs/codex-cli-paper-trading.md` | [docs/contracts/codex-cli-paper-trading.md](../../docs/contracts/codex-cli-paper-trading.md) |
+| `docs/instrument-asset-taxonomy.md` | [docs/contracts/instrument-asset-taxonomy.md](../../docs/contracts/instrument-asset-taxonomy.md) |
+| `docs/live-trading-threat-model.md` | [docs/contracts/live-trading-threat-model.md](../../docs/contracts/live-trading-threat-model.md) |
+| `docs/llm-boundary.md` | [docs/contracts/llm-boundary.md](../../docs/contracts/llm-boundary.md) |
+| `docs/market-regime-allocation.md` | [docs/contracts/market-regime-allocation.md](../../docs/contracts/market-regime-allocation.md) |
+| `docs/mcp-tools.md` | [docs/contracts/mcp-tools.md](../../docs/contracts/mcp-tools.md) |
+| `docs/official-token-auth-design.md` | [docs/contracts/official-token-auth-design.md](../../docs/contracts/official-token-auth-design.md) |
+| `docs/official-toss-open-api-adapter-design.md` | [docs/contracts/official-toss-open-api-adapter-design.md](../../docs/contracts/official-toss-open-api-adapter-design.md) |
+| `docs/read-only-intelligence-sources.md` | [docs/contracts/read-only-intelligence-sources.md](../../docs/contracts/read-only-intelligence-sources.md) |
+| `docs/risk-policy.md` | [docs/contracts/risk-policy.md](../../docs/contracts/risk-policy.md) |
+| `docs/trading-runtime.md` | [docs/contracts/trading-runtime.md](../../docs/contracts/trading-runtime.md) |
+| `docs/CODE_CONVENTION.md` | [docs/runbooks/CODE_CONVENTION.md](../../docs/runbooks/CODE_CONVENTION.md) |
+| `docs/ai-paper-trading-runbook.md` | [docs/runbooks/ai-paper-trading-runbook.md](../../docs/runbooks/ai-paper-trading-runbook.md) |
+| `docs/codex-maintenance-delegation-policy.md` | [docs/runbooks/codex-maintenance-delegation-policy.md](../../docs/runbooks/codex-maintenance-delegation-policy.md) |
+| `docs/historical-replay.md` | [docs/runbooks/historical-replay.md](../../docs/runbooks/historical-replay.md) |
+| `docs/repository-access-security-policy.md` | [docs/runbooks/repository-access-security-policy.md](../../docs/runbooks/repository-access-security-policy.md) |
+| `docs/strategy-bucket-validation-runbook.md` | [docs/runbooks/strategy-bucket-validation-runbook.md](../../docs/runbooks/strategy-bucket-validation-runbook.md) |
+| `docs/test-verification.md` | [docs/runbooks/test-verification.md](../../docs/runbooks/test-verification.md) |
+| `docs/REFACTORING_GUIDE.md` | [docs/plans/REFACTORING_GUIDE.md](../../docs/plans/REFACTORING_GUIDE.md) |
+| `docs/ai-investment-process-refactoring-plan.md` | [docs/plans/ai-investment-process-refactoring-plan.md](../../docs/plans/ai-investment-process-refactoring-plan.md) |
+| `docs/nextjs-dashboard-architecture-plan.md` | [docs/plans/nextjs-dashboard-architecture-plan.md](../../docs/plans/nextjs-dashboard-architecture-plan.md) |
+| `docs/official-market-calendar-source-acquisition-plan.md` | [docs/plans/official-market-calendar-source-acquisition-plan.md](../../docs/plans/official-market-calendar-source-acquisition-plan.md) |
+| `docs/quant-research-paper-simulation-plan.md` | [docs/plans/quant-research-paper-simulation-plan.md](../../docs/plans/quant-research-paper-simulation-plan.md) |
+| `docs/research-hardening-milestone-plan.md` | [docs/plans/research-hardening-milestone-plan.md](../../docs/plans/research-hardening-milestone-plan.md) |
+| `docs/roadmap.md` | [docs/plans/roadmap.md](../../docs/plans/roadmap.md) |
+| `docs/short-term-liquidity-stress-validation-plan.md` | [docs/plans/short-term-liquidity-stress-validation-plan.md](../../docs/plans/short-term-liquidity-stress-validation-plan.md) |
+| `docs/short-term-scoped-liquidity-stress-validation-plan.md` | [docs/plans/short-term-scoped-liquidity-stress-validation-plan.md](../../docs/plans/short-term-scoped-liquidity-stress-validation-plan.md) |
+| `docs/strategy-portfolio-operating-model-plan.md` | [docs/plans/strategy-portfolio-operating-model-plan.md](../../docs/plans/strategy-portfolio-operating-model-plan.md) |
+| `docs/trainer-mvp-roadmap.md` | [docs/plans/trainer-mvp-roadmap.md](../../docs/plans/trainer-mvp-roadmap.md) |
+| `docs/validation-role-regime-evidence-expansion-preflight-plan.md` | [docs/plans/validation-role-regime-evidence-expansion-preflight-plan.md](../../docs/plans/validation-role-regime-evidence-expansion-preflight-plan.md) |
+| `docs/validation-role-regime-evidence-expansion-split-provenance-plan.md` | [docs/plans/validation-role-regime-evidence-expansion-split-provenance-plan.md](../../docs/plans/validation-role-regime-evidence-expansion-split-provenance-plan.md) |
+| `docs/validation-role-regime-replay-selection-plan.md` | [docs/plans/validation-role-regime-replay-selection-plan.md](../../docs/plans/validation-role-regime-replay-selection-plan.md) |
+| `docs/validation-role-regime-statistical-readiness-plan.md` | [docs/plans/validation-role-regime-statistical-readiness-plan.md](../../docs/plans/validation-role-regime-statistical-readiness-plan.md) |
+| `docs/validation-split-regime-feasibility-plan.md` | [docs/plans/validation-split-regime-feasibility-plan.md](../../docs/plans/validation-split-regime-feasibility-plan.md) |
+| `docs/cpcv-pbo-validation-contract.md` | [docs/research/protocols/cpcv-pbo-validation-contract.md](../../docs/research/protocols/cpcv-pbo-validation-contract.md) |
+| `docs/replay-calendar-fx-contract.md` | [docs/research/protocols/replay-calendar-fx-contract.md](../../docs/research/protocols/replay-calendar-fx-contract.md) |
+| `docs/sharpe-statistical-validation-contract.md` | [docs/research/protocols/sharpe-statistical-validation-contract.md](../../docs/research/protocols/sharpe-statistical-validation-contract.md) |
+| `docs/strategy-bucket-validation-protocol.md` | [docs/research/protocols/strategy-bucket-validation-protocol.md](../../docs/research/protocols/strategy-bucket-validation-protocol.md) |
+| `docs/triple-barrier-label-contract.md` | [docs/research/protocols/triple-barrier-label-contract.md](../../docs/research/protocols/triple-barrier-label-contract.md) |
+| `docs/validation-role-regime-evidence-expansion-source-preregistration.md` | [docs/research/protocols/validation-role-regime-evidence-expansion-source-preregistration.md](../../docs/research/protocols/validation-role-regime-evidence-expansion-source-preregistration.md) |
+| `docs/validation-role-regime-evidence-expansion-target-policy.md` | [docs/research/protocols/validation-role-regime-evidence-expansion-target-policy.md](../../docs/research/protocols/validation-role-regime-evidence-expansion-target-policy.md) |
+| `docs/historical-replay-diagnostic-brief.md` | [docs/research/results/historical-replay-diagnostic-brief.md](../../docs/research/results/historical-replay-diagnostic-brief.md) |
+| `docs/short-intraday-cost-revalidation-results.md` | [docs/research/results/short-intraday-cost-revalidation-results.md](../../docs/research/results/short-intraday-cost-revalidation-results.md) |
+| `docs/short-term-liquidity-stress-results.md` | [docs/research/results/short-term-liquidity-stress-results.md](../../docs/research/results/short-term-liquidity-stress-results.md) |
+| `docs/short-term-scoped-liquidity-stress-results.md` | [docs/research/results/short-term-scoped-liquidity-stress-results.md](../../docs/research/results/short-term-scoped-liquidity-stress-results.md) |
+| `docs/short-term-spread-impact-sensitivity-results.md` | [docs/research/results/short-term-spread-impact-sensitivity-results.md](../../docs/research/results/short-term-spread-impact-sensitivity-results.md) |
+| `docs/strategy-bucket-validation-research-results.md` | [docs/research/results/strategy-bucket-validation-research-results.md](../../docs/research/results/strategy-bucket-validation-research-results.md) |
+| `docs/strategy-bucket-validation-smoke-results.md` | [docs/research/results/strategy-bucket-validation-smoke-results.md](../../docs/research/results/strategy-bucket-validation-smoke-results.md) |
+| `docs/strategy-preset-candidate-scope-audit.md` | [docs/research/results/strategy-preset-candidate-scope-audit.md](../../docs/research/results/strategy-preset-candidate-scope-audit.md) |
+| `docs/validation-role-regime-replay-smoke-results.md` | [docs/research/results/validation-role-regime-replay-smoke-results.md](../../docs/research/results/validation-role-regime-replay-smoke-results.md) |
+| `docs/validation-split-regime-feasibility-results.md` | [docs/research/results/validation-split-regime-feasibility-results.md](../../docs/research/results/validation-split-regime-feasibility-results.md) |
+| `docs/quant-research-paper-simulation-review.md` | [docs/research/reviews/quant-research-paper-simulation-review.md](../../docs/research/reviews/quant-research-paper-simulation-review.md) |
+| `docs/paper-simulation-dashboard-plan.md` | [docs/archive/paper-simulation-dashboard-plan.md](../../docs/archive/paper-simulation-dashboard-plan.md) |
+| `docs/pr-implementation-plan.md` | [docs/archive/pr-implementation-plan.md](../../docs/archive/pr-implementation-plan.md) |
+| `docs/pr-review-log.md` | [docs/archive/pr-review-log.md](../../docs/archive/pr-review-log.md) |
+| `docs/chatgpt-review/README.md` | [docs/archive/chatgpt-review/README.md](../../docs/archive/chatgpt-review/README.md) |
+| `docs/chatgpt-review/historical-replay-log-summary-2026-06-12-1553-kst.json` | [docs/archive/chatgpt-review/historical-replay-log-summary-2026-06-12-1553-kst.json](../../docs/archive/chatgpt-review/historical-replay-log-summary-2026-06-12-1553-kst.json) |
+| `docs/chatgpt-review/chatgpt-analysis-summary-2026-06-12.md` | [docs/archive/chatgpt-review/chatgpt-analysis-summary-2026-06-12.md](../../docs/archive/chatgpt-review/chatgpt-analysis-summary-2026-06-12.md) |
+| `docs/chatgpt-review/historical-replay-progress-snapshot-2026-06-12-1553-kst.json` | [docs/archive/chatgpt-review/historical-replay-progress-snapshot-2026-06-12-1553-kst.json](../../docs/archive/chatgpt-review/historical-replay-progress-snapshot-2026-06-12-1553-kst.json) |
+| `docs/chatgpt-review/chatgpt-analysis-raw-2026-06-12.md` | [docs/archive/chatgpt-review/chatgpt-analysis-raw-2026-06-12.md](../../docs/archive/chatgpt-review/chatgpt-analysis-raw-2026-06-12.md) |
+| `docs/chatgpt-review/chatgpt-review-prompt-2026-06-12.md` | [docs/archive/chatgpt-review/chatgpt-review-prompt-2026-06-12.md](../../docs/archive/chatgpt-review/chatgpt-review-prompt-2026-06-12.md) |
