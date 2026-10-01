@@ -6,7 +6,7 @@
 
 이 문서는 실거래 기능 구현 계획이 아니다. live order, broker mutation, raw `codex exec`, raw `tossctl`, natural language order, `place_order` surface는 범위에 포함하지 않는다. AI decision provider는 direction/evidence proposal만 제공하며 final sizing과 gate는 deterministic backend와 Risk Engine이 담당한다.
 
-구체적인 replay/report 명령과 bucket별 실행 matrix는 [strategy-bucket-validation-runbook.md](strategy-bucket-validation-runbook.md)를 따른다.
+구체적인 replay/report 명령과 bucket별 실행 matrix는 [strategy-bucket-validation-runbook.md](runbooks/strategy-bucket-validation-runbook.md)를 따른다.
 
 ## 기준 소스
 
@@ -17,10 +17,10 @@
 | Strategy bucket enum | `src/domain/schemas.ts` | `long_term`, `swing`, `short_term`, `intraday`, `hedge` |
 | Strategy replay preset | `src/replay/strategyReplayPreset.ts` | preset별 window, cadence, decision call budget, risk profile, exit policy |
 | Bucket test validation | `src/api/strategyBucketTestValidation.ts` | paper-only config validation, bucket policy 존재 여부, provider mode gate |
-| Historical replay guide | `docs/historical-replay.md` | batch replay command, preset, cost, validation split, report artifact |
+| Historical replay guide | `docs/runbooks/historical-replay.md` | batch replay command, preset, cost, validation split, report artifact |
 | Sharpe validation | `docs/sharpe-statistical-validation-contract.md` | sample size, confidence interval, Lo-style adjustment, PSR, DSR warning |
 | CPCV/PBO validation | `docs/cpcv-pbo-validation-contract.md` | selection overfitting, split matrix, sampled/full CPCV/PBO warning |
-| RH milestone | `docs/research-hardening-milestone-plan.md` | calendar/FX, lifecycle, market impact, Sharpe, CPCV/PBO, Triple Barrier 상태 |
+| RH milestone | `docs/plans/research-hardening-milestone-plan.md` | calendar/FX, lifecycle, market impact, Sharpe, CPCV/PBO, Triple Barrier 상태 |
 | Dashboard lab | `apps/dashboard/README.md` | read-only validation lab, strategy test lab, risk trace, cost warning |
 
 `regime_cash`는 `StrategyReplayPresetName`에는 포함되지만 `strategyBucket` enum은 아니다. 따라서 이 문서에서는 별도 "allocation/cash reserve preset"으로 검증하고, bucket별 결과 matrix에는 `long_term`, `swing`, `short_term`, `intraday`, `hedge`만 넣는다.

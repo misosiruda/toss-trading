@@ -1,6 +1,6 @@
 # Strategy Bucket Validation Runbook
 
-이 문서는 [Strategy Bucket Validation Protocol](strategy-bucket-validation-protocol.md)을 실제 paper-only historical replay 명령으로 옮길 때 사용하는 실행 절차다.
+이 문서는 [Strategy Bucket Validation Protocol](../strategy-bucket-validation-protocol.md)을 실제 paper-only historical replay 명령으로 옮길 때 사용하는 실행 절차다.
 
 범위는 실행 matrix와 확인 순서 문서화다. 이 문서는 실거래 주문, broker mutation, raw `codex exec`, raw `tossctl`, natural language order, `place_order` surface를 추가하지 않는다. 기본 실행은 deterministic fixture provider를 사용하며, Codex CLI provider는 기존 paper-only guarded provider 경로에서 명시적으로만 사용한다.
 
@@ -160,7 +160,7 @@ foreach ($Preset in $Presets) {
 
 Research 판정은 protocol의 `research_valid_for_paper_followup`, `conditional`, `invalid_for_current_data_or_model`, `inconclusive` 중 하나로만 기록한다. 특정 종목 판단, 매매 권유, 성과 약속 문구는 쓰지 않는다.
 
-2026-07-13 deterministic research matrix의 입력, 결과, blocker와 판정은 [Strategy Bucket Validation Research 결과](strategy-bucket-validation-research-results.md)에 기록한다.
+2026-07-13 deterministic research matrix의 입력, 결과, blocker와 판정은 [Strategy Bucket Validation Research 결과](../strategy-bucket-validation-research-results.md)에 기록한다.
 
 ## `regime_cash` policy stress
 

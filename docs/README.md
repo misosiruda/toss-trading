@@ -4,11 +4,11 @@
 
 | 알고 싶은 것 | 시작점 | 다음 문서 |
 | --- | --- | --- |
-| 무엇을 만들고 왜 만드는가 | [프로젝트 개요](architecture/project-overview.md) | [Trainer MVP 제안](trainer-mvp-roadmap.md) |
+| 무엇을 만들고 왜 만드는가 | [프로젝트 개요](architecture/project-overview.md) | [Trainer MVP 제안](plans/trainer-mvp-roadmap.md) |
 | 지금 무엇이 구현되어 있는가 | [프로젝트 개요의 구현 지도](architecture/project-overview.md) | [코드 구조](architecture/PROJECT_STRUCTURE.md), 실제 source |
-| 어떻게 실행하고 확인하는가 | [AI paper 운영 절차](ai-paper-trading-runbook.md) | [historical replay](historical-replay.md), [dashboard 실행](../apps/dashboard/README.md) |
-| 다음에 무엇을 만들 것인가 | [Trainer MVP 제안](trainer-mvp-roadmap.md) | 해당 단계의 기존 domain contract |
-| 변경할 때 지켜야 할 기준은 무엇인가 | [AGENTS.md](../AGENTS.md) | [검증 절차](test-verification.md), [코드 컨벤션](CODE_CONVENTION.md) |
+| 어떻게 실행하고 확인하는가 | [AI paper 운영 절차](runbooks/ai-paper-trading-runbook.md) | [historical replay](runbooks/historical-replay.md), [dashboard 실행](../apps/dashboard/README.md) |
+| 다음에 무엇을 만들 것인가 | [Trainer MVP 제안](plans/trainer-mvp-roadmap.md) | 해당 단계의 기존 domain contract |
+| 변경할 때 지켜야 할 기준은 무엇인가 | [AGENTS.md](../AGENTS.md) | [검증 절차](runbooks/test-verification.md), [코드 컨벤션](runbooks/CODE_CONVENTION.md) |
 
 문서 감사 기준은 2026-10-01, 원격과 일치함을 확인한 `main`의 `d9818e7`이다.
 별도로 미병합 PR788의 `dd132a3`를 검토했으며 해당 변경은 이 문서 branch의 코드에 포함하지 않는다.
@@ -44,12 +44,12 @@
 
 ### 제품·아키텍처·개발
 
-- [프로젝트 개요](architecture/project-overview.md), [Trainer MVP 제안](trainer-mvp-roadmap.md)
+- [프로젝트 개요](architecture/project-overview.md), [Trainer MVP 제안](plans/trainer-mvp-roadmap.md)
 - [Architecture](architecture/architecture.md): 장기 책임 분리와 목표 설계
 - [Project Structure](architecture/PROJECT_STRUCTURE.md): 현재 코드 위치
-- [Code Convention](CODE_CONVENTION.md), [Refactoring Guide](REFACTORING_GUIDE.md)
-- [기존 Roadmap](roadmap.md), [PR Implementation Plan](pr-implementation-plan.md), [PR Review Log](pr-review-log.md)
-- [AI Process Refactoring Plan](ai-investment-process-refactoring-plan.md)
+- [Code Convention](runbooks/CODE_CONVENTION.md), [Refactoring Guide](plans/REFACTORING_GUIDE.md)
+- [기존 Roadmap](plans/roadmap.md), [PR Implementation Plan](pr-implementation-plan.md), [PR Review Log](pr-review-log.md)
+- [AI Process Refactoring Plan](plans/ai-investment-process-refactoring-plan.md)
 - [Portfolio Positioning](architecture/portfolio-positioning.md): 기존 backend engineering 설명
 
 ### 안전·실행·포트폴리오 계약
@@ -57,29 +57,29 @@
 - [LLM boundary](contracts/llm-boundary.md), [MCP tools](contracts/mcp-tools.md), [risk policy](contracts/risk-policy.md)
 - [trading runtime](contracts/trading-runtime.md), [automation boundary](contracts/automation.md)
 - [Codex CLI paper provider](contracts/codex-cli-paper-trading.md), [read-only intelligence](contracts/read-only-intelligence-sources.md)
-- [전략 포트폴리오 운용 모델](strategy-portfolio-operating-model-plan.md)
+- [전략 포트폴리오 운용 모델](plans/strategy-portfolio-operating-model-plan.md)
 - [market regime allocation](contracts/market-regime-allocation.md), [asset taxonomy](contracts/instrument-asset-taxonomy.md)
 - [공식 API adapter](contracts/official-toss-open-api-adapter-design.md), [token auth](contracts/official-token-auth-design.md)
 - [live threat model](contracts/live-trading-threat-model.md): 미래 live 경계의 설계이며 live 구현 승인이 아님
 
 ### 운영·UI·검증 절차
 
-- [AI paper runbook](ai-paper-trading-runbook.md), [historical replay](historical-replay.md)
-- [strategy bucket validation runbook](strategy-bucket-validation-runbook.md)
-- [검증 명령과 병합 절차](test-verification.md), [maintenance 위임 범위](codex-maintenance-delegation-policy.md)
-- [repository access/security](repository-access-security-policy.md), [root security policy](../SECURITY.md)
-- [Next.js dashboard](nextjs-dashboard-architecture-plan.md), [dashboard routing](architecture/dashboard-routing-policy.md)
+- [AI paper runbook](runbooks/ai-paper-trading-runbook.md), [historical replay](runbooks/historical-replay.md)
+- [strategy bucket validation runbook](runbooks/strategy-bucket-validation-runbook.md)
+- [검증 명령과 병합 절차](runbooks/test-verification.md), [maintenance 위임 범위](runbooks/codex-maintenance-delegation-policy.md)
+- [repository access/security](runbooks/repository-access-security-policy.md), [root security policy](../SECURITY.md)
+- [Next.js dashboard](plans/nextjs-dashboard-architecture-plan.md), [dashboard routing](architecture/dashboard-routing-policy.md)
 - [정적 dashboard 초기 계획](paper-simulation-dashboard-plan.md): 과거 제품화 범위와 현행 상태를 분리해 읽음
 
 ### 연구 계약·확장 계획
 
-- [Quant Research Plan](quant-research-paper-simulation-plan.md), [Review](quant-research-paper-simulation-review.md)
-- [Research Hardening](research-hardening-milestone-plan.md), [bucket validation protocol](strategy-bucket-validation-protocol.md)
-- [calendar/FX contract](replay-calendar-fx-contract.md), [official calendar acquisition](official-market-calendar-source-acquisition-plan.md)
+- [Quant Research Plan](plans/quant-research-paper-simulation-plan.md), [Review](quant-research-paper-simulation-review.md)
+- [Research Hardening](plans/research-hardening-milestone-plan.md), [bucket validation protocol](strategy-bucket-validation-protocol.md)
+- [calendar/FX contract](replay-calendar-fx-contract.md), [official calendar acquisition](plans/official-market-calendar-source-acquisition-plan.md)
 - [Sharpe validation](sharpe-statistical-validation-contract.md), [CPCV/PBO](cpcv-pbo-validation-contract.md), [triple barrier](triple-barrier-label-contract.md)
-- [split/regime feasibility](validation-split-regime-feasibility-plan.md), [role/regime replay selection](validation-role-regime-replay-selection-plan.md), [statistical readiness](validation-role-regime-statistical-readiness-plan.md)
-- Evidence expansion: [source preregistration](validation-role-regime-evidence-expansion-source-preregistration.md), [split provenance](validation-role-regime-evidence-expansion-split-provenance-plan.md), [target policy](validation-role-regime-evidence-expansion-target-policy.md), [preflight](validation-role-regime-evidence-expansion-preflight-plan.md)
-- Liquidity stress: [일반 계획](short-term-liquidity-stress-validation-plan.md), [범위 제한 계획](short-term-scoped-liquidity-stress-validation-plan.md)
+- [split/regime feasibility](plans/validation-split-regime-feasibility-plan.md), [role/regime replay selection](plans/validation-role-regime-replay-selection-plan.md), [statistical readiness](plans/validation-role-regime-statistical-readiness-plan.md)
+- Evidence expansion: [source preregistration](validation-role-regime-evidence-expansion-source-preregistration.md), [split provenance](plans/validation-role-regime-evidence-expansion-split-provenance-plan.md), [target policy](validation-role-regime-evidence-expansion-target-policy.md), [preflight](plans/validation-role-regime-evidence-expansion-preflight-plan.md)
+- Liquidity stress: [일반 계획](plans/short-term-liquidity-stress-validation-plan.md), [범위 제한 계획](plans/short-term-scoped-liquidity-stress-validation-plan.md)
 
 ### 고정 실험 결과·참고 자료
 
@@ -150,8 +150,8 @@ Universe JSON은 실행 입력이므로 이번 PR에서 위치를 유지한다.
 
 - `docs/contracts/mcp-tools.md`, `docs/contracts/llm-boundary.md`: `scripts/qualityGate.mjs`가 파일과 backtick tool 목록을 검증
 - `docs/historical-universe*.json`: CLI 기본값과 test fixture가 참조
-- `docs/codex-maintenance-delegation-policy.md`: `AGENTS.md`가 참조
-- `docs/test-verification.md`: 유지보수 절차가 참조
+- `docs/runbooks/codex-maintenance-delegation-policy.md`: `AGENTS.md`가 참조
+- `docs/runbooks/test-verification.md`: 유지보수 절차가 참조
 
 이동할 때는 inbound/outbound 링크, heading anchor, README/runbook 명령 예시,
 스크립트·테스트의 literal path를 함께 조사한다. 한 책임씩 이동하고 원본→대체 문서 관계를

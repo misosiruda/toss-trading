@@ -3,9 +3,9 @@
 > Codex is not the trading engine. Codex is an MCP-based operations interface for inspecting, explaining, and safely controlling a deterministic trading backend.
 
 이 문서는 기존 backend 기반 milestone의 목적과 범위를 보존합니다. 현재 개인 AI 투자
-트레이너 방향과 다음 사용자 흐름은 [프로젝트 개요](architecture/project-overview.md)와
+트레이너 방향과 다음 사용자 흐름은 [프로젝트 개요](../architecture/project-overview.md)와
 [Trainer MVP 제안](trainer-mvp-roadmap.md)을 먼저 읽습니다. 기존 PR 단위의 상세 계획은
-[pr-implementation-plan.md](pr-implementation-plan.md)에 있습니다. 이 목록의 존재만으로
+[pr-implementation-plan.md](../pr-implementation-plan.md)에 있습니다. 이 목록의 존재만으로
 각 항목이 현재 모두 완료됐거나 다음 작업 순서가 확정됐다고 해석하지 않습니다.
 
 ## Milestone 1: Documentation and Architecture
@@ -157,7 +157,7 @@
 - Codex 실패, usage limit, timeout, invalid JSON이 모두 no-trade/no-paper-order로 처리됨
 - paper trading report가 투자 조언이나 수익 보장으로 읽히지 않음
 
-자세한 설계는 [codex-cli-paper-trading.md](contracts/codex-cli-paper-trading.md)를 참고합니다.
+자세한 설계는 [codex-cli-paper-trading.md](../contracts/codex-cli-paper-trading.md)를 참고합니다.
 
 ## Milestone 9: Portfolio Polish
 
@@ -177,7 +177,7 @@
 - financial advice로 오해될 표현이 없음
 
 Live order path의 threat model은
-[live-trading-threat-model.md](contracts/live-trading-threat-model.md)에 별도 문서화되어 있다.
+[live-trading-threat-model.md](../contracts/live-trading-threat-model.md)에 별도 문서화되어 있다.
 이 문서는 future gate를 정의하지만 live trading 또는 broker mutation을 승인하지 않는다.
 
 ## Milestone 10: Research Hardening

@@ -582,10 +582,10 @@ focused test나 build를 앞뒤로 중복 실행할 필요는 없다. 최종 검
 코드 변경과 함께 갱신해야 하는 문서:
 
 - 구조/위치 변경: `docs/architecture/PROJECT_STRUCTURE.md`
-- 코드 스타일/레이어 규칙 변경: `docs/CODE_CONVENTION.md`
+- 코드 스타일/레이어 규칙 변경: `docs/runbooks/CODE_CONVENTION.md`
 - risk policy 변경: `docs/contracts/risk-policy.md`
 - MCP tool 변경: `docs/contracts/mcp-tools.md`, `docs/contracts/llm-boundary.md`
-- replay/batch artifact 변경: `docs/historical-replay.md`
+- replay/batch artifact 변경: `docs/runbooks/historical-replay.md`
 - paper-only Codex provider 변경: `docs/contracts/codex-cli-paper-trading.md`
 
 문서에는 실제 계좌, 실제 API key, 실제 주문/체결 데이터를 넣지 않는다.

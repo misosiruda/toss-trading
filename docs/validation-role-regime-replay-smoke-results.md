@@ -180,7 +180,7 @@ Aggregate report 생성은 통과했으며 다음 값을 기록했다.
 
 이번 smoke로 ready plan에서 deterministic fixture batch와 evidence-aware aggregate report까지의 plumbing은 확인했다. 전략 유효성 판정은 완료되지 않았으며, 역할별 planned row 50개를 독립 표본으로 해석하지 않는다.
 
-남은 role별 sample, cross-role 독립성, serial dependence, multiple-testing context와 calendar evidence gate는 [Validation Role-Regime 통계 준비도 보강 계획](validation-role-regime-statistical-readiness-plan.md)에 사전 고정한다.
+남은 role별 sample, cross-role 독립성, serial dependence, multiple-testing context와 calendar evidence gate는 [Validation Role-Regime 통계 준비도 보강 계획](plans/validation-role-regime-statistical-readiness-plan.md)에 사전 고정한다.
 
 ## Artifact 정책
 

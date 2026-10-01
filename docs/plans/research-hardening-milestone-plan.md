@@ -59,7 +59,7 @@
 
 정책 기준:
 
-- routing/archive 결정 기록은 [dashboard-routing-policy.md](architecture/dashboard-routing-policy.md)를 기준으로 한다.
+- routing/archive 결정 기록은 [dashboard-routing-policy.md](../architecture/dashboard-routing-policy.md)를 기준으로 한다.
 - 현재 결정은 Next.js `apps/dashboard`를 기본 operator UI로 두고, Local Operations API의 정적 `/dashboard`는 legacy static compatibility surface로 유지하는 것이다.
 
 비범위:
@@ -146,7 +146,7 @@
 
 정책 기준:
 
-- Universe lifecycle snapshot contract는 [historical-replay.md](historical-replay.md)의 `Universe manifest` 생명주기 snapshot 계약과 `docs/historical-universe.lifecycle-sample.json` fixture를 기준으로 한다.
+- Universe lifecycle snapshot contract는 [historical-replay.md](../runbooks/historical-replay.md)의 `Universe manifest` 생명주기 snapshot 계약과 `docs/historical-universe.lifecycle-sample.json` fixture를 기준으로 한다.
 
 현재 결정:
 
@@ -195,7 +195,7 @@
 
 정책 기준:
 
-- RH4 cost/execution contract는 [historical-replay.md](historical-replay.md)의 `Q3-2 기준`과 `paper_cost_model.v5` / `execution_simulator.v4` 설명을 기준으로 한다.
+- RH4 cost/execution contract는 [historical-replay.md](../runbooks/historical-replay.md)의 `Q3-2 기준`과 `paper_cost_model.v5` / `execution_simulator.v4` 설명을 기준으로 한다.
 
 현재 결정:
 
@@ -230,11 +230,11 @@
 
 정책 기준:
 
-- Sharpe validation design과 metric schema는 [sharpe-statistical-validation-contract.md](sharpe-statistical-validation-contract.md)를 기준으로 한다.
+- Sharpe validation design과 metric schema는 [sharpe-statistical-validation-contract.md](../sharpe-statistical-validation-contract.md)를 기준으로 한다.
 
 현재 결정:
 
-- `sharpe_validation.v1` contract는 [sharpe-statistical-validation-contract.md](sharpe-statistical-validation-contract.md)를 기준으로 하며, source of truth는 `src/analytics/sharpeValidation.ts`다.
+- `sharpe_validation.v1` contract는 [sharpe-statistical-validation-contract.md](../sharpe-statistical-validation-contract.md)를 기준으로 하며, source of truth는 `src/analytics/sharpeValidation.ts`다.
 - standalone `calculateSharpeValidationReport()`는 sample Sharpe, 95% confidence interval, Lo-style adjusted Sharpe, benchmark-gated Probabilistic Sharpe Ratio, selection-context-gated Deflated Sharpe Ratio를 계산한다.
 - `HistoricalReplayReport.sharpeValidation`은 single replay return sample, lag 5 autocorrelation diagnostic, `candidateCount=1` / `trialCount=1` selection context를 기록하고 Markdown render에 read-only section을 표시한다.
 - `BatchReplayAggregateReport`는 `overall`, `byRegime`, `byValidationSplitRole` group summary마다 `sharpeValidation`을 생성하고, trial dispersion이 부족하면 DSR을 `missing_selection_context`로 fail-closed warning 처리한다.
@@ -307,11 +307,11 @@
 
 정책 기준:
 
-- CPCV/PBO validation design과 config/report schema는 [cpcv-pbo-validation-contract.md](cpcv-pbo-validation-contract.md)를 기준으로 한다.
+- CPCV/PBO validation design과 config/report schema는 [cpcv-pbo-validation-contract.md](../cpcv-pbo-validation-contract.md)를 기준으로 한다.
 
 현재 결정:
 
-- `cpcv_pbo_validation.v1` contract는 [cpcv-pbo-validation-contract.md](cpcv-pbo-validation-contract.md)를 기준으로 하며, source of truth는 `src/replay/cpcvPboValidation.ts`다.
+- `cpcv_pbo_validation.v1` contract는 [cpcv-pbo-validation-contract.md](../cpcv-pbo-validation-contract.md)를 기준으로 하며, source of truth는 `src/replay/cpcvPboValidation.ts`다.
 - `src/replay/combinatorialPurgedCv.ts`는 `combinatorial_purged_cv` standalone split plan을 생성하고, invalid config와 exhaustive budget excess를 fail-closed 처리한다.
 - standalone PBO calculator는 config/split plan 일치 여부를 검증하고 `config`, `splitPlan`, `performanceMatrix`, `selectionLog`, `pbo`, `warnings`를 하나의 artifact로 기록한다.
 - PBO 계산은 train metric 기준 selected candidate, deterministic `candidate_key_asc` tie breaker, holdout rank percentile, insufficient/mismatched holdout matrix fail-closed warning을 사용한다.
@@ -361,11 +361,11 @@
 
 정책 기준:
 
-- Triple barrier label design과 schema는 [triple-barrier-label-contract.md](triple-barrier-label-contract.md)를 기준으로 한다.
+- Triple barrier label design과 schema는 [triple-barrier-label-contract.md](../triple-barrier-label-contract.md)를 기준으로 한다.
 
 현재 결정:
 
-- `triple_barrier_label.v1`, `meta_label_candidate.v1`, `meta_label_evaluation.v1` contract는 [triple-barrier-label-contract.md](triple-barrier-label-contract.md)를 기준으로 하며, source of truth는 `src/replay/tripleBarrierLabel.ts`다.
+- `triple_barrier_label.v1`, `meta_label_candidate.v1`, `meta_label_evaluation.v1` contract는 [triple-barrier-label-contract.md](../triple-barrier-label-contract.md)를 기준으로 하며, source of truth는 `src/replay/tripleBarrierLabel.ts`다.
 - standalone label generator는 historical market snapshot fixture와 event 목록에서 config hash, barrier touch result, direction label, purged sample, summary, warning을 가진 `triple_barrier_label.v1` artifact를 생성한다.
 - `buildTripleBarrierPurgedKFoldSamples`는 generated label horizon을 `PurgedKFoldSample` 호환 입력으로 변환해 overlap 제거와 embargo validation에 연결한다.
 - `meta_label_candidate.v1`과 `buildMetaLabelCandidate`는 side decision을 사후 label outcome과 비교하되 `sizingDirective`는 `null`만 허용하고, non-null 값은 `META_LABEL_SIZING_DIRECTIVE_REJECTED`로 fail-closed 처리한다.

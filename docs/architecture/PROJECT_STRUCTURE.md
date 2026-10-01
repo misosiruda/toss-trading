@@ -145,7 +145,7 @@ flowchart TD
 - `src/paper/orderEngine.ts`
 - `src/paper/executionModel.ts`
 - `docs/contracts/risk-policy.md`
-- `docs/historical-replay.md`
+- `docs/runbooks/historical-replay.md`
 
 필수 확인:
 
@@ -421,7 +421,7 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 - `docs/contracts/live-trading-threat-model.md`
 - `docs/contracts/official-toss-open-api-adapter-design.md`
 - `docs/architecture/PROJECT_STRUCTURE.md`
-- `docs/CODE_CONVENTION.md`
+- `docs/runbooks/CODE_CONVENTION.md`
 
 필수 확인:
 
@@ -472,7 +472,7 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 - `src/market/packetHash.ts`
 - `src/replay/historicalDataAvailability.ts`
 - `src/domain/schemas.ts`
-- `docs/historical-replay.md`
+- `docs/runbooks/historical-replay.md`
 
 필수 확인:
 
@@ -491,7 +491,7 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 - `src/workflows/historicalBatchReplayWorkflow.ts`
 - `src/reports/historicalReplayReport.ts`
 - `src/reports/batchReplayReport.ts`
-- `docs/historical-replay.md`
+- `docs/runbooks/historical-replay.md`
 
 필수 확인:
 
@@ -504,7 +504,7 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 현재 운영 UI는 Next.js `apps/dashboard`가 기준이고, `dashboard/`의 정적 HTML/CSS/ES module은
 legacy compatibility surface다. `src/api`는 두 UI가 사용하는 조회와 별도 guarded paper-only
 mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard를 구분한다.
-[dashboard routing policy](dashboard-routing-policy.md)와 [Next.js 계획](../nextjs-dashboard-architecture-plan.md)을 함께 확인한다.
+[dashboard routing policy](dashboard-routing-policy.md)와 [Next.js 계획](../plans/nextjs-dashboard-architecture-plan.md)을 함께 확인한다.
 
 수정 후보:
 
@@ -536,7 +536,7 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `dashboard/state.js`
 - `dashboard/tableRenderers.js`
 - `dashboard/styles.css`
-- `docs/historical-replay.md`
+- `docs/runbooks/historical-replay.md`
 
 필수 확인:
 
@@ -840,22 +840,22 @@ test만 실행한다. 영향 범위를 안전하게 계산할 수 없으면 전�
 `scripts/verificationRunner.mjs`가 build → quality → tooling test → 영향/전체 test를 실행하고
 각 단계 timing과 실패 상태를 출력한다. 실패하면 이후 단계는 실행하지 않는다. `quality:gate`의
 Local Operations API route, dashboard endpoint, MCP enabled/disabled tool name, Codex decision
-provider safe default와 문서 drift 검사는 유지된다. 상세 절차는 [test-verification.md](../test-verification.md)를 따른다.
+provider safe default와 문서 drift 검사는 유지된다. 상세 절차는 [test-verification.md](../runbooks/test-verification.md)를 따른다.
 
 리팩토링 범위가 좁더라도 `npm test`는 `npm run build`를 포함한다. risk, paper order, replay, storage contract를 바꾸면 해당 영역 테스트를 추가하거나 보강한다.
 
 ## 관련 문서
 
-- [CODE_CONVENTION.md](../CODE_CONVENTION.md)
-- [REFACTORING_GUIDE.md](../REFACTORING_GUIDE.md)
-- [ai-investment-process-refactoring-plan.md](../ai-investment-process-refactoring-plan.md)
+- [CODE_CONVENTION.md](../runbooks/CODE_CONVENTION.md)
+- [REFACTORING_GUIDE.md](../plans/REFACTORING_GUIDE.md)
+- [ai-investment-process-refactoring-plan.md](../plans/ai-investment-process-refactoring-plan.md)
 - [architecture.md](architecture.md)
 - [official-toss-open-api-adapter-design.md](../contracts/official-toss-open-api-adapter-design.md)
 - [official-token-auth-design.md](../contracts/official-token-auth-design.md)
 - [trading-runtime.md](../contracts/trading-runtime.md)
 - [risk-policy.md](../contracts/risk-policy.md)
-- [historical-replay.md](../historical-replay.md)
+- [historical-replay.md](../runbooks/historical-replay.md)
 - [quant-research-paper-simulation-review.md](../quant-research-paper-simulation-review.md)
-- [quant-research-paper-simulation-plan.md](../quant-research-paper-simulation-plan.md)
-- [nextjs-dashboard-architecture-plan.md](../nextjs-dashboard-architecture-plan.md)
+- [quant-research-paper-simulation-plan.md](../plans/quant-research-paper-simulation-plan.md)
+- [nextjs-dashboard-architecture-plan.md](../plans/nextjs-dashboard-architecture-plan.md)
 - [mcp-tools.md](../contracts/mcp-tools.md)

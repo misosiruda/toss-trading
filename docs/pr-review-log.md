@@ -989,7 +989,7 @@
 ### Review 3: Diff and Integration
 
 - `src/replay/historicalReplaySafety.test.ts`를 추가했습니다.
-- `docs/historical-replay.md`를 추가해 input/output, flow, 실행 방법, lookahead guard, safety boundary, dashboard 조회 방식을 정리했습니다.
+- `docs/runbooks/historical-replay.md`를 추가해 input/output, flow, 실행 방법, lookahead guard, safety boundary, dashboard 조회 방식을 정리했습니다.
 - README에 historical replay 문서 링크를 추가했습니다.
 - PR-28부터 PR-37까지의 historical accelerated replay slice가 dashboard 조회까지 연결됐습니다.
 
@@ -1356,7 +1356,7 @@
 - `src/replay/replayWindowSampler.ts`를 추가해 seed, range, window size, timezone offset 기반의 deterministic window 선택을 구현했습니다.
 - `src/replay/replayWindowSampler.test.ts`를 추가해 단일/복수 월 후보, 재현성, fail-closed 동작을 검증했습니다.
 - `src/cli/historicalReplay.ts`는 기존 positional `startAt/endAt` 실행을 유지하면서 `--random-window`가 있을 때만 sampler 결과를 사용합니다.
-- `docs/historical-replay.md`는 `--print-window-only`와 선택된 window로 dry-run replay를 실행하는 예시를 추가했습니다.
+- `docs/runbooks/historical-replay.md`는 `--print-window-only`와 선택된 window로 dry-run replay를 실행하는 예시를 추가했습니다.
 - `docs/pr-implementation-plan.md`는 PR-50 범위와 PR-51~PR-58 batch replay 후속 순서를 기록했습니다.
 - 이번 PR은 반복 batch 실행, 데이터 가용성 scan, regime classification, aggregate report, dashboard batch view를 포함하지 않습니다.
 
@@ -1391,7 +1391,7 @@
 - `src/cli/historicalReplay.ts`는 `--check-data-availability`, `--require-data-availability`, `--min-window-snapshots`, `--min-snapshots-per-symbol`, `--required-symbols`를 historical replay CLI에 연결합니다.
 - `src/cli/historicalReplayCli.test.ts`를 추가해 named option value와 positional fallback의 통합 동작을 고정합니다.
 - `package.json`에 `historical:availability` script를 추가했습니다.
-- `docs/historical-replay.md`는 availability 확인, required symbol coverage, replay 전 fail-closed 사용 예시를 추가했습니다.
+- `docs/runbooks/historical-replay.md`는 availability 확인, required symbol coverage, replay 전 fail-closed 사용 예시를 추가했습니다.
 - `docs/pr-implementation-plan.md`는 PR-51 범위와 PR-52 이후 batch replay 후속 순서를 갱신했습니다.
 - 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
 - 이번 PR은 외부 historical data 수집기, 반복 batch runner, regime classification, aggregate report, dashboard batch view를 포함하지 않습니다.
@@ -1424,7 +1424,7 @@
 - `src/cli/historicalReplay.ts`는 metadata 전용 batch option을 파싱하고 workflow option으로 전달합니다.
 - `src/cli/historicalReplayCli.test.ts`는 CLI batch metadata 저장 경로를 검증합니다.
 - `src/workflows/historicalReplayWorkflow.test.ts`는 stored metadata 구조를 검증합니다.
-- `docs/historical-replay.md`는 run metadata 필드와 batch run metadata CLI 예시를 추가했습니다.
+- `docs/runbooks/historical-replay.md`는 run metadata 필드와 batch run metadata CLI 예시를 추가했습니다.
 - `docs/pr-implementation-plan.md`는 PR-52 범위와 PR-53 이후 batch replay 후속 순서를 기록했습니다.
 - 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
 - 이번 PR은 반복 batch 실행 loop, batch run directory layout, regime classification, aggregate report, dashboard batch view를 포함하지 않습니다.
@@ -1458,7 +1458,7 @@
 - `package.json`에 `historical:batch:replay:dry` script를 추가했습니다.
 - `src/workflows/historicalBatchReplayWorkflow.test.ts`는 completed/skipped batch run을 검증합니다.
 - `src/cli/historicalReplayCli.test.ts`는 batch CLI integration path를 검증합니다.
-- `docs/historical-replay.md`는 batch runner CLI 예시와 출력 구조를 추가했습니다.
+- `docs/runbooks/historical-replay.md`는 batch runner CLI 예시와 출력 구조를 추가했습니다.
 - `docs/pr-implementation-plan.md`는 PR-53 범위와 PR-54 이후 후속 순서를 기록했습니다.
 - 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
 - 이번 PR은 regime classification, aggregate report, benchmark comparison hardening, dashboard batch view를 포함하지 않습니다.
@@ -1491,7 +1491,7 @@
 - `src/analytics/marketRegimeClassifier.test.ts`를 추가해 bull/bear/sideways/mixed/insufficient classification을 검증합니다.
 - `src/workflows/historicalBatchReplayWorkflow.ts`는 각 run window에 대해 regime을 계산하고 `BatchReplayRunRecord.marketRegime`에 저장합니다.
 - `src/workflows/historicalBatchReplayWorkflow.test.ts`는 completed/skipped run의 regime label 저장을 검증합니다.
-- `docs/historical-replay.md`는 regime label과 기본 threshold를 문서화했습니다.
+- `docs/runbooks/historical-replay.md`는 regime label과 기본 threshold를 문서화했습니다.
 - `docs/pr-implementation-plan.md`는 PR-54 범위와 PR-55 이후 후속 순서를 기록했습니다.
 - 변경 코드 파일 대상 금지 경계 grep에서 live/order/broker/raw command 관련 신규 노출이 없음을 확인했습니다.
 - 이번 PR은 aggregate report, regime별 수익률 비교표, benchmark comparison hardening, dashboard batch view를 포함하지 않습니다.
@@ -1524,7 +1524,7 @@
 - `src/cli/historicalBatchReport.ts`를 추가해 `batch-replay-runs.jsonl` 입력과 optional JSON report 출력을 지원합니다.
 - `src/cli/historicalReplayCli.test.ts`는 batch replay CLI smoke 뒤 aggregate report CLI까지 이어서 검증합니다.
 - `package.json`에 `historical:batch:report` script를 추가했습니다.
-- `docs/historical-replay.md`는 aggregate report CLI 예시, 출력 metric, paper-only 해석 경계를 문서화했습니다.
+- `docs/runbooks/historical-replay.md`는 aggregate report CLI 예시, 출력 metric, paper-only 해석 경계를 문서화했습니다.
 - `docs/pr-implementation-plan.md`는 PR-55 범위와 PR-56 이후 후속 순서를 기록했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, 신규 match는 disclaimer와 문서상 제외/금지 경계 문구로만 확인했습니다.
 - 이번 PR은 benchmark comparison hardening, dashboard batch view, aggregate 결과 기반 전략 자동 조정은 포함하지 않습니다.
@@ -1556,7 +1556,7 @@
 - `src/reports/historicalReplayBenchmark.test.ts`를 추가해 comparison delta, equal-weight entry point, unavailable benchmark contract를 고정했습니다.
 - `src/reports/historicalReplayReport.ts`는 markdown report에 `benchmark_comparisons`를 출력합니다.
 - `src/reports/historicalReplayReport.test.ts`는 새 comparison field가 report와 rendered output에 포함되는지 검증합니다.
-- `docs/historical-replay.md`는 comparison delta semantics와 unavailable benchmark 표현을 문서화했습니다.
+- `docs/runbooks/historical-replay.md`는 comparison delta semantics와 unavailable benchmark 표현을 문서화했습니다.
 - `docs/pr-implementation-plan.md`는 PR-56 범위와 PR-57 이후 후속 순서를 기록했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, match는 문서상 제외/금지 경계 문구로만 확인했습니다.
 - 이번 PR은 Sharpe/Sortino/Calmar, 외부 market index benchmark, dashboard batch view를 포함하지 않습니다.
@@ -1591,7 +1591,7 @@
 - `dashboard/app.js`는 batch aggregate report를 fetch하고 전체/장세별 metric을 렌더링합니다.
 - `dashboard/styles.css`는 batch replay panel layout과 mobile responsive rule을 추가했습니다.
 - `src/api/localOperationsServer.test.ts`는 API endpoint, dashboard DOM hook, renderer wiring을 검증합니다.
-- `docs/historical-replay.md`는 dashboard에서 batch aggregate report를 조회하는 방법과 실행 버튼이 없다는 경계를 문서화했습니다.
+- `docs/runbooks/historical-replay.md`는 dashboard에서 batch aggregate report를 조회하는 방법과 실행 버튼이 없다는 경계를 문서화했습니다.
 - `docs/pr-implementation-plan.md`는 PR-57 범위와 PR-58 후속 순서를 기록했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 실행 경로는 없고, match는 기존 `/place_order` 거절 테스트, 문서상 제외/금지 경계, 신규 paper-only disclaimer로만 확인했습니다.
 - 이번 PR은 dashboard batch 실행 버튼, report 생성, live trading 연결, strategy 자동 조정은 포함하지 않습니다.
@@ -1655,7 +1655,7 @@
 - `package.json`에 `historical:batch:replay` script를 추가하고 기존 dry script는 유지했습니다.
 - `src/workflows/historicalBatchReplayWorkflow.test.ts`는 injected Codex-style provider가 run별로 사용되는지 검증합니다.
 - `src/cli/historicalReplayCli.test.ts`는 default provider metadata와 Codex AI guard를 검증합니다.
-- `docs/historical-replay.md`는 실제 Codex AI batch 실행 명령, 권장 10회 설정, call cap, safety boundary를 문서화했습니다.
+- `docs/runbooks/historical-replay.md`는 실제 Codex AI batch 실행 명령, 권장 10회 설정, call cap, safety boundary를 문서화했습니다.
 - `docs/pr-implementation-plan.md`는 PR-59 범위와 후속 계획 상태를 기록했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 기존 CLI test의 `node:child_process`와 문서상 제외/금지 경계로만 확인했습니다.
 - 이번 PR은 retry/backoff scheduler, 병렬 batch execution, dashboard-triggered replay, live trading 연결을 포함하지 않습니다.
@@ -1691,7 +1691,7 @@
 - `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 새 env resolver를 사용합니다.
 - `src/ai/codexCliDecisionProvider.test.ts`는 unsupported schema keyword가 남지 않았는지, action별 branch와 `claimSupport` contract가 유지되는지 검증합니다.
 - `src/replay/codexHistoricalDecisionProvider.test.ts`는 historical prompt가 no-lookahead boundary와 non-empty decision rule을 함께 포함하는지 검증합니다.
-- `docs/historical-replay.md`는 historical replay에서 `CODEX_*` fallback env와 output schema 전달 방식을 문서화했습니다.
+- `docs/runbooks/historical-replay.md`는 historical replay에서 `CODEX_*` fallback env와 output schema 전달 방식을 문서화했습니다.
 - `docs/pr-implementation-plan.md`는 PR-60 범위와 이후 paper return 실험 PR 순서를 기록했습니다.
 - 이번 PR은 aggressive risk profile, 목표 수익률 최적화, 장세 균형 sampler, live trading 연결을 포함하지 않습니다.
 
@@ -1722,7 +1722,7 @@
 - `src/workflows/historicalReplayWorkflow.ts`와 `src/workflows/historicalBatchReplayWorkflow.ts`는 run metadata와 batch manifest에 profile 정보를 저장합니다.
 - `src/replay/historicalReplayAuditLog.ts`는 metadata schema에 nullable `riskProfile`과 `riskPolicy`를 추가했습니다.
 - `src/paper/riskProfile.test.ts`, `src/workflows/historicalBatchReplayWorkflow.test.ts`, `src/workflows/historicalReplayWorkflow.test.ts`, `src/cli/historicalReplayCli.test.ts`는 profile default, aggressive fill, metadata 저장, CLI integration을 검증합니다.
-- `docs/historical-replay.md`, `docs/contracts/risk-policy.md`, `docs/pr-implementation-plan.md`는 profile 표, CLI 예시, paper-only 적용 경계를 문서화했습니다.
+- `docs/runbooks/historical-replay.md`, `docs/contracts/risk-policy.md`, `docs/pr-implementation-plan.md`는 profile 표, CLI 예시, paper-only 적용 경계를 문서화했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.
 
 ## PR-62: Market Regime Balanced Batch Sampler
@@ -1753,7 +1753,7 @@
 - `src/cli/historicalBatchReplay.ts`는 `--window-sampling random|balanced_regime`과 `--target-regimes`를 파싱하고 stdout에 선택 mode를 출력합니다.
 - `src/replay/regimeBalancedWindowSampler.test.ts`, `src/workflows/historicalBatchReplayWorkflow.test.ts`, `src/cli/historicalReplayCli.test.ts`, `src/reports/batchReplayReport.test.ts`는 sampler, workflow, CLI, aggregate fixture contract를 검증합니다.
 - `src/replay/historicalReplaySafety.test.ts`는 신규 sampler source file을 금지 실행 표면 정적 검사 대상에 포함했습니다.
-- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 balanced sampling 사용법, 저장 metadata, 제외 범위를 문서화했습니다.
+- `docs/runbooks/historical-replay.md`와 `docs/pr-implementation-plan.md`는 balanced sampling 사용법, 저장 metadata, 제외 범위를 문서화했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.
 
 ## PR-63: Target Return Hit-rate Aggregate Report
@@ -1782,7 +1782,7 @@
 - `src/cli/historicalBatchReport.ts`는 `--target-return-thresholds`를 comma-separated ratio list로 파싱합니다.
 - `src/reports/batchReplayReport.test.ts`는 기본 threshold, custom threshold, skipped/failed/null-return 제외, markdown render를 검증합니다.
 - `src/cli/historicalReplayCli.test.ts`는 aggregate report CLI가 custom threshold를 JSON report에 저장하는지 검증합니다.
-- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 CLI 사용법, metric 의미, 제외 범위를 문서화했습니다.
+- `docs/runbooks/historical-replay.md`와 `docs/pr-implementation-plan.md`는 CLI 사용법, metric 의미, 제외 범위를 문서화했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.
 
 ## PR-64: Paper Exit Policy Replay
@@ -1811,7 +1811,7 @@
 - `src/replay/historicalReplayAuditLog.ts`는 같은 packet의 exit/provider decision을 모두 남길 수 있도록 decision hash 기준 중복 제거로 변경했습니다.
 - `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 paper exit policy CLI 옵션을 받습니다.
 - `src/workflows/historicalReplayWorkflow.ts`, `src/workflows/historicalBatchReplayWorkflow.ts`, `src/reports/historicalReplayReport.ts`는 policy metadata를 저장/출력합니다.
-- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 사용법, metadata, 제외 범위를 문서화했습니다.
+- `docs/runbooks/historical-replay.md`와 `docs/pr-implementation-plan.md`는 사용법, metadata, 제외 범위를 문서화했습니다.
 - PR #28로 merge 완료했습니다.
 
 ## PR-65: Historical Universe Coverage
@@ -1842,7 +1842,7 @@
 - `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 `--universe-path`로 manifest required symbol을 availability check에 반영합니다.
 - `package.json`은 `historical:universe:coverage` script를 추가합니다.
 - `src/replay/historicalReplaySafety.test.ts`는 신규 coverage source와 CLI를 live execution surface 정적 검사 대상에 포함합니다.
-- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 coverage 사용법, PR-65 범위, 제외 범위를 문서화합니다.
+- `docs/runbooks/historical-replay.md`와 `docs/pr-implementation-plan.md`는 coverage 사용법, PR-65 범위, 제외 범위를 문서화합니다.
 
 ## PR-66: Aggressive Codex Prompt Policy
 
@@ -1871,7 +1871,7 @@
 - `src/workflows/historicalBatchReplayWorkflow.ts`는 batch manifest의 decision provider metadata에 nullable `promptPolicy`, `promptVersion`을 추가합니다.
 - `src/replay/codexHistoricalDecisionProvider.test.ts`는 default/balanced policy 유지와 aggressive prompt guard 문구를 검증합니다.
 - `src/workflows/historicalBatchReplayWorkflow.test.ts`는 Codex-style provider metadata에 aggressive prompt policy/version이 기록되는지 검증합니다.
-- `docs/historical-replay.md`, `docs/contracts/codex-cli-paper-trading.md`, `docs/pr-implementation-plan.md`는 prompt policy 동작, 감사 metadata, 제외 범위를 문서화합니다.
+- `docs/runbooks/historical-replay.md`, `docs/contracts/codex-cli-paper-trading.md`, `docs/pr-implementation-plan.md`는 prompt policy 동작, 감사 metadata, 제외 범위를 문서화합니다.
 
 ## PR-67: Batch AI Failure Accounting
 
@@ -1897,7 +1897,7 @@
 - `src/reports/batchReplayReport.ts`는 completed run의 `aiDecisionFailureCount`를 `totalAiDecisionFailureCount`로 합산하고 markdown render에 표시합니다.
 - `src/workflows/historicalBatchReplayWorkflow.test.ts`는 provider failure가 있어도 replay가 완료되면 batch run이 `completed`로 남고 AI failure count가 1로 기록되는지 검증합니다.
 - `src/reports/batchReplayReport.test.ts`는 completed run 내부 AI failure count와 failed run count가 분리되는지 검증합니다.
-- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 AI failure accounting 의미, 검증 기준, 제외 범위를 문서화합니다.
+- `docs/runbooks/historical-replay.md`와 `docs/pr-implementation-plan.md`는 AI failure accounting 의미, 검증 기준, 제외 범위를 문서화합니다.
 
 ## PR-68: Codex CLI Batch Session Budget
 
@@ -1953,7 +1953,7 @@
 - `src/paper/riskProfile.ts`는 profile별 allocation policy와 initial cash 기반 aggressive budget scaling을 제공합니다.
 - `src/replay/historicalReplayRunner.ts`는 allocation이 있을 때 first-priced fixture를 여러 eligible 후보로 분산합니다.
 - `src/replay/codexHistoricalReplayRunner.ts`, `src/workflows/historicalReplayWorkflow.ts`, `src/workflows/historicalBatchReplayWorkflow.ts`, CLI는 allocation policy를 replay와 metadata에 전달합니다.
-- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 target exposure profile, metadata, 제외 범위를 문서화합니다.
+- `docs/runbooks/historical-replay.md`와 `docs/pr-implementation-plan.md`는 target exposure profile, metadata, 제외 범위를 문서화합니다.
 
 ## PR-70: Paper Exit Policy Telemetry
 
@@ -1979,14 +1979,14 @@
 - `src/cli/historicalReplay.ts`와 `src/cli/historicalBatchReplay.ts`는 새 paper exit option을 파싱합니다.
 - `src/reports/historicalReplayReport.ts`는 portfolio construction metric과 meaningful/dust reject count를 출력합니다.
 - `src/reports/batchReplayReport.ts`와 `src/workflows/historicalBatchReplayWorkflow.ts`는 run summary와 aggregate report에 exposure/cash/time-in-market/target gap/dust reject metric을 전달합니다.
-- `docs/historical-replay.md`와 `docs/pr-implementation-plan.md`는 option, metric, 제외 범위를 문서화합니다.
+- `docs/runbooks/historical-replay.md`와 `docs/pr-implementation-plan.md`는 option, metric, 제외 범위를 문서화합니다.
 
 ## Phase 25: AI Paper Trading 운영 Runbook 정리
 
 ### Review 1: Scope and Safety
 
 - 범위는 Codex AI paper run과 historical/batch replay 운영 절차 문서화에 한정합니다.
-- `docs/ai-paper-trading-runbook.md`를 새로 추가하고 README, Codex CLI paper trading, historical replay, automation 문서에서 runbook으로 진입할 수 있게 연결했습니다.
+- `docs/runbooks/ai-paper-trading-runbook.md`를 새로 추가하고 README, Codex CLI paper trading, historical replay, automation 문서에서 runbook으로 진입할 수 있게 연결했습니다.
 - code behavior, API route, dashboard asset, risk/order/replay 로직, package script는 변경하지 않았습니다.
 - runbook은 `TRADING_ENABLED=false`, `BROKER_PROVIDER=mock`, `AI_DECISION_MODE=paper_only`, `AI_DECISION_ENABLED=false` 기본 경계를 유지합니다.
 - live trading enable 절차, 실계좌 주문 절차, raw `codex exec`/raw `tossctl` MCP tool, `place_order` enabled surface는 추가하지 않았습니다.
@@ -2001,7 +2001,7 @@
 
 ### Review 3: Diff and Integration
 
-- `docs/ai-paper-trading-runbook.md`는 실행 전 `.env`, schema path, data availability, budget/sampling, 실행 중 progress/audit, 실행 후 decision/risk/trade count와 retry 판단 순서를 정리합니다.
+- `docs/runbooks/ai-paper-trading-runbook.md`는 실행 전 `.env`, schema path, data availability, budget/sampling, 실행 중 progress/audit, 실행 후 decision/risk/trade count와 retry 판단 순서를 정리합니다.
 - stored packet paper run, single historical replay, batch historical replay, aggregate report, dashboard read-only 조회 절차를 실제 package script 기준으로 작성했습니다.
 - failure triage table은 provider disabled, Codex executable/auth/usage limit, timeout, invalid schema, packet mismatch, risk reject, data availability 부족을 artifact 기준으로 분리합니다.
 - 금지 경계 grep 결과 match는 기존 금지 예시와 paper-only disclaimer 문구로만 확인했고 신규 live/raw execution surface는 없습니다.
@@ -2030,7 +2030,7 @@
 - `scripts/qualityGate.mjs`는 `readCodexDecisionProviderConfig({})`의 safe default를 검사합니다.
 - `scripts/qualityGate.mjs`는 `readHistoricalCodexDecisionEnv({})`의 historical replay Codex call cap과 web search default를 검사합니다.
 - `scripts/qualityGate.mjs`는 `AI_DECISION_*` alias가 `CODEX_*` fallback보다 우선되는지 검사합니다.
-- `docs/architecture/PROJECT_STRUCTURE.md`와 `docs/CODE_CONVENTION.md`는 `quality:gate` 검사 범위에 Codex decision provider safe default가 포함된다는 점을 반영했습니다.
+- `docs/architecture/PROJECT_STRUCTURE.md`와 `docs/runbooks/CODE_CONVENTION.md`는 `quality:gate` 검사 범위에 Codex decision provider safe default가 포함된다는 점을 반영했습니다.
 - 신규 runtime behavior, API contract, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 27: Official Toss Open API Adapter Design
@@ -2113,7 +2113,7 @@
 - enabled 상태에서 client id 또는 client secret이 없으면 `status=invalid`와 issue code로 fail-closed 상태를 반환합니다.
 - `summarizeTossOpenApiAuthConfig`는 credential value를 반환하지 않고 존재 여부만 반환합니다.
 - `scripts/qualityGate.mjs`는 default Toss Open API auth config가 disabled 상태인지 build artifact 기준으로 검사합니다.
-- `.env.example`, README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 parser 구현 상태와 후속 PR 분리 계획을 반영합니다.
+- `.env.example`, README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 parser 구현 상태와 후속 PR 분리 계획을 반영합니다.
 - 신규 network call, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 30: Mocked Token Auth Client
@@ -2141,7 +2141,7 @@
 - `src/broker/tossOpenApiAuthClient.ts`는 `application/x-www-form-urlencoded` token issue request를 만들고, `Bearer` response와 positive `expires_in`을 검증합니다.
 - `TossOpenApiAuthClient`는 process memory token cache, expiry safety margin, concurrent request single-flight를 제공하지만, 실제 HTTP transport는 injected `TossOpenApiTokenIssuer` 밖에 두었습니다.
 - `src/broker/tossOpenApiAuthClient.test.ts`는 request body, disabled/invalid config fail-closed, cache, single-flight, invalid response no-cache, non-`Bearer` rejection, malformed response shape rejection을 검증합니다.
-- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 mocked auth client 구현 상태와 후속 제외 범위를 반영합니다.
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 mocked auth client 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 network call, persistent token store, API route, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 31: Authenticated Read-only HTTP Client
@@ -2172,7 +2172,7 @@
 - HTTP response mapping은 nested `error.code`, 401 auth failure, 403 forbidden, 429 rate limit과 `Retry-After`, generic 4xx/5xx, invalid status를 구분합니다.
 - `401 invalid-token`/`expired-token` 계열은 optional `clearToken()` hook이 있을 때만 cache clear 후 `GET`을 1회 재시도합니다.
 - `src/broker/tossOpenApiReadOnlyHttpClient.test.ts`는 Bearer injection, query serialization, mutation method block, disabled/invalid auth config fail-closed, invalid path/base URL, nested error code parsing, 401 token retry, 401/403/429/4xx/5xx mapping, invalid response status를 검증합니다.
-- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 authenticated read-only HTTP client 구현 상태와 후속 제외 범위를 반영합니다.
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 authenticated read-only HTTP client 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, market adapter, account snapshot reader, persistent token store, API route, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 32: Read-only Market Data Adapter
@@ -2205,7 +2205,7 @@
 - `prices.symbols`는 1-200개만 허용하고, symbol은 letters, numbers, dot, dash만 허용하며, path segment는 `encodeURIComponent`로 구성합니다.
 - `trades.count`는 1-50, `candles.count`는 1-200, `candles.interval`은 `1m` 또는 `1d`, market calendar region은 `KR` 또는 `US`만 허용합니다.
 - `src/broker/tossOpenApiMarketDataAdapter.test.ts`는 prices/orderbook/trades/candles/warnings/calendar mapping, 201개 이상 prices symbols fail-closed, invalid input fail-closed, order endpoint 미호출을 검증합니다.
-- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only market data adapter 구현 상태와 후속 제외 범위를 반영합니다.
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only market data adapter 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, account snapshot reader, account/order mutation, API route, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 33: Read-only Account Snapshot Reader
@@ -2239,7 +2239,7 @@
 - `accountSeq`가 있으면 `/api/v1/accounts`와 `/api/v1/holdings`를 호출하고, holdings query에는 optional normalized `symbol`만 추가합니다.
 - account number와 accountSeq는 snapshot output에서 `****`로 masking합니다.
 - `src/broker/tossOpenApiAccountSnapshotReader.test.ts`는 account/holdings mapping, masking, missing `accountSeq` degraded status, invalid input fail-closed, malformed envelope fail-closed, order endpoint 미호출을 검증합니다.
-- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only account snapshot reader 구현 상태와 후속 제외 범위를 반영합니다.
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only account snapshot reader 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, order mutation, portfolio mutation, API route, data model, migration, dashboard UI 변경은 없습니다.
 
 ### Codex Review Fix: Account Header Contract
@@ -2300,7 +2300,7 @@
 - `src/risk/liveRiskEngine.ts`는 pure in-memory evaluation만 수행하며 filesystem, network, broker, storage를 호출하지 않습니다.
 - `src/risk/liveRiskEngine.ts`는 raw root payload를 안전한 evaluation input으로 정규화한 뒤 rule evaluation을 수행합니다.
 - `RiskDecision`은 `orderIntentId`, `signalId`, `approved`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 반환합니다.
-- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/risk-policy.md`, `docs/pr-implementation-plan.md`는 live risk module 위치와 제외 범위를 반영합니다.
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/risk-policy.md`, `docs/pr-implementation-plan.md`는 live risk module 위치와 제외 범위를 반영합니다.
 - 신규 official API call, order mutation, broker gateway, `OrderRouter`, API route, MCP tool, dashboard UI, data model, migration 변경은 없습니다.
 
 ### Codex Review Fix

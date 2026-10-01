@@ -126,7 +126,7 @@ MCP tool catalog, risk policy, runbook을 최신 구현과 맞추는 문서화 �
 - `--sandbox workspace-write` 또는 `danger-full-access` 사용
 - usage limit 또는 timeout 실패를 무시하고 이전 판단 재사용
 
-실제 Codex AI paper run 또는 batch replay 실행 전후 점검은 [AI Paper Trading Runbook](../ai-paper-trading-runbook.md)을 기준으로 수행합니다. Codex automation은 이 runbook을 요약하거나 갱신할 수 있지만, runbook에 없는 live trading enable 절차를 자동으로 만들지 않습니다.
+실제 Codex AI paper run 또는 batch replay 실행 전후 점검은 [AI Paper Trading Runbook](../runbooks/ai-paper-trading-runbook.md)을 기준으로 수행합니다. Codex automation은 이 runbook을 요약하거나 갱신할 수 있지만, runbook에 없는 live trading enable 절차를 자동으로 만들지 않습니다.
 
 ## Unsafe Automation Examples
 

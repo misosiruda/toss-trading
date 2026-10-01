@@ -1,9 +1,9 @@
 # Codex Maintenance Delegation Policy
 
 이 문서는 `misosiruda/toss-trading`의 repository maintenance를 Codex가 장시간
-연속 수행할 때 적용하는 owner의 상시 위임 정책이다. 목표는 작은 PR, 검증, Codex
-review, merge, 다음 작업 발견을 반복하면서 불필요한 owner 판단 요청을 최소화하는
-것이다.
+연속 수행할 때 적용하는 owner의 상시 위임 정책이다. 목표는 기능 단위 PR의 사전 설계,
+책임별 커밋, 검증, Codex review, merge, 다음 작업 발견을 반복하면서 불필요한 owner 판단
+요청을 최소화하는 것이다.
 
 이 위임은 code maintenance와 paper-only research infrastructure에만 적용한다.
 Codex는 trading engine이 아니며 deterministic backend와 Risk Engine의 final
@@ -24,7 +24,7 @@ sizing/gate 책임을 대신하지 않는다.
 
 ## 상시 자동 승인 범위
 
-다음 변경은 별도 owner 확인 없이 한 번에 하나의 작은 PR로 진행할 수 있다.
+다음 변경은 별도 owner 확인 없이 사전 설계한 하나의 기능 PR 범위에서 진행할 수 있다.
 
 - roadmap과 현재 구현을 일치시키는 문서 갱신
 - strict schema, structured contract, parser, normalizer와 validator
@@ -112,31 +112,38 @@ fail-closed 중단할 수 있다. 추정만으로 실행 한계를 주장하지 
 7. actual external input 전에 만들 수 있는 preflight, plan, report와 audit contract
 8. 문서, 테스트와 구현의 불일치
 
-후보마다 현재 코드와 문서를 확인하고, safety dependency 순서상 가장 앞에 있는 하나의
-독립 책임만 다음 PR로 선택한다. 고정 목록 완료는 discovery 종료가 아니다.
+후보마다 현재 코드와 문서를 확인하고, safety dependency 순서상 가장 앞에 있는 완결된
+기능 단위를 다음 PR로 설계한다. 여러 책임의 변경이 같은 기능의 완료에 필요하면 범위에
+명시하고 책임이 바뀌기 전에 커밋한다. 고정 목록 완료는 discovery 종료가 아니다.
 
 `OWNER_ACTION_REQUIRED` 전에 발견한 모든 합리적 후보를 검토해야 한다. 하나라도
 상시 자동 승인 범위에서 credential 없이 진행 가능하면 중단하지 않는다. 중단 보고에는
 각 후보가 왜 불가능한지와 owner가 수행할 정확한 화면, 값, 최소 권한, 확인 명령과
 완료 증거를 적는다. Secret 값 자체를 요청하거나 출력하지 않는다.
 
-## Small-PR 및 Review 루프
+## 기능 PR 설계와 Review 루프
 
-1. `AGENTS.md`, 관련 rule, 이 문서, active roadmap과 대상 코드를 읽는다.
+PR은 작업 후 모인 변경이나 커밋 수로 정하지 않는다. 구현 전에 목적, 포함 범위, 비범위,
+완료 조건과 검증 방법을 정하고 그 기능 범위를 완료한 뒤 게시한다. 의미 있는 책임 단위로
+커밋하되 최소/목표 커밋 개수를 PR 생성 조건으로 두지 않는다. 책임이 다른 변경으로 넘어가기
+전에 현재 책임의 검토 가능한 변경을 커밋한다.
+
+1. `AGENTS.md`, 관련 rule, 이 문서, active roadmap과 대상 코드를 읽고 기능 PR 범위를 설계한다.
 2. GitHub identity, repository, push permission, branch, worktree, open PR과 PR
    author를 fail-closed로 확인한다. 이 상시 위임으로 merge할 수 있는 PR author는
    exact owner login `misosiruda`뿐이다. Collaborator-authored PR은 이어서 수정하거나
    merge하지 않고 명시적인 owner review를 요구한다.
 3. 중단된 동일 목적 PR 또는 remote branch가 있으면 중복 생성하지 않고 이어간다.
-4. 독립 검토 가능한 책임 하나만 구현하고 문서, 테스트, checklist와 PR 본문 범위를
-   실제 diff에 맞춘다.
+4. 사전 설계한 기능 범위를 구현하고 책임 단위가 바뀌기 전에 커밋한다. 문서, 테스트,
+   checklist와 PR 본문 범위는 설계와 실제 diff에 맞춘다. 무관한 기능을 같은 PR에 묶지 않는다.
 5. 범위, safety boundary, 테스트·문서·PR 본문 일치를 각각 자체 검토한다.
 6. 반복 구현과 review finding 수정에는 `git diff --check`와 `npm run check:review`를 실행한다.
    이 명령은 build/quality/tooling gate와 변경 영향 테스트를 실행하며 영향이 불명확하면 전체
    suite로 fallback한다. 같은 변경에 `check:review`와 `check`를 연속으로 필수 실행하지 않는다.
    전체 검증을 선택했다면 그것이 포함하는 focused suite를 별도로 중복 실행할 필요가 없다.
    Frontend 변경이면 관련 build, E2E와 a11y도 실행한다.
-7. Korean Conventional Commit으로 commit하고 push한 뒤 ready PR을 만든다.
+7. Korean Conventional Commit으로 책임별 변경을 기록한다. 설계한 기능의 완료 조건과
+   검증을 충족한 뒤 승인된 범위에서 push하고 PR을 만든다.
 8. 실제 repository label만 사용하고 `misosiruda`를 assignee로 설정한 뒤 title,
    assignee, label, files와 current head를 검증한다.
 9. current head마다 `@codex review`를 한 번 요청하고 issue comments, reviews와
@@ -148,7 +155,7 @@ fail-closed 중단할 수 있다. 추정만으로 실행 한계를 주장하지 
     코드·테스트·설정·의존성·base가 변경되면 새 후보를 다시 검증한다. 동일한 검증 입력의
     통과 증거가 이미 있으면 중복 실행하지 않되 이전 HEAD나 불명확한 결과를 재사용하지 않는다.
     실패한 검증은 수정·재검수로 돌아간다. 필수 check 성공과 검증 대상 HEAD의 일치를 확인하고
-    expected head SHA로 기존 merge 방식을 사용한다. 세부 절차는 `docs/test-verification.md`를 따른다.
+    expected head SHA로 기존 merge 방식을 사용한다. 세부 절차는 `docs/runbooks/test-verification.md`를 따른다.
 12. `MERGED`를 확인하고 `main`을 fast-forward한 뒤 병합 branch만 정리하고 다음 작업
     발견 절차로 돌아간다.
 

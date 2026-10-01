@@ -318,7 +318,7 @@ Target return hit-rate는 paper-only batch sample을 요약하는 사후 분석 
 관련 문서:
 
 - `docs/contracts/codex-cli-paper-trading.md`
-- `docs/historical-replay.md`
+- `docs/runbooks/historical-replay.md`
 - `docs/contracts/automation.md`
 - `docs/contracts/risk-policy.md`
 - `docs/architecture/PROJECT_STRUCTURE.md`

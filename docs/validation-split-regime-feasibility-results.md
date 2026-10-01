@@ -1,6 +1,6 @@
 # Validation Split Role-Local Regime Feasibility 결과
 
-이 문서는 [Validation Split Role-Local Regime Feasibility 계획](validation-split-regime-feasibility-plan.md)에 사전 고정한 입력으로 실행한 paper-only deterministic preflight 결과를 기록한다.
+이 문서는 [Validation Split Role-Local Regime Feasibility 계획](plans/validation-split-regime-feasibility-plan.md)에 사전 고정한 입력으로 실행한 paper-only deterministic preflight 결과를 기록한다.
 
 이 결과는 replay 성과, strategy 유효성, 특정 종목 판단, 투자 조언 또는 예상 수익의 근거가 아니다. Generated fixture와 artifact는 `data/validation-feasibility/`에만 보관하며 PR에는 포함하지 않는다.
 
@@ -176,6 +176,6 @@ npm run historical:validation:regime-feasibility -- --source-data-dir data/repla
 
 ## 결론과 다음 단계
 
-고정한 minimum 1 기준에서는 role-local regime feasibility가 `available`이다. 다음 단계는 [Validation Role-Local Regime Replay Selection 계획](validation-role-regime-replay-selection-plan.md)에 따라 role 안에서는 candidate를 deduplicate하고 cross-role shared evidence를 별도로 기록하는 것이다.
+고정한 minimum 1 기준에서는 role-local regime feasibility가 `available`이다. 다음 단계는 [Validation Role-Local Regime Replay Selection 계획](plans/validation-role-regime-replay-selection-plan.md)에 따라 role 안에서는 candidate를 deduplicate하고 cross-role shared evidence를 별도로 기록하는 것이다.
 
 다음 계획은 candidate의 원래 split ID와 role을 보존하고, assignment 간 결과를 독립 sample처럼 합치지 않으며, bear와 test mixed의 단일 candidate 의존성을 명시해야 한다. 공식 exchange calendar, holiday/early-close 독립 검증, replay 성과, Sharpe/PBO readiness와 strategy 유효성은 이번 결과에서 확인되지 않았다.

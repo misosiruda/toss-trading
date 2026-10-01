@@ -6,7 +6,7 @@
 
 ## 배경
 
-[Validation Split Role-Local Regime Feasibility 결과](validation-split-regime-feasibility-results.md)는 고정 minimum 1 기준으로 train, validation, test aggregate가 `bull`, `bear`, `sideways`, `mixed` candidate를 모두 가진다고 판정했다.
+[Validation Split Role-Local Regime Feasibility 결과](../validation-split-regime-feasibility-results.md)는 고정 minimum 1 기준으로 train, validation, test aggregate가 `bull`, `bear`, `sideways`, `mixed` candidate를 모두 가진다고 판정했다.
 
 현재 `historicalBatchReplay` workflow는 `validationSplitAssignments[runIndex]`를 받으면 `selectBatchReplayWindow()`에서 assignment role 전체 범위를 즉시 `fixed_range`로 선택한다. 따라서 `--window-sampling balanced_regime`과 `--target-regimes`를 함께 전달해도 validation assignment가 있으면 regime sampler를 실행하지 않는다.
 
@@ -341,7 +341,7 @@ Unavailable regime을 broad fallback, 다른 bucket 또는 다른 role candidate
 3. Exclusive writer와 read-only plan CLI
 4. Batch manifest/run record plan provenance contract
 5. Workflow exact-window 연결과 fail-closed E2E
-6. [Deterministic fixture provider smoke 결과 문서](validation-role-regime-replay-smoke-results.md)
+6. [Deterministic fixture provider smoke 결과 문서](../validation-role-regime-replay-smoke-results.md)
 
 각 PR은 앞 단계 contract와 test만 포함한다. Plan artifact parser와 writer가 완성되기 전에는 batch workflow semantics를 변경하지 않는다.
 

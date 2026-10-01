@@ -149,7 +149,7 @@ interface EvidenceExpansionRoleTarget {
 
 현재 계약된 role sample minimum은 30이다. Actual expansion 실행의
 role-regime capacity floor는
-[Validation Role-Regime Evidence Expansion Target 정책](validation-role-regime-evidence-expansion-target-policy.md)에서
+[Validation Role-Regime Evidence Expansion Target 정책](../validation-role-regime-evidence-expansion-target-policy.md)에서
 각 cell 8로 사전 고정한다. Strict schema는 fail-closed 상태를 표현하기 위해
 `byRegime`의 `null`을 계속 허용하며, 이 경우
 `ROLE_REGIME_TARGET_UNDEFINED` blocker를 생성한다.
@@ -644,7 +644,7 @@ replay input으로 승격하지 않는다.
 1. [Split Provenance 계획](validation-role-regime-evidence-expansion-split-provenance-plan.md)에
    따라 baseline/expansion validation split hash를 분리한다. 고정된
    `roleRegimeSampleMinimum=8` 정책을 유지하면서
-   [Evidence Expansion Source 사전 등록](validation-role-regime-evidence-expansion-source-preregistration.md)의
+   [Evidence Expansion Source 사전 등록](../validation-role-regime-evidence-expansion-source-preregistration.md)의
    source range, universe, coverage, expansion validation split, canonical
    `generatedAt`과 temp output root를 사용한다.
 2. Official calendar evidence ingestion/writer와 full legacy rule/fixture

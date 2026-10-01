@@ -89,9 +89,9 @@ flowchart TD
 범위:
 
 - `docs/quant-research-paper-simulation-review.md`
-- `docs/quant-research-paper-simulation-plan.md`
+- `docs/plans/quant-research-paper-simulation-plan.md`
 - `docs/contracts/risk-policy.md`
-- `docs/historical-replay.md`
+- `docs/runbooks/historical-replay.md`
 - `scripts/qualityGate.mjs` 후보
 
 산출물:
@@ -131,7 +131,7 @@ git diff --check
 - `src/workflows/historicalBatchReplayWorkflow.ts`
 - `src/storage/artifactPaths.ts`
 - `src/domain/schemas.ts`
-- `docs/historical-replay.md`
+- `docs/runbooks/historical-replay.md`
 
 핵심 필드:
 
@@ -463,7 +463,7 @@ Hedge 정책:
 - `src/cli/historicalBatchReplay.ts`
 - `src/workflows/historicalBatchReplayWorkflow.ts`
 - `src/reports/batchReplayReport.ts`
-- `docs/historical-replay.md`
+- `docs/runbooks/historical-replay.md`
 
 1차 protocol:
 
@@ -614,7 +614,7 @@ Metric 후보:
 - `dashboard/reportRenderers.js`
 - `dashboard/portfolioRenderers.js`
 - `dashboard/batchRunRenderers.js`
-- `docs/ai-paper-trading-runbook.md`
+- `docs/runbooks/ai-paper-trading-runbook.md`
 
 Report 구획:
 

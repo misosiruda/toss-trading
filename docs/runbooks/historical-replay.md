@@ -22,7 +22,7 @@ Codex AI historical replay 또는 batch replay를 실제로 실행하기 전후�
 - paper risk profile: `conservative`, `balanced`, `aggressive_paper`
 - optional paper exit policy: take-profit, stop-loss, rebalance threshold
 
-Calendar/FX fixture를 replay input 정합성 검증에 연결하는 RH2 contract는 [Replay Calendar And FX Contract](replay-calendar-fx-contract.md)를 기준으로 한다.
+Calendar/FX fixture를 replay input 정합성 검증에 연결하는 RH2 contract는 [Replay Calendar And FX Contract](../replay-calendar-fx-contract.md)를 기준으로 한다.
 
 출력:
 
@@ -53,7 +53,7 @@ Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 
 
 ## Research Reproducibility Manifest
 
-`ReplayResearchManifest`는 research-grade replay 비교를 위한 최소 재현성 key contract입니다. Q1-2부터 single historical replay는 `historical-replay-research-manifest.json`을 저장하고, `historical-replay-run-metadata.json`, `historical-replay-report.json`, batch run record는 같은 manifest hash reference를 남깁니다. 현재 manifest는 normalized snapshot의 calendar/FX source ref를 `dataSnapshotHash`에 포함하지만, normalized calendar/FX fixture 파일과 stale policy 자체는 아직 별도 hash source로 저장하지 않습니다. 해당 입력이 replay 결과를 구분해야 하는 contract가 되면 [Replay Calendar And FX Contract](replay-calendar-fx-contract.md)의 future `calendarHash`/`currencyConversionHash` 정책에 따라 manifest hash source를 확장합니다.
+`ReplayResearchManifest`는 research-grade replay 비교를 위한 최소 재현성 key contract입니다. Q1-2부터 single historical replay는 `historical-replay-research-manifest.json`을 저장하고, `historical-replay-run-metadata.json`, `historical-replay-report.json`, batch run record는 같은 manifest hash reference를 남깁니다. 현재 manifest는 normalized snapshot의 calendar/FX source ref를 `dataSnapshotHash`에 포함하지만, normalized calendar/FX fixture 파일과 stale policy 자체는 아직 별도 hash source로 저장하지 않습니다. 해당 입력이 replay 결과를 구분해야 하는 contract가 되면 [Replay Calendar And FX Contract](../replay-calendar-fx-contract.md)의 future `calendarHash`/`currencyConversionHash` 정책에 따라 manifest hash source를 확장합니다.
 
 필수 hash는 `sha256:<64 hex>` 형식이며, hash 대상은 JSON-compatible plain data를 stable key order로 직렬화한 값입니다. `Date`는 ISO string으로 canonicalize하고, `undefined`, `NaN`, `Infinity`, function, symbol, class instance 같은 비 JSON 입력은 fail-closed로 거절합니다.
 
@@ -198,7 +198,7 @@ Historical replay report의 `Sharpe Statistical Validation` section은 `sharpe_v
 - `selectionContext`: single replay는 `candidateCount=1`, `trialCount=1`, `trialSharpeRatioStandardDeviation=null`, `multipleTestingAdjustment=none`으로 기록
 - `warnings`: insufficient sample, zero volatility, serial correlation 미보정, multiple testing context 부족 경고
 
-RH5 Sharpe 통계 검증의 design과 `sharpe_validation.v1` schema는 [Sharpe Statistical Validation Contract](sharpe-statistical-validation-contract.md)를 기준으로 한다. 이 contract는 sample Sharpe confidence interval, benchmark-gated Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 후보를 sample warning과 selection context warning으로 분리하기 위한 사후 검증 layer이며, live signal이나 자동 sizing으로 연결하지 않는다.
+RH5 Sharpe 통계 검증의 design과 `sharpe_validation.v1` schema는 [Sharpe Statistical Validation Contract](../sharpe-statistical-validation-contract.md)를 기준으로 한다. 이 contract는 sample Sharpe confidence interval, benchmark-gated Probabilistic Sharpe Ratio, Deflated Sharpe Ratio 후보를 sample warning과 selection context warning으로 분리하기 위한 사후 검증 layer이며, live signal이나 자동 sizing으로 연결하지 않는다.
 
 Q3-2 기준:
 
@@ -403,7 +403,7 @@ npm run historical:batch:replay:dry -- -- --source-data-dir data/replay-2026-04-
 - `--validation-role-regime-plan-path`를 사용하면 strict-parsed ready plan의 ordered run을 exact window로 실행합니다. Run count, range, window month, timezone, `short_term` candidate scope는 plan에서 결정되며 random/balanced sampler를 호출하지 않습니다.
 - Plan mode는 `--universe-path`, `--coverage-path`, `--calendar-fixtures-path`, 하나 이상의 `--calendar-rule`을 필수로 받습니다. Snapshot, universe source, coverage, calendar, default classifier, candidate hash와 recomputed target regime이 plan provenance와 다르면 batch artifact 생성 전에 거부합니다.
 - Plan mode는 `--validation-splits-path`, `--window-sampling`, `--target-regimes`, `--runs`, random range와 window/timezone override를 함께 받을 수 없습니다. 기존 output directory가 있으면 덮어쓰지 않습니다.
-- 첫 deterministic fixture provider 실행 결과와 report independence 제한은 [Validation Role-Regime Replay Smoke Results](validation-role-regime-replay-smoke-results.md)에 기록합니다.
+- 첫 deterministic fixture provider 실행 결과와 report independence 제한은 [Validation Role-Regime Replay Smoke Results](../validation-role-regime-replay-smoke-results.md)에 기록합니다.
 - 기본 batch runner는 deterministic paper replay를 실행합니다. Codex CLI AI 호출은 `--use-codex-ai`를 명시하고 환경 변수가 활성화된 경우에만 수행합니다.
 - Codex CLI AI 호출은 run마다 별도 `CodexCliDecisionProvider`를 생성하고 `codex exec --ephemeral`을 사용합니다. `--max-codex-calls-per-run`은 batch 전체가 아니라 각 run의 paper-only 호출 상한입니다.
 - `--use-codex-ai` 실행 전에는 기본으로 preflight decision을 1회 수행합니다. 이미 Codex 연결을 별도 확인한 경우에만 `--skip-codex-preflight`로 생략합니다.
@@ -864,7 +864,7 @@ npm run historical:batch:report -- -- --runs-path data/batch-replay/batch-smoke-
 
 Aggregate report는 `overall`, `byRegime.*`, `byValidationSplitRole.*` group summary마다 같은 group return sample을 기준으로 `sharpeValidation`을 생성합니다. 이 field는 lag 5까지의 autocorrelation diagnostic, sample size warning, non-IID warning, Lo-style adjusted Sharpe, benchmark가 없는 PSR `not_applicable` 상태, 아직 계산하지 않는 DSR 상태를 read-only 검증 지표로 기록합니다. 기존 저장 artifact에는 이 field가 없을 수 있으며, Replay Research Report, legacy static dashboard renderer, Next.js Validation Lab은 missing/available 상태와 warning을 read-only로 표시합니다.
 
-`validationRoleRegimePlan` provenance가 모든 run record에 있으면 aggregate report는 `validationRoleRegimeStatisticalReadiness`를 생성합니다. 이 field는 planned run과 global unique evidence를 구분하고 role-local, role-exclusive, cross-role shared, role-regime cell count를 `validation_role_regime_statistical_readiness.v1` contract로 기록합니다. Role sample minimum은 기존 값 30을 사용합니다. [Evidence expansion target 정책](validation-role-regime-evidence-expansion-target-policy.md)은 후속 actual 실행의 role-regime minimum을 8로 고정하지만, 현재 runtime은 이 값이 명시적으로 전달되지 않으면 `null`과 blocker를 보존합니다. Legacy record만 있는 report는 이 field를 `null`로 유지하고, planned/legacy 혼합, incomplete plan, count conflict 또는 같은 evidence의 role 내 regime 충돌은 readiness를 임의 보정하지 않고 report 생성을 fail-closed로 거부합니다.
+`validationRoleRegimePlan` provenance가 모든 run record에 있으면 aggregate report는 `validationRoleRegimeStatisticalReadiness`를 생성합니다. 이 field는 planned run과 global unique evidence를 구분하고 role-local, role-exclusive, cross-role shared, role-regime cell count를 `validation_role_regime_statistical_readiness.v1` contract로 기록합니다. Role sample minimum은 기존 값 30을 사용합니다. [Evidence expansion target 정책](../validation-role-regime-evidence-expansion-target-policy.md)은 후속 actual 실행의 role-regime minimum을 8로 고정하지만, 현재 runtime은 이 값이 명시적으로 전달되지 않으면 `null`과 blocker를 보존합니다. Legacy record만 있는 report는 이 field를 `null`로 유지하고, planned/legacy 혼합, incomplete plan, count conflict 또는 같은 evidence의 role 내 regime 충돌은 readiness를 임의 보정하지 않고 report 생성을 fail-closed로 거부합니다.
 
 `historical-universe-coverage.json`을 aggregate report에 포함하려면 `--universe-coverage-path`를 전달합니다. 지정하지 않아도 `batch-replay-runs.jsonl`과 같은 directory에 `historical-universe-coverage.json`이 있으면 자동으로 읽습니다.
 

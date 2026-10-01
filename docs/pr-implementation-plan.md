@@ -2379,7 +2379,7 @@
 
 - `src/broker/tossOpenApiReadOnlyHttpClient.ts`
 - `src/broker/tossOpenApiReadOnlyHttpClient.test.ts`
-- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2421,7 +2421,7 @@
 
 - `src/broker/tossOpenApiMarketDataAdapter.ts`
 - `src/broker/tossOpenApiMarketDataAdapter.test.ts`
-- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2463,7 +2463,7 @@
 
 - `src/broker/tossOpenApiAccountSnapshotReader.ts`
 - `src/broker/tossOpenApiAccountSnapshotReader.test.ts`
-- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2505,7 +2505,7 @@
 - `src/risk/liveRiskPolicy.ts`
 - `src/risk/liveRiskEngine.ts`
 - `src/risk/liveRiskEngine.test.ts`
-- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/risk-policy.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/risk-policy.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2591,7 +2591,7 @@
 - `src/config/tossOpenApiAuthConfig.test.ts`
 - `.env.example` placeholder
 - `scripts/qualityGate.mjs` safe default drift check
-- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2627,7 +2627,7 @@
 
 - `src/broker/tossOpenApiAuthClient.ts`
 - `src/broker/tossOpenApiAuthClient.test.ts`
-- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/runbooks/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
