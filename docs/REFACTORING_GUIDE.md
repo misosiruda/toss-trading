@@ -11,7 +11,7 @@
 이 문서는 여러 시점의 behavior-preserving phase를 보존한다. 초기 phase의 API
 `GET`/`HEAD` 전용 설명과 새 실행 버튼 금지는 당시 변경 범위의 제한이다. 현재 API는
 조회와 별도 guarded paper-only simulation/policy/test `POST`를 제공하고, MCP는 read-only다.
-현재 surface는 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)와
+현재 surface는 [PROJECT_STRUCTURE.md](architecture/PROJECT_STRUCTURE.md)와
 `src/api/localOperationsSurface.ts`를 확인한다. 기존 allowlist/guard를 보존하는 정정이며
 추가 mutation, raw command 또는 live order를 허용하는 변경이 아니다.
 
@@ -31,7 +31,7 @@
 
 이번 리팩토링의 첫 산출물은 아래 문서다.
 
-- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md): 코드 위치와 책임 지도
+- [PROJECT_STRUCTURE.md](architecture/PROJECT_STRUCTURE.md): 코드 위치와 책임 지도
 - [CODE_CONVENTION.md](CODE_CONVENTION.md): TypeScript 코드 컨벤션과 레이어 규칙
 - [REFACTORING_GUIDE.md](REFACTORING_GUIDE.md): 단계별 리팩토링 운영 기준
 
@@ -47,7 +47,7 @@
 
 완료 기준:
 
-- `docs/PROJECT_STRUCTURE.md`가 주요 디렉터리와 entrypoint를 설명한다.
+- `docs/architecture/PROJECT_STRUCTURE.md`가 주요 디렉터리와 entrypoint를 설명한다.
 - `docs/CODE_CONVENTION.md`가 TypeScript style, import 방향, 안전 규칙을 설명한다.
 - `README.md`에서 새 문서로 진입할 수 있다.
 
@@ -63,8 +63,8 @@ npm run build
 
 - `src/domain/schemas.ts`
 - `schemas/virtual-decision.schema.json`
-- `docs/codex-cli-paper-trading.md`
-- `docs/risk-policy.md`
+- `docs/contracts/codex-cli-paper-trading.md`
+- `docs/contracts/risk-policy.md`
 
 목표:
 
@@ -172,8 +172,8 @@ npm run build
 - `src/api/`
 - `src/mcp/`
 - `dashboard/`
-- `docs/mcp-tools.md`
-- `docs/llm-boundary.md`
+- `docs/contracts/mcp-tools.md`
+- `docs/contracts/llm-boundary.md`
 
 목표:
 
@@ -300,7 +300,7 @@ npm run build
 - `src/api/localOperationsServer.test.ts`
 - `scripts/qualityGate.mjs`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -332,7 +332,7 @@ npm run build
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -365,7 +365,7 @@ npm run build
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -398,7 +398,7 @@ npm run build
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -432,7 +432,7 @@ npm run build
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -466,7 +466,7 @@ npm run build
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -500,7 +500,7 @@ npm run build
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -535,7 +535,7 @@ npm run build
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -570,7 +570,7 @@ npm run build
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -605,7 +605,7 @@ npm run build
 - `src/api/localOperationsSurface.ts`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -640,7 +640,7 @@ npm run build
 - `dashboard/decisionRenderers.js`
 - `src/api/localOperationsServer.test.ts`
 - `docs/CODE_CONVENTION.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 목표:
 
@@ -676,9 +676,9 @@ npm run build
 
 - `docs/ai-investment-process-refactoring-plan.md`
 - `docs/REFACTORING_GUIDE.md`
-- `docs/codex-cli-paper-trading.md`
-- `docs/llm-boundary.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/contracts/codex-cli-paper-trading.md`
+- `docs/contracts/llm-boundary.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 - `README.md`
 
 목표:
@@ -842,8 +842,8 @@ npm run build
 - `src/api/localOperationsReaders.ts`
 - `src/reports/`
 - `docs/historical-replay.md`
-- `docs/risk-policy.md`
-- `docs/codex-cli-paper-trading.md`
+- `docs/contracts/risk-policy.md`
+- `docs/contracts/codex-cli-paper-trading.md`
 
 목표:
 
@@ -877,9 +877,9 @@ npm run build
 범위:
 
 - 신규 후보: `docs/ai-paper-trading-runbook.md`
-- `docs/codex-cli-paper-trading.md`
+- `docs/contracts/codex-cli-paper-trading.md`
 - `docs/historical-replay.md`
-- `docs/automation.md`
+- `docs/contracts/automation.md`
 - `README.md`
 
 목표:
@@ -946,7 +946,7 @@ npm run build
 
 - [ ] `AGENTS.md` 확인
 - [ ] 관련 `docs/` 문서 확인
-- [ ] `docs/PROJECT_STRUCTURE.md`에서 변경 위치 확인
+- [ ] `docs/architecture/PROJECT_STRUCTURE.md`에서 변경 위치 확인
 - [ ] `docs/CODE_CONVENTION.md`에서 레이어와 import 방향 확인
 - [ ] `git status --short`로 기존 변경 확인
 - [ ] behavior-preserving refactor인지 behavior change인지 분리

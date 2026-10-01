@@ -116,4 +116,4 @@ Local Operations API의 route와 method 기준은 `src/api/localOperationsSurfac
 - MCP server는 `BROKER_PROVIDER=mock`, `TRADING_ENABLED=false` 환경에서 먼저 실행한다.
 - Codex CLI paper decision은 backend worker 경로에서만 실행하고 MCP tool로 노출하지 않는다.
 
-설정 예시는 [.codex/config.example.toml](../.codex/config.example.toml)을 참고한다.
+설정 예시는 [.codex/config.example.toml](../../.codex/config.example.toml)을 참고한다.

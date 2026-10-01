@@ -8,7 +8,7 @@
 - 미정: 전략 종류, 대상 시장·종목군·기간, 첫 화면, 자동 실행 범위, Jev 등 추가 provider 채택
 - 이 문서는 구현·실험 실행 승인이나 기능 완료 보고가 아니다.
 
-[프로젝트 개요](project-overview.md)가 전체 목표와 현재 상태를 설명한다.
+[프로젝트 개요](architecture/project-overview.md)가 전체 목표와 현재 상태를 설명한다.
 이 문서는 다음 작은 제품 단위를 고르기 위한 제안이며 기존 안전·domain contract를 대체하지 않는다.
 아래 학습·코칭 흐름은 첫 사용자 경험의 제안이다. 제품의 전체 목적을 교육 UX만으로 한정하지 않는다.
 
@@ -46,7 +46,7 @@
 
 산출물:
 
-- [프로젝트 개요](project-overview.md), 이 MVP 제안, [문서 탐색 지도](README.md)
+- [프로젝트 개요](architecture/project-overview.md), 이 MVP 제안, [문서 탐색 지도](README.md)
 - 현재 구현/부분 연결/제안의 구분
 - 첫 전략·입력·질문·결과 검토 방식에 대한 결정 목록
 
@@ -161,7 +161,7 @@ Jev 등 추가 scorer의 실험은 이 단계의 필수 조건이 아니다. 채
 - [기존 roadmap](roadmap.md)과 [PR plan](pr-implementation-plan.md)은 기존 기반의 순서·이력을 보존한다.
 - [전략 포트폴리오 계획](strategy-portfolio-operating-model-plan.md)은 장기 multi-bucket 운용 계약을 유지한다.
 - [Research Hardening](research-hardening-milestone-plan.md)과 evidence expansion은 연구 결과의 한계를 판단하는 기준이다.
-- [Next.js 계획](nextjs-dashboard-architecture-plan.md)과 [routing 정책](dashboard-routing-policy.md)은 기존 UI 경계를 유지한다.
+- [Next.js 계획](nextjs-dashboard-architecture-plan.md)과 [routing 정책](architecture/dashboard-routing-policy.md)은 기존 UI 경계를 유지한다.
 
 이 계획들에서 MVP에 필요한 안전·증거 의존성만 먼저 연결하되, 완성되지 않은 기능을
 완료라고 설명하거나 기존 제약을 건너뛰지 않는다. 구체적인 첫 구현 PR은 T0 검토와

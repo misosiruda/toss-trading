@@ -59,7 +59,7 @@
 
 정책 기준:
 
-- routing/archive 결정 기록은 [dashboard-routing-policy.md](dashboard-routing-policy.md)를 기준으로 한다.
+- routing/archive 결정 기록은 [dashboard-routing-policy.md](architecture/dashboard-routing-policy.md)를 기준으로 한다.
 - 현재 결정은 Next.js `apps/dashboard`를 기본 operator UI로 두고, Local Operations API의 정적 `/dashboard`는 legacy static compatibility surface로 유지하는 것이다.
 
 비범위:

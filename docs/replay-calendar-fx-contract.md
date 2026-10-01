@@ -124,7 +124,7 @@ NYSE raw document는 별도의 상위 exchange-grade historical evidence다. Sou
 official broker라고 해서 replay evidence class가 자동 승격되지는 않는다. 실제
 historical coverage가 검증되기 전에는 `observed_session_only`를 유지한다.
 
-Actual acquisition은 [Official Toss Open API Adapter Design](official-toss-open-api-adapter-design.md)의
+Actual acquisition은 [Official Toss Open API Adapter Design](contracts/official-toss-open-api-adapter-design.md)의
 calendar 전용 network allowlist를 따라야 한다. Exact token POST와 KR/US calendar GET
 외의 host, method, path, query 또는 account header는 허용하지 않으며, disabled/invalid
 config, redirect, timeout, response-size/content-type 위반과 partial body는 evidence 생성

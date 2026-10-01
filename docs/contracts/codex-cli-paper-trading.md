@@ -13,7 +13,7 @@
 - Codex non-interactive mode: <https://developers.openai.com/codex/noninteractive>
 - Codex CLI command reference: <https://developers.openai.com/codex/cli/reference>
 - Codex usage limits: <https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan>
-- 운영 runbook: [ai-paper-trading-runbook.md](ai-paper-trading-runbook.md)
+- 운영 runbook: [ai-paper-trading-runbook.md](../ai-paper-trading-runbook.md)
 
 ## High-level Flow
 
@@ -416,7 +416,7 @@ Codex Pro는 더 높은 포함 사용량을 제공하지만 usage limit이 있�
 
 현재 Codex limit은 Codex usage dashboard 또는 active Codex CLI session의 `/status`에서 확인합니다.
 
-실행 전 `.env`, schema path, data availability, daily/per-run budget, 실행 후 artifact 확인 순서는 [AI Paper Trading Runbook](ai-paper-trading-runbook.md)을 기준으로 점검합니다.
+실행 전 `.env`, schema path, data availability, daily/per-run budget, 실행 후 artifact 확인 순서는 [AI Paper Trading Runbook](../ai-paper-trading-runbook.md)을 기준으로 점검합니다.
 
 ## 보안과 안전 규칙
 

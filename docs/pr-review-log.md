@@ -1268,7 +1268,7 @@
 - `src/domain/schemas.ts`에 `MarketCandidateFeatureScore` schema/type과 feature score ref consistency validation을 추가했습니다.
 - `src/market/packetBuilder.ts`는 `featureRefs`와 같은 prefix를 사용하는 deterministic `featureScores[]`를 생성합니다.
 - `src/ai/decisionPrompt.ts`는 `paper-v10`으로 version을 올리고 `featureScores` 사용 경계를 명시합니다.
-- `docs/codex-cli-paper-trading.md`는 `featureScores` packet contract와 prompt version 예시를 갱신했습니다.
+- `docs/contracts/codex-cli-paper-trading.md`는 `featureScores` packet contract와 prompt version 예시를 갱신했습니다.
 - 코드 변경 파일 대상 금지 경계 grep에서 live order, raw `codex exec`, raw `tossctl`, sandbox escalation 관련 신규 노출이 없음을 확인했습니다.
 - `git diff --check`로 whitespace error가 없음을 확인했습니다.
 - 이번 PR은 confidence decomposition, feature score risk gate, AI output schema feature score 추가, decision schema v2 전환은 포함하지 않습니다.
@@ -1300,7 +1300,7 @@
 - `src/paper/decisionConfidence.ts`는 packet candidate, cited refs, feature scores, action eligibility, execution hint를 사용해 backend confidence components를 계산합니다.
 - `src/paper/virtualDecisionValidation.ts`는 AI-supplied confidence breakdown을 reject합니다.
 - paper run, stored market packet run, historical replay runner는 validation 이후 저장/result decision에 confidence breakdown을 bind합니다.
-- `docs/codex-cli-paper-trading.md`는 `confidenceBreakdown`이 backend-generated 저장 metadata이며 Codex output field가 아님을 명시합니다.
+- `docs/contracts/codex-cli-paper-trading.md`는 `confidenceBreakdown`이 backend-generated 저장 metadata이며 Codex output field가 아님을 명시합니다.
 - 이번 PR은 confidence threshold gate, Risk Engine approval 연동, calibration policy, decision schema v2 전환은 포함하지 않습니다.
 
 ## PR-49: Virtual Decision Regression Suite
@@ -1722,7 +1722,7 @@
 - `src/workflows/historicalReplayWorkflow.ts`와 `src/workflows/historicalBatchReplayWorkflow.ts`는 run metadata와 batch manifest에 profile 정보를 저장합니다.
 - `src/replay/historicalReplayAuditLog.ts`는 metadata schema에 nullable `riskProfile`과 `riskPolicy`를 추가했습니다.
 - `src/paper/riskProfile.test.ts`, `src/workflows/historicalBatchReplayWorkflow.test.ts`, `src/workflows/historicalReplayWorkflow.test.ts`, `src/cli/historicalReplayCli.test.ts`는 profile default, aggressive fill, metadata 저장, CLI integration을 검증합니다.
-- `docs/historical-replay.md`, `docs/risk-policy.md`, `docs/pr-implementation-plan.md`는 profile 표, CLI 예시, paper-only 적용 경계를 문서화했습니다.
+- `docs/historical-replay.md`, `docs/contracts/risk-policy.md`, `docs/pr-implementation-plan.md`는 profile 표, CLI 예시, paper-only 적용 경계를 문서화했습니다.
 - 변경 파일 대상 금지 경계 grep에서 신규 live/order/broker/MCP tool 노출은 없고, match는 문서상 제외/금지 경계와 기존 Codex AI enable 예시로만 확인했습니다.
 
 ## PR-62: Market Regime Balanced Batch Sampler
@@ -1871,7 +1871,7 @@
 - `src/workflows/historicalBatchReplayWorkflow.ts`는 batch manifest의 decision provider metadata에 nullable `promptPolicy`, `promptVersion`을 추가합니다.
 - `src/replay/codexHistoricalDecisionProvider.test.ts`는 default/balanced policy 유지와 aggressive prompt guard 문구를 검증합니다.
 - `src/workflows/historicalBatchReplayWorkflow.test.ts`는 Codex-style provider metadata에 aggressive prompt policy/version이 기록되는지 검증합니다.
-- `docs/historical-replay.md`, `docs/codex-cli-paper-trading.md`, `docs/pr-implementation-plan.md`는 prompt policy 동작, 감사 metadata, 제외 범위를 문서화합니다.
+- `docs/historical-replay.md`, `docs/contracts/codex-cli-paper-trading.md`, `docs/pr-implementation-plan.md`는 prompt policy 동작, 감사 metadata, 제외 범위를 문서화합니다.
 
 ## PR-67: Batch AI Failure Accounting
 
@@ -2030,7 +2030,7 @@
 - `scripts/qualityGate.mjs`는 `readCodexDecisionProviderConfig({})`의 safe default를 검사합니다.
 - `scripts/qualityGate.mjs`는 `readHistoricalCodexDecisionEnv({})`의 historical replay Codex call cap과 web search default를 검사합니다.
 - `scripts/qualityGate.mjs`는 `AI_DECISION_*` alias가 `CODEX_*` fallback보다 우선되는지 검사합니다.
-- `docs/PROJECT_STRUCTURE.md`와 `docs/CODE_CONVENTION.md`는 `quality:gate` 검사 범위에 Codex decision provider safe default가 포함된다는 점을 반영했습니다.
+- `docs/architecture/PROJECT_STRUCTURE.md`와 `docs/CODE_CONVENTION.md`는 `quality:gate` 검사 범위에 Codex decision provider safe default가 포함된다는 점을 반영했습니다.
 - 신규 runtime behavior, API contract, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 27: Official Toss Open API Adapter Design
@@ -2053,9 +2053,9 @@
 
 ### Review 3: Diff and Integration
 
-- `docs/official-toss-open-api-adapter-design.md`는 공식 endpoint category, OAuth2 Client Credentials, `X-Tossinvest-Account`, rate limit, error envelope, idempotency, audit/masking, PR 분리 순서를 문서화합니다.
-- `README.md`와 `docs/architecture.md`는 official adapter가 아직 구현되지 않았고 설계 문서만 존재한다는 경계를 연결합니다.
-- `docs/PROJECT_STRUCTURE.md`는 새 설계 문서를 구조/책임 경계 문서 목록에 추가합니다.
+- `docs/contracts/official-toss-open-api-adapter-design.md`는 공식 endpoint category, OAuth2 Client Credentials, `X-Tossinvest-Account`, rate limit, error envelope, idempotency, audit/masking, PR 분리 순서를 문서화합니다.
+- `README.md`와 `docs/architecture/architecture.md`는 official adapter가 아직 구현되지 않았고 설계 문서만 존재한다는 경계를 연결합니다.
+- `docs/architecture/PROJECT_STRUCTURE.md`는 새 설계 문서를 구조/책임 경계 문서 목록에 추가합니다.
 - `docs/pr-implementation-plan.md`는 Later PRs의 official adapter design 범위를 설계 문서로 구체화하고 구현 제외 범위를 명시합니다.
 - Codex review 후속 수정으로 live trading threat model을 official order gateway보다 앞에 배치했습니다.
 - 신규 runtime behavior, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.
@@ -2080,10 +2080,10 @@
 
 ### Review 3: Diff and Integration
 
-- `docs/official-token-auth-design.md`는 token endpoint 계약, secret handling, process memory token cache, expiry margin, guarded reissue, single-flight, multi-process 제약, MCP/dashboard token value 노출 금지 정책을 문서화합니다.
+- `docs/contracts/official-token-auth-design.md`는 token endpoint 계약, secret handling, process memory token cache, expiry margin, guarded reissue, single-flight, multi-process 제약, MCP/dashboard token value 노출 금지 정책을 문서화합니다.
 - `README.md`는 official adapter와 token auth client가 아직 구현되지 않았고 설계 문서만 존재한다는 current status를 연결합니다.
-- `docs/architecture.md`는 official adapter 설계와 token auth 설계의 참조 경계를 분리합니다.
-- `docs/PROJECT_STRUCTURE.md`와 `docs/official-toss-open-api-adapter-design.md`는 새 token auth 설계 문서를 관련 문서와 PR 분리 계획에 추가합니다.
+- `docs/architecture/architecture.md`는 official adapter 설계와 token auth 설계의 참조 경계를 분리합니다.
+- `docs/architecture/PROJECT_STRUCTURE.md`와 `docs/contracts/official-toss-open-api-adapter-design.md`는 새 token auth 설계 문서를 관련 문서와 PR 분리 계획에 추가합니다.
 - `docs/pr-implementation-plan.md`는 Later PRs의 official token auth design 범위, 포함 항목, 제외 항목을 구체화했습니다.
 - 신규 runtime behavior, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.
 
@@ -2113,7 +2113,7 @@
 - enabled 상태에서 client id 또는 client secret이 없으면 `status=invalid`와 issue code로 fail-closed 상태를 반환합니다.
 - `summarizeTossOpenApiAuthConfig`는 credential value를 반환하지 않고 존재 여부만 반환합니다.
 - `scripts/qualityGate.mjs`는 default Toss Open API auth config가 disabled 상태인지 build artifact 기준으로 검사합니다.
-- `.env.example`, README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 parser 구현 상태와 후속 PR 분리 계획을 반영합니다.
+- `.env.example`, README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 parser 구현 상태와 후속 PR 분리 계획을 반영합니다.
 - 신규 network call, API contract implementation, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 30: Mocked Token Auth Client
@@ -2141,7 +2141,7 @@
 - `src/broker/tossOpenApiAuthClient.ts`는 `application/x-www-form-urlencoded` token issue request를 만들고, `Bearer` response와 positive `expires_in`을 검증합니다.
 - `TossOpenApiAuthClient`는 process memory token cache, expiry safety margin, concurrent request single-flight를 제공하지만, 실제 HTTP transport는 injected `TossOpenApiTokenIssuer` 밖에 두었습니다.
 - `src/broker/tossOpenApiAuthClient.test.ts`는 request body, disabled/invalid config fail-closed, cache, single-flight, invalid response no-cache, non-`Bearer` rejection, malformed response shape rejection을 검증합니다.
-- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 mocked auth client 구현 상태와 후속 제외 범위를 반영합니다.
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 mocked auth client 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 network call, persistent token store, API route, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 31: Authenticated Read-only HTTP Client
@@ -2172,7 +2172,7 @@
 - HTTP response mapping은 nested `error.code`, 401 auth failure, 403 forbidden, 429 rate limit과 `Retry-After`, generic 4xx/5xx, invalid status를 구분합니다.
 - `401 invalid-token`/`expired-token` 계열은 optional `clearToken()` hook이 있을 때만 cache clear 후 `GET`을 1회 재시도합니다.
 - `src/broker/tossOpenApiReadOnlyHttpClient.test.ts`는 Bearer injection, query serialization, mutation method block, disabled/invalid auth config fail-closed, invalid path/base URL, nested error code parsing, 401 token retry, 401/403/429/4xx/5xx mapping, invalid response status를 검증합니다.
-- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 authenticated read-only HTTP client 구현 상태와 후속 제외 범위를 반영합니다.
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 authenticated read-only HTTP client 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, market adapter, account snapshot reader, persistent token store, API route, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 32: Read-only Market Data Adapter
@@ -2205,7 +2205,7 @@
 - `prices.symbols`는 1-200개만 허용하고, symbol은 letters, numbers, dot, dash만 허용하며, path segment는 `encodeURIComponent`로 구성합니다.
 - `trades.count`는 1-50, `candles.count`는 1-200, `candles.interval`은 `1m` 또는 `1d`, market calendar region은 `KR` 또는 `US`만 허용합니다.
 - `src/broker/tossOpenApiMarketDataAdapter.test.ts`는 prices/orderbook/trades/candles/warnings/calendar mapping, 201개 이상 prices symbols fail-closed, invalid input fail-closed, order endpoint 미호출을 검증합니다.
-- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only market data adapter 구현 상태와 후속 제외 범위를 반영합니다.
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only market data adapter 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, account snapshot reader, account/order mutation, API route, data model, migration, dashboard UI 변경은 없습니다.
 
 ## Phase 33: Read-only Account Snapshot Reader
@@ -2239,7 +2239,7 @@
 - `accountSeq`가 있으면 `/api/v1/accounts`와 `/api/v1/holdings`를 호출하고, holdings query에는 optional normalized `symbol`만 추가합니다.
 - account number와 accountSeq는 snapshot output에서 `****`로 masking합니다.
 - `src/broker/tossOpenApiAccountSnapshotReader.test.ts`는 account/holdings mapping, masking, missing `accountSeq` degraded status, invalid input fail-closed, malformed envelope fail-closed, order endpoint 미호출을 검증합니다.
-- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only account snapshot reader 구현 상태와 후속 제외 범위를 반영합니다.
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`, `docs/pr-implementation-plan.md`는 read-only account snapshot reader 구현 상태와 후속 제외 범위를 반영합니다.
 - 신규 actual network call, order mutation, portfolio mutation, API route, data model, migration, dashboard UI 변경은 없습니다.
 
 ### Codex Review Fix: Account Header Contract
@@ -2300,7 +2300,7 @@
 - `src/risk/liveRiskEngine.ts`는 pure in-memory evaluation만 수행하며 filesystem, network, broker, storage를 호출하지 않습니다.
 - `src/risk/liveRiskEngine.ts`는 raw root payload를 안전한 evaluation input으로 정규화한 뒤 rule evaluation을 수행합니다.
 - `RiskDecision`은 `orderIntentId`, `signalId`, `approved`, `rejectCodes`, `checkedRules`, `riskSnapshotRef`, `createdAt`을 반환합니다.
-- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/risk-policy.md`, `docs/pr-implementation-plan.md`는 live risk module 위치와 제외 범위를 반영합니다.
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/risk-policy.md`, `docs/pr-implementation-plan.md`는 live risk module 위치와 제외 범위를 반영합니다.
 - 신규 official API call, order mutation, broker gateway, `OrderRouter`, API route, MCP tool, dashboard UI, data model, migration 변경은 없습니다.
 
 ### Codex Review Fix

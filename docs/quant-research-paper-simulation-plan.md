@@ -90,7 +90,7 @@ flowchart TD
 
 - `docs/quant-research-paper-simulation-review.md`
 - `docs/quant-research-paper-simulation-plan.md`
-- `docs/risk-policy.md`
+- `docs/contracts/risk-policy.md`
 - `docs/historical-replay.md`
 - `scripts/qualityGate.mjs` 후보
 
@@ -330,7 +330,7 @@ Q3-2 구현 기준:
 - 신규 후보: `src/paper/strategyBucketPolicy.ts`
 - 신규 후보: `src/paper/portfolioExposureAggregator.ts`
 - `src/reports/batchReplayReport.ts`
-- `docs/risk-policy.md`
+- `docs/contracts/risk-policy.md`
 
 Bucket:
 
@@ -403,8 +403,8 @@ Aggregation 축:
 - 신규 후보: `src/paper/hedgePolicy.ts`
 - `src/paper/riskEngine.ts`
 - `src/reports/historicalReplayReport.ts`
-- `docs/market-regime-allocation.md`
-- `docs/risk-policy.md`
+- `docs/contracts/market-regime-allocation.md`
+- `docs/contracts/risk-policy.md`
 
 Cash reserve 정책:
 

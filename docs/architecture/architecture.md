@@ -16,7 +16,7 @@ Codex는 분석과 운영 인터페이스로 유용하지만, 실시간 trading 
 ## High-level Architecture
 
 다음은 목표 설계입니다. 실행 가능한 paper 경로, 독립 계약, 미구현 live 연결의 상태 구분은
-[코드 구조](PROJECT_STRUCTURE.md)와 [공식 adapter 구현 범위](official-toss-open-api-adapter-design.md)를 함께 확인합니다.
+[코드 구조](PROJECT_STRUCTURE.md)와 [공식 adapter 구현 범위](../contracts/official-toss-open-api-adapter-design.md)를 함께 확인합니다.
 
 ```mermaid
 flowchart LR
@@ -75,7 +75,7 @@ Trading Engine은 Codex가 실행 중이 아니어도 동작해야 합니다. Co
 
 `MarketDataCollector`는 시세, 거래량, 호가, 체결, market hours 정보를 수집합니다. 수집된 데이터는 `MarketSnapshotStore`에 저장되고 screener와 strategy가 동일한 snapshot 기준으로 판단할 수 있게 합니다.
 
-공식 broker adapter의 primary source는 Toss Securities Open API입니다. `tossinvest-cli` fork 같은 비공식 source는 production broker adapter가 아니라 optional read-only intelligence source로만 다룹니다. Official adapter 구현 전 설계 경계는 [official-toss-open-api-adapter-design.md](official-toss-open-api-adapter-design.md)를 따르고, token 발급과 secret handling 경계는 [official-token-auth-design.md](official-token-auth-design.md)를 따릅니다.
+공식 broker adapter의 primary source는 Toss Securities Open API입니다. `tossinvest-cli` fork 같은 비공식 source는 production broker adapter가 아니라 optional read-only intelligence source로만 다룹니다. Official adapter 구현 전 설계 경계는 [official-toss-open-api-adapter-design.md](../contracts/official-toss-open-api-adapter-design.md)를 따르고, token 발급과 secret handling 경계는 [official-token-auth-design.md](../contracts/official-token-auth-design.md)를 따릅니다.
 
 ### ExternalIntelligenceCollector
 
@@ -112,7 +112,7 @@ Screener 결과는 `CandidateStore`에 저장됩니다. LLM은 후보 설명을 
 - output schema validation 실패 시 no-decision 처리
 - usage limit, timeout, login failure는 `AI_DECISION_FAILED` audit event로 기록
 
-자세한 설계는 [codex-cli-paper-trading.md](codex-cli-paper-trading.md)를 참고합니다.
+자세한 설계는 [codex-cli-paper-trading.md](../contracts/codex-cli-paper-trading.md)를 참고합니다.
 
 ### PaperOrderEngine
 

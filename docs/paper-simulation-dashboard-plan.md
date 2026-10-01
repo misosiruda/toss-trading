@@ -32,7 +32,7 @@
 
 남은 보류 항목:
 
-- 기존 정적 `dashboard/` archive 이동, redirect 전환, Next.js deployment routing 통합은 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)의 RH1에서 다루며, routing/archive 정책 기준은 [dashboard-routing-policy.md](dashboard-routing-policy.md)를 따른다.
+- 기존 정적 `dashboard/` archive 이동, redirect 전환, Next.js deployment routing 통합은 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)의 RH1에서 다루며, routing/archive 정책 기준은 [dashboard-routing-policy.md](architecture/dashboard-routing-policy.md)를 따른다.
 - SSE progress stream은 polling fallback만으로 operator 확인 요구를 충족하지 못하는 실제 latency 문제가 확인될 때 [research-hardening-milestone-plan.md](research-hardening-milestone-plan.md)의 후속 범위로 재평가한다.
 
 ## 제품 방향
@@ -350,7 +350,7 @@ Route:
 조회 route와 guarded paper-only `POST`를 분리하며, `POST /paper/simulations`는 typed
 설정의 historical batch workflow를 시작할 수 있다. 아래 `GET`/`HEAD` 전용 설명을
 현행 서버 전체의 제한으로 적용하지 않는다. 현재 경계는 위 `현재 상태`와
-[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md), `src/api/localOperationsSurface.ts`를 따른다.
+[PROJECT_STRUCTURE.md](architecture/PROJECT_STRUCTURE.md), `src/api/localOperationsSurface.ts`를 따른다.
 
 기존 `Local Operations API`는 read-only 조회 전용으로 유지한다. 가상 투자 실행을 dashboard에서 시작하려면 별도 surface가 필요하다.
 

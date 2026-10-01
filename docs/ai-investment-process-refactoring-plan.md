@@ -109,9 +109,9 @@ flowchart TD
 
 - `docs/ai-investment-process-refactoring-plan.md`
 - `docs/REFACTORING_GUIDE.md`
-- `docs/codex-cli-paper-trading.md`
-- `docs/llm-boundary.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/contracts/codex-cli-paper-trading.md`
+- `docs/contracts/llm-boundary.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 - `README.md`
 
 작업:
@@ -331,8 +331,8 @@ npm run historical:replay:dry -- --data-dir <historical-snapshot-data-dir> --sta
 - `src/api/localOperationsReaders.ts`
 - `src/reports/`
 - `docs/historical-replay.md`
-- `docs/risk-policy.md`
-- `docs/codex-cli-paper-trading.md`
+- `docs/contracts/risk-policy.md`
+- `docs/contracts/codex-cli-paper-trading.md`
 
 작업:
 
@@ -377,9 +377,9 @@ git diff --check
 범위:
 
 - 신규 후보: `docs/ai-paper-trading-runbook.md`
-- `docs/codex-cli-paper-trading.md`
+- `docs/contracts/codex-cli-paper-trading.md`
 - `docs/historical-replay.md`
-- `docs/automation.md`
+- `docs/contracts/automation.md`
 - `README.md`
 
 작업:

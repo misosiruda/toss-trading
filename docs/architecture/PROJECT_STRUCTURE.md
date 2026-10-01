@@ -126,7 +126,7 @@ flowchart TD
 - `src/paper/virtualDecisionValidation.ts`
 - `src/paper/decisionNormalizer.ts`
 - `src/ai/decisionPrompt.ts`
-- `docs/codex-cli-paper-trading.md`
+- `docs/contracts/codex-cli-paper-trading.md`
 
 필수 확인:
 
@@ -144,7 +144,7 @@ flowchart TD
 - `src/paper/riskProfile.ts`
 - `src/paper/orderEngine.ts`
 - `src/paper/executionModel.ts`
-- `docs/risk-policy.md`
+- `docs/contracts/risk-policy.md`
 - `docs/historical-replay.md`
 
 필수 확인:
@@ -392,9 +392,9 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 - `src/risk/liveRiskEngine.ts`
 - `src/risk/liveRiskPolicy.ts`
 - `src/risk/liveRiskEngine.test.ts`
-- `docs/risk-policy.md`
-- `docs/trading-runtime.md`
-- `docs/official-toss-open-api-adapter-design.md`
+- `docs/contracts/risk-policy.md`
+- `docs/contracts/trading-runtime.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
 
 필수 확인:
 
@@ -418,9 +418,9 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 - `src/order/dryRunShadowState.test.ts` (구현됨: duplicate/timeout/reconciliation 상태 전이 테스트)
 - `src/order/dryRunOrderRouter.ts` (구현됨: exact safe config, opaque synthetic approval와 shadow reservation 연결)
 - `src/order/dryRunOrderRouter.test.ts` (구현됨: gate/authority/approval/duplicate/masking 회귀 테스트)
-- `docs/live-trading-threat-model.md`
-- `docs/official-toss-open-api-adapter-design.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/contracts/live-trading-threat-model.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 - `docs/CODE_CONVENTION.md`
 
 필수 확인:
@@ -504,7 +504,7 @@ fsync 이후 원본 count/hash/time을 제공하고 consumer 종료까지 저장
 현재 운영 UI는 Next.js `apps/dashboard`가 기준이고, `dashboard/`의 정적 HTML/CSS/ES module은
 legacy compatibility surface다. `src/api`는 두 UI가 사용하는 조회와 별도 guarded paper-only
 mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard를 구분한다.
-[dashboard routing policy](dashboard-routing-policy.md)와 [Next.js 계획](nextjs-dashboard-architecture-plan.md)을 함께 확인한다.
+[dashboard routing policy](dashboard-routing-policy.md)와 [Next.js 계획](../nextjs-dashboard-architecture-plan.md)을 함께 확인한다.
 
 수정 후보:
 
@@ -554,8 +554,8 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `src/mcp/server.ts`
 - `src/mcp/virtualPortfolioTools.ts`
 - `src/mcp/toolSurfacePolicy.ts`
-- `docs/mcp-tools.md`
-- `docs/llm-boundary.md`
+- `docs/contracts/mcp-tools.md`
+- `docs/contracts/llm-boundary.md`
 
 필수 확인:
 
@@ -572,7 +572,7 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `src/config/tossOpenApiAuthConfig.test.ts`
 - `.env.example`
 - `scripts/qualityGate.mjs`
-- `docs/official-token-auth-design.md`
+- `docs/contracts/official-token-auth-design.md`
 
 필수 확인:
 
@@ -587,7 +587,7 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 
 - `src/broker/tossOpenApiAuthClient.ts`
 - `src/broker/tossOpenApiAuthClient.test.ts`
-- `docs/official-token-auth-design.md`
+- `docs/contracts/official-token-auth-design.md`
 
 필수 확인:
 
@@ -604,8 +604,8 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 
 - `src/broker/tossOpenApiTokenIssuerNetworkTransport.ts`
 - `src/broker/tossOpenApiTokenIssuerNetworkTransport.test.ts`
-- `docs/official-token-auth-design.md`
-- `docs/official-toss-open-api-adapter-design.md`
+- `docs/contracts/official-token-auth-design.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
 
 필수 확인:
 
@@ -623,8 +623,8 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `src/broker/tossOpenApiCalendarNetworkTransport.ts`
 - `src/broker/tossOpenApiCalendarNetworkTransport.test.ts`
 - `src/replay/officialMarketCalendarNetworkResponseFreshness.ts`
-- `docs/official-token-auth-design.md`
-- `docs/official-toss-open-api-adapter-design.md`
+- `docs/contracts/official-token-auth-design.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
 - `docs/replay-calendar-fx-contract.md`
 
 필수 확인:
@@ -647,8 +647,8 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `src/replay/officialBrokerObservedCalendarEvidenceV2.ts`
 - `src/replay/officialBrokerObservedCalendarReplayAdapter.ts`
 - `src/replay/officialBrokerObservedCalendarCoverageProbe.ts`
-- `docs/official-token-auth-design.md`
-- `docs/official-toss-open-api-adapter-design.md`
+- `docs/contracts/official-token-auth-design.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
 - `docs/replay-calendar-fx-contract.md`
 
 필수 확인:
@@ -674,8 +674,8 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `src/replay/officialBrokerObservedCalendarOpenApiCompatibility.ts`
 - `src/replay/officialBrokerObservedCalendarEvidenceV2.ts`
 - `src/replay/officialBrokerObservedCalendarEphemeralObservation.ts`
-- `docs/official-token-auth-design.md`
-- `docs/official-toss-open-api-adapter-design.md`
+- `docs/contracts/official-token-auth-design.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
 - `docs/replay-calendar-fx-contract.md`
 
 필수 확인:
@@ -698,8 +698,8 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 - `src/cli/tossOpenApiCredentialReadinessPreflight.ts`
 - `src/config/tossOpenApiAuthConfig.ts`
 - `.env.example`
-- `docs/official-token-auth-design.md`
-- `docs/official-toss-open-api-adapter-design.md`
+- `docs/contracts/official-token-auth-design.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
 
 필수 확인:
 
@@ -717,8 +717,8 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 
 - `src/broker/tossOpenApiReadOnlyHttpClient.ts`
 - `src/broker/tossOpenApiReadOnlyHttpClient.test.ts`
-- `docs/official-token-auth-design.md`
-- `docs/official-toss-open-api-adapter-design.md`
+- `docs/contracts/official-token-auth-design.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
 
 필수 확인:
 
@@ -738,7 +738,7 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 
 - `src/broker/tossOpenApiMarketDataAdapter.ts`
 - `src/broker/tossOpenApiMarketDataAdapter.test.ts`
-- `docs/official-toss-open-api-adapter-design.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
 
 필수 확인:
 
@@ -755,7 +755,7 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 
 - `src/broker/tossOpenApiAccountSnapshotReader.ts`
 - `src/broker/tossOpenApiAccountSnapshotReader.test.ts`
-- `docs/official-toss-open-api-adapter-design.md`
+- `docs/contracts/official-toss-open-api-adapter-design.md`
 
 필수 확인:
 
@@ -840,22 +840,22 @@ test만 실행한다. 영향 범위를 안전하게 계산할 수 없으면 전�
 `scripts/verificationRunner.mjs`가 build → quality → tooling test → 영향/전체 test를 실행하고
 각 단계 timing과 실패 상태를 출력한다. 실패하면 이후 단계는 실행하지 않는다. `quality:gate`의
 Local Operations API route, dashboard endpoint, MCP enabled/disabled tool name, Codex decision
-provider safe default와 문서 drift 검사는 유지된다. 상세 절차는 [test-verification.md](test-verification.md)를 따른다.
+provider safe default와 문서 drift 검사는 유지된다. 상세 절차는 [test-verification.md](../test-verification.md)를 따른다.
 
 리팩토링 범위가 좁더라도 `npm test`는 `npm run build`를 포함한다. risk, paper order, replay, storage contract를 바꾸면 해당 영역 테스트를 추가하거나 보강한다.
 
 ## 관련 문서
 
-- [CODE_CONVENTION.md](CODE_CONVENTION.md)
-- [REFACTORING_GUIDE.md](REFACTORING_GUIDE.md)
-- [ai-investment-process-refactoring-plan.md](ai-investment-process-refactoring-plan.md)
+- [CODE_CONVENTION.md](../CODE_CONVENTION.md)
+- [REFACTORING_GUIDE.md](../REFACTORING_GUIDE.md)
+- [ai-investment-process-refactoring-plan.md](../ai-investment-process-refactoring-plan.md)
 - [architecture.md](architecture.md)
-- [official-toss-open-api-adapter-design.md](official-toss-open-api-adapter-design.md)
-- [official-token-auth-design.md](official-token-auth-design.md)
-- [trading-runtime.md](trading-runtime.md)
-- [risk-policy.md](risk-policy.md)
-- [historical-replay.md](historical-replay.md)
-- [quant-research-paper-simulation-review.md](quant-research-paper-simulation-review.md)
-- [quant-research-paper-simulation-plan.md](quant-research-paper-simulation-plan.md)
-- [nextjs-dashboard-architecture-plan.md](nextjs-dashboard-architecture-plan.md)
-- [mcp-tools.md](mcp-tools.md)
+- [official-toss-open-api-adapter-design.md](../contracts/official-toss-open-api-adapter-design.md)
+- [official-token-auth-design.md](../contracts/official-token-auth-design.md)
+- [trading-runtime.md](../contracts/trading-runtime.md)
+- [risk-policy.md](../contracts/risk-policy.md)
+- [historical-replay.md](../historical-replay.md)
+- [quant-research-paper-simulation-review.md](../quant-research-paper-simulation-review.md)
+- [quant-research-paper-simulation-plan.md](../quant-research-paper-simulation-plan.md)
+- [nextjs-dashboard-architecture-plan.md](../nextjs-dashboard-architecture-plan.md)
+- [mcp-tools.md](../contracts/mcp-tools.md)

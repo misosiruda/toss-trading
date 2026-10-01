@@ -468,7 +468,7 @@ live order 또는 broker mutation을 승인하지 않는다.
 
 ## 제안 계층
 
-후속 구현에서 `src/broker/` 또는 동등한 broker integration layer를 도입할 수 있다. 실제 코드 도입 전에는 `docs/PROJECT_STRUCTURE.md`와 `docs/CODE_CONVENTION.md`를 먼저 갱신한다.
+후속 구현에서 `src/broker/` 또는 동등한 broker integration layer를 도입할 수 있다. 실제 코드 도입 전에는 `docs/architecture/PROJECT_STRUCTURE.md`와 `docs/CODE_CONVENTION.md`를 먼저 갱신한다.
 
 | 계층 | 책임 | 금지 |
 | --- | --- | --- |

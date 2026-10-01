@@ -6,8 +6,8 @@
 - 구현 기준: remote-verified `main`, `d9818e7`
 - 별도 검토: 미병합 PR788 branch `feat/current-opening-budget-sessions`, `dd132a3`; 이 문서 branch에는 해당 코드 변경을 포함하지 않음
 - 이 문서는 현재 코드와 제품 목표를 구분한다. 실행·테스트·배포 성공을 새로 확인한 보고서는 아니다.
-- 다음 구현 순서는 [Trainer MVP 제안](trainer-mvp-roadmap.md)에서 검토한다.
-- 상세 안전 기준과 계약은 [AGENTS.md](../AGENTS.md) 및 [문서 지도](README.md)의 원문을 유지한다.
+- 다음 구현 순서는 [Trainer MVP 제안](../trainer-mvp-roadmap.md)에서 검토한다.
+- 상세 안전 기준과 계약은 [AGENTS.md](../../AGENTS.md) 및 [문서 지도](../README.md)의 원문을 유지한다.
 
 ## 제품 목적
 
@@ -62,12 +62,12 @@ Codex provider를 선택하고 환경 설정의 enabled 값을 읽으며, `--dry
 
 주요 코드 근거:
 
-- [paperDecisionPipeline](../src/workflows/paperDecisionPipeline.ts), [paper run CLI](../src/cli/paperRunOnce.ts), [provider](../src/ai/codexCliDecisionProvider.ts)
-- [historical workflow](../src/workflows/historicalReplayWorkflow.ts), [batch workflow](../src/workflows/historicalBatchReplayWorkflow.ts)
-- [current portfolio snapshot](../src/portfolio/currentPortfolioSizingSnapshotFiles.ts), [capacity document](../src/portfolio/bucketOpeningCapacityStateFiles.ts), [bucket valuation workflow](../src/workflows/bucketValuationRunOnce.ts)
-- [API surface](../src/api/localOperationsSurface.ts), [paper simulation execution](../src/api/paperSimulationRuns.ts), [ViewModels](../src/api/dashboardViewModels.ts)
-- [MCP tools](../src/mcp/virtualPortfolioTools.ts), [dashboard 실행 안내](../apps/dashboard/README.md)
-- [공식 adapter 구현 범위](official-toss-open-api-adapter-design.md), [statistical readiness의 한계](validation-role-regime-statistical-readiness-plan.md)
+- [paperDecisionPipeline](../../src/workflows/paperDecisionPipeline.ts), [paper run CLI](../../src/cli/paperRunOnce.ts), [provider](../../src/ai/codexCliDecisionProvider.ts)
+- [historical workflow](../../src/workflows/historicalReplayWorkflow.ts), [batch workflow](../../src/workflows/historicalBatchReplayWorkflow.ts)
+- [current portfolio snapshot](../../src/portfolio/currentPortfolioSizingSnapshotFiles.ts), [capacity document](../../src/portfolio/bucketOpeningCapacityStateFiles.ts), [bucket valuation workflow](../../src/workflows/bucketValuationRunOnce.ts)
+- [API surface](../../src/api/localOperationsSurface.ts), [paper simulation execution](../../src/api/paperSimulationRuns.ts), [ViewModels](../../src/api/dashboardViewModels.ts)
+- [MCP tools](../../src/mcp/virtualPortfolioTools.ts), [dashboard 실행 안내](../../apps/dashboard/README.md)
+- [공식 adapter 구현 범위](../contracts/official-toss-open-api-adapter-design.md), [statistical readiness의 한계](../validation-role-regime-statistical-readiness-plan.md)
 
 ## 현재 포트폴리오 작업이 제품에서 맡는 역할
 
@@ -88,7 +88,7 @@ PR788의 변경은 내부 연결 단계이며, chronology/lifetime 검토가 남
 완성으로 해석하지 않는다. Fundamental evidence도 실제 공식 재무 데이터 취득이나 long-term
 quality 판정을 제공하지 않는다.
 
-[전략 포트폴리오 계획](strategy-portfolio-operating-model-plan.md)의 최종 수용 기준 12개는
+[전략 포트폴리오 계획](../strategy-portfolio-operating-model-plan.md)의 최종 수용 기준 12개는
 관찰 시점에 전부 미체크다. 앞부분의 초기 기준선과 뒤쪽의 최신 구현 기록을 구분해야 한다.
 현재 Trainer MVP가 이 모든 확장을 먼저 완료해야 하는지는 별도 제품 범위 결정이다.
 
@@ -127,7 +127,7 @@ backend 설계를 미확인 dot runtime API에 의존시키지 않는다.
 ## 다음 결정
 
 우선 제품의 최소 운용·검토 흐름과 기존 구현의 재사용 지점을 문서로 합의한다.
-[Trainer MVP 제안](trainer-mvp-roadmap.md)은 단일 전략으로 첫 end-to-end 경험을 닫는
+[Trainer MVP 제안](../trainer-mvp-roadmap.md)은 단일 전략으로 첫 end-to-end 경험을 닫는
 방안을 제안하지만 전략·시장·기간·세부 UI 또는 Jev 채택이 승인된 상태는 아니다.
 
 실행 절차는 기존 runbook에 두고 이 문서에 복제하지 않는다. 상세 개발을 시작할 때는

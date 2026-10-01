@@ -2355,7 +2355,7 @@
 
 설계 문서:
 
-- [official-toss-open-api-adapter-design.md](official-toss-open-api-adapter-design.md)
+- [official-toss-open-api-adapter-design.md](contracts/official-toss-open-api-adapter-design.md)
 
 이 단계는 official API adapter 구현이 아니라, 공식 OpenAPI source of truth, 인증 방식, endpoint category, rate limit, error model, adapter 계층, mock-first 구현 순서, MCP/dashboard 금지 표면을 문서화합니다.
 
@@ -2379,7 +2379,7 @@
 
 - `src/broker/tossOpenApiReadOnlyHttpClient.ts`
 - `src/broker/tossOpenApiReadOnlyHttpClient.test.ts`
-- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`, `docs/official-toss-open-api-adapter-design.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`, `docs/contracts/official-toss-open-api-adapter-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2421,7 +2421,7 @@
 
 - `src/broker/tossOpenApiMarketDataAdapter.ts`
 - `src/broker/tossOpenApiMarketDataAdapter.test.ts`
-- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2463,7 +2463,7 @@
 
 - `src/broker/tossOpenApiAccountSnapshotReader.ts`
 - `src/broker/tossOpenApiAccountSnapshotReader.test.ts`
-- README, `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-toss-open-api-adapter-design.md`
+- README, `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-toss-open-api-adapter-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2505,7 +2505,7 @@
 - `src/risk/liveRiskPolicy.ts`
 - `src/risk/liveRiskEngine.ts`
 - `src/risk/liveRiskEngine.test.ts`
-- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/risk-policy.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/risk-policy.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2555,7 +2555,7 @@
 
 설계 문서:
 
-- [official-token-auth-design.md](official-token-auth-design.md)
+- [official-token-auth-design.md](contracts/official-token-auth-design.md)
 
 이 단계는 official token auth 구현이 아니라, `POST /oauth2/token`의 OAuth2 Client Credentials 계약, `application/x-www-form-urlencoded` 요청, secret handling, token lifecycle, single-flight, client당 유효 token 1개 제약, 후속 구현 테스트 기준을 문서화합니다.
 
@@ -2591,7 +2591,7 @@
 - `src/config/tossOpenApiAuthConfig.test.ts`
 - `.env.example` placeholder
 - `scripts/qualityGate.mjs` safe default drift check
-- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:
@@ -2627,7 +2627,7 @@
 
 - `src/broker/tossOpenApiAuthClient.ts`
 - `src/broker/tossOpenApiAuthClient.test.ts`
-- `docs/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/official-token-auth-design.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`, `docs/CODE_CONVENTION.md`, `docs/contracts/official-token-auth-design.md`
 - PR review log에 3단계 검토 기록 추가
 
 검증:

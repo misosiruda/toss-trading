@@ -8,7 +8,7 @@
 
 ## 처음 읽는 순서
 
-- 제품 목적과 현재 구현: [프로젝트 개요](docs/project-overview.md)
+- 제품 목적과 현재 구현: [프로젝트 개요](docs/architecture/project-overview.md)
 - 다음 사용자 흐름의 제안과 미정 사항: [Trainer MVP 제안](docs/trainer-mvp-roadmap.md)
 - 계약·운영·연구 문서 찾기: [문서 안내](docs/README.md)
 
@@ -96,8 +96,8 @@ Codex is not the trading engine. Codex is an MCP-based operations interface for 
 ## Current Status
 
 - TypeScript 기반 paper trading backend vertical slice가 구현되어 있습니다.
-- Toss Securities Open API는 safe-disabled token issuer, KR/US calendar GET transport, version-aware paper-only evidence/lifecycle coordinator와 credential readiness preflight까지 구현되어 있습니다. Account/order network adapter와 live trading 연결은 구현하지 않았습니다. 세부 경계는 [official Toss Open API adapter 설계](docs/official-toss-open-api-adapter-design.md)와 [official token auth 설계](docs/official-token-auth-design.md)를 따릅니다.
-- `LiveRiskEngine`은 fail-closed module contract로 구현돼 있지만 broker gateway나 `OrderRouter`에 연결되지 않습니다. Future live order path의 attack surface와 owner gate는 [live trading threat model](docs/live-trading-threat-model.md)에 문서화돼 있으며, 이 문서는 live trading enablement를 승인하지 않습니다.
+- Toss Securities Open API는 safe-disabled token issuer, KR/US calendar GET transport, version-aware paper-only evidence/lifecycle coordinator와 credential readiness preflight까지 구현되어 있습니다. Account/order network adapter와 live trading 연결은 구현하지 않았습니다. 세부 경계는 [official Toss Open API adapter 설계](docs/contracts/official-toss-open-api-adapter-design.md)와 [official token auth 설계](docs/contracts/official-token-auth-design.md)를 따릅니다.
+- `LiveRiskEngine`은 fail-closed module contract로 구현돼 있지만 broker gateway나 `OrderRouter`에 연결되지 않습니다. Future live order path의 attack surface와 owner gate는 [live trading threat model](docs/contracts/live-trading-threat-model.md)에 문서화돼 있으며, 이 문서는 live trading enablement를 승인하지 않습니다.
 - `tossinvest-cli` fork 연동은 allowlist 기반 read-only collector, normalizer, stored market packet 기반 paper run까지 구현되어 있으며, 주문/account/portfolio source of truth로 사용하지 않습니다.
 - Codex CLI paper trading provider는 `AI_DECISION_ENABLED=false`를 기본값으로 두며, paper-only `virtual_decision` JSON만 받습니다.
 - MCP server는 virtual portfolio 조회 tool만 노출합니다.
@@ -213,9 +213,9 @@ Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재
 9. Portfolio polish
 
 자세한 계획은 [docs/roadmap.md](docs/roadmap.md)를 참고합니다.
-Official Toss Open API adapter 설계는 [docs/official-toss-open-api-adapter-design.md](docs/official-toss-open-api-adapter-design.md)를 참고합니다.
-Official Toss Open API token auth 설계는 [docs/official-token-auth-design.md](docs/official-token-auth-design.md)를 참고합니다.
-Codex CLI paper trading 설계는 [docs/codex-cli-paper-trading.md](docs/codex-cli-paper-trading.md)를 참고합니다.
+Official Toss Open API adapter 설계는 [docs/contracts/official-toss-open-api-adapter-design.md](docs/contracts/official-toss-open-api-adapter-design.md)를 참고합니다.
+Official Toss Open API token auth 설계는 [docs/contracts/official-token-auth-design.md](docs/contracts/official-token-auth-design.md)를 참고합니다.
+Codex CLI paper trading 설계는 [docs/contracts/codex-cli-paper-trading.md](docs/contracts/codex-cli-paper-trading.md)를 참고합니다.
 Historical replay 실행과 안전 경계는 [docs/historical-replay.md](docs/historical-replay.md)를 참고합니다.
 Codex AI paper run과 batch replay 운영 절차는 [docs/ai-paper-trading-runbook.md](docs/ai-paper-trading-runbook.md)를 참고합니다.
 퀀트 연구 기반 paper simulation 검토와 개선 TODO는 [docs/quant-research-paper-simulation-review.md](docs/quant-research-paper-simulation-review.md)를 참고합니다.
@@ -226,7 +226,7 @@ Strategy bucket deterministic smoke 결과와 다음 검증 조건은 [docs/stra
 Q1\~Q9 이후의 dashboard routing, calendar/FX, universe lifecycle, market impact, Sharpe validation, CPCV/PBO, Triple Barrier 후속 milestone은 [docs/research-hardening-milestone-plan.md](docs/research-hardening-milestone-plan.md)를 참고합니다.
 CPCV/PBO validation contract와 config/report schema 후보는 [docs/cpcv-pbo-validation-contract.md](docs/cpcv-pbo-validation-contract.md)를 참고합니다.
 구현 PR 단위 계획은 [docs/pr-implementation-plan.md](docs/pr-implementation-plan.md)를 참고합니다.
-코드 위치와 책임 경계는 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)를 참고합니다.
+코드 위치와 책임 경계는 [docs/architecture/PROJECT_STRUCTURE.md](docs/architecture/PROJECT_STRUCTURE.md)를 참고합니다.
 코드 컨벤션과 레이어 규칙은 [docs/CODE_CONVENTION.md](docs/CODE_CONVENTION.md)를 참고합니다.
 Repository access와 public review 보안 절차는 [docs/repository-access-security-policy.md](docs/repository-access-security-policy.md)를 참고합니다.
 대규모 리팩토링 진행 기준은 [docs/REFACTORING_GUIDE.md](docs/REFACTORING_GUIDE.md)를 참고합니다.

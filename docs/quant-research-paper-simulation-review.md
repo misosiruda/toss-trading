@@ -653,10 +653,10 @@ Storage/audit:
 Docs:
 
 - `docs/historical-replay.md`
-- `docs/risk-policy.md`
-- `docs/market-regime-allocation.md`
+- `docs/contracts/risk-policy.md`
+- `docs/contracts/market-regime-allocation.md`
 - `docs/ai-paper-trading-runbook.md`
-- `docs/PROJECT_STRUCTURE.md`
+- `docs/architecture/PROJECT_STRUCTURE.md`
 
 ### 2. 필요한 JSON log schema 후보
 
