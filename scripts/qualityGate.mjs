@@ -53,8 +53,8 @@ const dashboardScript = readText("dashboard/app.js");
 const dashboardModuleImports = readDashboardModuleImportGraph("app.js");
 const dashboardApiClientScript = readText("dashboard/apiClient.js");
 const localOperationsServerSource = readText("src/api/localOperationsServer.ts");
-const mcpToolsDoc = readText("docs/mcp-tools.md");
-const llmBoundaryDoc = readText("docs/llm-boundary.md");
+const mcpToolsDoc = readText("docs/contracts/mcp-tools.md");
+const llmBoundaryDoc = readText("docs/contracts/llm-boundary.md");
 const dashboardEndpointPaths = readDashboardEndpointPaths(
   dashboardApiClientScript
 );
@@ -159,8 +159,8 @@ for (const forbiddenImport of [
 }
 
 for (const toolName of virtualPortfolioToolNames) {
-  assertBacktickedName(mcpToolsDoc, toolName, "docs/mcp-tools.md");
-  assertBacktickedName(llmBoundaryDoc, toolName, "docs/llm-boundary.md");
+  assertBacktickedName(mcpToolsDoc, toolName, "docs/contracts/mcp-tools.md");
+  assertBacktickedName(llmBoundaryDoc, toolName, "docs/contracts/llm-boundary.md");
 }
 
 for (const disabledToolName of disabledByDefaultMcpToolNames) {
@@ -168,8 +168,8 @@ for (const disabledToolName of disabledByDefaultMcpToolNames) {
     !virtualPortfolioToolNames.includes(disabledToolName),
     `${disabledToolName} must not be an enabled MCP tool`
   );
-  assertBacktickedName(mcpToolsDoc, disabledToolName, "docs/mcp-tools.md");
-  assertBacktickedName(llmBoundaryDoc, disabledToolName, "docs/llm-boundary.md");
+  assertBacktickedName(mcpToolsDoc, disabledToolName, "docs/contracts/mcp-tools.md");
+  assertBacktickedName(llmBoundaryDoc, disabledToolName, "docs/contracts/llm-boundary.md");
 }
 
 assert(

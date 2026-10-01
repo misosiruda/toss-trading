@@ -1,12 +1,20 @@
 # Toss Trading MCP Backend
 
-이 프로젝트는 개인 브로커리지/트레이딩 백엔드와 Codex MCP 운영 인터페이스를 분리해서 설계하기 위한 문서 중심 프로젝트입니다. 대상 브로커의 primary source는 Toss Securities Open API입니다. 비공식 `tossinvest-cli` fork는 공식 API에 없는 시장 정보 표면을 검토하기 위한 optional read-only intelligence source로만 다룹니다.
+이 프로젝트는 개인 AI 투자 트레이너를 목표로 하는 paper-only 운용·평가 시스템입니다. 개인이 AI 전략과 포트폴리오를 설정하고, 가상 운용 결과와 판단 근거를 검토·개선하는 흐름을 만들고 있습니다. 현재 결정론적 paper trading backend, historical replay, 운영 dashboard와 Codex MCP 인터페이스가 구현되어 있으며, 전체 제품 흐름은 연결 중입니다.
+
+대상 브로커의 primary source는 Toss Securities Open API입니다. 비공식 `tossinvest-cli` fork는 공식 API에 없는 시장 정보 표면을 검토하기 위한 optional read-only intelligence source로만 다룹니다.
 
 > Codex is not the trading engine. Codex is an MCP-based operations interface for inspecting, explaining, and safely controlling a deterministic trading backend.
 
+## 처음 읽는 순서
+
+- 제품 목적과 현재 구현: [프로젝트 개요](docs/architecture/project-overview.md)
+- 다음 사용자 흐름의 제안과 미정 사항: [Trainer MVP 제안](docs/plans/trainer-mvp-roadmap.md)
+- 계약·운영·연구 문서 찾기: [문서 안내](docs/README.md)
+
 ## Project Summary
 
-이 저장소의 목표는 "Codex로 자동매매"를 만드는 것이 아닙니다. 목표는 결정론적 트레이딩 백엔드가 시장 데이터 수집, 스크리닝, 전략 평가, 리스크 검증, 주문 라우팅, 체결 추적, 포지션 정합성 확인, 감사 로그를 담당하고, Codex는 MCP를 통해 이를 조회하고 설명하고 제한적으로 제어하는 운영 인터페이스로만 사용하는 구조를 문서화하는 것입니다. 단, 실거래와 분리된 paper trading에서는 Codex CLI를 `virtual_decision` 생성 provider로 사용할 수 있습니다.
+개인 AI 투자 트레이너의 기반에서는 결정론적 백엔드가 데이터 처리, 검증, sizing, Risk, 가상 체결과 감사 기록을 담당하고, AI는 근거에 연결된 paper-only 제안과 설명을 제공합니다. 현재 Codex CLI는 `virtual_decision` 생성 provider로 사용할 수 있으며 MCP는 운영 조회 인터페이스입니다. 장기 아키텍처의 주문 라우팅·체결 추적 책임 분리는 설계 경계이며, 실제 broker 주문 경로가 연결되었다는 뜻은 아닙니다.
 
 초기 단계에서는 실제 브로커 연동이 아니라 `mock` provider를 기준으로 설계합니다. 실거래 기능은 명시적인 사용자 지시, 공식 API adapter 설계, 리스크 정책 테스트, 감사 로그 설계가 갖춰진 뒤에만 검토할 수 있습니다. 비공식 정보 수집 source는 후보 enrichment와 관측성에만 사용하고 주문 실행 경로에는 연결하지 않습니다.
 
@@ -88,8 +96,8 @@ Codex is not the trading engine. Codex is an MCP-based operations interface for 
 ## Current Status
 
 - TypeScript 기반 paper trading backend vertical slice가 구현되어 있습니다.
-- Toss Securities Open API는 safe-disabled token issuer, KR/US calendar GET transport, version-aware paper-only evidence/lifecycle coordinator와 credential readiness preflight까지 구현되어 있습니다. Account/order network adapter와 live trading 연결은 구현하지 않았습니다. 세부 경계는 [official Toss Open API adapter 설계](docs/official-toss-open-api-adapter-design.md)와 [official token auth 설계](docs/official-token-auth-design.md)를 따릅니다.
-- `LiveRiskEngine`은 fail-closed module contract로 구현돼 있지만 broker gateway나 `OrderRouter`에 연결되지 않습니다. Future live order path의 attack surface와 owner gate는 [live trading threat model](docs/live-trading-threat-model.md)에 문서화돼 있으며, 이 문서는 live trading enablement를 승인하지 않습니다.
+- Toss Securities Open API는 safe-disabled token issuer, KR/US calendar GET transport, version-aware paper-only evidence/lifecycle coordinator와 credential readiness preflight까지 구현되어 있습니다. Account/order network adapter와 live trading 연결은 구현하지 않았습니다. 세부 경계는 [official Toss Open API adapter 설계](docs/contracts/official-toss-open-api-adapter-design.md)와 [official token auth 설계](docs/contracts/official-token-auth-design.md)를 따릅니다.
+- `LiveRiskEngine`은 fail-closed module contract로 구현돼 있지만 broker gateway나 `OrderRouter`에 연결되지 않습니다. Future live order path의 attack surface와 owner gate는 [live trading threat model](docs/contracts/live-trading-threat-model.md)에 문서화돼 있으며, 이 문서는 live trading enablement를 승인하지 않습니다.
 - `tossinvest-cli` fork 연동은 allowlist 기반 read-only collector, normalizer, stored market packet 기반 paper run까지 구현되어 있으며, 주문/account/portfolio source of truth로 사용하지 않습니다.
 - Codex CLI paper trading provider는 `AI_DECISION_ENABLED=false`를 기본값으로 두며, paper-only `virtual_decision` JSON만 받습니다.
 - MCP server는 virtual portfolio 조회 tool만 노출합니다.
@@ -187,9 +195,12 @@ npm --prefix apps/dashboard run dev
 
 legacy static view의 `/dashboard`는 live trading disabled 상태를 보여주는 shell이고, 가상 투자 실험 화면은 `/dashboard/virtual` 아래에 있습니다. 조회 영역은 `/virtual/portfolio`, `/virtual/decisions`, `/virtual/trades`, `/paper/report`, `/replay/report`, `/source/health`, `/market/packets`, `/audit/events`, `/dashboard/view-model/live-readiness`, `/dashboard/view-model/portfolio-compliance`, `/dashboard/view-model/strategy-test-lab`, `/dashboard/view-model/risk-gate-trace`, `/dashboard/view-model/validation-lab`, `/dashboard/view-model/audit` 같은 read-only endpoint를 호출합니다. legacy static view의 `Run 생성`은 same-origin, JSON body, 전용 operation header를 요구하는 guarded `POST /paper/simulations`만 사용하며, 내부적으로 allowlisted paper-only historical batch replay runner에 typed config를 전달합니다. Strategy bucket test create endpoint와 Next.js strategy test lab route handler는 validation을 통과한 설정을 queued record와 audit event로만 저장하며 replay runner를 시작하지 않습니다. live order, raw `codex exec`, raw `tossctl` 실행 endpoint는 노출하지 않습니다. 일부 endpoint 조회가 실패해도 dashboard는 가능한 데이터를 먼저 렌더링하고 실패한 조회 그룹을 상단 상태와 오류 배너에 표시합니다.
 
-Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재구성하는 기존 정적 dashboard 계획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다. strategy bucket, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 Next.js 전환 계획은 [docs/nextjs-dashboard-architecture-plan.md](docs/nextjs-dashboard-architecture-plan.md)를 참고합니다. 두 계획 모두 실투자 활성화가 아니라 paper-only simulation과 read-only/live-disabled 관제 경계를 유지하는 방향을 다룹니다.
+Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재구성하는 기존 정적 dashboard 계획은 [docs/archive/paper-simulation-dashboard-plan.md](docs/archive/paper-simulation-dashboard-plan.md)를 참고합니다. strategy bucket, dynamic cash reserve, hedge, validation lab을 policy 중심으로 포용하는 Next.js 전환 계획은 [docs/plans/nextjs-dashboard-architecture-plan.md](docs/plans/nextjs-dashboard-architecture-plan.md)를 참고합니다. 두 계획 모두 실투자 활성화가 아니라 paper-only simulation과 read-only/live-disabled 관제 경계를 유지하는 방향을 다룹니다.
 
 ## Roadmap
+
+현재 제품 방향과 다음 단계의 제안은 [Trainer MVP 제안](docs/plans/trainer-mvp-roadmap.md)을 먼저 읽습니다.
+아래 목록과 기존 roadmap은 backend 기반의 구현 순서·범위를 보존하며 전체 완료 상태를 뜻하지 않습니다.
 
 1. Documentation and architecture
 2. Mock MCP server
@@ -201,28 +212,28 @@ Dashboard를 live 투자 관제와 paper-only simulation 제품 흐름으로 재
 8. Codex CLI paper trading decision provider
 9. Portfolio polish
 
-자세한 계획은 [docs/roadmap.md](docs/roadmap.md)를 참고합니다.
-Official Toss Open API adapter 설계는 [docs/official-toss-open-api-adapter-design.md](docs/official-toss-open-api-adapter-design.md)를 참고합니다.
-Official Toss Open API token auth 설계는 [docs/official-token-auth-design.md](docs/official-token-auth-design.md)를 참고합니다.
-Codex CLI paper trading 설계는 [docs/codex-cli-paper-trading.md](docs/codex-cli-paper-trading.md)를 참고합니다.
-Historical replay 실행과 안전 경계는 [docs/historical-replay.md](docs/historical-replay.md)를 참고합니다.
-Codex AI paper run과 batch replay 운영 절차는 [docs/ai-paper-trading-runbook.md](docs/ai-paper-trading-runbook.md)를 참고합니다.
-퀀트 연구 기반 paper simulation 검토와 개선 TODO는 [docs/quant-research-paper-simulation-review.md](docs/quant-research-paper-simulation-review.md)를 참고합니다.
-퀀트 연구 기반 paper simulation 구현 기획은 [docs/quant-research-paper-simulation-plan.md](docs/quant-research-paper-simulation-plan.md)를 참고합니다.
-Strategy bucket별 검증 질문, 실패 조건, 판정 기준은 [docs/strategy-bucket-validation-protocol.md](docs/strategy-bucket-validation-protocol.md)를 참고합니다.
-Strategy bucket별 replay 실행 matrix와 결과 기록 절차는 [docs/strategy-bucket-validation-runbook.md](docs/strategy-bucket-validation-runbook.md)를 참고합니다.
-Strategy bucket deterministic smoke 결과와 다음 검증 조건은 [docs/strategy-bucket-validation-smoke-results.md](docs/strategy-bucket-validation-smoke-results.md)를 참고합니다.
-Q1\~Q9 이후의 dashboard routing, calendar/FX, universe lifecycle, market impact, Sharpe validation, CPCV/PBO, Triple Barrier 후속 milestone은 [docs/research-hardening-milestone-plan.md](docs/research-hardening-milestone-plan.md)를 참고합니다.
-CPCV/PBO validation contract와 config/report schema 후보는 [docs/cpcv-pbo-validation-contract.md](docs/cpcv-pbo-validation-contract.md)를 참고합니다.
-구현 PR 단위 계획은 [docs/pr-implementation-plan.md](docs/pr-implementation-plan.md)를 참고합니다.
-코드 위치와 책임 경계는 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)를 참고합니다.
-코드 컨벤션과 레이어 규칙은 [docs/CODE_CONVENTION.md](docs/CODE_CONVENTION.md)를 참고합니다.
-Repository access와 public review 보안 절차는 [docs/repository-access-security-policy.md](docs/repository-access-security-policy.md)를 참고합니다.
-대규모 리팩토링 진행 기준은 [docs/REFACTORING_GUIDE.md](docs/REFACTORING_GUIDE.md)를 참고합니다.
-AI paper-only 투자 판단 프로세스 리팩토링 계획은 [docs/ai-investment-process-refactoring-plan.md](docs/ai-investment-process-refactoring-plan.md)를 참고합니다.
-전략 포트폴리오 정책, 종목별 mandate, bucket 기반 종목 선택과 통합 리밸런싱 계획은 [docs/strategy-portfolio-operating-model-plan.md](docs/strategy-portfolio-operating-model-plan.md)를 참고합니다.
-Paper simulation dashboard 기획은 [docs/paper-simulation-dashboard-plan.md](docs/paper-simulation-dashboard-plan.md)를 참고합니다.
-Next.js 기반 dashboard 전환 기획은 [docs/nextjs-dashboard-architecture-plan.md](docs/nextjs-dashboard-architecture-plan.md)를 참고합니다.
+자세한 계획은 [docs/plans/roadmap.md](docs/plans/roadmap.md)를 참고합니다.
+Official Toss Open API adapter 설계는 [docs/contracts/official-toss-open-api-adapter-design.md](docs/contracts/official-toss-open-api-adapter-design.md)를 참고합니다.
+Official Toss Open API token auth 설계는 [docs/contracts/official-token-auth-design.md](docs/contracts/official-token-auth-design.md)를 참고합니다.
+Codex CLI paper trading 설계는 [docs/contracts/codex-cli-paper-trading.md](docs/contracts/codex-cli-paper-trading.md)를 참고합니다.
+Historical replay 실행과 안전 경계는 [docs/runbooks/historical-replay.md](docs/runbooks/historical-replay.md)를 참고합니다.
+Codex AI paper run과 batch replay 운영 절차는 [docs/runbooks/ai-paper-trading-runbook.md](docs/runbooks/ai-paper-trading-runbook.md)를 참고합니다.
+퀀트 연구 기반 paper simulation 검토와 개선 TODO는 [docs/research/reviews/quant-research-paper-simulation-review.md](docs/research/reviews/quant-research-paper-simulation-review.md)를 참고합니다.
+퀀트 연구 기반 paper simulation 구현 기획은 [docs/plans/quant-research-paper-simulation-plan.md](docs/plans/quant-research-paper-simulation-plan.md)를 참고합니다.
+Strategy bucket별 검증 질문, 실패 조건, 판정 기준은 [docs/research/protocols/strategy-bucket-validation-protocol.md](docs/research/protocols/strategy-bucket-validation-protocol.md)를 참고합니다.
+Strategy bucket별 replay 실행 matrix와 결과 기록 절차는 [docs/runbooks/strategy-bucket-validation-runbook.md](docs/runbooks/strategy-bucket-validation-runbook.md)를 참고합니다.
+Strategy bucket deterministic smoke 결과와 다음 검증 조건은 [docs/research/results/strategy-bucket-validation-smoke-results.md](docs/research/results/strategy-bucket-validation-smoke-results.md)를 참고합니다.
+Q1\~Q9 이후의 dashboard routing, calendar/FX, universe lifecycle, market impact, Sharpe validation, CPCV/PBO, Triple Barrier 후속 milestone은 [docs/plans/research-hardening-milestone-plan.md](docs/plans/research-hardening-milestone-plan.md)를 참고합니다.
+CPCV/PBO validation contract와 config/report schema 후보는 [docs/research/protocols/cpcv-pbo-validation-contract.md](docs/research/protocols/cpcv-pbo-validation-contract.md)를 참고합니다.
+구현 PR 단위 계획은 [docs/archive/pr-implementation-plan.md](docs/archive/pr-implementation-plan.md)를 참고합니다.
+코드 위치와 책임 경계는 [docs/architecture/PROJECT_STRUCTURE.md](docs/architecture/PROJECT_STRUCTURE.md)를 참고합니다.
+코드 컨벤션과 레이어 규칙은 [docs/runbooks/CODE_CONVENTION.md](docs/runbooks/CODE_CONVENTION.md)를 참고합니다.
+Repository access와 public review 보안 절차는 [docs/runbooks/repository-access-security-policy.md](docs/runbooks/repository-access-security-policy.md)를 참고합니다.
+대규모 리팩토링 진행 기준은 [docs/plans/REFACTORING_GUIDE.md](docs/plans/REFACTORING_GUIDE.md)를 참고합니다.
+AI paper-only 투자 판단 프로세스 리팩토링 계획은 [docs/plans/ai-investment-process-refactoring-plan.md](docs/plans/ai-investment-process-refactoring-plan.md)를 참고합니다.
+전략 포트폴리오 정책, 종목별 mandate, bucket 기반 종목 선택과 통합 리밸런싱 계획은 [docs/plans/strategy-portfolio-operating-model-plan.md](docs/plans/strategy-portfolio-operating-model-plan.md)를 참고합니다.
+Paper simulation dashboard 기획은 [docs/archive/paper-simulation-dashboard-plan.md](docs/archive/paper-simulation-dashboard-plan.md)를 참고합니다.
+Next.js 기반 dashboard 전환 기획은 [docs/plans/nextjs-dashboard-architecture-plan.md](docs/plans/nextjs-dashboard-architecture-plan.md)를 참고합니다.
 
 ## License
 
