@@ -11,7 +11,8 @@
 
 - 기준 main: `d9818e74fdf932588ebecce5eecc2525baa6421f` (2026-10-01 원격 확인)
 - 작업 branch: `docs/personal-investment-trainer-structure`
-- 상태: 설계 범위의 문서 이동과 로컬 검증 완료. 원격 push/PR 게시 전 검토 단계
+- 현재 상태: [GitHub PR #789](https://github.com/misosiruda/toss-trading/pull/789)로 병합됨. 병합 commit `8eede864a26143ac91a912671d7f98bd222632e0` (2026-10-02 KST 원격 확인)
+- 아래 최종 검증 기록은 원래 게시 전 시점의 관찰이며 이후 병합 사실과 구분해 보존한다.
 - PR788의 source 변경과 미병합 테스트는 별도 checkout에 보존하며 이 PR에 포함하지 않는다.
 
 ## 포함 범위

@@ -10,3 +10,5 @@
 
 연구 protocol과 결과는 [research](../research/README.md)에 있고, 미완료 연구 확장·포트폴리오·UI 계획은 archive하지 않았다.
 [전체 문서 안내](../README.md)로 돌아간다.
+
+- [전략 포트폴리오 과거 기준선과 구현 이력](strategy-portfolio-operating-model-history.md): 당시 부재 진술과 기존 13절 분할의 상세 정본 찾아보기

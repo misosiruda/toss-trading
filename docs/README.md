@@ -96,7 +96,7 @@
 
 1. 제품 목적을 파악하려면 초기 backend 소개, 여러 roadmap, 최신 portfolio 계획을 함께 해석해야 한다.
 2. 같은 주제가 roadmap → PR plan → refactoring guide → domain plan에 반복되며 일부 상태 설명이 다르다.
-3. 6,905행의 포트폴리오 운영 계획에 목표, 계약, 저장·복구 규칙, PR별 구현 이력, 테스트와 최종 수용 기준이 함께 있다.
+3. 정리 전 6,905행의 포트폴리오 운영 계획에 목표, 계약, 저장·복구 규칙, PR별 구현 이력, 테스트와 최종 수용 기준이 함께 있다.
 4. API 전체가 `GET`/`HEAD` 전용이라는 과거 설명과 현재 guarded paper-only `POST`가 충돌한다.
 5. Next.js를 skeleton으로 설명하는 과거 문장과 현재 운영 UI가 공존한다.
 
@@ -125,26 +125,22 @@
 - 기존 파일명과 계약·실험·완료 기준을 보존한다.
 - stale 문장을 확인된 코드에 맞추되 새 mutation이나 provider 채택을 승인하지 않는다.
 
-### 다음 별도 기능 PR: 큰 계획의 내용 분리
+### 포트폴리오 운영 계획의 내용 분리
 
-포트폴리오 운영 계획은 분리하는 편이 좋다. 다만 원문을 새 문서 여러 개에 복사하여
-동시에 유지하지 않는다. 각 절의 정본을 하나만 정한 뒤 순차적으로 옮긴다.
+기존 [운용 모델 진입점](plans/strategy-portfolio-operating-model-plan.md)은 목적·운용 순서와
+기존 heading 안내를 유지한다. 세부 본문은 아래 책임별 정본에서 한 번만 관리한다.
 
-- 제품 목표와 운용 순서: 기존 1~5절을 짧은 상위 설명으로 정리
-- 계약: 기존 6~10절의 policy/mandate/state, selection/sizing/reservation, rebalance/risk/fill로 책임별 분할
-- 구현 상태와 남은 작업: 13절의 현재 상태를 계약과 분리하고 실제 코드 근거를 연결
-- 구현 이력: 이미 완료된 작은 PR의 상세 경위를 별도 역사 기록으로 보존
-- 검증·호환성·최종 수용 기준: 기존 14~16절을 추적 가능한 체크리스트로 보존
+- 계약: [policy/lifecycle](contracts/strategy-portfolio/policy-lifecycle.md), [mandate/state](contracts/strategy-portfolio/mandate-state.md), [selection/sizing/reservation](contracts/strategy-portfolio/selection-sizing-reservation.md), [rebalance/Risk/fill](contracts/strategy-portfolio/rebalance-risk-fill.md)
+- 상태: [main 구현과 남은 연결](architecture/strategy-portfolio-implementation-status.md), 미병합 PR788 및 제안 구분
+- 계획: [기존 내부 PR 1~8과 API/Dashboard](plans/strategy-portfolio/implementation-stages.md)
+- 검증: [테스트·호환성·최종 수용 기준](plans/strategy-portfolio/validation-and-acceptance.md)
+- 이력: [과거 기준선과 변경 찾아보기](archive/strategy-portfolio-operating-model-history.md)
+- 추적: [기능 PR 설계](plans/strategy-portfolio/document-split-plan.md), [원문 구간·anchor·AC 대응](plans/strategy-portfolio/source-map.md)
 
-기존 `PR 1`~`PR 8`은 문서 내부 구현 단계명이며 GitHub PR 번호와 다르다.
-`PR-xx`, `Qx`, `RHx`, `Nx`, `Phase xx` 같은 기존 식별자는 재번호를 부여하지 않는다.
-기존 최종 수용 기준 12개에는 고정 ID가 없으므로, 분할 시 원문 순서에 따라
-`SPOM-AC-01`~`SPOM-AC-12`를 부여하는 대응표를 먼저 만든다. 대응표는 원문 문장,
-기존 절/항목 순서, 기준 commit, 새 위치를 보존하고 완료 상태를 바꾸지 않아야 한다.
-
-원래 파일은 개요·목차·이전 위치 안내를 남기는 안정적인 진입점으로 유지한다.
-기존 heading/anchor도 가능한 한 보존하고, 바뀌는 anchor는 이전→이후 매핑으로 검토한다.
-분할 자체는 이번 변경 범위가 아니다.
+기존 `PR 1`~`PR 8`은 내부 단계명이며 GitHub PR 번호가 아니다. 최종 수용 기준은 원문
+순서대로 `SPOM-AC-01`~`SPOM-AC-12`를 부여했고, 문장·순서·12개 미완료 상태를 유지한다.
+기존 13절의 safety/lease/fail-closed/rollback 제약은 이력으로 숨기지 않고 활성 계약에 남긴다.
+과거 “후속/미구현” 표현은 해당 분할의 범위 기록이며 현재 상태표와 구분한다.
 
 ### 참조를 보존하는 소규모 이동
 
