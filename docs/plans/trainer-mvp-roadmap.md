@@ -156,6 +156,16 @@ Jev 등 추가 scorer의 실험은 이 단계의 필수 조건이 아니다. 채
 - [ ] `TR-MVP-07`: 사용자가 결과에서 배운 점과 다음에 검증할 질문을 확인할 수 있음
 - [ ] `TR-MVP-08`: paper-only 기본값, read-only MCP, no live/raw-command surface가 유지됨
 
+## 첫 engineering slice의 상세 계획
+
+실제 전략·시장 선택 전에 진행할 fixture-only 연결 범위를
+[재현 가능한 단일 paper 실험 기획](reproducible-paper-experiment/product-plan.md),
+[기술 설계](reproducible-paper-experiment/technical-design.md),
+[기능 PR 작업 계획](reproducible-paper-experiment/pr-work-plan.md)에 정리한다.
+기획·설계 문서 PR을 먼저 검수·병합하고 입력 계약부터 구현한다.
+이는 T1~T3의 제한된 engineering 증거를 만드는 계획이며 T4 AI 비교 또는
+위 TR-MVP 전체 수용 기준의 완료를 뜻하지 않는다. cooperative cancel은 첫 slice 비범위다.
+
 ## 기존 계획과의 관계
 
 - [기존 roadmap](roadmap.md)과 [PR plan](../archive/pr-implementation-plan.md)은 기존 기반의 순서·이력을 보존한다.
@@ -164,5 +174,5 @@ Jev 등 추가 scorer의 실험은 이 단계의 필수 조건이 아니다. 채
 - [Next.js 계획](nextjs-dashboard-architecture-plan.md)과 [routing 정책](../architecture/dashboard-routing-policy.md)은 기존 UI 경계를 유지한다.
 
 이 계획들에서 MVP에 필요한 안전·증거 의존성만 먼저 연결하되, 완성되지 않은 기능을
-완료라고 설명하거나 기존 제약을 건너뛰지 않는다. 구체적인 첫 구현 PR은 T0 검토와
-현재 코드 연결 분석 후 결정한다.
+완료라고 설명하거나 기존 제약을 건너뛰지 않는다. 첫 fixture engineering 구현의 범위와 순서는 위 상세 계획을 따른다. 실제 전략·시장·
+AI provider의 제품 선택은 별도로 남아 있다.

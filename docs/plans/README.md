@@ -6,6 +6,8 @@
 ## 제품과 현재 정리
 
 - [Trainer MVP 제안](trainer-mvp-roadmap.md): 단일 전략 paper 운용·검토를 먼저 연결하는 제안
+- [재현 가능한 paper 실험](reproducible-paper-experiment/product-plan.md): fixture 입력 → 기존 workflow → 근거 검토 기획
+  - [기술 설계](reproducible-paper-experiment/technical-design.md), [기능 PR 작업 계획](reproducible-paper-experiment/pr-work-plan.md)
 - [문서 체계 PR 설계](documentation-system-refactor-plan.md): 이번 문서 분류 기능의 범위·수용 기준
 - [기존 기반 roadmap](roadmap.md): backend milestone의 목적과 범위
 - [전략 포트폴리오 운영 모델](strategy-portfolio-operating-model-plan.md): policy/mandate/selection/reservation/Risk/fill과 장기 multi-bucket 계획
