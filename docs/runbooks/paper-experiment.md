@@ -63,6 +63,7 @@ Read projection은 terminal 증거가 없으면 `incomplete`이고 저장된 마
 
 완료 전에 고정 allowlist 11개 artifact의 schema, identity/path, input/config, 비용 모델 hash,
 packet/decision/Risk/trade count, 모든 tick의 audit timeline과 report timeline을 대조한다.
+최종 audit portfolio는 report의 초기/최종 잔고·포지션 요약 및 progress의 full currentPortfolio와도 일치해야 한다.
 기존 report의 전체 nested shape도 strict하게 검사하지만 재무·통계 계산을 새로 하지 않는다.
 그 다음 input/source, 기존 manifest/metadata/progress/report, 5개 JSONL의 contract/format/record count와
 기존 `createReplayResearchHash`의 parsed payload digest를 state의 `artifactInventory`에 기록한다.
@@ -95,7 +96,9 @@ bounded read를 확인한다. Stored path는 파일을 여는 권한이 아니�
 - cancel/resume/자동 retry는 미지원. Ctrl+C/강제 종료를 취소 성공으로 표시하지 않음
 
 오류 출력은 고정 `PaperExperimentStorageError.code`만 노출한다. Filesystem path나 JSON/Zod 원문을
-그대로 error message에 포함하지 않는다. 실제 path는 backend owner handle에만 별도로 제공한다.
+그대로 error message에 포함하지 않는다. Malformed replay JSON/JSONL, schema 위반과 잘못된 UTF-8은
+`ARTIFACT_INTEGRITY`이며 실제 filesystem 접근 실패는 `IO_FAILURE`로 구분한다.
+실제 path는 backend owner handle에만 별도로 제공한다.
 
 ## 로컬 검증
 
