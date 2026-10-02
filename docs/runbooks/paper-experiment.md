@@ -64,10 +64,20 @@ Read projection은 terminal 증거가 없으면 `incomplete`이고 저장된 마
 완료 전에 고정 allowlist 11개 artifact의 schema, identity/path, input/config, 비용 모델 hash,
 packet/decision/Risk/trade count, 모든 tick의 audit timeline과 report timeline을 대조한다.
 최종 audit portfolio는 report의 초기/최종 잔고·포지션 요약 및 progress의 full currentPortfolio와도 일치해야 한다.
-기존 report의 전체 nested shape도 strict하게 검사하지만 재무·통계 계산을 새로 하지 않는다.
+기존 report의 전체 nested shape를 strict하게 검사하고, 보존한 log·input에서 복원할 수 있는
+summary는 기존 report/portfolio/hash helper를 재사용한 순수 adapter로 대조한다. 새 재무·통계
+공식이나 Risk/매매 계산 구현을 만들지 않는다.
 그 다음 input/source, 기존 manifest/metadata/progress/report, 5개 JSONL의 contract/format/record count와
 기존 `createReplayResearchHash`의 parsed payload digest를 state의 `artifactInventory`에 기록한다.
 기존 manifest의 세부 hash와 실행 options 간 결속 검증은 EXP-03에서 연결한다.
+
+보존 근거로 확인 가능한 범위와 없는 범위를 구분한다. Decision/trade/cost/Risk 요약,
+portfolio/analytics/performance/benchmark와 progress의 tick·bounded recent projections는
+canonical logs·고정 input과 대조한다. 전체 provider 호출 결과·sampling event·warning·dust event 및
+운영 timing의 원본은 현재 inventory에 모두 있지 않으므로 해당 값은 schema/상호 count·상한 검증과
+sealed digest까지만 확인한다. 존재하지 않는 event를 0으로 제조하지 않는다. 실행 시점의 사실성·
+완전한 receipt 결속은 EXP-03 adapter의 책임이며 이 저장 검증으로 공급자 성공을 보증하지 않는다.
+
 
 JSONL은 존재해야 하며 invalid/blank/torn line을 건너뛰지 않는다. 빈 log는 실제 파일이 있고
 schema·count가 0인 경우만 허용한다. Input은 2 MiB, state는 64 KiB, replay artifact 각각은 16 MiB,

@@ -517,6 +517,13 @@ order -> broker/api/mcp/cli/ai/paper/storage
 
 예외가 필요하면 먼저 문서에 이유를 적고, 더 작은 adapter나 DTO로 경계를 줄인다.
 
+EXP-02의 `paperExperimentInventory` → `reports/paperExperimentEvidence`는 저장된 근거의
+read-only 일치 검증을 위한 제한된 예외다. 후자는 기존 report/portfolio/hash helper만 재사용하여
+canonical log·input에서 복원 가능한 report/progress projection을 대조한다. 새 매매·Risk 판단이나
+재무 공식, runner/provider 실행, artifact write를 추가하지 않는다. 보존되지 않은 provider 호출별
+결과·전체 warning·sampling event를 임의 복원하거나 저장 정합성을 실행 성공 증거로 확대하지 않는다.
+
+
 ## Schema와 Contract
 
 - 외부 입력은 Zod schema로 검증한다.
