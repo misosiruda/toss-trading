@@ -3,7 +3,7 @@
 ## 상태와 결정
 
 [기획](product-plan.md)을 구현하기 위한 설계다. EXP-01의 입력 계약과 EXP-02의 입력 보존·격리 저장을
-구현했고 EXP-03은 기존 single workflow 연결·실행 receipt·CLI를 구현했다. 결과 검토는 후속 EXP-04 설계다.
+구현했고 EXP-03은 기존 single workflow 연결·실행 receipt·CLI를 구현했다. EXP-04는 read-only 근거 projection·한국어 보고서·동일 조건 비교를 구현했다.
 저장 API와 실제 보장/비보장 경계는 [runbook](../../runbooks/paper-experiment.md)에 정리한다.
 코드 관찰 기준은 `bc1423bd992171cf86b5c5d288e9c1c915cc2333`이다.
 구현 순서·검증 명령은 [PR 작업 계획](pr-work-plan.md)에 둔다.

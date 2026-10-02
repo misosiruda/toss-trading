@@ -4,7 +4,7 @@
 
 - 기준일: 2026-10-02, 코드 기준 `bc1423bd992171cf86b5c5d288e9c1c915cc2333` (`origin/main` 확인)
 - 상태: 기획·설계 PR #791, EXP-01 PR #792와 EXP-02 PR #793이 병합되었다.
-  EXP-03 실행·CLI를 구현했으며 결과 검토는 후속 EXP-04다. 각 기능 PR의 검수·병합 뒤 dependency를 진행한다.
+  EXP-03 PR #794 병합 뒤 EXP-04 근거 검토·반복 비교를 구현했다. 최종 검수·병합 gate는 해당 PR의 exact SHA 기록을 따른다.
   저장 library의 현재 경계는 [runbook](../../runbooks/paper-experiment.md)을 따른다.
 - 사용자 요청 순서: 기획 → 기술 설계 → 기능별 PR 작업 문서 → 문서 PR 게시·검수·병합 → 구현
 - 정본: 이 문서는 목적·범위, [기술 설계](technical-design.md)는 계약·실패 경계,

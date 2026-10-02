@@ -145,7 +145,7 @@ Jev 등 추가 scorer의 실험은 이 단계의 필수 조건이 아니다. 채
 ## 제안된 MVP 수용 기준
 
 아래 ID는 새 Trainer 범위의 기준이다. 기존 포트폴리오 계획의 최종 기준을 대체하거나
-완료로 전환하지 않는다. 현재는 모두 미검증이다.
+완료로 전환하지 않는다. 아래 전체 제품 수용 기준은 모두 미완료이며 제한된 fixture 증거는 다음 절에 구분한다.
 
 - [ ] `TR-MVP-01`: 하나의 학습 질문과 명시적 전략·입력·policy 범위가 고정됨
 - [ ] `TR-MVP-02`: 기존 paper workflow로 입력부터 결과 검토까지 한 경로가 연결됨
@@ -165,6 +165,23 @@ Jev 등 추가 scorer의 실험은 이 단계의 필수 조건이 아니다. 채
 기획·설계 문서 PR을 먼저 검수·병합하고 입력 계약부터 구현한다.
 이는 T1~T3의 제한된 engineering 증거를 만드는 계획이며 T4 AI 비교 또는
 위 TR-MVP 전체 수용 기준의 완료를 뜻하지 않는다. cooperative cancel은 첫 slice 비범위다.
+
+### EXP-01~04가 공급한 제한된 증거
+
+[실제 실행·검토 기록](../runbooks/paper-experiment.md)은 고정 synthetic fixture 한 경로에 한정한다.
+기획 PR #791 → 입력 #792 → 저장 #793 → 실행 #794 병합 뒤 EXP-04 근거 검토·비교를 연결했다.
+EXP-04의 최종 PR gate/병합 여부는 해당 exact SHA의 원격 결과를 따른다.
+
+| 기준 | 공급한 engineering 증거 | 남은 제품 수용/검증 |
+| --- | --- | --- |
+| TR-MVP-01 | 질문·fixture·full policy·cost·cutoff 보존 | 실제 투자 가설·전략·시장 선택 |
+| TR-MVP-02 | 빈 root의 validate/run/inspect/review/retry/compare 및 별도 root 재현 | 실제 source와 제품 UI 사용 |
+| TR-MVP-03 | decision→packet/dataRefs→Risk→paper fill/portfolio, HOLD/skip/failure의 고정 근거 링크 | 모든 실제 전략 상황, provider 내부 전체 이력 |
+| TR-MVP-04 | 기존 cashOnly/비용·보조 기준선 제약, null 유지, 같은 입력/runtime semantic 비교 | 비용 동등한 투자전략 비교·통계 유효성 |
+| TR-MVP-05 | 중단/부분 artifact·retry·read-only review와 새 출력 generation의 보존 | cooperative cancel/resume·공유/multi-bucket/분산 복구 |
+| TR-MVP-06 | deterministic fixture, 외부 AI 호출 없음, 실패 event 분리 | 실제 AI provider budget/timeout/품질 |
+| TR-MVP-07 | 근거·한계·입력의 다음 질문을 한국어 JSON/Markdown으로 연결 | 사용자의 학습 확인·제품 수용 |
+| TR-MVP-08 | 안전 기본값·Risk gate·기존 read-only MCP 유지, 새 UI/API/live surface 없음 | 이후 확장 경로의 개별 검증 |
 
 ## 기존 계획과의 관계
 
