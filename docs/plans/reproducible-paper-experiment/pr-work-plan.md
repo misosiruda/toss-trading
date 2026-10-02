@@ -9,7 +9,7 @@
 
 `EXP-00`~`EXP-04`는 이 문서의 작업 ID이며 GitHub PR 번호가 아니다. 구현 시 path 이름을
 조정할 수 있으나 책임·계약·AC는 유지한다. EXP-00은 PR #791로 병합되었다.
-EXP-01의 입력 계약·fixture·unit test만 구현했으며 EXP-02~04는 미구현이다. 예정 CLI 명령을 실행된
+EXP-01 PR #792 병합 후 EXP-02의 입력 보존·격리 저장·unit test를 구현했으며 EXP-03~04는 미구현이다. 예정 CLI 명령을 실행된
 증거로 읽지 않는다. 커밋 개수는 게시 조건이 아니다. schema/저장/실행/검토/테스트·문서의
 책임이 바뀌기 전에 검토 가능한 단위로 Korean Conventional Commit을 남긴다.
 
@@ -109,18 +109,35 @@ rollback: 새 contract/fixture와 export만 revert. 기존 저장소 migration �
 
 수용 기준:
 
-- [ ] `EXP-02-AC1`: 새 process가 원래 source/env 없이 보존된 full input으로 같은 normalized config 복원
-- [ ] `EXP-02-AC2`: 동일 attempt 동시 생성은 하나만 성공. 기존 파일·비어 있는 기존 dir도 변경 없이 충돌
-- [ ] `EXP-02-AC3`: source/shared root/기존 attempt의 bytes 불변; traversal·symlink·ancestor overlap 거절
-- [ ] `EXP-02-AC4`: materialized source와 inputHash 일치; 변조·부분 JSONL·누락은 incomplete/error;
+- [x] `EXP-02-AC1`: 새 process가 원래 source/env 없이 보존된 full input으로 같은 normalized config 복원
+- [x] `EXP-02-AC2`: 동일 attempt 동시 생성은 하나만 성공. 기존 파일·비어 있는 기존 dir도 변경 없이 충돌
+- [x] `EXP-02-AC3`: source/shared root/기존 attempt의 bytes 불변; traversal·symlink·ancestor overlap 거절
+- [x] `EXP-02-AC4`: materialized source와 inputHash 일치; 변조·부분 JSONL·누락은 incomplete/error;
   completed inventory 검증에서 complete-row 경계 truncation과 schema-valid report 변조도 탐지
-- [ ] `EXP-02-AC5`: crash/write fault에서 completed 오판 없음. read/inspect는 어떤 상태도 자동 보정하지 않음
-- [ ] `EXP-02-AC6`: retry는 새 attempt와 parentAttemptId만 생성, 원래 attempt append/resume/삭제 없음
+- [x] `EXP-02-AC5`: crash/write fault에서 completed 오판 없음. read/inspect는 어떤 상태도 자동 보정하지 않음
+- [x] `EXP-02-AC6`: retry는 새 attempt와 parentAttemptId만 생성, 원래 attempt append/resume/삭제 없음
 
 예정 집중 검증: `npm run build && node --test dist/storage/paperExperimentStore.test.js`
 
 테스트는 `mkdtemp` root와 child process를 사용하여 프로세스 메모리에만 의존한 보장을 배제한다.
 fs error injection은 directory 생성/input write/state replace/read 시점에 각각 적용한다.
+
+로컬 수용 증거 (2026-10-02):
+
+- `origin/main` PR #792 merge `4c1e179524d7ab31aa622cea18ed1c06e68bb52f`에서 isolated checkout 생성
+- Build 후 신규 저장 테스트 88개와 artifact path 테스트 7개, 총 95개 통과 (실패·skip 0)
+- Separate-process 동시 생성 하나만 성공, 원 source 삭제/hostile env 뒤 같은 full input 복원,
+  explicit retry의 새 identity·parent lineage와 원 attempt bytes 불변 검증
+- Existing empty/file/failed/completed dir 충돌, traversal·ancestor overlap·symlink·hardlink 거절
+- Input/source와 completed inventory 변조, complete-row truncation·잘못된 report shape·timeline 누락 검출
+- Directory/open/partial write/sync/rename/read fault와 준비 중 process 종료에서 완료 오판 없음
+- Import/inspect의 filesystem mutation·process spawn·network 호출 0과 read-only 보존 검증
+- 기존 recorder/report builder로 만든 synthetic 저장 evidence만 사용. Runner/provider/CLI 실행 없음
+
+체크한 AC는 저장 library의 unit 수용 범위다. Exact candidate의 aggregate/full 검증과
+독립/current-head 검수·원격 보호 조건·병합 결과는 실제 PR 증거를 따른다.
+실제 runtime/build identity 관측과 manifest/options 결속은 EXP-03의 책임이며 아직 실행되지 않았다.
+현재 API/오류·저장 한계는 [runbook](../../runbooks/paper-experiment.md)에 기록한다.
 rollback: 신규 writer를 되돌리고 기존 attempt는 보존. reader 지원이 없어도 old runtime이 새 directory를
 자동 소비하지 않는다. 저장 데이터를 지우거나 이전 공유 저장소로 합치는 migration은 하지 않는다.
 

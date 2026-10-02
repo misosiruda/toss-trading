@@ -66,6 +66,7 @@
 ### 운영·UI·검증 절차
 
 - [AI paper runbook](runbooks/ai-paper-trading-runbook.md), [historical replay](runbooks/historical-replay.md)
+- [고정 fixture paper 실험](runbooks/paper-experiment.md): 입력 검증·격리 저장 library와 후속 실행 범위
 - [strategy bucket validation runbook](runbooks/strategy-bucket-validation-runbook.md)
 - [검증 명령과 병합 절차](runbooks/test-verification.md), [maintenance 위임 범위](runbooks/codex-maintenance-delegation-policy.md)
 - [repository access/security](runbooks/repository-access-security-policy.md), [root security policy](../SECURITY.md)
