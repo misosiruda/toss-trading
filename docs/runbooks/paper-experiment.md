@@ -15,6 +15,7 @@ EXP-01 입력 검증과 EXP-02 격리 저장 library만 구현했다. Runner/CLI
 `inputHash`, bounded source preflight를 반환한다. Caller가 독립적으로 검증한 revision을 받아
 정규화하며 Git, 환경변수, filesystem, provider 또는 network를 조사하지 않는다.
 입력은 synthetic 100 snapshots/10 symbols/100 ticks/100 calls 및 2 MiB로 제한한다.
+저장할 full normalized JSON의 확장 크기도 attempt 생성 전에 같은 byte 상한으로 검사한다.
 실제 시장·전략 선택이나 투자 성과의 증거가 아니다.
 
 ## 저장 library의 호출 계약

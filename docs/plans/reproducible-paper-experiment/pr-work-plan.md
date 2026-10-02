@@ -125,7 +125,7 @@ fs error injection은 directory 생성/input write/state replace/read 시점에 
 로컬 수용 증거 (2026-10-02):
 
 - `origin/main` PR #792 merge `4c1e179524d7ab31aa622cea18ed1c06e68bb52f`에서 isolated checkout 생성
-- Build 후 신규 저장 테스트 88개와 artifact path 테스트 7개, 총 95개 통과 (실패·skip 0)
+- Build 후 신규 저장 테스트 90개와 artifact path 테스트 7개, 총 97개 통과 (실패·skip 0)
 - Separate-process 동시 생성 하나만 성공, 원 source 삭제/hostile env 뒤 같은 full input 복원,
   explicit retry의 새 identity·parent lineage와 원 attempt bytes 불변 검증
 - Existing empty/file/failed/completed dir 충돌, traversal·ancestor overlap·symlink·hardlink 거절
