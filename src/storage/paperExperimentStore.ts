@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { PAPER_EXPERIMENT_LIMITS, parsePaperExperimentInput } from "../replay/paperExperimentInput.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
-import { createPaperExperimentArtifactPaths, PAPER_EXPERIMENT_RUN_FILE_NAME } from "./artifactPaths.js";
+import { createPaperExperimentArtifactPaths, PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN, PAPER_EXPERIMENT_RUN_FILE_NAME } from "./artifactPaths.js";
 import {
   paperExperimentRuntimeIdentitySchema, paperExperimentStateSchema,
   type PaperExperimentRuntimeIdentity, type PaperExperimentState
@@ -74,8 +74,15 @@ function instant(date: Date): string {
   return value;
 }
 
+function attemptPaths(root: string, attemptId: string): ExperimentPaths {
+  requireExperimentStorage(typeof attemptId === "string" && PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN.test(attemptId), "INVALID_REQUEST");
+  return createPaperExperimentArtifactPaths(root, attemptId);
+}
+
 async function readState(paths: ExperimentPaths, attemptId: string): Promise<PaperExperimentState> {
-  const raw: unknown = JSON.parse(await readExperimentFile(paths.statePath, 64 * 1024));
+  const text = await readExperimentFile(paths.statePath, 64 * 1024, "STATE_INVALID");
+  let raw: unknown;
+  try { raw = JSON.parse(text); } catch { throw new PaperExperimentStorageError("STATE_INVALID"); }
   const result = paperExperimentStateSchema.safeParse(raw);
   requireExperimentStorage(result.success && result.data.attemptId === attemptId, "STATE_INVALID");
   return result.data;
@@ -88,7 +95,7 @@ export async function inspectPaperExperimentAttempt(
   let input: ReturnType<typeof parsePaperExperimentInput> | null = null;
   try {
     const root = await validateLocation(location);
-    const paths = createPaperExperimentArtifactPaths(root, attemptId);
+    const paths = attemptPaths(root, attemptId);
     state = await readState(paths, attemptId);
     input = await verifyExperimentInput(paths, state);
     if (state.status === "completed") {
@@ -114,11 +121,12 @@ export async function retryPaperExperimentAttempt(options: Omit<CreatePaperExper
 }) {
   try {
     const root = await validateLocation(options);
-    const parentPaths = createPaperExperimentArtifactPaths(root, options.parentAttemptId);
+    const parentPaths = attemptPaths(root, options.parentAttemptId);
     const parent = await readState(parentPaths, options.parentAttemptId);
     const input = await verifyExperimentInput(parentPaths, parent);
-    const runtime = paperExperimentRuntimeIdentitySchema.parse(options.runtimeIdentity);
-    requireExperimentStorage(createReplayResearchHash(runtime) === createReplayResearchHash(parent.runtimeIdentity), "RUNTIME_MISMATCH");
+    const runtime = paperExperimentRuntimeIdentitySchema.safeParse(options.runtimeIdentity);
+    requireExperimentStorage(runtime.success, "INVALID_REQUEST");
+    requireExperimentStorage(createReplayResearchHash(runtime.data) === createReplayResearchHash(parent.runtimeIdentity), "RUNTIME_MISMATCH");
     requireExperimentStorage(instant(options.createdAt) >= parent.createdAt, "INVALID_REQUEST");
     return await createAttempt({ ...options, inputJson: JSON.stringify(input.normalizedInput) }, parent.attemptId);
   } catch (error) { throw storageError(error); }
@@ -130,14 +138,17 @@ async function createAttempt(options: CreatePaperExperimentAttemptOptions, paren
   let input: ReturnType<typeof parsePaperExperimentInput>;
   let serializedInput: string;
   try {
-    const runtimeIdentity = paperExperimentRuntimeIdentitySchema.parse(options.runtimeIdentity);
+    const runtime = paperExperimentRuntimeIdentitySchema.safeParse(options.runtimeIdentity);
+    requireExperimentStorage(runtime.success, "INVALID_REQUEST");
+    const runtimeIdentity = runtime.data;
     const createdAt = instant(options.createdAt);
-    input = parsePaperExperimentInput(options.inputJson, { implementationRevision: runtimeIdentity.implementationRevision });
+    try { input = parsePaperExperimentInput(options.inputJson, { implementationRevision: runtimeIdentity.implementationRevision }); }
+    catch { throw new PaperExperimentStorageError("INVALID_REQUEST"); }
     serializedInput = `${JSON.stringify(input.normalizedInput)}\n`;
     requireExperimentStorage(Buffer.byteLength(serializedInput, "utf8") <= PAPER_EXPERIMENT_LIMITS.inputBytes, "INVALID_REQUEST");
     const root = await validateLocation(options);
     const attemptId = options.attemptId ?? `exp-${randomUUID()}`;
-    paths = createPaperExperimentArtifactPaths(root, attemptId);
+    paths = attemptPaths(root, attemptId);
     requireExperimentStorage(attemptId !== parentAttemptId, "ATTEMPT_EXISTS");
     state = paperExperimentStateSchema.parse({
       schemaVersion: "paper_experiment_attempt.v1", attemptId, runId: attemptId, parentAttemptId,

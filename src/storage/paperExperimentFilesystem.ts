@@ -80,15 +80,19 @@ export async function assertEmptyExperimentDirectory(path: string): Promise<void
   requireExperimentStorage((await readdir(path)).length === 0, "REPLAY_NOT_EMPTY");
 }
 
-export async function readExperimentFile(path: string, maxBytes: number): Promise<string> {
+export async function readExperimentFile(
+  path: string, maxBytes: number, integrityCode: "INPUT_INTEGRITY" | "STATE_INVALID" | "ARTIFACT_INTEGRITY" = "ARTIFACT_INTEGRITY"
+): Promise<string> {
   await assertExperimentPath(path);
   const before = await lstat(path);
-  requireExperimentStorage(before.isFile() && before.nlink === 1 && before.size <= maxBytes, "ARTIFACT_INTEGRITY");
+  requireExperimentStorage(before.isFile() && before.nlink === 1, "PATH_UNSAFE");
+  requireExperimentStorage(before.size <= maxBytes, integrityCode);
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const opened = await handle.stat();
     requireExperimentStorage(opened.isFile() && opened.nlink === 1 && opened.dev === before.dev
-      && opened.ino === before.ino && opened.size <= maxBytes, "ARTIFACT_INTEGRITY");
+      && opened.ino === before.ino, "PATH_UNSAFE");
+    requireExperimentStorage(opened.size <= maxBytes, integrityCode);
     // Bounded allocation also handles a file growing after stat. Do not use readFile's unbounded allocation.
     const buffer = Buffer.alloc(maxBytes + 1);
     let used = 0;
@@ -97,12 +101,12 @@ export async function readExperimentFile(path: string, maxBytes: number): Promis
       if (bytesRead === 0) break;
       used += bytesRead;
     }
-    requireExperimentStorage(used <= maxBytes, "ARTIFACT_INTEGRITY");
+    requireExperimentStorage(used <= maxBytes, integrityCode);
     const after = await handle.stat();
-    requireExperimentStorage(after.size === used && after.mtimeMs === opened.mtimeMs, "ARTIFACT_INTEGRITY");
+    requireExperimentStorage(after.size === used && after.mtimeMs === opened.mtimeMs, integrityCode);
     try {
       return new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, used));
-    } catch { throw new PaperExperimentStorageError("ARTIFACT_INTEGRITY"); }
+    } catch { throw new PaperExperimentStorageError(integrityCode); }
   } finally {
     await handle.close();
   }

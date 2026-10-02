@@ -12,6 +12,7 @@ import {
 import { historicalReplayProgressSnapshotSchema } from "../replay/historicalReplayProgress.js";
 import { PAPER_EXPERIMENT_LIMITS, parsePaperExperimentInput } from "../replay/paperExperimentInput.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
+import { verifyPaperExperimentRetainedEvidence } from "../reports/paperExperimentEvidence.js";
 import { createPaperExperimentArtifactPaths } from "./artifactPaths.js";
 import {
   PAPER_EXPERIMENT_ARTIFACTS, type PaperExperimentInventoryEntry, type PaperExperimentState
@@ -22,36 +23,39 @@ import { paperExperimentReportSchema } from "./paperExperimentReportContract.js"
 const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
 export type ExperimentPaths = ReturnType<typeof createPaperExperimentArtifactPaths>;
 
-function parseExperimentArtifact<T>(text: string, schema: z.ZodType<T>) {
+function parseExperimentArtifact<T>(text: string, schema: z.ZodType<T>, code: "ARTIFACT_INTEGRITY" | "INPUT_INTEGRITY" = "ARTIFACT_INTEGRITY") {
   try {
     const raw: unknown = JSON.parse(text);
     return { raw, value: schema.parse(raw) };
   } catch {
     // The file read is deliberately outside this boundary: only invalid persisted payloads map here.
-    throw new PaperExperimentStorageError("ARTIFACT_INTEGRITY");
+    throw new PaperExperimentStorageError(code);
   }
 }
 
-export function parseExperimentJsonl(text: string, schema: z.ZodType): unknown[] {
+export function parseExperimentJsonl(
+  text: string, schema: z.ZodType, code: "ARTIFACT_INTEGRITY" | "INPUT_INTEGRITY" = "ARTIFACT_INTEGRITY"
+): unknown[] {
   if (text === "") return [];
-  requireExperimentStorage(text.endsWith("\n"), "ARTIFACT_INTEGRITY");
+  requireExperimentStorage(text.endsWith("\n"), code);
   const lines = text.slice(0, -1).split("\n");
-  requireExperimentStorage(lines.length <= 10_000, "ARTIFACT_INTEGRITY");
+  requireExperimentStorage(lines.length <= 10_000, code);
   return lines.map((line) => {
-    requireExperimentStorage(line.trim().length > 0, "ARTIFACT_INTEGRITY");
-    return parseExperimentArtifact(line, schema).raw;
+    requireExperimentStorage(line.trim().length > 0, code);
+    return parseExperimentArtifact(line, schema, code).raw;
   });
 }
 
 export async function verifyExperimentInput(paths: ExperimentPaths, state: PaperExperimentState) {
-  const inputText = await readExperimentFile(paths.inputPath, PAPER_EXPERIMENT_LIMITS.inputBytes);
-  const input = parsePaperExperimentInput(inputText, {
-    implementationRevision: state.runtimeIdentity.implementationRevision
-  });
+  const inputText = await readExperimentFile(paths.inputPath, PAPER_EXPERIMENT_LIMITS.inputBytes, "INPUT_INTEGRITY");
+  let input: ReturnType<typeof parsePaperExperimentInput>;
+  try {
+    input = parsePaperExperimentInput(inputText, { implementationRevision: state.runtimeIdentity.implementationRevision });
+  } catch { throw new PaperExperimentStorageError("INPUT_INTEGRITY"); }
   requireExperimentStorage(input.inputHash === state.inputHash
     && createReplayResearchHash(JSON.parse(inputText)) === input.inputHash, "INPUT_INTEGRITY");
   const source = parseExperimentJsonl(
-    await readExperimentFile(paths.sourcePath, PAPER_EXPERIMENT_LIMITS.inputBytes), historicalMarketSnapshotSchema
+    await readExperimentFile(paths.sourcePath, PAPER_EXPERIMENT_LIMITS.inputBytes, "INPUT_INTEGRITY"), historicalMarketSnapshotSchema, "INPUT_INTEGRITY"
   );
   requireExperimentStorage(createReplayResearchHash(source)
     === createReplayResearchHash(input.normalizedInput.source.snapshots), "INPUT_INTEGRITY");
@@ -163,5 +167,8 @@ export async function captureExperimentInventory(paths: ExperimentPaths, state: 
     finalPositionMarketValueKrw: finalPortfolio.positionMarketValueKrw,
     finalVirtualNetWorthKrw: finalPortfolio.virtualNetWorthKrw
   });
+  try {
+    verifyPaperExperimentRetainedEvidence({ input, metadata, progress, report, packets, decisions, risks, trades, timeline });
+  } catch { throw new PaperExperimentStorageError("ARTIFACT_INTEGRITY"); }
   return inventory;
 }

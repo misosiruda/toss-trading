@@ -41,7 +41,7 @@ export interface HistoricalReplayMetricSummary {
 }
 
 export function buildHistoricalReplayBenchmarks(
-  result: HistoricalReplayResult
+  result: Pick<HistoricalReplayResult, "initialPortfolio" | "portfolioTimeline" | "trades" | "packets">
 ): HistoricalReplayBenchmarkReport {
   const initialNetWorthKrw = portfolioNetWorth(result.initialPortfolio);
   const strategyCurve = result.portfolioTimeline.map(
