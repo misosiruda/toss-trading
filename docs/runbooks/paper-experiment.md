@@ -63,6 +63,11 @@ Read projection은 terminal 증거가 없으면 `incomplete`이고 저장된 마
 
 완료 전에 고정 allowlist 11개 artifact의 schema, identity/path, input/config, 비용 모델 hash,
 packet/decision/Risk/trade count, 모든 tick의 audit timeline과 report timeline을 대조한다.
+V1은 기존 report 기본 title과 paper-only disclaimer를 고정한다. Metadata/progress의 disclaimer도
+기존 공통 문구와 같아야 한다. 일반 report builder의 별도 custom title 기능은 변경하지 않지만
+이 fixture 저장 계약에서는 사용하지 않는다. Manifest의 execution model version과 log에 명시된
+trade cost model version은 보존 input의 cost model version과 일치해야 한다.
+
 Report 초기 현금은 고정 input과 일치해야 한다. 최종 audit portfolio는 report의 최종 잔고·포지션
 요약 및 progress의 full currentPortfolio와 일치해야 한다.
 기존 report의 전체 nested shape를 strict하게 검사하고, 보존한 log·input에서 복원할 수 있는

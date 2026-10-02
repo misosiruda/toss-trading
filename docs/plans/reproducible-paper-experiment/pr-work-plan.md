@@ -125,7 +125,7 @@ fs error injection은 directory 생성/input write/state replace/read 시점에 
 로컬 수용 증거 (2026-10-02):
 
 - `origin/main` PR #792 merge `4c1e179524d7ab31aa622cea18ed1c06e68bb52f`에서 isolated checkout 생성
-- Build 후 신규 저장 테스트 176개, artifact path 7개와 기존 report/progress 회귀 8개, 총 191개 통과 (실패·skip 0)
+- Build 후 신규 저장 테스트 183개, artifact path 7개와 기존 report/progress 회귀 8개, 총 198개 통과 (실패·skip 0)
 - Separate-process 동시 생성 하나만 성공, 원 source 삭제/hostile env 뒤 같은 full input 복원,
   explicit retry의 새 identity·parent lineage와 원 attempt bytes 불변 검증
 - Existing empty/file/failed/completed dir 충돌, traversal·ancestor overlap·symlink·hardlink 거절
@@ -137,6 +137,7 @@ fs error injection은 directory 생성/input write/state replace/read 시점에 
   실제 I/O 오류·path alias·잘못된 caller request와 구분
 - Nonempty decision·approved/rejected Risk·trade 및 97 tick/최근 50 decision의 positive fixture 검증
 - Mirrored progress도 같이 변조한 decision/packet hash·Risk/trade reference·simulated timestamp 거절 검증
+- Report/metadata/progress의 고정 안전 문구와 기본 title, 일관되게 바꾼 execution/cost model version 및 paper-only mode 변조 거절
 - 전체 warning/provider/sampling event의 부재를 숨기거나 0으로 대체하지 않고 기존 inventory로
   검증 가능한 부분과 EXP-03 실행 receipt 의존성을 runbook에 명시
 - Import/inspect의 filesystem mutation·process spawn·network 호출 0과 read-only 보존 검증
