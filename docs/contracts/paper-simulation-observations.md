@@ -79,7 +79,11 @@ prefix로 복원하지 않는다. Reader는 mkdir·lock 획득·fsync·repair·m
 
 새 관측 경로의 모든 directory component는 symlink가 아닌 directory여야 한다.
 Log는 symlink/hardlink가 아닌 단일 regular file이며 descriptor/path identity와
-읽기 전후 size·mtime·ctime을 대조한다. Alias가 포함된 설정은 canonical 경로로 운영해야 한다.
+읽기 전후 size·mtime·ctime을 대조하고, 마지막 writer barrier 확인 뒤 같은 fingerprint를
+다시 확인한다. 파일 읽기와 마지막 barrier 확인 사이에 append와 lock 해제를 마친 writer가
+있어도 이전 accepted/unknown을 반환하지 않고 변경된 조회는 unavailable로 내린다.
+마지막 fingerprint 확인 이후 시작한 변경까지 포착하는 atomic snapshot·lease나 응답 시점의
+최신 상태 보장은 아니다. Alias가 포함된 설정은 canonical 경로로 운영해야 한다.
 존재하는 output directory와 old artifact는 migration 없이 유지한다.
 기존 sourceDataDir의 lexical `data` 경계와 source 검증 수준은 입력 계약 그대로다.
 이 관측 기능은 source dataset의 존재·symlink·coverage·품질을 새로 인증하지 않는다.

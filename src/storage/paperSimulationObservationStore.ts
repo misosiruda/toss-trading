@@ -1,3 +1,4 @@
+import type { Stats } from "node:fs";
 import { lstat, mkdir, open } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
 
@@ -48,7 +49,7 @@ export async function recordPaperSimulationRunnerFailure(
   const path = paperSimulationObservationPath(storageBaseDir, simulationRunId);
   await assertDirectories(dirname(path));
   await withPaperExecutionLogBatch([path], async () => {
-    const prior = await readObservationFile(path, simulationRunId);
+    const { result: prior } = await readObservationFile(path, simulationRunId);
     if (prior.status !== "available" || prior.outcome !== "unknown" || prior.acceptedAt !== acceptedAt) {
       throw new Error("paper simulation acceptance evidence is unavailable");
     }
@@ -68,19 +69,20 @@ export async function readPaperSimulationObservation(storageBaseDir: string, sim
   try {
     await assertDirectories(dirname(path));
     if (await exists(`${path}.paper-log.lock`)) return { status: "unavailable", simulationRunId };
-    const result = await readObservationFile(path, simulationRunId);
+    const { result, fingerprint } = await readObservationFile(path, simulationRunId);
     await assertDirectories(dirname(path));
     if (await exists(`${path}.paper-log.lock`)) return { status: "unavailable", simulationRunId };
-    return result;
+    // A writer can finish and remove its barrier after the file read but before this probe.
+    return await observationStillMatches(path, fingerprint) ? result : { status: "unavailable", simulationRunId };
   } catch (error) {
     return { status: isCode(error, "ENOENT") ? "missing" : "unavailable", simulationRunId };
   }
 }
 
-async function readObservationFile(path: string, simulationRunId: string): Promise<PaperSimulationObservation> {
+async function readObservationFile(path: string, simulationRunId: string): Promise<{ result: PaperSimulationObservation; fingerprint: Stats }> {
   const before = await lstat(path);
   if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) throw new Error("observation must be an unaliased file");
-  if (before.size > 4096) return { status: "invalid", simulationRunId };
+  if (before.size > 4096) return { result: { status: "invalid", simulationRunId }, fingerprint: before };
   const handle = await open(path, "r");
   try {
     const opened = await handle.stat();
@@ -99,10 +101,21 @@ async function readObservationFile(path: string, simulationRunId: string): Promi
       after.size !== length || before.size !== length || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
       throw new Error("observation changed during read");
     }
-    if (length > 4096) return { status: "invalid", simulationRunId };
-    try { return parsePaperSimulationObservation(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length)), simulationRunId); }
-    catch { return { status: "invalid", simulationRunId }; }
+    if (length > 4096) return { result: { status: "invalid", simulationRunId }, fingerprint: after };
+    try {
+      const result = parsePaperSimulationObservation(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length)), simulationRunId);
+      return { result, fingerprint: after };
+    } catch { return { result: { status: "invalid", simulationRunId }, fingerprint: after }; }
   } finally { await handle.close(); }
+}
+
+async function observationStillMatches(path: string, expected: Stats): Promise<boolean> {
+  try {
+    const current = await lstat(path);
+    return current.isFile() && !current.isSymbolicLink() && current.nlink === 1 &&
+      current.dev === expected.dev && current.ino === expected.ino && current.size === expected.size &&
+      current.mtimeMs === expected.mtimeMs && current.ctimeMs === expected.ctimeMs;
+  } catch { return false; }
 }
 
 async function ensureDirectories(path: string): Promise<void> {

@@ -311,6 +311,69 @@ test("shared-root parent fsync is required on initial admission and retry even w
   }
 });
 
+for (const completion of ["before", "after"] as const) {
+  test(`a failure writer finishing ${completion} the trailing barrier probe invalidates the earlier accepted view`, async (context) => {
+    const { storage, path, root } = await fixture(context);
+    await acceptPaperSimulation(storage, simulationRunId, acceptedAt);
+    const originalLstat = fs.lstat;
+    let barrierProbes = 0, writerFinished = false, postWriterFingerprintChecks = 0;
+    const mock = context.mock.method(fs, "lstat", async (...args: Parameters<typeof fs.lstat>) => {
+      if (args[0] === path && writerFinished) postWriterFingerprintChecks++;
+      if (args[0] === `${path}.paper-log.lock` && ++barrierProbes === 2) {
+        if (completion === "after") {
+          let missing: unknown;
+          try { await originalLstat(...args); } catch (error) { missing = error; }
+          assert.equal((missing as NodeJS.ErrnoException)?.code, "ENOENT");
+          await recordPaperSimulationRunnerFailure(storage, simulationRunId, acceptedAt, observedAt);
+          writerFinished = true;
+          throw missing; // Preserve the no-barrier result captured before the writer ran.
+        }
+        await recordPaperSimulationRunnerFailure(storage, simulationRunId, acceptedAt, observedAt);
+        writerFinished = true;
+      }
+      return originalLstat(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.deepEqual(await readPaperSimulationObservation(storage, simulationRunId), { status: "unavailable", simulationRunId });
+      assert.equal(barrierProbes, 2);
+      assert.equal(writerFinished, true);
+      assert.equal(postWriterFingerprintChecks, 1);
+    } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(await fs.readFile(path, "utf8"), jsonl(accepted, failed));
+    assert.deepEqual(await fs.readdir(dirname(path)), [PAPER_SIMULATION_OBSERVATIONS_FILE_NAME]);
+    const beforeStableRead = await snapshot(root);
+    const stable = await readPaperSimulationObservation(storage, simulationRunId);
+    assert.equal(stable.status === "available" && stable.outcome, "runner_failed");
+    assert.deepEqual(await snapshot(root), beforeStableRead);
+  });
+}
+
+test("replacement or removal after the trailing barrier probe cannot return the earlier file observation", async (context) => {
+  for (const mutation of ["replace", "remove"] as const) {
+    const { storage, path } = await fixture(context);
+    await acceptPaperSimulation(storage, simulationRunId, acceptedAt);
+    const originalLstat = fs.lstat;
+    let probes = 0;
+    const mock = context.mock.method(fs, "lstat", async (...args: Parameters<typeof fs.lstat>) => {
+      if (args[0] === `${path}.paper-log.lock` && ++probes === 2) {
+        let missing: unknown;
+        try { await originalLstat(...args); } catch (error) { missing = error; }
+        assert.equal((missing as NodeJS.ErrnoException)?.code, "ENOENT");
+        await fs.rename(path, `${path}.previous`);
+        if (mutation === "replace") await fs.writeFile(path, jsonl(accepted));
+        throw missing;
+      }
+      return originalLstat(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      assert.deepEqual(await readPaperSimulationObservation(storage, simulationRunId), { status: "unavailable", simulationRunId });
+    } finally { mock.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(await fs.readFile(`${path}.previous`, "utf8"), jsonl(accepted));
+  }
+});
+
 async function fixture(context: TestContext) {
   const root = await fs.mkdtemp(join(tmpdir(), "paper-simulation-observation-"));
   context.after(() => fs.rm(root, { recursive: true, force: true }));
