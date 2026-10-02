@@ -15,6 +15,21 @@
   2열 생성 form, summary의 차트 중심 배치를 반응형 HTML 시안으로 구체화했다.
 - 생성 이미지의 가상 정책 버전·비용·bucket 값은 사실성 검토 후 채택하지 않았다.
 
+## 자동 review finding 수정
+
+첫 문서 head의 P2 두 건을 반영했다.
+
+- 완료·진행·실패·미관측 모두 실행 ID가 포함된 상세 링크를 제공한다. 선택 ID의 이름·상태·
+  관측 기록을 표시하며 완료 예시의 수치를 다른 실행에 재사용하지 않는다. 미확인 ID도 구분한다.
+- 모바일에 접이식 주메뉴를 추가해 실험/전략·정책/비교/데이터/설정 구성을 유지한다.
+  세부 메뉴는 production 기능이 아니라 기존 기능 이전표로 이어지는 명시적 구성 안내다.
+- HTML을 읽을 수 있게 포맷하고 임시 JSDOM 검증으로 desktop/mobile ID별 링크, 상태별 상세,
+  미확인 ID, mobile menu의 이동/닫힘, 검색/필터/empty, 3단계 이동/입력 보존/요약 갱신,
+  키보드 tab 이동, ID/ARIA 참조와 JavaScript error 부재를 확인했다.
+
+JSDOM 검증은 DOM 동작 검사이며 실제 viewport·pixel·layout·browser 접근성 검사와 다르다.
+이 검증 도구는 repo dependency에 추가하지 않았고 production 코드도 변경하지 않았다.
+
 ## 아직 통과하지 못한 확인
 
 1440/1024/390px의 실제 HTML screenshot, browser interaction, overflow, axe, console 검증은
