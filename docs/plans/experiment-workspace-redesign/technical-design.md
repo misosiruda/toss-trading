@@ -2,7 +2,7 @@
 
 기준 `main d954915` · 2026-10-02 · 구현 전
 
-## 현재 계약을 확인한 코드
+## 재설계 시작 시점에 확인한 코드 (`d954915`)
 
 - `src/api/paperSimulationRuns.ts`: `POST /paper/simulations`는 guarded config를 파싱하고
   비동기 runner를 시작한다. `accepted` 응답과 runner 결과는 다르다. API의 `costModel`과
@@ -19,7 +19,15 @@
 - `src/api/localOperationsSurface.ts`, `dashboard/index.html`: legacy-only 화면/route 보존 대상.
 - EXP-01~04의 fixture CLI와 historical simulation API는 다른 실행 계층이다.
 
-위 내용은 코드 관찰이며 새 UI 실행 검증 또는 데이터 가용성 확인을 뜻하지 않는다.
+위 내용은 시작 시점의 코드 관찰이며 새 UI 실행 검증 또는 데이터 가용성 확인을 뜻하지 않는다.
+
+### 현재 반영된 UX-02a (`492afe9`, PR #797)
+
+[입력·실효 조건 계약](../../contracts/paper-simulation-config.md)이 병합됐다. validation-only API와
+create/runner의 shared effective config가 추가됐으며 `high_cost`/`cash_only`는 미지원 400이다.
+preset 문자열과 kr/us allocation은 호환 유지하면서 preset/market filter 미적용을 명시한다.
+존재하지 않는 ISO 달력 날짜의 rollover도 차단한다. 이 변경은 UI 연결이나 PortfolioPolicy 적용,
+데이터 가용성, accepted 이후 실패 관측을 완료한 것이 아니다.
 
 ## 기존 기능 이전표
 
@@ -97,7 +105,9 @@ failed를 만들어내지 않는다. 실제 오류 기록 API가 없다면 ‘�
 | --- | --- | --- |
 | 요청 | idle / validating / submitting / accepted / rejected / response_unknown | browser 요청 lifecycle, runner 상태 아님 |
 | 실행 `run_state` | queued / running / completed / completed_with_failures / failed / skipped / missing | 원본 artifact 계약에서만 취함 |
-| 조회 `status` | ok / offline / invalid / unavailable | 읽기·검증 결과, 실행 생존/성공 아님 |
+| fetch wrapper `status` | ok / offline / invalid | HTTP/네트워크·payload guard 결과, 실행 생존/성공 아님 |
+| endpoint `status` | ok / running / missing / blocked / degraded | `/batch/replay/runs` 원본 상태, wrapper와 별도 보존 |
+| 자료 판독 조건 | available / missing / blocked / degraded / unavailable | endpoint·corruptLineCount·개별 artifact 결과를 보존 |
 | 관측 | fetchedAt / heartbeatAt / artifactUpdatedAt | 각각 자료 조회·실행 heartbeat·원본 갱신 시각 |
 | 결과 완전성 | complete / partial / missing / unsupported | 완료된 실행도 결과 일부가 빠질 수 있음 |
 
@@ -116,6 +126,38 @@ run 목록이며 `totalCount`도 해당 batch 내부 건수다. 따라서 ‘최
 기존 Risk/audit/validation ViewModel은 전체 storage 기준이며 runId로 한정하지 않는다.
 Fallback 링크에는 ‘전체 운영 기록’이라고 쓰고 선택 실행의 근거인 것처럼 붙이지 않는다.
 UX-05의 run-scoped read-model은 record별 명시적 참조와 source run identity를 모두 검증한다.
+
+### 목록 adapter: activeRun 결합과 source 상태
+
+`runs`는 이미 append된 개별 실행 기록이며 진행 중인 실행은 manifest의 `activeRun`으로 따로
+온다(`src/api/localOperationsReaders.ts:263–305`). 다음 규칙을 UX-01의 순수 adapter에서 검증한다.
+
+1. 반환된 batchId와 결속된 activeRun의 runId/필수 필드를 검증한다. 임의 ID를 만들지 않는다.
+2. `batchStatus=running`이고 유효한 activeRun이 있으면 runs와 runId 기준으로 결합한다.
+3. 같은 runId의 terminal record가 도착하면 그 기록을 우선하고 active 항목을 제거한다.
+   한 실행을 running+completed 두 줄로 표시하거나 active 값으로 terminal 결과를 덮지 않는다.
+4. terminal batch에 activeRun이 남거나 ID가 모순되면 불일치 경고다. 가짜 running을 추가하지 않는다.
+5. count/totalCount/statusCounts는 원래 저장 기록의 값이다. 표시 목록에 active 1개를 추가했다고
+   서버 전체 건수처럼 바꾸지 않고 ‘저장된 N개 · 진행 중 1개’ 등 범위를 분리한다.
+
+fetch wrapper와 endpoint 상태는 다음처럼 구분한다. endpoint 값을 wrapper union으로 검증해
+정상 running을 invalid로 바꾸지 않는다.
+
+| 입력 | 화면 판독 조건 | 실행 상태 처리 |
+| --- | --- | --- |
+| wrapper offline | 통신/HTTP 오류, 최근 조회 시각 표시 | 이전 원본 상태가 있으면 마지막 관측으로만 보존 |
+| wrapper invalid | payload 계약 불일치 | 확인하지 못한 payload로 상태를 추정하지 않음 |
+| wrapper ok + endpoint ok | 판독 가능 | 각 record의 상태만 사용 |
+| wrapper ok + endpoint running | batch 진행 관측 | 유효 activeRun을 결합; 모든 row를 running으로 바꾸지 않음 |
+| wrapper ok + endpoint missing | source/run index 미관측 | 신규 accepted의 실패나 0건 성공으로 바꾸지 않음 |
+| wrapper ok + endpoint blocked | 허용 artifact 경계에서 조회 차단 | 대체 경로 우회 없이 이유를 표시 |
+| wrapper ok + endpoint degraded | 일부 기록 손상/불완전 | 검증된 항목만 partial로 표시, 누락을 0으로 바꾸지 않음 |
+| 어떤 endpoint 상태든 corruptLineCount > 0 | 판독 경고/degraded를 함께 보존 | top-level running이 손상 진단을 숨기지 않게 함 |
+| 알 수 없는 endpoint 상태 | adapter contract 불일치 | 임의 정상/완료로 매핑하지 않음 |
+
+batchStatus, endpoint status, wrapper status, 개별 run_state와 개별 artifact 판독 상태를 하나의
+배지로 합치지 않는다. UX-01 검증 fixture는 empty running batch/active-only/terminal 전환 중복,
+missing/blocked/degraded/unknown endpoint, offline/invalid wrapper, running+corruptLineCount를 포함한다.
 
 공유 query에 filter와 selection을 보존한다. 새 query가 도착하면 이전 read 결과가 덮어쓰지 못하도록
 request identity/AbortController를 사용한다. retry는 GET에만 제한적으로 제공하며 POST 자동 반복 금지.

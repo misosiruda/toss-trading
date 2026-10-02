@@ -1651,10 +1651,7 @@
             : "all";
           renderList();
         }
-        const listHref = "#list" + filterQuery();
-        document
-          .querySelectorAll('a[href^="#list"]')
-          .forEach((link) => link.setAttribute("href", listHref));
+        syncListLinks();
         const screen = [
           "list",
           "new",
@@ -1784,9 +1781,16 @@
           if (location.hash !== nextHash) location.hash = nextHash;
         }
       }
+      function syncListLinks() {
+        const listHref = "#list" + filterQuery();
+        document
+          .querySelectorAll('a[href^="#list"]')
+          .forEach((link) => link.setAttribute("href", listHref));
+      }
       function updateFilters() {
         history.replaceState(null, "", "#list" + filterQuery());
         renderList();
+        syncListLinks();
       }
       document
         .querySelector("#search")
