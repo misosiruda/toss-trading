@@ -163,7 +163,7 @@ export async function runHistoricalReplayWorkflow(
   }
 }
 
-function createWorkflowResearchManifest(input: {
+export function createWorkflowResearchManifest(input: {
   plan: HistoricalReplayWorkflowPlan;
   snapshots: HistoricalMarketSnapshot[];
   corruptLineCount: number;
