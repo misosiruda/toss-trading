@@ -28,3 +28,5 @@
 - Liquidity stress: [일반](short-term-liquidity-stress-validation-plan.md), [범위 제한](short-term-scoped-liquidity-stress-validation-plan.md)
 
 실험 protocol·사전 등록·결과는 [전체 문서 지도](../README.md)의 research 분류에서 찾는다.
+
+- 전략 포트폴리오 상세: [내부 PR 1~8 단계](strategy-portfolio/implementation-stages.md), [검증·최종 수용 기준](strategy-portfolio/validation-and-acceptance.md), [분리 설계와 검증](strategy-portfolio/document-split-plan.md), [원문 대응](strategy-portfolio/source-map.md)

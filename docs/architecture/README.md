@@ -9,3 +9,5 @@
 5. [Backend portfolio positioning](portfolio-positioning.md): 기존 engineering 설명과 프로젝트 소개 기준
 
 전체 문서의 역할과 다음 계획은 [문서 안내](../README.md)를 확인한다.
+
+- [전략 포트폴리오 현재 구현과 남은 연결](strategy-portfolio-implementation-status.md): main source, 미병합 PR788, 제안의 구분

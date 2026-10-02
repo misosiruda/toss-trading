@@ -24,3 +24,5 @@
 - [Live trading threat model](live-trading-threat-model.md): 미래 위험·승인 경계이며 live enablement 아님
 
 연구 검증 protocol과 활성 포트폴리오 계획은 [전체 문서 지도](../README.md)에서 별도로 찾는다.
+
+- 전략 포트폴리오 상세: [policy/lifecycle](strategy-portfolio/policy-lifecycle.md), [mandate/state](strategy-portfolio/mandate-state.md), [selection/sizing/reservation](strategy-portfolio/selection-sizing-reservation.md), [rebalance/Risk/fill](strategy-portfolio/rebalance-risk-fill.md)
