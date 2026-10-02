@@ -223,6 +223,10 @@ artifact basename 및 JSON pointer/row로 연결한다. Local absolute path나 s
 Account/order/execution identifier와 credential의 labeled 값(quoted/JSON-like/case/구분자 변형 포함)은
 보고서의 문자열·구조화 key에서 가린다. Authorization/Cookie header는 scheme·여러 cookie 값까지
 함께 가린다. 이 표현 단계 redaction은 원본 evidence와 raw semantic 비교에 적용하지 않는다.
+최종 assembled review(비교 ID 포함), 직접 Markdown renderer 입력, CLI review envelope, completion marker와
+writer 반환 metadata에서 각각 출력 직전 sanitization을 적용한다. 내부 lookup/semantic 비교는 raw 값을
+사용하며 원본 evidence는 변경하지 않는다. 경로 마스킹 예외는 producer가 생성하는 고정 field와 bounded
+row pointer만 허용하여 token 모양의 임의 reference field가 그대로 링크가 되지 않게 한다.
 JSON pointer의 전체 문서는 RFC 6901의 빈 문자열(`""`)로 가리킨다. `/`는 빈 key를 뜻하므로
 root 별칭으로 사용하지 않는다. decisionHash/packetHash와 packet generatedAt은 각각 실제 field를
 따로 연결한다. Coverage는 clock/freshness/universe/cutoff를 포함한 전체 normalized input을 참조하고

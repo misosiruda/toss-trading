@@ -439,3 +439,39 @@ test("presentation masking never makes different raw identifiers reproducible", 
   assert.notEqual(a.inputEligibility.inputHash, b.inputEligibility.inputHash);
   assert.equal(a.comparison!.status, "incomparable"); assert.ok(a.comparison!.reasons.includes("INPUT_MISMATCH"));
 });
+
+test("final report assembly sanitizes valid secret-shaped primary/comparison IDs and completion metadata", async () => {
+  for (const attemptId of ["ghp_abcdefgh", "sk-abcdefgh", "legacy_opaque_01"]) {
+    const options = await setup(); const run = await runPaperExperimentWorkflow({ ...options, attemptId });
+    const before = { input: await tree(join(run.artifactRoot, "input")), replay: await tree(join(run.artifactRoot, "replay")),
+      state: await fs.readFile(join(run.artifactRoot, "experiment-run.json"), "utf8") };
+    const comparisonId = "ghp_missingabcdefgh";
+    const result = await writePaperExperimentReview(options, attemptId, comparisonId);
+    assert.equal(result.review.comparison!.status, "incomparable");
+    assert.ok(!JSON.stringify(result).includes(comparisonId));
+    if (attemptId === "legacy_opaque_01") assert.equal(result.review.attemptId, attemptId);
+    else assert.ok(!JSON.stringify(result).includes(attemptId));
+    for (const path of Object.values(result.files)) {
+      const text = await fs.readFile(join(run.artifactRoot, path), "utf8");
+      assert.ok(!text.includes(comparisonId));
+      if (attemptId !== "legacy_opaque_01") assert.ok(!text.includes(attemptId), path);
+    }
+    const marker = await json(join(run.artifactRoot, result.files.completion));
+    assert.equal(marker.jsonDigest, createReplayResearchHash(await json(join(run.artifactRoot, result.files.json))));
+    assert.equal(marker.markdownDigest, createReplayResearchHash(await fs.readFile(join(run.artifactRoot, result.files.markdown), "utf8")));
+    assert.deepEqual({ input: await tree(join(run.artifactRoot, "input")), replay: await tree(join(run.artifactRoot, "replay")),
+      state: await fs.readFile(join(run.artifactRoot, "experiment-run.json"), "utf8") }, before);
+  }
+});
+
+test("direct Markdown rendering sanitizes the complete input and rejects forged token-shaped references", async () => {
+  const options = await setup(); const run = await runPaperExperimentWorkflow(options);
+  const review = await createPaperExperimentReview(options, run.attemptId, { location: options, attemptId: "exp-missing" });
+  review.attemptId = "ghp_abcdefgh"; review.comparison!.attemptId = "sk-abcdefgh";
+  review.policy!.evidence = { artifact: "experiment-input.json", field: "/sk-PRIVATESECRET123",
+    href: "../../input/experiment-input.json#/sk-PRIVATESECRET123" };
+  const text = renderPaperExperimentReviewMarkdown(review);
+  for (const secret of ["ghp_abcdefgh", "sk-abcdefgh", "PRIVATESECRET123"]) assert.ok(!text.includes(secret));
+  assert.match(text, /근거 주소 없음/);
+  assert.ok(!JSON.stringify(safePaperExperimentReviewValue(review.policy!.evidence)).includes("PRIVATESECRET123"));
+});

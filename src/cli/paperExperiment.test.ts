@@ -4,6 +4,7 @@ import { cp, link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -32,14 +33,38 @@ async function bind(root: string) {
   await writeFile(join(root, PAPER_EXPERIMENT_BUILD_RECEIPT), JSON.stringify(receipt));
   return receipt;
 }
-async function cli(root: string, args: string[], options: { launcher?: boolean; env?: NodeJS.ProcessEnv } = {}) {
+async function cli(root: string, args: string[], options: { launcher?: boolean; env?: NodeJS.ProcessEnv; compilerDiagnostic?: boolean } = {}) {
   const entry = options.launcher ? "scripts/paperExperiment.mjs" : "dist/cli/paperExperiment.js";
+  let diagnosticFile: string | undefined;
+  const preload: string[] = [];
+  if (options.compilerDiagnostic) {
+    // Test-only observer. Forward the exact subprocess arguments/result; never retry or suppress failure.
+    const directory = await mkdtemp(join(tmpdir(), "paper-experiment-compiler-probe-"));
+    diagnosticFile = join(directory, "subprocess.jsonl");
+    const path = join(directory, "probe.mjs");
+    await writeFile(path, `import cp from 'node:child_process'; import fs from 'node:fs';
+      import {syncBuiltinESMExports} from 'node:module';
+      const original=cp.execFileSync.bind(cp), destination=${JSON.stringify(diagnosticFile)};
+      const record=(value)=>{try{fs.appendFileSync(destination,JSON.stringify(value)+'\\n',{mode:0o600});}catch{}};
+      cp.execFileSync=(file,args,options)=>{
+        const compiler=Array.isArray(args)&&args[0]==='node_modules/typescript/bin/tsc';
+        try {const value=original(file,args,options);if(compiler)record({stage:'compiler',status:0,signal:null});return value;}
+        catch(error){record({stage:compiler?'compiler':'fixed_git',status:error.status??null,signal:error.signal??null,
+          code:error.code??null,stdout:error.stdout?.toString().slice(0,8192)??'',stderr:error.stderr?.toString().slice(0,8192)??''});throw error;}
+      };syncBuiltinESMExports();`, { mode: 0o600 });
+    preload.push("--import", pathToFileURL(path).href);
+  }
   try {
-    const result = await command(process.execPath, [entry, ...args], { cwd: root, env: options.env ?? process.env, maxBuffer: 2 * 1024 * 1024 });
+    const result = await command(process.execPath, [...preload, entry, ...args], { cwd: root, env: options.env ?? process.env, maxBuffer: 2 * 1024 * 1024 });
     return { code: 0, stdout: result.stdout, stderr: result.stderr };
   } catch (error) {
     const result = error as { code: number; stdout: string; stderr: string };
-    return { code: result.code, stdout: result.stdout, stderr: result.stderr };
+    let diagnostic = "";
+    if (diagnosticFile !== undefined) {
+      try { diagnostic = "\nTest subprocess diagnostic: " + await readFile(diagnosticFile, "utf8"); }
+      catch { diagnostic = "\nTest subprocess diagnostic unavailable"; }
+    }
+    return { code: result.code, stdout: result.stdout, stderr: result.stderr + diagnostic };
   }
 }
 function last(output: string) { return JSON.parse(output.trim().split("\n").at(-1)!); }
@@ -91,7 +116,7 @@ test("run admission rejects missing binding, modified dist, dirty source, lock/N
 
 test("clean supported launcher builds and binds real HEAD/lock/Node; fresh inspect and retry retain source", async () => {
   const root = await sandbox();
-  const validated = await cli(root, ["validate", "--input", fixture], { launcher: true });
+  const validated = await cli(root, ["validate", "--input", fixture], { launcher: true, compilerDiagnostic: true });
   assert.equal(validated.code, 0, validated.stdout + validated.stderr);
   assert.equal(last(validated.stdout).runtimeIdentity.implementationRevision, execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim());
   assert.equal(last(validated.stdout).runtimeIdentity.nodeVersion, process.version);
@@ -120,6 +145,28 @@ test("clean supported launcher builds and binds real HEAD/lock/Node; fresh inspe
   const selfComparison = await cli(root, ["review", "--attempt", first.attemptId, "--compare-attempt", first.attemptId], { launcher: true });
   assert.equal(selfComparison.code, 1); assert.equal(last(selfComparison.stdout).review.comparison.status, "incomparable");
   assert.ok(last(selfComparison.stdout).review.comparison.reasons.includes("DISTINCT_ATTEMPTS_REQUIRED"));
+  for (const secretId of ["ghp_abcdefgh", "sk-abcdefgh"]) {
+    const missing = await cli(root, ["review", "--attempt", first.attemptId, "--compare-attempt", secretId], { launcher: true });
+    assert.equal(missing.code, 1); assert.ok(!missing.stdout.includes(secretId));
+    const saved = last(missing.stdout);
+    for (const relative of Object.values(saved.files) as string[]) assert.ok(!(await readFile(join(first.artifactRoot, relative), "utf8")).includes(secretId));
+  }
+  const allocatedSecretId = "ghp_abcdefgh";
+  const allocate = `import {readFile} from 'node:fs/promises'; import {join} from 'node:path';
+    const {verifyPaperExperimentBuild}=await import('./dist/replay/paperExperimentRuntime.js');
+    const {runPaperExperimentWorkflow}=await import('./dist/workflows/paperExperimentWorkflow.js');
+    await runPaperExperimentWorkflow({rootDir:join(process.cwd(),'data/paper-experiments'),protectedPaths:[],
+      runtimeIdentity:await verifyPaperExperimentBuild(process.cwd()),createdAt:new Date(),attemptId:${JSON.stringify(allocatedSecretId)},
+      inputJson:await readFile(${JSON.stringify(fixture)},'utf8')});`;
+  await command(process.execPath, ["--input-type=module", "-e", allocate], { cwd: root });
+  const allocated = await cli(root, ["review", "--attempt", allocatedSecretId], { launcher: true });
+  assert.equal(allocated.code, 0, allocated.stdout + allocated.stderr); assert.ok(!allocated.stdout.includes(allocatedSecretId));
+  for (const relative of Object.values(last(allocated.stdout).files) as string[]) {
+    assert.ok(!(await readFile(join(root, "data/paper-experiments", allocatedSecretId, relative), "utf8")).includes(allocatedSecretId));
+  }
+  const allocatedComparison = await cli(root, ["review", "--attempt", first.attemptId, "--compare-attempt", allocatedSecretId], { launcher: true });
+  assert.equal(allocatedComparison.code, 0); assert.equal(last(allocatedComparison.stdout).review.comparison.status, "identical");
+  assert.ok(!allocatedComparison.stdout.includes(allocatedSecretId));
   const secondRoot = await mkdtemp(join(tmpdir(), "paper-experiment-cli-second-root-"));
   for (const name of ["src", "dist", "scripts", ".git", "package.json", "package-lock.json", "tsconfig.json", ".gitignore"]) {
     await cp(join(root, name), join(secondRoot, name), { recursive: true });
@@ -217,8 +264,9 @@ test("failed supported build invalidates old receipt and never creates an attemp
   await writeFile(join(root, "src/broken.ts"), "export const broken: = ;\n");
   execFileSync("git", ["add", "src/broken.ts"], { cwd: root });
   execFileSync("git", ["-c", "user.name=Experiment Test", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "broken synthetic build"], { cwd: root });
-  const result = await cli(root, ["run", "--input", fixture], { launcher: true });
+  const result = await cli(root, ["run", "--input", fixture], { launcher: true, compilerDiagnostic: true });
   assert.equal(result.code, 1); assert.match(result.stderr, /BUILD_OR_RUNTIME_FAILED/);
+  assert.match(result.stderr, /"stage":"compiler"/); assert.match(result.stderr, /src\/broken\.ts/);
   await assert.rejects(readFile(join(root, PAPER_EXPERIMENT_BUILD_RECEIPT)), { code: "ENOENT" });
   assert.equal(await readTree(join(root, "data")), null);
 });

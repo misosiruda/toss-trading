@@ -7,7 +7,7 @@ import { PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN } from "../storage/artifactPaths.js
 import { assertExperimentPath, assertExperimentPathSyntax, ensureExperimentDirectory, requireExperimentStorage,
   storageError, writeExclusiveExperimentFile } from "../storage/paperExperimentFilesystem.js";
 import { inspectPaperExperimentAttempt, type PaperExperimentStoreLocation } from "../storage/paperExperimentStore.js";
-import { createPaperExperimentReview, renderPaperExperimentReviewMarkdown } from "./paperExperimentReview.js";
+import { createPaperExperimentReview, renderPaperExperimentReviewMarkdown, safePaperExperimentReviewValue } from "./paperExperimentReview.js";
 
 /** New generation only; no source/replay writes, deletion, replacement, repair, or existing output overwrite. */
 export async function writePaperExperimentReview(location: PaperExperimentStoreLocation, attemptId: string,
@@ -21,8 +21,8 @@ export async function writePaperExperimentReview(location: PaperExperimentStoreL
     const attemptDir = join(location.rootDir, attemptId);
     await assertExperimentPath(attemptDir);
     requireExperimentStorage((await lstat(attemptDir)).isDirectory(), "PATH_UNSAFE");
-    const review = await createPaperExperimentReview(location, attemptId,
-      compareAttemptId === undefined ? undefined : { location, attemptId: compareAttemptId });
+    const review = safePaperExperimentReviewValue(await createPaperExperimentReview(location, attemptId,
+      compareAttemptId === undefined ? undefined : { location, attemptId: compareAttemptId }));
     const directory = join(attemptDir, "review");
     await ensureExperimentDirectory(directory);
     const reviewId = `review-${randomUUID()}`;
@@ -39,10 +39,11 @@ export async function writePaperExperimentReview(location: PaperExperimentStoreL
     }
     await publish("review.json", json);
     await publish("review.md", markdown);
-    await publish("review-complete.json", `${JSON.stringify({ schemaVersion: "paper_experiment_review_output.v1",
+    const marker = safePaperExperimentReviewValue({ schemaVersion: "paper_experiment_review_output.v1",
       reviewId, attemptId, files: ["review.json", "review.md"],
-      jsonDigest: createReplayResearchHash(review), markdownDigest: createReplayResearchHash(markdown) })}\n`);
-    return { review, reviewId, files: { json: `review/${reviewId}/review.json`, markdown: `review/${reviewId}/review.md`,
-      completion: `review/${reviewId}/review-complete.json` } };
+      jsonDigest: createReplayResearchHash(review), markdownDigest: createReplayResearchHash(markdown) });
+    await publish("review-complete.json", JSON.stringify(marker) + "\n");
+    return safePaperExperimentReviewValue({ review, reviewId, files: { json: `review/${reviewId}/review.json`, markdown: `review/${reviewId}/review.md`,
+      completion: `review/${reviewId}/review-complete.json` } });
   } catch (error) { throw storageError(error); }
 }

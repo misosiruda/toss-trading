@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { writePaperExperimentReview } from "../reports/paperExperimentReviewOutput.js";
+import { safePaperExperimentReviewValue } from "../reports/paperExperimentReview.js";
 import { PAPER_EXPERIMENT_LIMITS, parsePaperExperimentInput, PaperExperimentValidationError } from "../replay/paperExperimentInput.js";
 import { PaperExperimentRuntimeError, verifyPaperExperimentBuild } from "../replay/paperExperimentRuntime.js";
 import { PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN } from "../storage/artifactPaths.js";
@@ -38,7 +39,7 @@ export async function paperExperimentMain(args: string[]): Promise<number> {
     if (parsed.command === "help") { console.log(PAPER_EXPERIMENT_HELP); return 0; }
     if (parsed.command === "review") {
       const result = await writePaperExperimentReview(location, parsed.attempt, parsed.compareAttempt);
-      output({ attemptId: parsed.attempt, ...result });
+      output(safePaperExperimentReviewValue({ attemptId: parsed.attempt, ...result }));
       return result.review.execution.integrity === "verified"
         && (!result.review.comparison || result.review.comparison.status === "identical") ? 0 : 1;
     }

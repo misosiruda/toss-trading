@@ -30,6 +30,28 @@ function stateProof(field: string) {
 function derivation(algorithm: string, inputs: ReturnType<typeof proof>[]) { return { algorithm, inputs }; }
 function claim<T>(value: T, artifact: ReviewArtifactKey, field: string) { return { value, evidence: proof(artifact, field) }; }
 
+/** Only actual producer fields and bounded row indices receive the path-redaction exemption. */
+function isCanonicalReviewReference(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Object.keys(value).length !== 3) return false;
+  const { artifact, field, href } = value as { artifact?: unknown; field?: unknown; href?: unknown };
+  if (typeof field !== "string") return false;
+  const paths: Record<string, string> = { ...REVIEW_ARTIFACT_PATHS, state: "experiment-run.json" };
+  const rules: Record<string, RegExp> = {
+    state: /^(?:\/(?:status|terminationReason|runtimeIdentity|inputHash))?$/,
+    input: /^(?:\/(?:question|configuration|costModel|evaluation\/reviewQuestions))?$/,
+    source: /^$/, manifest: /^$/, metadata: /^$/, progress: /^$/,
+    report: /^(?:\/(?:costSummary|benchmarks))?$/,
+    packets: /^(?:\/(?:0|[1-9]\d{0,3})(?:\/generatedAt)?)?$/,
+    decisions: /^(?:\/(?:0|[1-9]\d{0,3})\/(?:decisionHash|packetHash|decisions\/(?:0|[1-9]\d{0,3})))?$/,
+    riskDecisions: /^(?:\/(?:0|[1-9]\d{0,3}))?$/,
+    trades: /^(?:\/(?:0|[1-9]\d{0,3}))?$/,
+    timeline: /^(?:\/(?:0|[1-9]\d{0,3})\/portfolio)?$/,
+    execution: /^(?:\/(?:auditEvents(?:\/(?:0|[1-9]\d{0,3}))?|samplingDecisions|warnings))?$/
+  };
+  const entry = Object.entries(paths).find(([, path]) => basename(path) === artifact);
+  return entry !== undefined && rules[entry[0]]!.test(field) && href === "../../" + entry[1] + "#" + field;
+}
+
 /** Presentation redaction only: raw values remain in semantic comparison and source artifacts. */
 export function safePaperExperimentReviewValue<T>(value: T): T {
   function privateLabel(key: string): boolean {
@@ -39,12 +61,7 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
   }
   function visit(item: unknown): unknown {
     if (Array.isArray(item)) return item.map(visit);
-    if (item !== null && typeof item === "object" && "artifact" in item && "field" in item && "href" in item) {
-      const reference = item as { artifact: unknown; field: unknown; href: unknown };
-      const path = [...Object.values(REVIEW_ARTIFACT_PATHS), "experiment-run.json"].find((path) => basename(path) === reference.artifact);
-      if (Object.keys(item).length === 3 && path && typeof reference.field === "string"
-        && /^(?:\/[A-Za-z0-9_/-]*)?$/.test(reference.field) && reference.href === `../../${path}#${reference.field}`) return item;
-    }
+    if (isCanonicalReviewReference(item)) return item;
     if (item !== null && typeof item === "object") return Object.fromEntries(Object.entries(item).map(([key, nested]) =>
       [redact(key), privateLabel(key) ? "[비공개]" : visit(nested)]));
     return typeof item === "string" ? redact(item) : item;
@@ -170,7 +187,7 @@ export async function createPaperExperimentReview(location: PaperExperimentStore
     notice: "같은 입력·runtime의 engineering 재현 비교다. 다른 조건의 성과 순위는 제공하지 않는다." } : null;
   // Do not redact canonical references that we generated, but redact every source-supplied value.
   const projected = projectEvidence(evidence);
-  return { ...safePaperExperimentReviewValue(projected), comparison };
+  return safePaperExperimentReviewValue({ ...projected, comparison });
 }
 export type PaperExperimentReview = Awaited<ReturnType<typeof createPaperExperimentReview>>;
 
@@ -179,7 +196,8 @@ function markdownText(value: unknown): string {
     .replace(/[\\`*_{}\[\]()#+.!|~-]/g, "\\$&").replace(/\r?\n/g, "<br>");
 }
 /** Korean labels with escaped data. Only code-generated fixed artifact references become links. */
-export function renderPaperExperimentReviewMarkdown(review: PaperExperimentReview): string {
+export function renderPaperExperimentReviewMarkdown(input: PaperExperimentReview): string {
+  const review = safePaperExperimentReviewValue(input);
   const lines = [`# ${review.title}`, "", "## 핵심 확인", "",
     `- 질문: ${markdownText(review.question?.value ?? "사용할 수 없음")}`,
     `- attempt: ${markdownText(review.attemptId ?? "사용할 수 없음")}`,
@@ -195,7 +213,7 @@ export function renderPaperExperimentReviewMarkdown(review: PaperExperimentRevie
   lines.push("", review.execution.notice, "상세 구조와 모든 값은 함께 생성된 [review.json](review.json)에 보존한다.", "");
   function ref(evidence: { artifact: string; field: string }): string {
     const path = [...Object.values(REVIEW_ARTIFACT_PATHS), "experiment-run.json"].find((path) => basename(path) === evidence.artifact);
-    return path && /^(?:\/[A-Za-z0-9_/-]*)?$/.test(evidence.field)
+    return isCanonicalReviewReference(evidence)
       ? `[${evidence.artifact} ${evidence.field}](../../${path}#${evidence.field})` : "근거 주소 없음";
   }
   const data = (value: unknown) => markdownText(JSON.stringify(value));
