@@ -324,12 +324,16 @@
       .complete {
         color: var(--green);
       }
+      .skipped {
+        color: var(--muted);
+      }
       .running {
         color: var(--blue);
       }
       .failed {
         color: #c92a2a;
       }
+      .completed_with_failures,
       .unknown {
         color: var(--amber);
       }
@@ -977,7 +981,7 @@
         </nav>
       </details>
     </div>
-    <main id="content">
+    <main id="content" tabindex="-1">
       <section id="screen-list" class="screen">
         <header class="page-head">
           <div>
@@ -996,6 +1000,8 @@
             <option value="complete">완료</option>
             <option value="running">진행 중</option>
             <option value="failed">실패</option>
+            <option value="completed_with_failures">부분 실패</option>
+            <option value="skipped">건너뜀</option>
             <option value="unknown">확인 필요</option></select
           ><select aria-label="시안 데이터 범위" disabled>
             <option>합성 예시 데이터</option>
@@ -1579,7 +1585,33 @@
           result: "저장된 오류 · 기간 확인 필요",
           observed: "13:32 UTC",
         },
+        {
+          name: "일부 실행이 실패한 batch",
+          id: "run-demo-005",
+          state: "completed_with_failures",
+          label: "부분 실패",
+          setting: "balanced",
+          result: "완료 2 · 실패 1 · 건너뜀 1",
+          observed: "13:30 UTC",
+        },
+        {
+          name: "자료 부족으로 건너뛴 실행",
+          id: "run-demo-006",
+          state: "skipped",
+          label: "건너뜀",
+          setting: "balanced",
+          result: "저장된 사유 · 필요한 자료 부족",
+          observed: "13:28 UTC",
+        },
       ];
+      function filterQuery() {
+        const query = new URLSearchParams();
+        const q = document.querySelector("#search").value;
+        const status = document.querySelector("#status").value;
+        if (q) query.set("q", q);
+        if (status !== "all") query.set("status", status);
+        return query.toString() ? "?" + query.toString() : "";
+      }
       function renderList() {
         const q = document.querySelector("#search").value.toLowerCase(),
           s = document.querySelector("#status").value;
@@ -1589,23 +1621,40 @@
             (r.name + " " + r.id).toLowerCase().includes(q),
         );
         document.querySelector("#list-count").textContent =
-          `불러온 예시 4개 중 ${shown.length}개 표시`;
+          `불러온 예시 ${runs.length}개 중 ${shown.length}개 표시`;
         document.querySelector("#rows").innerHTML = shown
           .map(
             (r) =>
-              `<tr><td><a href="#detail/${r.id}">${r.name}</a><span class="meta">${r.id} · 설계 예시</span></td><td><span class="state ${r.state}">${r.label}</span></td><td>${r.setting}<span class="meta">fixture 판단</span></td><td>합성 예시<span class="meta">2024.01.01–01.31</span></td><td class="duration">${r.observed}</td><td>${r.result}</td></tr>`,
+              `<tr><td><a href="#detail/${r.id}${filterQuery()}">${r.name}</a><span class="meta">${r.id} · 설계 예시</span></td><td><span class="state ${r.state}">${r.label}</span></td><td>${r.setting}<span class="meta">fixture 판단</span></td><td>합성 예시<span class="meta">2024.01.01–01.31</span></td><td class="duration">${r.observed}</td><td>${r.result}</td></tr>`,
           )
           .join("");
         document.querySelector("#mobile-runs").innerHTML = shown
           .map(
             (r) =>
-              `<article class="mobile-run"><div class="top"><a href="#detail/${r.id}"><strong>${r.name}</strong></a><span class="state ${r.state}">${r.label}</span></div><span class="meta">${r.setting} · 합성 예시 · 2024.01.01–01.31</span><div class="result">${r.result}</div><span class="meta">마지막 관측 ${r.observed} · ${r.id}</span></article>`,
+              `<article class="mobile-run"><div class="top"><a href="#detail/${r.id}${filterQuery()}"><strong>${r.name}</strong></a><span class="state ${r.state}">${r.label}</span></div><span class="meta">${r.setting} · 합성 예시 · 2024.01.01–01.31</span><div class="result">${r.result}</div><span class="meta">마지막 관측 ${r.observed} · ${r.id}</span></article>`,
           )
           .join("");
         document.querySelector("#empty").hidden = shown.length !== 0;
       }
+      let lastRouteIdentity = "";
       function showScreen() {
-        const [route, runId] = location.hash.slice(1).split("/");
+        const [path, query = ""] = location.hash.slice(1).split("?");
+        const [route, runId, tabId] = path.split("/");
+        const params = new URLSearchParams(query);
+        if (route === "list" || query) {
+          document.querySelector("#search").value = params.get("q") ?? "";
+          const status = params.get("status") ?? "all";
+          document.querySelector("#status").value = [
+            ...document.querySelector("#status").options,
+          ].some((o) => o.value === status)
+            ? status
+            : "all";
+          renderList();
+        }
+        const listHref = "#list" + filterQuery();
+        document
+          .querySelectorAll('a[href^="#list"]')
+          .forEach((link) => link.setAttribute("href", listHref));
         const screen = [
           "list",
           "new",
@@ -1625,7 +1674,7 @@
           .forEach((el) =>
             el.classList.toggle(
               "selected",
-              el.getAttribute("href") ===
+              el.getAttribute("href")?.split("?")[0] ===
                 "#" +
                   (screen === "new" || screen === "detail" ? "list" : screen),
             ),
@@ -1635,6 +1684,7 @@
           const run =
             runs.find((r) => r.id === runId) ?? (runId ? null : runs[0]);
           const complete = run?.state === "complete";
+          if (complete) selectTab(tabId ?? "summary", false, false);
           document.querySelector("#run-title").textContent =
             run?.name ?? "실행을 찾을 수 없음";
           document.querySelector("#run-state").textContent = run
@@ -1660,9 +1710,13 @@
                 ? "관측된 진행"
                 : run?.state === "failed"
                   ? "저장된 실패"
-                  : run
-                    ? "접수 후 기록 확인"
-                    : "자료 없음";
+                  : run?.state === "completed_with_failures"
+                    ? "일부 실패를 포함한 완료"
+                    : run?.state === "skipped"
+                      ? "건너뛴 실행"
+                      : run
+                        ? "접수 후 기록 확인"
+                        : "자료 없음";
             const detail = document.createElement("p");
             detail.textContent =
               run?.result ?? "목록으로 돌아가 실행 ID를 확인하세요";
@@ -1675,7 +1729,9 @@
             observed.append(heading, detail, note);
           }
         }
-        window.scrollTo(0, 0);
+        const identity = screen + "/" + (runId ?? "");
+        if (lastRouteIdentity !== identity) window.scrollTo(0, 0);
+        lastRouteIdentity = identity;
       }
       let step = 1;
       function showStep(n) {
@@ -1696,7 +1752,12 @@
         document.querySelector("#previous").textContent =
           step === 1 ? "목록으로" : "이전";
       }
-      function selectTab(id, focus = false) {
+      function selectTab(requestedId, focus = false, persist = true) {
+        const id = ["summary", "replay", "evidence", "record"].includes(
+          requestedId,
+        )
+          ? requestedId
+          : "summary";
         document.querySelectorAll("[data-tab]").forEach((el) => {
           const active = el.dataset.tab === id;
           el.classList.toggle("active", active);
@@ -1707,16 +1768,33 @@
         document
           .querySelectorAll(".tabpanel")
           .forEach((el) => (el.hidden = el.id !== `panel-${id}`));
+        if (persist) {
+          const [path, query = ""] = location.hash.slice(1).split("?");
+          const runId = path.split("/")[1] ?? runs[0].id;
+          const nextHash =
+            "#detail/" + runId + "/" + id + (query ? "?" + query : "");
+          if (location.hash !== nextHash) location.hash = nextHash;
+        }
       }
-      document.querySelector("#search").addEventListener("input", renderList);
-      document.querySelector("#status").addEventListener("change", renderList);
+      function updateFilters() {
+        history.replaceState(null, "", "#list" + filterQuery());
+        renderList();
+      }
+      document
+        .querySelector("#search")
+        .addEventListener("input", updateFilters);
+      document
+        .querySelector("#status")
+        .addEventListener("change", updateFilters);
       document
         .querySelector("#next")
         .addEventListener("click", () => showStep(step + 1));
       document
         .querySelector("#previous")
         .addEventListener("click", () =>
-          step === 1 ? (location.hash = "list") : showStep(step - 1),
+          step === 1
+            ? (location.hash = "list" + filterQuery())
+            : showStep(step - 1),
         );
       document
         .querySelector("#risk")
@@ -1767,6 +1845,12 @@
             document.querySelector("#sampling").value;
         });
       }
+      document.querySelector(".skip").addEventListener("click", (event) => {
+        event.preventDefault();
+        const main = document.querySelector("#content");
+        main.focus();
+        main.scrollIntoView?.({ block: "start" });
+      });
       addEventListener("hashchange", showScreen);
       renderList();
       showScreen();

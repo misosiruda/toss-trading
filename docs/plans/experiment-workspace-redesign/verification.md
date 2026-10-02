@@ -17,12 +17,16 @@
 
 ## 자동 review finding 수정
 
-첫 문서 head의 P2 두 건을 반영했다.
+첫 두 차례 문서 head의 P2 네 건을 반영했다.
 
 - 완료·진행·실패·미관측 모두 실행 ID가 포함된 상세 링크를 제공한다. 선택 ID의 이름·상태·
   관측 기록을 표시하며 완료 예시의 수치를 다른 실행에 재사용하지 않는다. 미확인 ID도 구분한다.
 - 모바일에 접이식 주메뉴를 추가해 실험/전략·정책/비교/데이터/설정 구성을 유지한다.
   세부 메뉴는 production 기능이 아니라 기존 기능 이전표로 이어지는 명시적 구성 안내다.
+- 부분 실패(`completed_with_failures`)와 건너뜀 예시/필터/상세를 추가하고 완료·실패·skip counts를 보인다.
+- 상세 tab과 목록 filter를 URL에 보존한다. 직접 링크·새 문서 로드·뒤로/앞으로에서도 같은 tab과 조건을 복원한다.
+- 별도 DOM 검토에서 찾은 skip link의 hash 충돌을 수정했다. 본문 이동은 현재 실행·tab·filter를
+  바꾸지 않고 main에 focus를 옮긴다. 직접/reload 링크와 filter를 유지하는 뒤로/앞으로를 재검증했다.
 - HTML을 읽을 수 있게 포맷하고 임시 JSDOM 검증으로 desktop/mobile ID별 링크, 상태별 상세,
   미확인 ID, mobile menu의 이동/닫힘, 검색/필터/empty, 3단계 이동/입력 보존/요약 갱신,
   키보드 tab 이동, ID/ARIA 참조와 JavaScript error 부재를 확인했다.
