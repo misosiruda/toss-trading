@@ -496,3 +496,56 @@ test("backend path syntax accepts native absolute paths and rejects both travers
     assert.throws(() => assertExperimentPathSyntax(`${options.rootDir}${suffix}`), assertCode("PATH_UNSAFE"));
   }
 });
+
+for (const field of ["initialCashKrw", "finalCashKrw", "finalPositionCount", "finalPositionMarketValueKrw", "finalVirtualNetWorthKrw"] as const) {
+  test(`completion rejects schema-valid report portfolio ${field} inconsistent with final audit evidence`, async (t) => {
+    const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+    await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner);
+    await patchJson(paths.historicalReplayReportPath, (report) => { report.portfolio[field] += 1; });
+    const before = await bytes(owner.paths.attemptDir);
+    await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+    assert.equal((await inspectPaperExperimentAttempt(options, owner.attemptId)).storedStatus, "running");
+    assert.deepEqual(await bytes(owner.paths.attemptDir), before);
+  });
+}
+
+for (const field of ["cashKrw", "positionCount", "positionMarketValueKrw", "virtualNetWorthKrw", "simulatedAt", "positions"] as const) {
+  test(`completion rejects schema-valid progress currentPortfolio ${field} inconsistent with final audit evidence`, async (t) => {
+    const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+    await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner);
+    await patchJson(paths.historicalReplayProgressPath, (progress) => {
+      if (field === "simulatedAt") progress.currentPortfolio.simulatedAt = "2025-01-01T00:00:00.000Z";
+      else if (field === "positions") progress.currentPortfolio.positions = [{ market: "KR", symbol: "FIXTURE_A", quantity: 1,
+        averagePriceKrw: 10000, updatedAt: "2025-01-03T00:00:00.000Z" }];
+      else progress.currentPortfolio[field] += 1;
+    });
+    const before = await bytes(owner.paths.attemptDir);
+    await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+    assert.deepEqual(await bytes(owner.paths.attemptDir), before);
+  });
+}
+
+for (const format of ["json-syntax", "json-schema", "jsonl-syntax", "jsonl-schema", "utf8"] as const) {
+  test(`malformed persisted replay ${format} is artifact integrity, while filesystem failures stay IO_FAILURE`, async (t) => {
+    const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+    await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner); await owner.complete(EXPERIMENT_TEST_TIME);
+    if (format === "json-syntax") await fs.writeFile(paths.historicalReplayReportPath, '{"portfolio":');
+    else if (format === "json-schema") await patchJson(paths.historicalReplayReportPath, (report) => { delete report.costSummary; });
+    else if (format === "jsonl-syntax") await fs.writeFile(paths.historicalReplayTradeLogPath, '{"tradeId":\n');
+    else if (format === "jsonl-schema") await fs.writeFile(paths.historicalReplayTradeLogPath, '{}\n');
+    else await fs.writeFile(paths.historicalReplayReportPath, Buffer.from([0xc3, 0x28]));
+    const before = await bytes(owner.paths.attemptDir);
+    const inspected = await inspectPaperExperimentAttempt(options, owner.attemptId);
+    assert.equal(inspected.status, "incomplete"); assert.equal(inspected.storedStatus, "completed");
+    assert.equal(inspected.errorCode, "ARTIFACT_INTEGRITY");
+    assert.deepEqual(await bytes(owner.paths.attemptDir), before);
+    const original = fs.open.bind(fs);
+    t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      if (String(args[0]) === paths.historicalReplayReportPath) throw Object.assign(new Error("synthetic EIO"), { code: "EIO" });
+      return original(...args);
+    }); syncBuiltinESMExports();
+    try { assert.equal((await inspectPaperExperimentAttempt(options, owner.attemptId)).errorCode, "IO_FAILURE"); }
+    finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+    assert.deepEqual(await bytes(owner.paths.attemptDir), before);
+  });
+}

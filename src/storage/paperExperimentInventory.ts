@@ -16,11 +16,21 @@ import { createPaperExperimentArtifactPaths } from "./artifactPaths.js";
 import {
   PAPER_EXPERIMENT_ARTIFACTS, type PaperExperimentInventoryEntry, type PaperExperimentState
 } from "./paperExperimentContract.js";
-import { readExperimentFile, requireExperimentStorage } from "./paperExperimentFilesystem.js";
+import { PaperExperimentStorageError, readExperimentFile, requireExperimentStorage } from "./paperExperimentFilesystem.js";
 import { paperExperimentReportSchema } from "./paperExperimentReportContract.js";
 
 const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
 export type ExperimentPaths = ReturnType<typeof createPaperExperimentArtifactPaths>;
+
+function parseExperimentArtifact<T>(text: string, schema: z.ZodType<T>) {
+  try {
+    const raw: unknown = JSON.parse(text);
+    return { raw, value: schema.parse(raw) };
+  } catch {
+    // The file read is deliberately outside this boundary: only invalid persisted payloads map here.
+    throw new PaperExperimentStorageError("ARTIFACT_INTEGRITY");
+  }
+}
 
 export function parseExperimentJsonl(text: string, schema: z.ZodType): unknown[] {
   if (text === "") return [];
@@ -29,9 +39,7 @@ export function parseExperimentJsonl(text: string, schema: z.ZodType): unknown[]
   requireExperimentStorage(lines.length <= 10_000, "ARTIFACT_INTEGRITY");
   return lines.map((line) => {
     requireExperimentStorage(line.trim().length > 0, "ARTIFACT_INTEGRITY");
-    const value: unknown = JSON.parse(line);
-    schema.parse(value);
-    return value;
+    return parseExperimentArtifact(line, schema).raw;
   });
 }
 
@@ -59,8 +67,8 @@ export async function captureExperimentInventory(paths: ExperimentPaths, state: 
       digest: createReplayResearchHash(value) });
   }
   async function json<T>(key: keyof typeof PAPER_EXPERIMENT_ARTIFACTS, contract: string, schema: z.ZodType<T>): Promise<T> {
-    const raw: unknown = JSON.parse(await readExperimentFile(join(paths.attemptDir, PAPER_EXPERIMENT_ARTIFACTS[key]), MAX_ARTIFACT_BYTES));
-    const value = schema.parse(raw);
+    const text = await readExperimentFile(join(paths.attemptDir, PAPER_EXPERIMENT_ARTIFACTS[key]), MAX_ARTIFACT_BYTES);
+    const { raw, value } = parseExperimentArtifact(text, schema);
     add(key, contract, "json", raw);
     return value;
   }
@@ -145,5 +153,15 @@ export async function captureExperimentInventory(paths: ExperimentPaths, state: 
     void positions;
     equal(row, summary);
   }
+  const finalPortfolio = timeline.filter((row) => row.tickIndex === ticks - 1).at(-1)?.portfolio;
+  requireExperimentStorage(finalPortfolio !== undefined, "ARTIFACT_INTEGRITY");
+  equal(progress.currentPortfolio, finalPortfolio);
+  equal(report.portfolio, {
+    initialCashKrw: input.normalizedInput.configuration.initialCashKrw,
+    finalCashKrw: finalPortfolio.cashKrw,
+    finalPositionCount: finalPortfolio.positionCount,
+    finalPositionMarketValueKrw: finalPortfolio.positionMarketValueKrw,
+    finalVirtualNetWorthKrw: finalPortfolio.virtualNetWorthKrw
+  });
   return inventory;
 }

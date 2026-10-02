@@ -100,7 +100,9 @@ export async function readExperimentFile(path: string, maxBytes: number): Promis
     requireExperimentStorage(used <= maxBytes, "ARTIFACT_INTEGRITY");
     const after = await handle.stat();
     requireExperimentStorage(after.size === used && after.mtimeMs === opened.mtimeMs, "ARTIFACT_INTEGRITY");
-    return new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, used));
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, used));
+    } catch { throw new PaperExperimentStorageError("ARTIFACT_INTEGRITY"); }
   } finally {
     await handle.close();
   }
