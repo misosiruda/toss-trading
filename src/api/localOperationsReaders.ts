@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 
+import { readPaperSimulationObservation } from "../storage/paperSimulationObservationStore.js";
 import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
 import {
   BATCH_REPLAY_ARTIFACT_DIR_NAME,
@@ -198,6 +199,7 @@ export async function readBatchReplayRuns(
   const aggregate = await readJsonFile(paths.batchReplayAggregateReportPath);
   const manifests = await readBatchReplayManifests(storageBaseDir);
   const lookupId = normalizeRunLookupId(options.runId ?? null);
+  const simulationObservation = options.runId == null ? null : await readPaperSimulationObservation(storageBaseDir, options.runId);
   const selectedManifest =
     lookupId === null
       ? (manifests[0] ?? null)
@@ -226,6 +228,7 @@ export async function readBatchReplayRuns(
       batchStatus,
       batchId: selectedManifest?.batchId ?? null,
       ...manifestMetadata,
+      simulationObservation,
       sourceRunsPath: null,
       runs: [],
       selectedRun: null,
@@ -249,6 +252,7 @@ export async function readBatchReplayRuns(
       batchStatus,
       batchId: selectedManifest?.batchId ?? null,
       ...manifestMetadata,
+      simulationObservation,
       sourceRunsPath,
       runs: [],
       selectedRun: null,
@@ -298,6 +302,7 @@ export async function readBatchReplayRuns(
     batchStatus: normalizedBatchStatus,
     batchId,
     ...manifestMetadata,
+    simulationObservation,
     sourceRunsPath,
     runs,
     selectedRun,
