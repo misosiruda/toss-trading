@@ -467,25 +467,72 @@ test("all labeled-key separators share normalization across text, structured val
     "sha256:" + "a".repeat(64), "2025-01-01T00:00:00.000Z"]) assert.equal(safePaperExperimentReviewValue(text), text);
 });
 
+test("unlabeled account-like text is masked without changing numeric facts or canonical identities", async () => {
+  const samples: string[] = [];
+  for (let length = 10; length <= 20; length++) {
+    const digits = "01234567890123456789".slice(0, length);
+    for (const separator of ["", "-", ".", " ", "\t", " .-\t"]) {
+      const grouped = digits.match(/.{1,3}/g)!.join(separator);
+      for (const value of [grouped, `note: ${grouped}.`, JSON.stringify(grouped), JSON.stringify(JSON.stringify(grouped)),
+        JSON.stringify(JSON.stringify(JSON.stringify(grouped))),
+        grouped.replace(/./g, (letter) => "\\u" + letter.charCodeAt(0).toString(16).padStart(4, "0"))]) {
+        const result = safePaperExperimentReviewValue(value);
+        assert.notEqual(result, value, value); assert.ok(!result.includes(digits), value);
+      }
+    }
+    samples.push(digits);
+  }
+  for (const value of ["12345678901234 22345678901234", "1234 5678 901234 2234 5678 901234"]) {
+    assert.equal(safePaperExperimentReviewValue(value), "[계좌형 숫자 비공개]");
+  }
+  for (const value of ["-12345678901234", "12345678901234-", "_12345678901234_", "계좌-12345678901234"]) {
+    assert.ok(!safePaperExperimentReviewValue(value).includes("12345678901234"));
+  }
+  const safe = ["123456789", "123456789012345678901", "fixture:item.12345678901234", "abc.12345678901234.def",
+    "exp-12345678-1234-1234-1234-123456789012", "legacy_opaque_01", "2025-01-01 - 2025-01-03",
+    "2025-01-01T00:00:00.12345678901234Z", "sha256:" + "1".repeat(64), "a".repeat(20) + "1".repeat(20),
+    "a".repeat(20) + "1".repeat(20) + "a".repeat(24)];
+  for (const value of safe) assert.equal(safePaperExperimentReviewValue(value), value);
+  for (const value of safe) assert.ok(!safePaperExperimentReviewValue("orderId=" + value).includes(value));
+  for (const value of ["ord_12345678-1234-1234-1234-123456789012", "exec_12345678-1234-1234-1234-123456789012",
+    "a".repeat(40) + "." + "b".repeat(16) + "." + "c".repeat(16),
+    ["a", "b", "c"].map((value) => value.repeat(64)).join(".")]) assert.notEqual(safePaperExperimentReviewValue(value), value);
+  const facts = { cost: 12345678901234, count: 1234567890, ratio: 0.012345678901234 };
+  assert.deepEqual(safePaperExperimentReviewValue(facts), facts);
+  const options = await setup(), input = JSON.parse(options.inputJson);
+  input.question = samples.slice(0, 5).join(", "); input.source.coverageDescription = samples.slice(5).join("; ");
+  input.evaluation.reviewQuestions = ['bare "12345678901234"', "123.456.789.012.34", "123 456 789 012 34"];
+  const run = await runPaperExperimentWorkflow({ ...options, inputJson: JSON.stringify(input) });
+  const before = await tree(join(run.artifactRoot, "input")), written = await writePaperExperimentReview(options, run.attemptId);
+  for (const path of [written.files.json, written.files.markdown]) {
+    const output = await fs.readFile(join(run.artifactRoot, path), "utf8");
+    for (const digits of samples) assert.ok(!output.includes(digits));
+    assert.ok(!output.includes("12345678901234"));
+  }
+  assert.deepEqual(await tree(join(run.artifactRoot, "input")), before);
+});
+
 test("presentation masking never makes different raw identifiers reproducible", async () => {
+  for (const questions of [["orderId=PRIVATE_FIRST", "orderId=PRIVATE_SECOND"], ["12345678901234", "22345678901234"]]) {
   const options = await setup(); const input = JSON.parse(options.inputJson);
-  input.question = "orderId=PRIVATE_FIRST";
+  input.question = questions[0];
   const first = await runPaperExperimentWorkflow({ ...options, inputJson: JSON.stringify(input) });
-  input.question = "orderId=PRIVATE_SECOND";
+  input.question = questions[1];
   const second = await runPaperExperimentWorkflow({ ...options, inputJson: JSON.stringify(input) });
   const a = await createPaperExperimentReview(options, first.attemptId, { location: options, attemptId: second.attemptId });
   const b = await createPaperExperimentReview(options, second.attemptId);
   assert.equal(a.question!.value, b.question!.value);
   assert.notEqual(a.inputEligibility.inputHash, b.inputEligibility.inputHash);
   assert.equal(a.comparison!.status, "incomparable"); assert.ok(a.comparison!.reasons.includes("INPUT_MISMATCH"));
+  }
 });
 
 test("final report assembly sanitizes valid secret-shaped primary/comparison IDs and completion metadata", async () => {
-  for (const attemptId of ["ghp_abcdefgh", "sk-abcdefgh", "legacy_opaque_01"]) {
+  for (const attemptId of ["ghp_abcdefgh", "sk-abcdefgh", "12345678901234", "legacy_opaque_01"]) {
     const options = await setup(); const run = await runPaperExperimentWorkflow({ ...options, attemptId });
     const before = { input: await tree(join(run.artifactRoot, "input")), replay: await tree(join(run.artifactRoot, "replay")),
       state: await fs.readFile(join(run.artifactRoot, "experiment-run.json"), "utf8") };
-    const comparisonId = "ghp_missingabcdefgh";
+    const comparisonId = attemptId === "12345678901234" ? "22345678901234" : "ghp_missingabcdefgh";
     const result = await writePaperExperimentReview(options, attemptId, comparisonId);
     assert.equal(result.review.comparison!.status, "incomparable");
     assert.ok(!JSON.stringify(result).includes(comparisonId));
@@ -507,12 +554,12 @@ test("final report assembly sanitizes valid secret-shaped primary/comparison IDs
 test("direct Markdown rendering sanitizes the complete input and rejects forged token-shaped references", async () => {
   const options = await setup(); const run = await runPaperExperimentWorkflow(options);
   const review = await createPaperExperimentReview(options, run.attemptId, { location: options, attemptId: "exp-missing" });
-  review.attemptId = "ghp_abcdefgh"; review.comparison!.attemptId = "sk-abcdefgh";
+  review.attemptId = "ghp_abcdefgh"; review.comparison!.attemptId = "12345678901234";
   review.question!.value = JSON.stringify(JSON.stringify({ "account.number": "head, PRIVATE_RENDERED_DOT; more" }));
   review.policy!.evidence = { artifact: "experiment-input.json", field: "/sk-PRIVATESECRET123",
     href: "../../input/experiment-input.json#/sk-PRIVATESECRET123" };
   const text = renderPaperExperimentReviewMarkdown(review);
-  for (const secret of ["ghp_abcdefgh", "sk-abcdefgh", "PRIVATESECRET123", "PRIVATE_RENDERED_DOT"]) assert.ok(!text.includes(secret));
+  for (const secret of ["ghp_abcdefgh", "12345678901234", "PRIVATESECRET123", "PRIVATE_RENDERED_DOT"]) assert.ok(!text.includes(secret));
   assert.match(text, /근거 주소 없음/);
   assert.ok(!JSON.stringify(safePaperExperimentReviewValue(review.policy!.evidence)).includes("PRIVATESECRET123"));
 });

@@ -65,6 +65,33 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
     return /(?:password|apikey|account|order(?:id|number|no)|execution(?:id|number|no))/i.test(normalized)
       || maskSensitiveValue(normalized, null) !== null;
   }
+  function accountLikeText(text: string): string {
+    // Maximal numeric strings only: never mask a substring of a longer identifier.
+    // Date/time tokens are preserved before scanning ambiguous free-text numbers.
+    const tokens = /\b\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?(?![\d.-])|(?:\d|\\+u003[0-9])(?:(?:[ .\t-]|\\+u00(?:09|20|2[dDeE])|\\+t)*(?:\d|\\+u003[0-9]))*/g;
+    return text.replace(tokens, (token: string, offset: number) => {
+      if (/^\d{4}-\d{2}-\d{2}/.test(token) && !Number.isNaN(Date.parse(token))) return token;
+      const prefix = /[A-Za-z0-9_.-]+$/.exec(text.slice(0, offset))?.[0] ?? "";
+      const suffix = /^[A-Za-z0-9_.-]+/.exec(text.slice(offset + token.length))?.[0] ?? "";
+      if (/[A-Za-z]/.test(prefix + suffix)) return token;
+      const digits = normalizeLabel(token).replace(/\D/g, "").length;
+      // Multiple grouped values can merge into one stream. Mask it as a whole,
+      // while a single contiguous >20-digit identifier stays untouched.
+      if (digits > 20) return /[ .\t-]/.test(token.replace(/\\+u([0-9A-Fa-f]{4})/g,
+        (_, hex: string) => String.fromCharCode(parseInt(hex, 16))).replace(/\\+t/g, "\t"))
+        ? "[계좌형 숫자 비공개]" : token;
+      return digits >= 10 && digits <= 20 ? "[계좌형 숫자 비공개]" : token;
+    });
+  }
+  function unlabeledText(text: string): string {
+    // Known sensitive token classes take precedence over canonical hash/UUID shapes.
+    const sensitive = text.replace(/\b(?:ord|exec)_[A-Za-z0-9_-]{6,}\b|\b[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
+      (token) => maskSensitiveText(token));
+    // Protect complete canonical tokens after labeled values and paths were removed.
+    const canonical = /((?<![A-Za-z0-9_-])(?:[A-Za-z][A-Za-z0-9]*[-_])?[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}(?![A-Za-z0-9_-])|(?<![A-Za-z0-9_])(?:sha256:)?(?:[a-fA-F0-9]{64}|[a-fA-F0-9]{40})(?![A-Za-z0-9_])|\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})(?![A-Za-z0-9_]))/g;
+    return sensitive.split(canonical).map((part, index) => index % 2 === 1
+      ? part : accountLikeText(maskSensitiveText(part))).join("");
+  }
   function visit(item: unknown): unknown {
     if (Array.isArray(item)) return item.map(visit);
     if (isCanonicalReviewReference(item)) return item;
@@ -73,7 +100,7 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
     return typeof item === "string" ? redact(item) : item;
   }
   function redact(text: string) {
-    const cleaned = maskSensitiveText(text).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+    const cleaned = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
     // Scan labels separately: a non-sensitive URL/label must not swallow a later credential.
     // Decode only key escapes for classification; do not decode or mutate safe source text.
     const labels = /(?:\\*["'])?((?:[A-Za-z]|\\+u[0-9A-Fa-f]{4})(?:[A-Za-z0-9_. \t-]|\\+u[0-9A-Fa-f]{4}|\\+t)*)(?:\\*["'])?\s*[:=]\s*/g;
@@ -92,11 +119,11 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
       masked += cleaned.slice(cursor, match.index) + "[비공개]";
       cursor = end; labels.lastIndex = end;
     }
-    return (masked + cleaned.slice(cursor))
+    return unlabeledText((masked + cleaned.slice(cursor))
       .replace(/\b(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,})\b/g, "[비공개]")
       .replace(/"(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/)|(?:https?|file):\/\/)(?:\\[\s\S]|[^"\\])*"|'(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/)|(?:https?|file):\/\/)(?:\\[\s\S]|[^'\\])*'/gi, "[경로·주소 비공개]")
       .replace(/(?:https?|file):\/\/[^\s<>"']+/gi, "[외부 주소 비공개]")
-      .replace(/(?:[A-Za-z]:[\\/]|\\\\)(?:\\(?:\r\n|[\s\S])|[^,;\r\n<>"'])+|(?<![A-Za-z0-9_.-])\/(?!\/)(?:\\(?:\r\n|[\s\S])|[^,;\r\n<>"'])+/g, "[로컬 경로 비공개]");
+      .replace(/(?:[A-Za-z]:[\\/]|\\\\)(?:\\(?:\r\n|[\s\S])|[^,;\r\n<>"'])+|(?<![A-Za-z0-9_.-])\/(?!\/)(?:\\(?:\r\n|[\s\S])|[^,;\r\n<>"'])+/g, "[로컬 경로 비공개]"));
   }
   return visit(value) as T;
 }

@@ -227,6 +227,13 @@ Labeled key 문법은 ASCII 문자·숫자와 dot/underscore/hyphen/수평 공�
 구분자를 지원하며 같은 정규화로 문자열·구조화 key·header를 분류한다. JSON-like quoted key의
 Unicode escape 및 중첩 JSON 문자열의 escaped quote도 이 key 분류에만 반영한다. 안전한 source/version
 문자열을 통째로 decode하지 않으며, 임의의 unlabeled 민감 정보를 모두 탐지한다고 보장하지 않는다.
+별도로 자유 문자열의 standalone 10~20자리 ASCII 숫자는 계좌형으로 보수적으로 가린다. Bare 또는
+hyphen/dot/space/tab의 반복·혼합 그룹과 JSON 문자 escape를 포함하며 연속 20자리 초과 숫자의
+일부만 가리지 않는다. 구분자로 연결된 stream은 계좌형 값 여러 개가 이어진 경우도 놓치지 않도록
+총 20자리 초과여도 전체를 가린다. 따라서 자유 문자열의 긴 숫자 목록도 가려질 수 있다.
+완전한 hash/UUID/ISO timestamp, 날짜와 문자에 붙은 identifier는 보존한다. Epoch·큰 금액을 문자열로
+쓴 값도 모호하면 가려질 수 있으나 typed numeric 비용·count에는 적용하지 않는다. 계좌 여부를 판정하는
+검증기가 아닌 표현 경계의 heuristic이며 원본과 비교용 숫자는 변하지 않는다.
 최종 assembled review(비교 ID 포함), 직접 Markdown renderer 입력, CLI review envelope, completion marker와
 writer 반환 metadata에서 각각 출력 직전 sanitization을 적용한다. 내부 lookup/semantic 비교는 raw 값을
 사용하며 원본 evidence는 변경하지 않는다. 경로 마스킹 예외는 producer가 생성하는 고정 field와 bounded
