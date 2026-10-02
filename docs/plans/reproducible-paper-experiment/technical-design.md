@@ -2,7 +2,8 @@
 
 ## 상태와 결정
 
-[기획](product-plan.md)을 구현하기 위한 설계이며 아직 구현된 계약이 아니다.
+[기획](product-plan.md)을 구현하기 위한 설계다. EXP-01의 순수 입력 계약·fixture·unit test만
+구현했으며 저장·실행·CLI·결과 검토는 후속 EXP-02~04 설계다.
 코드 관찰 기준은 `bc1423bd992171cf86b5c5d288e9c1c915cc2333`이다.
 구현 순서·검증 명령은 [PR 작업 계획](pr-work-plan.md)에 둔다.
 
@@ -73,6 +74,61 @@ source의 build를 선행하고 그 build 결과와 HEAD/lock/Node를 결속한 
 고정된 3 tick·빈 portfolio·1,000,000 KRW 가상 현금으로 충분하다. 거래일/calendar/FX의
 사실성을 주장하지 않으며 정확한 값은 EXP-01의 tracked fixture와 테스트로 확정한다.
 이는 실제 한국 시장/투자 전략을 선택한 결정이 아니다.
+
+### EXP-01에서 확정한 입력 형식
+
+정본 예시는 [`src/replay/fixtures/paper-experiment.v1.json`](../../../src/replay/fixtures/paper-experiment.v1.json)이다.
+[`parsePaperExperimentInput`](../../../src/replay/paperExperimentInput.ts)은 파일을 직접 열지 않고
+JSON 문자열 또는 UTF-8 bytes와 `PaperExperimentExecutionIdentity`를 받아
+`normalizedInput`, 기존 helper로 계산한 `inputHash`, source `preflight`를 반환한다.
+반환 object와 nested arrays/objects는 모두 freeze한다. 이는 메모리 불변성이고,
+EXP-02의 디스크 exclusive-write/무결성 보장을 이미 구현했다는 뜻이 아니다.
+
+- envelope version은 `paper_experiment_input.v1`, fixture는 `paper-experiment`/`1`, sourceRef는
+  `fixture:paper-experiment.v1`, provider는 `FirstPricedHistoricalDecisionProvider`/
+  `first_priced_fixture.v1`/`deterministic_fixture`/`externalCalls: 0`으로 고정
+- `implementationRevision: null`은 caller가 별도로 검증한 40자리 Git SHA에 결속하라는 요청이다.
+  문자열을 지정하면 context와 같아야 한다. 정규화 결과에는 항상 구체적인 SHA가 남는다.
+  순수 함수는 Git/lockfile/Node/build receipt를 직접 조사하지 않으며 caller context를 신뢰한다.
+  실제 execution identity 관측과 검증은 EXP-03의 책임이다. 테스트의 고정 context는 실제 실행 증거가 아니다.
+- timestamp는 timezone을 명시한 초 또는 정확히 세 자리 밀리초 ISO 형식만 허용하며 UTC로 정규화한다.
+  날짜만 있는 값, local time, 잘못된 달력 날짜, sub-millisecond와 UTC 변환 후 4자리 연도를
+  벗어나는 값은 거절한다. `createdAt`은 cutoff 대상이 아닌 생성 provenance다.
+- snapshot은 기존 schema를 재사용하며 symbol은 `FIXTURE_` 접두사, sourceRefs는 고정 fixture ref만 허용한다.
+  v1에서는 모든 universe member에 최소 한 source row를 요구한다. 이는 기존 universe parser의
+  일반 조건을 바꾸지 않는 이 contract의 제한이다. 중복·알 수 없는 symbol과 명시된 asset metadata
+  불일치는 거절한다. 양쪽에 명시된 `riskTags`는 set으로 비교·정규화하여 충돌을 거절한다.
+  시간별 미래·stale source는 coverage에 그대로 남는다. `lastPriceKrw`는 양수만
+  허용한다. 가격 0인 row는 다른 유효 row가 있어도 admission에서 거절하여 후속 provider가
+  이를 선택해 source gap을 Risk rejection으로 바꾸지 않도록 한다.
+- universe의 `lifecycleStatus`는 명시적인 effective 값으로 보존하고 parser 내부 파생 필드
+  `lifecycleStatusSource`는 JSON input에 넣지 않는다. 후속 runner adapter는 보존된 universe를
+  기존 universe parser로 다시 읽어 runtime용 provenance를 복원해야 한다. Golden fixture의
+  `active`는 synthetic 조건일 뿐 실제 lifecycle 검증이 아니다.
+- `configuration`은 기존 replay run configuration의 composition이다. clock speed와 timezone은
+  각각 `1`, `0`으로 고정한다. `maxDecisionCalls`는 1~100이며 null/unlimited를 받지 않는다.
+  session/random/provider path와 strategy preset·candidate bucket·exit/regime 확장은 받지 않는다.
+- Risk는 기존 profile resolver와 여섯 기본 Risk 값만 조합한다. allocation은 기존 resolver/schema를
+  재사용하고 execution은 기존 resolver의 모든 effective 숫자·boolean을 보존한다. 음수·비유한 수는
+  resolver 전에 거절하며 `fillRatio`는 0~1로 제한한다. 작은 v1 fixture의 추가 범위로
+  모든 비용 bps는 0~10,000, snapshot volume은 0~1,000,000,000,000으로 제한하여
+  기존 cost/volume 연산에 거대한 유한 수를 넘기지 않는다. 초기 positions는 항상 빈 배열이다.
+- 기존 packet builder와 같이 `maxSnapshotAgeSeconds`는 양수다. clock 최종 tick 또는
+  `generatedAt` + packet expiry와 각 `observedAt` + freshness가 UTC 9999년 마지막 밀리초를
+  넘으면 admission에서 거절한다. 설정 값 자체가 유한해도 파생 timestamp가 넘치는 입력은 받지 않는다.
+- `costModel`은 기존 `createPaperCostModel`의 버전·가정·full execution policy로 생성한다.
+  재입력에 `costModel`이 있으면 helper가 계산한 전체 payload와 hash가 같아야 하며 unknown field,
+  version 또는 값 변조를 거절한다. 정규화 입력을 JSON으로 저장한 뒤 같은 context로 재검증하면
+  동일한 payload/hash를 얻는다.
+- `preflight`는 tick 수, call 상한, source/symbol 수와 tick별 usable snapshot ID 및
+  `future_only`/`stale` 이유를 보존한다. 모든 tick에서 usable 가격이 없으면
+  입력 거절, 일부 결측은 `insufficient_data`다. 이는 decision/HOLD/Risk 결과가 아니다.
+- 오류는 고정 `PaperExperimentValidationError.code`만 노출하며 입력 값·unknown key·path나
+  Zod/resolver 원문 오류를 출력하지 않는다. Byte cap은 JSON parsing 전에 검사하고 잘못된 UTF-8도 거절한다.
+
+Golden fixture는 `KR:FIXTURE_A`의 2025-01-01~03 UTC 일별 3 tick, 1,000,000 KRW 가상 현금,
+10,000/10,100/10,050 KRW synthetic 가격이다. 별도 실제 시장·전략 선택 없이 unit test로 검증한다.
+이 단계는 workflow/provider를 생성·호출하거나 source/attempt를 저장하지 않는다.
 
 ## 2. Provenance, cutoff와 coverage
 

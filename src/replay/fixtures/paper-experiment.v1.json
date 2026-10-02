@@ -1,0 +1,151 @@
+{
+  "schemaVersion": "paper_experiment_input.v1",
+  "mode": "fixture_only",
+  "question": "같은 synthetic 입력과 정책으로 decision → Risk → paper 결과 근거를 재현할 수 있는가?",
+  "fixture": {
+    "id": "paper-experiment",
+    "version": 1
+  },
+  "implementationRevision": null,
+  "source": {
+    "kind": "inline_synthetic",
+    "coverageDescription": "가상 FIXTURE_A의 3개 일별 관측이며 실제 시장·거래일·FX coverage를 입증하지 않는다.",
+    "snapshots": [
+      {
+        "snapshotId": "fixture_a_day_1",
+        "market": "KR",
+        "symbol": "FIXTURE_A",
+        "assetType": "STOCK",
+        "assetClass": "equity",
+        "region": "KR",
+        "observedAt": "2025-01-01T00:00:00.000Z",
+        "interval": "1d",
+        "lastPriceKrw": 10000,
+        "volume": 10000,
+        "sourceRefs": [
+          "fixture:paper-experiment.v1"
+        ],
+        "createdAt": "2025-01-04T00:00:00.000Z"
+      },
+      {
+        "snapshotId": "fixture_a_day_2",
+        "market": "KR",
+        "symbol": "FIXTURE_A",
+        "assetType": "STOCK",
+        "assetClass": "equity",
+        "region": "KR",
+        "observedAt": "2025-01-02T00:00:00.000Z",
+        "interval": "1d",
+        "lastPriceKrw": 10100,
+        "volume": 10000,
+        "sourceRefs": [
+          "fixture:paper-experiment.v1"
+        ],
+        "createdAt": "2025-01-04T00:00:00.000Z"
+      },
+      {
+        "snapshotId": "fixture_a_day_3",
+        "market": "KR",
+        "symbol": "FIXTURE_A",
+        "assetType": "STOCK",
+        "assetClass": "equity",
+        "region": "KR",
+        "observedAt": "2025-01-03T00:00:00.000Z",
+        "interval": "1d",
+        "lastPriceKrw": 10050,
+        "volume": 10000,
+        "sourceRefs": [
+          "fixture:paper-experiment.v1"
+        ],
+        "createdAt": "2025-01-04T00:00:00.000Z"
+      }
+    ]
+  },
+  "universe": {
+    "mode": "paper_only_historical_universe",
+    "universeId": "paper-experiment-v1",
+    "snapshotDate": "2025-01-01",
+    "description": "작은 synthetic fixture universe",
+    "symbols": [
+      {
+        "market": "KR",
+        "symbol": "FIXTURE_A",
+        "assetType": "STOCK",
+        "assetClass": "equity",
+        "region": "KR",
+        "lifecycleStatus": "active",
+        "required": true
+      }
+    ],
+    "disclaimer": "Synthetic mechanics only. 실제 시장·전략·lifecycle 검증이나 투자 조언이 아니다."
+  },
+  "configuration": {
+    "clock": {
+      "startAt": "2025-01-01T00:00:00.000Z",
+      "endAt": "2025-01-03T00:00:00.000Z",
+      "stepSeconds": 86400,
+      "speedMultiplier": 1
+    },
+    "samplingPolicy": {
+      "everyNSteps": null,
+      "candidateChangedOnly": false,
+      "decisionFrequency": "every_tick",
+      "maxDecisionCalls": 3,
+      "timezoneOffsetMinutes": 0
+    },
+    "initialCashKrw": 1000000,
+    "packetIdPrefix": "paper_experiment_v1",
+    "packetExpiresInSeconds": 300,
+    "maxCandidates": 10,
+    "maxSnapshotAgeSeconds": 86400,
+    "constraints": {
+      "maxNewPositions": 3,
+      "maxBudgetPerSymbolKrw": 100000,
+      "allowedActions": [
+        "VIRTUAL_BUY",
+        "VIRTUAL_SELL",
+        "VIRTUAL_HOLD"
+      ]
+    },
+    "executionPolicy": {
+      "fillPriceRule": "current_candidate_last_price",
+      "slippageBps": 5,
+      "feeBps": 1,
+      "taxBps": 0,
+      "halfSpreadBps": 2,
+      "fillRatio": 1,
+      "allowFractionalShares": true,
+      "maxVolumeParticipationRate": 0.1,
+      "minLiquidityFillRatio": 0.1,
+      "rejectStaleLiquidity": true,
+      "marketImpactBpsPerParticipationRate": 0
+    },
+    "strategyPreset": null,
+    "candidateStrategyBucket": null,
+    "riskProfile": "conservative",
+    "riskPolicy": null,
+    "allocationPolicy": null,
+    "marketRegimeAllocationPolicy": null,
+    "paperExitPolicy": null
+  },
+  "initialPositions": [],
+  "provider": {
+    "id": "FirstPricedHistoricalDecisionProvider",
+    "version": "first_priced_fixture.v1",
+    "mode": "deterministic_fixture",
+    "externalCalls": 0
+  },
+  "evaluation": {
+    "evidenceCutoff": "2025-01-03T00:00:00.000Z",
+    "generatedAt": "2025-01-04T00:00:00.000Z",
+    "primaryBenchmark": "cashOnly",
+    "reviewQuestions": [
+      "입력·비용·Risk와 결과 근거가 연결되어 있는가?"
+    ],
+    "limitations": [
+      "synthetic_fixture_only",
+      "exchange_calendar_fx_lifecycle_not_verified",
+      "not_statistical_or_investment_evidence"
+    ]
+  }
+}
