@@ -4,6 +4,7 @@
 
 - [AI paper 운영](ai-paper-trading-runbook.md): CLI provider와 paper/batch 실행 조건·실패 확인
 - [Historical replay](historical-replay.md): 데이터 준비, 실행 mode, 산출물과 검증 한계
+- [고정 fixture paper 실험](paper-experiment.md): 입력 검증·격리 저장 library, 무결성·retry 경계와 미구현 CLI
 - [Strategy bucket validation](strategy-bucket-validation-runbook.md): isolated 실험과 결과 기록
 - [Test verification](test-verification.md): review/merge profile, 영향 범위와 완료 증거
 - [Maintenance delegation](codex-maintenance-delegation-policy.md): 기능 PR 설계, 책임별 커밋, 리뷰와 중단 경계

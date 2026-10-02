@@ -487,3 +487,24 @@ function isPathInside(childPath: string, parentPath: string): boolean {
   const path = relative(parentPath, childPath);
   return path === "" || (!!path && !path.startsWith("..") && !isAbsolute(path));
 }
+
+// Fixture experiment paths are allocated by the backend, never read from its JSON input.
+export const PAPER_EXPERIMENT_RUN_FILE_NAME = "experiment-run.json";
+export const PAPER_EXPERIMENT_INPUT_FILE_NAME = "experiment-input.json";
+export const PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
+
+export function createPaperExperimentArtifactPaths(rootDir: string, attemptId: string) {
+  if (!PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN.test(attemptId)) {
+    throw new Error("Invalid paper experiment attempt identity");
+  }
+  const attemptDir = join(resolve(rootDir), attemptId);
+  return Object.freeze({
+    attemptDir,
+    inputDir: join(attemptDir, "input"),
+    inputPath: join(attemptDir, "input", PAPER_EXPERIMENT_INPUT_FILE_NAME),
+    sourcePath: join(attemptDir, "input", HISTORICAL_MARKET_SNAPSHOTS_FILE_NAME),
+    statePath: join(attemptDir, PAPER_EXPERIMENT_RUN_FILE_NAME),
+    replayDir: join(attemptDir, "replay"),
+    reviewDir: join(attemptDir, "review")
+  });
+}

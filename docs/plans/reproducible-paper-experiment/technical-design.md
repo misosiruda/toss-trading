@@ -2,8 +2,9 @@
 
 ## 상태와 결정
 
-[기획](product-plan.md)을 구현하기 위한 설계다. EXP-01의 순수 입력 계약·fixture·unit test만
-구현했으며 저장·실행·CLI·결과 검토는 후속 EXP-02~04 설계다.
+[기획](product-plan.md)을 구현하기 위한 설계다. EXP-01의 입력 계약과 EXP-02의 입력 보존·격리 저장을
+구현했으며 실행·CLI·결과 검토는 후속 EXP-03~04 설계다.
+저장 API와 실제 보장/비보장 경계는 [runbook](../../runbooks/paper-experiment.md)에 정리한다.
 코드 관찰 기준은 `bc1423bd992171cf86b5c5d288e9c1c915cc2333`이다.
 구현 순서·검증 명령은 [PR 작업 계획](pr-work-plan.md)에 둔다.
 
@@ -81,8 +82,8 @@ source의 build를 선행하고 그 build 결과와 HEAD/lock/Node를 결속한 
 [`parsePaperExperimentInput`](../../../src/replay/paperExperimentInput.ts)은 파일을 직접 열지 않고
 JSON 문자열 또는 UTF-8 bytes와 `PaperExperimentExecutionIdentity`를 받아
 `normalizedInput`, 기존 helper로 계산한 `inputHash`, source `preflight`를 반환한다.
-반환 object와 nested arrays/objects는 모두 freeze한다. 이는 메모리 불변성이고,
-EXP-02의 디스크 exclusive-write/무결성 보장을 이미 구현했다는 뜻이 아니다.
+반환 object와 nested arrays/objects는 모두 freeze한다. 이는 메모리 불변성이다.
+디스크 exclusive-write/무결성은 별도 EXP-02 저장 library가 담당한다.
 
 - envelope version은 `paper_experiment_input.v1`, fixture는 `paper-experiment`/`1`, sourceRef는
   `fixture:paper-experiment.v1`, provider는 `FirstPricedHistoricalDecisionProvider`/

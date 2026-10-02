@@ -28,6 +28,10 @@ import {
 } from "../portfolio/markToMarket.js";
 import type { SimulatedTick } from "./simulatedClock.js";
 
+export const HISTORICAL_REPLAY_PROGRESS_DEFAULT_LIMITS = Object.freeze({
+  recentEvents: 50, recentRecords: 50, recentPackets: 10, portfolioTimeline: 1_500
+});
+
 export const HISTORICAL_REPLAY_PROGRESS_DISCLAIMER =
   "Paper-only historical replay progress. This is not financial advice, not a performance guarantee, and cannot place live orders.";
 
@@ -197,10 +201,10 @@ export class HistoricalReplayProgressRecorder {
   private maxTickElapsedMs = 0;
 
   constructor(private readonly options: HistoricalReplayProgressRecorderOptions) {
-    this.maxRecentEvents = options.maxRecentEvents ?? 50;
-    this.maxRecentRecords = options.maxRecentRecords ?? 50;
-    this.maxRecentPackets = options.maxRecentPackets ?? 10;
-    this.maxPortfolioTimelineRecords = options.maxPortfolioTimelineRecords ?? 1_500;
+    this.maxRecentEvents = options.maxRecentEvents ?? HISTORICAL_REPLAY_PROGRESS_DEFAULT_LIMITS.recentEvents;
+    this.maxRecentRecords = options.maxRecentRecords ?? HISTORICAL_REPLAY_PROGRESS_DEFAULT_LIMITS.recentRecords;
+    this.maxRecentPackets = options.maxRecentPackets ?? HISTORICAL_REPLAY_PROGRESS_DEFAULT_LIMITS.recentPackets;
+    this.maxPortfolioTimelineRecords = options.maxPortfolioTimelineRecords ?? HISTORICAL_REPLAY_PROGRESS_DEFAULT_LIMITS.portfolioTimeline;
     this.snapshot = {
       mode: "paper_only",
       status: "running",

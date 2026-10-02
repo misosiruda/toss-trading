@@ -10,6 +10,10 @@ Historical replay는 실제 시간을 기다리지 않고 저장된 과거 snaps
 
 Codex AI historical replay 또는 batch replay를 실제로 실행하기 전후의 운영 체크리스트는 [AI Paper Trading Runbook](ai-paper-trading-runbook.md)을 기준으로 확인합니다.
 
+고정 synthetic 실험의 신규 `paperExperimentStore`는 기존 공유 storage를 사용하지 않고 attempt별
+input/source와 빈 `replay/`를 격리한다. 저장 library만 구현했으며 이 문서의 CLI/workflow에 자동
+연결하지 않는다. 현재 계약과 retry/무결성 검증은 [고정 fixture 실험 runbook](paper-experiment.md)을 따른다.
+
 ## 입력과 출력
 
 입력:

@@ -38,6 +38,7 @@ import {
 } from "./historicalReplayBenchmark.js";
 
 const REPLAY_SHARPE_VALIDATION_AUTOCORRELATION_MAX_LAG = 5;
+const HISTORICAL_REPLAY_DEFAULT_TITLE = "Historical Replay Paper Report";
 
 export interface HistoricalReplayReportOptions {
   result: HistoricalReplayResult;
@@ -192,7 +193,7 @@ export function buildHistoricalReplayReport(
   const initialNetWorthKrw = portfolioNetWorth(result.initialPortfolio);
 
   return {
-    title: options.title ?? "Historical Replay Paper Report",
+    title: options.title ?? HISTORICAL_REPLAY_DEFAULT_TITLE,
     mode: "paper_only",
     generatedAt: options.generatedAt.toISOString(),
     simulatedRange: summarizeRange(result),
@@ -249,6 +250,34 @@ export function buildHistoricalReplayReport(
     sourceWarningSummary: summarizeWarnings(result.warnings),
     portfolioTimeline: result.portfolioTimeline,
     disclaimer: historicalReplayDisclaimer()
+  };
+}
+
+/** Pure validation projection from evidence that the experiment inventory actually retains. */
+export function buildHistoricalReplayRetainedEvidence(
+  evidence: Pick<HistoricalReplayResult, "initialPortfolio" | "finalPortfolio" | "portfolioTimeline"
+    | "packets" | "decisions" | "riskDecisions" | "trades" | "allocationPolicy">
+) {
+  const portfolioConstruction = buildPortfolioConstructionMetrics(evidence.portfolioTimeline, evidence.allocationPolicy);
+  const initialNetWorthKrw = portfolioNetWorth(evidence.initialPortfolio);
+  return {
+    title: HISTORICAL_REPLAY_DEFAULT_TITLE,
+    disclaimer: historicalReplayDisclaimer(),
+    portfolio: summarizePortfolio(evidence.initialPortfolio, evidence.finalPortfolio),
+    portfolioConstruction,
+    analytics: buildPaperPortfolioAnalytics({ portfolio: evidence.finalPortfolio, decisions: evidence.decisions, trades: evidence.trades }),
+    decisionOutcome: summarizeDecisions(evidence.decisions),
+    tradeSummary: summarizeTrades(evidence.trades),
+    costSummary: summarizeCosts(evidence.trades),
+    advancedPerformance: summarizeReplayPerformanceMetrics({ timeline: evidence.portfolioTimeline, trades: evidence.trades,
+      averageExposureRatio: portfolioConstruction.avgExposureRatio, initialNetWorthKrw }),
+    sharpeValidation: calculateSharpeValidationReport({
+      returns: buildReplayReturnSamples({ timeline: evidence.portfolioTimeline, initialNetWorthKrw }),
+      autocorrelationMaxLag: REPLAY_SHARPE_VALIDATION_AUTOCORRELATION_MAX_LAG,
+      selectionContext: { candidateCount: 1, trialCount: 1, selectedByMetric: "single_historical_replay", multipleTestingAdjustment: "none" }
+    }),
+    riskEvidence: summarizeRetainedRiskEvidence(evidence.riskDecisions, evidence.trades),
+    benchmarks: buildHistoricalReplayBenchmarks(evidence)
   };
 }
 
@@ -649,26 +678,32 @@ function sumTradeField(
 function summarizeRisk(
   result: HistoricalReplayResult
 ): HistoricalReplayRiskSummary {
-  const rejectCodes: Record<string, number> = {};
-  for (const decision of result.riskDecisions) {
-    for (const code of decision.rejectCodes) {
-      rejectCodes[code] = (rejectCodes[code] ?? 0) + 1;
-    }
-  }
-
+  const evidence = summarizeRetainedRiskEvidence(result.riskDecisions, result.trades);
   return {
-    approvedCount: result.riskDecisions.filter((decision) => decision.approved)
-      .length,
+    approvedCount: evidence.approvedCount,
     rejectedCount: result.rejectedCount,
     meaningfulRejectCount: result.rejectedCount,
     dustRejectCount: result.auditEvents.filter(
       (event) => event.eventType === "NO_OP_EXIT_DUST_CLOSED"
     ).length,
+    rejectCodes: evidence.rejectCodes,
+    policySummary: evidence.policySummary
+  };
+}
+
+function summarizeRetainedRiskEvidence(
+  riskDecisions: HistoricalReplayResult["riskDecisions"], trades: VirtualTrade[]
+) {
+  const rejectCodes: Record<string, number> = {};
+  for (const decision of riskDecisions) {
+    for (const code of decision.rejectCodes) {
+      rejectCodes[code] = (rejectCodes[code] ?? 0) + 1;
+    }
+  }
+  return {
+    approvedCount: riskDecisions.filter((decision) => decision.approved).length,
     rejectCodes,
-    policySummary: buildReplayRiskPolicySummary({
-      riskDecisions: result.riskDecisions,
-      trades: result.trades
-    })
+    policySummary: buildReplayRiskPolicySummary({ riskDecisions, trades })
   };
 }
 
