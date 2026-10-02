@@ -36,15 +36,17 @@
 
 포함: shared shell, 4개 주메뉴와 하단 설정, 기존 운영 요약 보존 route, server-side batch read,
 확인된 batch 또는 문맥 미확인 저장 기록으로 구분한 목록, client 필터·empty/error 상태·mobile list, old deep link smoke.
-범위: 최신 manifest와 기록의 batch 결속이 확인되면 최신 batch로 표기한다. aggregate fallback 등
+범위: manifest와 기록의 batch 결속이 확인되어도 현재는 ‘API가 선택한 batch’로 표기한다.
+누락·구문 오류·비객체 manifest의 제외 진단이 응답에 없어 최신 여부는 미확인이다. aggregate fallback 등
 문맥 미확인은 조회된 source 기록으로 제한하고 최신 batch/전체 실험으로 추정하지 않는다.
+최신 표기가 필요할 때의 manifest 진단/선택 근거 API는 별도 source 개선이며 UX-01에 끼워 넣지 않는다.
 cross-batch index는 별도 필요성 판단.
 비범위: 새 runner/config, 새 실험 실제 생성, 실행 상세 전면 개편, 비교 engine.
 완료: mock·실데이터 연결 실패 모두 첫 화면에 의미 있는 상태. 목록→기존 정확한 ID 상세.
 ‘새 실험’은 현재 작동하는 설정 진입점에 연결하고 제한을 설명하며, UX-03 후 canonical wizard로 교체한다.
 검증: activeRun+terminal runId dedupe, wrapper/endpoint 상태 분리와 running+corrupt 진단,
 ViewModel guard/unit, persisted/active/read 상태의 provenance, aggregate fallback/known batch 불일치,
-legacy route 보존, navigation/필터/back-forward, desktop/mobile E2E/axe.
+manifest 선택 진단 없는 응답에 최신 label 금지, legacy route 보존, navigation/필터/back-forward, desktop/mobile E2E/axe.
 
 ## UX-02a — 요청과 실제 실행 조건 일치
 
@@ -131,7 +133,7 @@ legacy route 보존, navigation/필터/back-forward, desktop/mobile E2E/axe.
 
 | 단계 | 상태 | 증거 |
 | --- | --- | --- |
-| UX-00 | 문서 작성·정적 검토 완료, browser 검증 대기 | [검증 기록](verification.md) |
+| UX-00 | 기획·시안 검증 완료; PR 검토 현황 별도 | [검증 기록](verification.md), HTML 79fd5b46; Windows Chrome499/499 및 모바일 기본1.62화면 |
 | UX-01 | 미구현 | 목록 activeRun/source 상태 계약 포함 |
 | UX-02a | 구현·병합 | [PR #797](https://github.com/misosiruda/toss-trading/pull/797), main `492afe9`; 전체 4,381 tests 중 4,348 pass/33 skip/0 fail |
 | UX-02b | 구현·병합 | [PR #798](https://github.com/misosiruda/toss-trading/pull/798), main `9235ab7`; 전체 4,462 tests 중 4,429 pass/33 skip/0 fail |

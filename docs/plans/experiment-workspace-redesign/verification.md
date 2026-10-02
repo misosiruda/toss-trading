@@ -17,7 +17,7 @@
 
 ## 자동 review finding 수정
 
-자동 review의 P2 열일곱 건을 반영했다.
+자동 review의 P2 열여덟 건을 반영했다.
 
 - 완료·진행·실패·미관측 모두 실행 ID가 포함된 상세 링크를 제공한다. 선택 ID의 이름·상태·
   관측 기록을 표시하며 완료 예시의 수치를 다른 실행에 재사용하지 않는다. 미확인 ID도 구분한다.
@@ -38,6 +38,8 @@
   남은 focus는 선택 tab으로 복구한다. DOM 회귀로 이를 구분했다.
 - 목록 adapter의 activeRun/runId 결합·terminal 우선 dedupe와 서버 count 분리를 문서화했다.
 - endpoint status와 fetch wrapper status를 분리하고 running 상태에서도 corruptLineCount 진단을 유지한다.
+- 현재 reader의 손상 manifest 제외가 응답에 드러나지 않는 한계를 확인했다. 선택된 batch와
+  원본 기록의 결속만으로 최신이라고 표시하지 않으며, 최신 표기는 별도 진단/선택 근거 계약 뒤로 제한했다.
 - persisted child 상태 네 값과 manifest-derived running, bucket queued, 조회 missing/unknown의
   출처·guard를 분리했다. 불가능한 저장 상태를 정상 row로 받아들이지 않는 테스트 계약을 명시했다.
 - 병합된 UX-02b 관측 mapping을 추가했다. index missing과 runner_failed의 동시 존재는 runner 실패
@@ -104,7 +106,7 @@ network, subprocess entry point를 감시해 호출 0을 확인했다. source da
 
 이 전체 조건 표시 버전은 이후 f481eb5의 실제 Chrome에서 기능·접근성 426개 검사를
 통과했지만 모바일 확인 화면의 지나친 세로 길이가 사용성 실패로 확인됐다. 아래 기록처럼
-통과 범위와 이 실패를 분리하며, 간결한 새 후보의 Chrome 검증은 별도로 기다린다.
+통과 범위와 이 실패를 분리하며, 아래 6f347b6에서 간결한 새 후보를 실제로 재검증했다.
 
 ### 간결한 확인 단계 후보의 DOM 회귀
 
@@ -119,11 +121,11 @@ network, subprocess entry point를 감시해 호출 0을 확인했다. source da
 - 3단계에서는 중복 입력 요약 aside를 숨기고 이전 편집 단계로 돌아가면 복구한다.
 - 추가 회귀는 닫힌 상세의 실제 DOM 가시성, 순차 펼치기/닫기와 focus, 전체 필드·notices·원문
   접근, 변경 입력 요약, preview/history 이후 문맥, network·runtime 오류 부재를 확인했다.
-- 390×844의 기본 확인 화면을 1–3화면 안에서 검토하는 것을 목표로 한다. DOM 검사는 pixel
-  높이를 측정하지 못하므로 목표 달성·세로 길이·가로 overflow·실제 키보드는 새 Chrome에서 확인한다.
+- DOM 검사는 pixel 높이를 측정하지 못하므로 아래 6f347b6의 실제 Chrome에서
+  390×844 기본 확인 1–3화면 목표, 세로 길이·가로 overflow·키보드를 별도로 확인했다.
 
-**현재 간결한 후보의 실제 Chrome QA는 대기 중이다. f481eb5의 426개 통과를 새 후보의
-통과나 세로 길이 문제 해결로 재사용하지 않는다.**
+**간결한 HTML은 6f347b6에서 실제 Chrome 499/499와 모바일 높이 목표를 통과했다.
+이후 이 기록과 source 선택 문구만 갱신했으며 HTML hash는 변하지 않았다.**
 
 ## 실제 Windows Chrome 1차 검증 (9134619)
 
@@ -191,6 +193,24 @@ Chrome 검증은 새 후보에서 기존 matrix와 함께 다시 수행해야 �
   기본 높이, 핵심 조건·경고 노출, 전체 조건/고정 예시 열람, 모바일 keyboard/focus를 재검증해야 한다.
 - screen reader, 다른 browser/device, production API 통합은 여전히 미검증이다.
 
+### 실제 Windows Chrome 5차 검증 (6f347b6)
+
+대상 commit `6f347b67418db206f5bfd974f3609be7a63910b9`, HTML SHA256
+`79fd5b4691660436743905e428f5aab59f02e1e49be048bdf733b46d063172af`를 사용자 노트북에서 확인했다.
+
+- 기존 270개와 새 간결한 확인 단계 229개, 합계 499/499 통과
+- axe 43상태 violation 0, console/page error 0, 가로 overflow 없음
+- 기본 8조건, 미검증·실효값 미조회, 접힘 밖 핵심 경고, 전체 29조건 접근, 고정 예시 불변,
+  keyboard/pointer 펼침·focus, 이전 단계의 입력요약 복구 통과
+- 기본 확인 높이: 1440×1000에서 1,261px(1.26화면), 1024×900에서 1,225px(1.36화면),
+  390×844에서 1,365px(1.62화면). 모바일 기본 1–3화면 목표를 충족했고 이전 11,542px보다 약88% 줄었다.
+- 모바일 모두 펼침은 21,822px이며 선택한 검사 자료의 범위다. 이것을 기본 확인 화면 높이로
+  숨기거나 기본 흐름의 짧은 화면과 혼동하지 않는다.
+- screen reader, 다른 browser/device, production API 통합은 미검증이다.
+
+최종 스크린샷은 해당 검증 환경에 보존됐다. 후속 production UI에서는 격리 fixture API로
+동일 동선을 검증해야 하며 이 문서 시안의 검증을 실제 API 연결 검증으로 대신하지 않는다.
+
 ### 최초 클라우드 검증 제한 기록
 
 초기에는 아래 제한으로 실제 HTML browser 검증을 실행하지 못했다. 이후 연결된 사용자
@@ -204,7 +224,7 @@ Chrome 검증은 새 후보에서 기존 matrix와 함께 다시 수행해야 �
 새 배포/외부 hosting 또는 계정 변경은 없었다. 시안 검증과 production UI 완료·병합을 구별하며
 browser 검증 조건을 생략하지 않는다.
 
-## 재개 시 검증 동선
+## 후속 production UI 검증 동선
 
 - 목록: 이름/상태 필터 → empty → 초기화 → 완료 예시 상세
 - 생성: 위험 설정 → 데이터 단계 → 값 수정 → 확인 → 이전 → 값 보존

@@ -206,13 +206,25 @@ active 항목은 가짜 terminal record를 만들지 않고 manifest 관측으�
 
 ## 데이터 읽기·오류·history
 
-목록은 우선 기존 `GET /batch/replay/runs` 범위만 사용한다. 최신 manifest와 반환 기록의 batch
-결속이 확인된 경우에만 ‘최신 batch의 실행 N개’로 표시한다. manifest가 없거나 runsPath가 없으면
+목록은 우선 기존 `GET /batch/replay/runs` 범위만 사용한다. 반환 manifest와 기록의 batch
+결속이 확인되어도 현재 API에서는 **‘API가 선택한 batch의 실행’**으로만 표시한다.
+`readBatchReplayManifests()`는 누락·JSON 구문 오류·비객체 manifest를 제외하며 제외 진단을
+응답에 넣지 않는다. EACCES 같은 그 밖의 I/O 오류는 조회 실패로 전파한다. 가장 최근에 만들어진
+batch가 제외되고 이전 정상 batch가 선택될 수 있으므로 현재
+응답만으로 ‘최신 batch’나 ‘현재 실행 중인 유일한 batch’라고 단정하지 않는다.
+선택 batch의 관측 시각과 ‘최신 여부 미확인’이라는 source 한계를 함께 제공한다.
+manifest가 없거나 runsPath가 없으면
 aggregate의 sourceRunsPath로 fallback할 수 있다. batch 문맥이 확인되지 않은 응답은
 ‘조회된 저장 기록 · batch 문맥 미확인’이며 전체 목록의 최신 batch를 추정하지 않는다.
 `totalCount`도 선택한 source JSONL의 기록 건수이지 전체 실험 수가 아니다. 여러 batch의 안정적인
 목록/검색이 필요하면 명시적 cursor/source contract를 별도 최소 backend PR로 먼저 추가한다.
 파일시스템을 browser에서 열지 않는다.
+
+향후 최신 표기가 필요하면 backend가 manifest 후보의 읽기 실패/누락 진단 또는 검증 가능한
+latest-selection provenance를 제공하는 별도 작은 계약을 먼저 구현·검증해야 한다.
+생성·수정 시각만으로 누락 후보의 최신 여부를 추정하지 않으며, 진단이 없거나 일부 후보의
+판독이 불완전하면 최신 표기는 계속 금지한다. 이 source 개선은 현재 UX-01의 선행조건이
+아니다. UX-01은 제한된 선택 결과를 정직하게 표시하는 범위로 진행한다.
 
 기존 Risk/audit/validation ViewModel은 전체 storage 기준이며 runId로 한정하지 않는다.
 Fallback 링크에는 ‘전체 운영 기록’이라고 쓰고 선택 실행의 근거인 것처럼 붙이지 않는다.
@@ -266,6 +278,9 @@ manifest active에서만 running 생성, child ID 없는 active 거부, bucket q
 이전 관측 warning이 persisted 상태를 덮지 않는 사례를 source별로 검사한다. manifest 없음+
 aggregate 저장 기록, manifest runsPath 없음+다른 batch fallback, known batch/record 불일치,
 limit으로 잘린 count와 전체 source totalCount/statusCounts의 차이도 검사한다.
+현재 응답에 manifest 선택 진단이 없으면 정상값만 반환돼도 최신 label을 만들지 않는 fixture를
+포함한다. 최신 선택 계약을 추가할 때는 newest manifest corrupt/미판독/누락 + older valid,
+모든 후보 불완전, 시각 부재/불일치를 검증하고 선택된 older 결과와 실패 진단을 함께 보존한다.
 
 ### UX-03/04: 접수 ID의 관측 mapping과 우선순위
 
@@ -300,7 +315,7 @@ limit으로 잘린 count와 전체 source totalCount/statusCounts의 차이도 �
 4. `available/unknown`은 더 구체적인 같은-ID manifest/child artifact 상태를 덮지 않는다.
    원본이 없을 때만 접수 이후 상태 미확인으로 설명한다. local 202의 접수 사실과 서버의
    missing/invalid/unavailable 관측도 별도다. 재조회 실패나 timeout은 runner 실패 증거가 아니다.
-5. 최신 batch 목록에서 관측 조회 ID가 없으면 null이 정상이다. accepted batch를 가짜 child row로
+5. 선택 batch 목록에서 관측 조회 ID가 없으면 null이 정상이다. accepted batch를 가짜 child row로
    추가하지 않으며, UX-03/04의 exact-ID 상세에서 이 mapping을 적용한다. POST 자동 retry는 없다.
 
 UX-03/04 테스트는 index missing + runner_failed, accepted-only unknown, manifest/child partial·terminal
