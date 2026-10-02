@@ -158,23 +158,24 @@ execution 상태와 result quality는 별개다. workflow의 `completed`는 모�
 | 명시적 HOLD | `completed`, no-trade reason | decision과 필요한 Risk/no-op 근거 보존 |
 | Risk 거절 | `completed`, risk-denied observation | 실제 rejectCodes와 no-fill 보존 |
 | runner throw·artifact 불일치 | `failed`, partial/unavailable | report가 일부 있어도 완료로 표시하지 않음 |
-| 협력적 취소 확인 | `cancelled`, partial evidence | 취소 전에 확정된 paper evidence 보존, rollback 주장 금지 |
+| 실행 중 취소 요청 | v1 미지원, 취소 성공 응답 없음 | cancel route/command를 노출하지 않음 |
 | 강제 종료·crash/terminal marker 없음 | 읽기 projection `incomplete`, 저장된 마지막 상태도 함께 표시 | 자동 resume·status 덮어쓰기·파일 삭제 금지 |
 
 outer owner는 workflow 호출 전체를 try/catch로 감싼다. 현재 workflow의 manifest/progress/audit
 시작 write가 내부 try보다 앞에 있으므로 내부 실패 recorder만 믿지 않는다. 실패 기록까지
 쓸 수 없으면 CLI의 nonzero exit와 partial path를 알리고 completed marker를 만들지 않는다.
 
-취소는 EXP-03에서 기존 workflow/runner에 optional cooperative signal을 추가한다. 기본 호출의
-동작은 그대로다. tick 시작, provider 전후, 각 execution 전, 최종 완료 commit 직전에 확인한다.
-취소 관측 뒤에는 새 decision/fill을 시작하지 않으며 진행 중인 동기 fill을 반쯤 rollback하지 않는다.
-취소 acknowledgement는 runner가 멈추고 종료 기록이 저장된 뒤에만 한다.
-완료 commit 뒤의 취소는 기존 완료 상태를 보존하는 already-terminal 응답이다.
+v1은 실행 중 cooperative cancel/resume을 지원하지 않는다. 기존 runner에는 cancellation
+signal이 없으므로 가짜 `cancelled` 상태, 성공 응답 또는 UI 버튼을 추가하지 않는다.
+CLI의 지원하지 않는 cancel 옵션은 실행 전 실패하고 파일을 변경하지 않는다.
+프로세스 Ctrl+C/강제 종료는 중단이며 실행 전부터 이 한계를 안내한다. 이미 기록된 paper
+artifact를 rollback하지 않고, read/inspect는 terminal 증거 없는 결과를 incomplete로 표시한다.
 
-기존 replay progress/audit schema는 `running/completed/failed` 중심이다. v1에서 이를 일괄
-확장하지 않고 typed cancellation을 기존 실패 기록에도 남기며 outer attempt가 `cancelled`와
-원인을 명시한다. reader는 이 둘을 함께 표시하고 historical `failed`를 숨기지 않는다.
-강제 kill은 cooperative cancel 성공으로 표시하지 않는다.
+cooperative cancel은 이 네 구현 PR 밖의 후속 범위다. 필요할 때 optional signal을 tick 시작,
+provider 전후, 각 execution 전, 최종 완료 commit 직전에 전달하는 별도 설계를 먼저 검토한다.
+그때도 runner 정지 확인 뒤에만 cancelled를 기록하고 완료와 취소의 race, 진행 중 fill의
+보존, legacy progress/audit schema·reader 호환성을 함께 검증해야 한다.
+이 미지원 항목 때문에 `TR-MVP-05` 전체를 이번에 완료로 바꾸지 않는다.
 
 재시작 시 read/inspect는 기존 artifact를 읽기만 한다. terminal marker 없는 실행을 timeout/PID
 추정만으로 완료·취소라고 고치지 않는다. 실행 중인지 입증할 수 없으면 incomplete/unknown이다.

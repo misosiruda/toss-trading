@@ -45,6 +45,7 @@
 ### 제품·아키텍처·개발
 
 - [프로젝트 개요](architecture/project-overview.md), [Trainer MVP 제안](plans/trainer-mvp-roadmap.md)
+- [재현 가능한 paper 실험 기획](plans/reproducible-paper-experiment/product-plan.md), [기술 설계](plans/reproducible-paper-experiment/technical-design.md), [기능 PR 작업 계획](plans/reproducible-paper-experiment/pr-work-plan.md): fixture-only engineering slice, 문서 PR 병합 후 구현
 - [Architecture](architecture/architecture.md): 장기 책임 분리와 목표 설계
 - [Project Structure](architecture/PROJECT_STRUCTURE.md): 현재 코드 위치
 - [Code Convention](runbooks/CODE_CONVENTION.md), [Refactoring Guide](plans/REFACTORING_GUIDE.md)

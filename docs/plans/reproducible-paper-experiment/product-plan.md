@@ -45,7 +45,7 @@
 2. 기존 config/schema/manifest/hash/clock/sampling/policy를 재사용하는 입력 계약
 3. attempt별 빈 저장소에서 기존 single historical paper workflow를 실행
 4. 성공, HOLD, Risk 거절, 입력·실행 실패를 구분하는 evidence 연결
-5. 취소·프로세스 중단·명시적 재실행에서 기존 artifact를 보존하고 fail-closed 처리
+5. 취소 미지원·프로세스 중단·명시적 재실행 경계를 표시하고 기존 artifact 보존
 6. 동일 조건 반복 실행의 semantic 결과 비교와 기존 cash benchmark를 포함한 결과 검토
 7. fixture·coverage·비용 가정·통계적 판단 불가·다음 검증 질문을 한국어로 표시
 
@@ -72,7 +72,8 @@ Risk Engine은 최종 gate다. static test provider도 schema·candidate scope·
 5. 재실행: 동일 입력을 새 attempt로 실행하고 이전 결과를 덮어쓰지 않은 상태로 비교
 
 최종 산출물은 보존된 입력, 기존 replay manifest와 audit/report, 얇은 attempt 상태 기록,
-한국어 review 보고서다. 취소·실패한 실행은 완성된 수익률 보고서처럼 보이지 않아야 한다.
+한국어 review 보고서다. v1은 실행 중 cooperative cancel/resume을 지원하지 않는다. 중단·실패한 실행은 완성된 수익률
+보고서처럼 보이지 않아야 한다.
 실제 CLI 이름·예시는 [PR 작업 계획](pr-work-plan.md)의 구현 후 명령 계약을 따른다.
 
 ## 첫 fixture와 평가 한계
@@ -96,7 +97,7 @@ Risk Engine은 최종 gate다. static test provider도 schema·candidate scope·
 | `TR-MVP-02` | 입력 → 기존 workflow → 보고서 CLI의 end-to-end 테스트 | 실제 source와 제품 UI의 사용 검증 |
 | `TR-MVP-03` | success/HOLD/Risk denial/no-candidate/failure의 audit 연결 | 모든 실제 전략 상황의 설명 가능성 |
 | `TR-MVP-04` | cash 기준선·비용·coverage·통계 한계와 반복 비교 | 비용 동등한 투자전략 비교·통계 유효성 |
-| `TR-MVP-05` | 격리·충돌·취소·중단·retry·부분 artifact 보존 테스트 | shared/multi-bucket 또는 분산 운용 복구 |
+| `TR-MVP-05` | 격리·충돌·중단·retry·부분 artifact 보존과 cancel 미지원 검증 | cooperative cancel, shared/multi-bucket 또는 분산 운용 복구 |
 | `TR-MVP-06` | 외부 AI 호출 0, fixture만 허용, backend 권한 경계 | 실제 AI provider의 budget/timeout/품질 검증 |
 | `TR-MVP-07` | 근거에 연결된 관찰·한계·다음 질문 템플릿 | 사용자가 학습 내용을 확인하는 제품 수용 |
 | `TR-MVP-08` | safe defaults·기존 read-only MCP·no live/raw surface 회귀 | 이후 추가 경로에 대한 별도 검증 |
