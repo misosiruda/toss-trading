@@ -417,6 +417,79 @@
         grid-template-columns: 1fr 1fr;
         gap: 16px;
       }
+      .validation-section {
+        margin-top: 28px;
+        padding-top: 24px;
+        border-top: 1px solid var(--line);
+        min-width: 0;
+      }
+      .config-comparison {
+        margin-top: 16px;
+        font-size: 13px;
+      }
+      .config-comparison .config-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1.3fr);
+        gap: 10px;
+        border-bottom: 1px solid var(--line);
+        padding: 10px 0;
+        margin: 0;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .config-comparison dt,
+      .config-comparison dd {
+        min-width: 0;
+      }
+      .config-label {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 3px;
+      }
+      @media (max-width: 767px) {
+        .config-comparison .config-row {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 6px;
+        }
+        .config-comparison dt {
+          font-weight: 600;
+          color: var(--text);
+        }
+      }
+      .validation-details {
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        min-width: 0;
+      }
+      .validation-details > summary {
+        cursor: pointer;
+        min-height: 44px;
+        padding: 12px;
+        overflow-wrap: anywhere;
+      }
+      .validation-details > summary:focus-visible {
+        outline: 3px solid #005fcc;
+        outline-offset: -4px;
+      }
+      .validation-json {
+        margin: 0;
+        padding: 12px;
+        background: #f7f8fa;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font: 12px/1.65 monospace;
+        min-width: 0;
+      }
+      .validation-notices {
+        padding-left: 20px;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .validation-notices li {
+        margin: 10px 0;
+      }
       .summary {
         border-left: 1px solid var(--line);
         padding-left: 32px;
@@ -1072,6 +1145,21 @@
                 >
               </div>
               <div class="field">
+                <label for="run-type">실행 유형 초안</label>
+                <select id="run-type">
+                  <option value="single_replay">
+                    단일 replay (single_replay)
+                  </option>
+                  <option value="batch_replay">
+                    여러 replay (batch_replay)
+                  </option>
+                </select>
+                <p class="help">
+                  요청 유형만 편집합니다. 실제 적용 횟수는 서버 검증 전
+                  미확인입니다
+                </p>
+              </div>
+              <div class="field">
                 <label for="risk">위험 설정</label
                 ><select id="risk">
                   <option>balanced</option>
@@ -1086,7 +1174,10 @@
                 <span>판단 provider</span>
                 <div class="choice">
                   <strong>fixture 판단</strong
-                  ><small>외부 AI 호출 없이 실행 흐름을 검증합니다</small>
+                  ><small
+                    >fixture 선택을 보여주는 시안이며 provider를 호출하지
+                    않습니다</small
+                  >
                 </div>
               </div>
             </div>
@@ -1123,15 +1214,16 @@
                 </div>
               </div>
               <div class="field">
-                <label for="sampling">판단 간격</label
+                <label for="sampling">판단 빈도</label
                 ><select id="sampling">
                   <option>주 1회</option>
                   <option>일 1회</option>
                 </select>
               </div>
               <div class="notice">
-                비용·benchmark·종목군 선택은 실제 적용 계약 검증 후 제공됩니다.
-                시안에서 임의의 적용값을 만들지 않습니다
+                추가 고정 초안 조건(stepSeconds·호출
+                한도·exit·비용·benchmark·종목군)은 최종 확인에서 모두 펼쳐볼 수
+                있습니다. 서버 검증이나 실행을 요청하지 않습니다
               </div>
             </div>
             <div class="form-step" data-step="3" hidden>
@@ -1142,8 +1234,8 @@
                 </li>
                 <li><span class="check">✓</span>실제 주문 경로 없음</li>
                 <li>
-                  <span class="check">✓</span>요청과 실제 적용 조건을 같은 곳에
-                  표시
+                  <span class="unknown">미검증</span> · 현재 입력의 실제 적용
+                  조건은 미조회
                 </li>
                 <li>
                   <span class="unknown">확인 필요</span> · 데이터 가용성은
@@ -1152,8 +1244,116 @@
               </ul>
               <div class="notice">
                 이 화면은 설계 예시입니다. 검증이나 실행 요청을 보내지 않으며,
-                완료 화면도 실제 결과가 아닙니다
+                ‘결과 시안 보기’는 실행 버튼이 아닙니다
               </div>
+              <section
+                class="validation-section"
+                aria-labelledby="draft-heading"
+              >
+                <h3 id="draft-heading">현재 입력 초안 · 서버 검증 미연결</h3>
+                <p class="sub" id="draft-status">초기 입력 · 미검증</p>
+                <p class="help">
+                  아래 raw 초안은 현재 양식값과 시안의 고정 요청 필드를 모두
+                  표시합니다. 숫자는 편집 중 문자열이며 API에 제출 가능한
+                  requestedConfig나 검증 결과가 아닙니다
+                </p>
+                <dl>
+                  <div>
+                    <dt>effectiveConfig</dt>
+                    <dd id="draft-effective-status">검증 미연결 · 미조회</dd>
+                  </div>
+                  <div>
+                    <dt>notices</dt>
+                    <dd>검증 미연결 · 미조회</dd>
+                  </div>
+                  <div>
+                    <dt>sourceDataKind / 가용성</dt>
+                    <dd>미조회 / 미검증</dd>
+                  </div>
+                  <div>
+                    <dt>tickDelayMs · 위험 수치</dt>
+                    <dd>서버 실효값 미조회</dd>
+                  </div>
+                </dl>
+                <dl id="draft-comparison" class="config-comparison"></dl>
+              </section>
+              <section
+                class="validation-section"
+                aria-labelledby="fixed-validation-heading"
+              >
+                <h3 id="fixed-validation-heading">
+                  별도 고정 입력의 서버 응답 예시
+                </h3>
+                <p class="sub">
+                  현재 양식과 무관한 고정 합성 입력입니다. 위 입력을 바꿔도 이
+                  예시는 바뀌지 않습니다
+                </p>
+                <div class="notice">
+                  문서 작성 시 validatePaperSimulationCandidate(고정 config,
+                  env={})를 실행해 얻은 원문입니다. browser는 저장된 예시만
+                  표시하며 validator·source 조회·runner를 호출하지 않습니다.
+                  예시의 valid는 현재 초안이나 데이터 가용성을 검증한 결과가
+                  아닙니다
+                </div>
+                <p class="help" id="fixed-response-status"></p>
+                <ul
+                  class="validation-notices"
+                  id="fixed-normalization-differences"
+                ></ul>
+
+                <dl id="fixed-comparison" class="config-comparison"></dl>
+                <h3 style="margin-top: 20px">이 고정 응답의 notices</h3>
+                <ul
+                  class="validation-notices"
+                  id="fixed-validation-notices"
+                ></ul>
+              </section>
+              <section
+                class="validation-section"
+                aria-labelledby="raw-inspection-heading"
+              >
+                <h3 id="raw-inspection-heading">검사용 전체 자료</h3>
+                <p class="help">
+                  현재 raw 초안과 별도 고정 응답을 각각 펼쳐 확인할 수 있습니다
+                </p>
+                <details class="validation-details">
+                  <summary>현재 전체 raw 요청 초안 · effective 미조회</summary>
+                  <pre id="draft-config" class="validation-json"></pre>
+                </details>
+                <details class="validation-details">
+                  <summary>별도 고정 requestedConfig 전체</summary>
+                  <pre
+                    id="fixed-requested-config"
+                    class="validation-json"
+                  ></pre>
+                </details>
+                <details class="validation-details">
+                  <summary>
+                    별도 고정 effectiveConfig 전체 ·
+                    constraints/riskPolicy/allocationPolicy 포함
+                  </summary>
+                  <pre
+                    id="fixed-effective-config"
+                    class="validation-json"
+                  ></pre>
+                </details>
+                <details class="validation-details">
+                  <summary>
+                    별도 고정 서버 응답 원문 · 모든 안전 상태 포함
+                  </summary>
+                  <pre
+                    id="fixed-validation-response"
+                    class="validation-json"
+                  ></pre>
+                </details>
+                <details class="validation-details">
+                  <summary>고정 응답 생성 근거</summary>
+                  <pre
+                    id="fixed-validation-provenance"
+                    class="validation-json"
+                  ></pre>
+                </details>
+              </section>
             </div>
           </div>
           <aside class="summary" aria-label="입력 요약">
@@ -1168,11 +1368,15 @@
                 <dd id="summary-risk">balanced</dd>
               </div>
               <div>
-                <dt>실행 횟수</dt>
+                <dt>요청 유형</dt>
+                <dd id="summary-run-type">single_replay</dd>
+              </div>
+              <div>
+                <dt>요청 횟수 (미검증)</dt>
                 <dd id="summary-count">1회</dd>
               </div>
               <div>
-                <dt>판단 간격</dt>
+                <dt>판단 빈도</dt>
                 <dd id="summary-sampling">주 1회</dd>
               </div>
               <div>
@@ -1180,8 +1384,8 @@
                 <dd>fixture 판단</dd>
               </div>
               <div>
-                <dt>자료 종류</dt>
-                <dd>합성 설계 예시</dd>
+                <dt>source 자료 종류</dt>
+                <dd>미조회 (시안 데이터는 합성)</dd>
               </div>
               <div>
                 <dt>기간</dt>
@@ -1667,6 +1871,240 @@
         </div>
       </section>
     </main>
+    <script type="application/json" id="validation-response-example">
+      {
+        "schemaVersion": "paper_simulation_validation.v1",
+        "mode": "paper_only",
+        "status": "valid",
+        "readOnly": true,
+        "storageMutationEnabled": false,
+        "liveTradingEnabled": false,
+        "orderPlacementEnabled": false,
+        "replayRunnerStarted": false,
+        "dataAvailabilityChecked": false,
+        "sourceDataKind": "unknown",
+        "requestedConfig": {
+          "mode": "paper_only",
+          "runType": "single_replay",
+          "runCount": 3,
+          "sourceDataDir": "data/validation-contract-example",
+          "universe": {
+            "preset": "fixed-synthetic-example-metadata",
+            "market": "mixed_global"
+          },
+          "window": {
+            "mode": "fixed_range",
+            "seed": "design-validation-example-v1",
+            "startAt": "2024-02-01",
+            "endAt": "2024-02-29",
+            "windowMonths": 1
+          },
+          "samplingPolicy": {
+            "decisionFrequency": "once_per_day",
+            "stepSeconds": 86400,
+            "maxDecisionCalls": 40,
+            "maxCodexCallsPerRun": 31
+          },
+          "capital": {
+            "initialCashKrw": 20000000
+          },
+          "decisionProvider": {
+            "mode": "dry_run_fixture",
+            "modelId": "example-unused-model",
+            "outputSchema": "schemas/virtual-decision.schema.json"
+          },
+          "riskProfile": "conservative",
+          "paperExitPolicy": "take_profit_stop_loss",
+          "costModel": "standard",
+          "benchmarkPolicy": "cash_equal_weight_initial_hold"
+        },
+        "effectiveConfig": {
+          "mode": "paper_only",
+          "runType": "single_replay",
+          "runCount": 1,
+          "sourceDataDir": "data/validation-contract-example",
+          "universe": {
+            "selection": "source_snapshots",
+            "presetApplied": false,
+            "marketFilterApplied": false,
+            "allocationMode": "split_target_kr_us"
+          },
+          "window": {
+            "mode": "fixed_range",
+            "seed": "design-validation-example-v1",
+            "rangeStartAt": "2024-01-31T15:00:00.000Z",
+            "rangeEndAt": "2024-02-29T14:59:59.999Z",
+            "windowMonths": null,
+            "fixedWindow": {
+              "seed": "design-validation-example-v1",
+              "rangeStart": "2024-01-31T15:00:00.000Z",
+              "rangeEnd": "2024-02-29T14:59:59.999Z",
+              "windowMonths": 1,
+              "timezoneOffsetMinutes": 540,
+              "candidateCount": 1,
+              "selectedCandidateIndex": 0,
+              "selectedMonth": "2024-02",
+              "localStartDate": "2024-02-01",
+              "localEndDate": "2024-02-29",
+              "startAt": "2024-01-31T15:00:00.000Z",
+              "endAt": "2024-02-29T14:59:59.999Z"
+            },
+            "timezoneOffsetMinutes": 540
+          },
+          "samplingPolicy": {
+            "decisionFrequency": "once_per_day",
+            "stepSeconds": 86400,
+            "maxDecisionCalls": 40,
+            "maxCodexCallsPerRun": 0
+          },
+          "capital": {
+            "initialCashKrw": 20000000
+          },
+          "decisionProvider": {
+            "mode": "dry_run_fixture",
+            "modelId": null,
+            "outputSchema": null
+          },
+          "riskProfile": "conservative",
+          "constraints": {
+            "maxNewPositions": 3,
+            "maxBudgetPerSymbolKrw": 2000000,
+            "allowedActions": ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+          },
+          "riskPolicy": {
+            "maxBudgetPerDecisionKrw": 2000000,
+            "maxSymbolExposureKrw": 4000000,
+            "targetExposureRatio": 0.35,
+            "maxPositionWeightRatio": 0.35,
+            "minCashReserveRatio": 0.1,
+            "minCashReserveKrw": 0
+          },
+          "allocationPolicy": {
+            "policyName": "conservative_allocation",
+            "targetExposureRatio": 0.35,
+            "minCashReserveRatio": 0.1,
+            "maxBudgetPerDecisionRatio": 0.1,
+            "maxSymbolExposureRatio": 0.2,
+            "marketTargetExposureRatios": {
+              "KR": 0.175,
+              "US": 0.175
+            }
+          },
+          "paperExitPolicy": {
+            "takeProfitMode": "full_exit",
+            "takeProfitRatio": 0.15,
+            "stopLossRatio": 0.08
+          },
+          "costModel": {
+            "modelVersion": "paper_cost_model.v5",
+            "executionModelVersion": "execution_simulator.v4",
+            "fillModel": "simple_fill_ratio_with_participation_cap",
+            "feeModel": "fixed_bps",
+            "taxModel": "sell_tax_bps",
+            "slippageModel": "linear_bps",
+            "spreadModel": "not_modeled",
+            "marketImpactModel": "not_modeled",
+            "volatilityAdjustmentModel": "not_modeled",
+            "liquidityModel": "conservative_when_available",
+            "executionPolicy": {
+              "fillPriceRule": "current_candidate_last_price",
+              "slippageBps": 0,
+              "feeBps": 0,
+              "taxBps": 0,
+              "halfSpreadBps": 0,
+              "fillRatio": 1,
+              "allowFractionalShares": true,
+              "maxVolumeParticipationRate": 0.1,
+              "minLiquidityFillRatio": 0.1,
+              "rejectStaleLiquidity": true,
+              "marketImpactBpsPerParticipationRate": 0
+            },
+            "costComponents": {
+              "fee": "fee_bps",
+              "tax": "sell_tax_bps",
+              "slippage": "slippage_bps",
+              "spread": "not_modeled",
+              "marketImpact": "not_modeled",
+              "volatilityAdjustment": "not_modeled"
+            },
+            "assumptions": [
+              "paper-only execution simulator",
+              "no live broker order",
+              "spread is an explicit zero placeholder",
+              "volatility-adjusted slippage is an explicit not-modeled placeholder",
+              "market impact is an explicit zero placeholder",
+              "volume participation cap applies only when candidate volume is available",
+              "missing volume preserves legacy fill behavior and is reported as not_modeled"
+            ]
+          },
+          "benchmarkPolicy": {
+            "mode": "fixed_report_benchmarks",
+            "names": [
+              "cashOnly",
+              "equalWeightBuyAndHold",
+              "initialPortfolioBuyAndHold"
+            ],
+            "equalWeightAvailability": "requires_priced_replay_packet"
+          },
+          "portfolioPolicyApplied": false,
+          "tickDelayMs": 0
+        },
+        "notices": [
+          {
+            "field": "universe.preset",
+            "code": "preset_not_applied",
+            "message": "The preset is retained request metadata; source snapshots determine the available symbols, without preset filtering."
+          },
+          {
+            "field": "universe.market",
+            "code": "allocation_only",
+            "message": "Market changes allocation targets only: mixed_global splits KR/US targets; kr and us retain risk-profile defaults. No market symbol filter is applied."
+          },
+          {
+            "field": "costModel",
+            "code": "workflow_execution_defaults",
+            "message": "standard means the existing workflow execution defaults shown in effectiveConfig.costModel, not a separate commission/slippage preset."
+          },
+          {
+            "field": "benchmarkPolicy",
+            "code": "fixed_report_benchmarks",
+            "message": "Reports compute cash, equal-weight and initial-portfolio benchmarks; equal-weight can be unavailable without a priced replay packet."
+          },
+          {
+            "field": "decisionProvider",
+            "code": "fixture_provider",
+            "message": "Fixture decisions use no external model, output schema file or Codex calls. Source data kind is not inferred from this provider."
+          },
+          {
+            "field": "runCount",
+            "code": "single_run_count",
+            "message": "single_replay always executes one replay."
+          },
+          {
+            "field": "window.windowMonths",
+            "code": "fixed_range_metadata_only",
+            "message": "Fixed dates determine the replay interval; windowMonths is retained only in fixed-window metadata."
+          }
+        ]
+      }
+    </script>
+    <script type="application/json" id="validation-response-provenance">
+      {
+        "description": "현재 입력과 무관한 고정 합성 요청의 pure validator 응답",
+        "generator": "validatePaperSimulationCandidate",
+        "module": "dist/api/paperSimulationConfig.js",
+        "source": "src/api/paperSimulationConfig.ts",
+        "sourceCommit": "06c862b0d84a4c50c0fca69ed8a26daf7deea897",
+        "sourceSha256": "12aaf681879f24e042717b572c39544e4786e67995eb44694ebe6195cd2c8075",
+        "executedModuleSha256": "f19ab577f1b2cfce080b68dc78c25866c8fe21a90074b5bf578b45d8d95f061e",
+        "responseFile": "validation-response.example.json",
+        "responseFileSha256": "096accd82104372e21739c66a9f670a3ad9f05fe4bda2590805a6ff80c4d71a6",
+        "env": {},
+        "sourceDataRead": false,
+        "runnerStarted": false,
+        "networkRequest": false
+      }
+    </script>
     <script>
       const runs = [
         {
@@ -2065,6 +2503,325 @@
             document.querySelector("#sampling").value;
         });
       }
+      const comparisonFields = [
+        ["mode", "실행 경계", "mode", "mode"],
+        ["runType", "실행 유형", "runType", "runType"],
+        ["runCount", "실행 횟수", "runCount", "runCount"],
+        ["sourceDataDir", "자료 경로", "sourceDataDir", "sourceDataDir"],
+        [
+          "universe.preset",
+          "종목군 preset",
+          "universe.preset",
+          "universe.presetApplied",
+        ],
+        [
+          "universe.market",
+          "시장 metadata",
+          "universe.market",
+          "universe.allocationMode",
+        ],
+        ["window.mode", "기간 방식", "window.mode", "window.mode"],
+        ["window.seed", "기간 seed", "window.seed", "window.seed"],
+        [
+          "window.startAt",
+          "기간 시작",
+          "window.startAt",
+          "window.rangeStartAt",
+        ],
+        ["window.endAt", "기간 종료", "window.endAt", "window.rangeEndAt"],
+        [
+          "window.windowMonths",
+          "기간 개월 metadata",
+          "window.windowMonths",
+          "window.windowMonths",
+        ],
+        [
+          "timezoneOffsetMinutes",
+          "시간대 offset (분)",
+          null,
+          "window.timezoneOffsetMinutes",
+        ],
+        [
+          "samplingPolicy.decisionFrequency",
+          "판단 빈도",
+          "samplingPolicy.decisionFrequency",
+          "samplingPolicy.decisionFrequency",
+        ],
+        [
+          "samplingPolicy.stepSeconds",
+          "시점 간격 (초)",
+          "samplingPolicy.stepSeconds",
+          "samplingPolicy.stepSeconds",
+        ],
+        [
+          "samplingPolicy.maxDecisionCalls",
+          "판단 호출 한도",
+          "samplingPolicy.maxDecisionCalls",
+          "samplingPolicy.maxDecisionCalls",
+        ],
+        [
+          "samplingPolicy.maxCodexCallsPerRun",
+          "Codex 호출 한도",
+          "samplingPolicy.maxCodexCallsPerRun",
+          "samplingPolicy.maxCodexCallsPerRun",
+        ],
+        [
+          "capital.initialCashKrw",
+          "가상 자금 (KRW)",
+          "capital.initialCashKrw",
+          "capital.initialCashKrw",
+        ],
+        [
+          "decisionProvider.mode",
+          "판단 provider",
+          "decisionProvider.mode",
+          "decisionProvider.mode",
+        ],
+        [
+          "decisionProvider.modelId",
+          "model ID",
+          "decisionProvider.modelId",
+          "decisionProvider.modelId",
+        ],
+        [
+          "decisionProvider.outputSchema",
+          "출력 schema",
+          "decisionProvider.outputSchema",
+          "decisionProvider.outputSchema",
+        ],
+        ["riskProfile", "위험 설정", "riskProfile", "riskProfile"],
+        ["riskDetails", "위험·제약·배분 수치", null, null],
+        ["paperExitPolicy", "exit 조건", "paperExitPolicy", "paperExitPolicy"],
+        ["costModel", "비용 조건", "costModel", null],
+        ["benchmarkPolicy", "benchmark", "benchmarkPolicy", "benchmarkPolicy"],
+        ["tickDelayMs", "tick 지연 (ms)", null, "tickDelayMs"],
+        ["sourceDataKind", "자료 종류", null, null],
+        ["dataAvailabilityChecked", "자료 가용성 확인", null, null],
+        [
+          "portfolioPolicyApplied",
+          "저장 정책 적용",
+          null,
+          "portfolioPolicyApplied",
+        ],
+      ];
+      function configValue(config, path) {
+        return path
+          ? path.split(".").reduce((value, key) => value?.[key], config)
+          : undefined;
+      }
+      function displayConfigValue(value) {
+        if (value === undefined) return "서버 산출 · 요청 필드 아님";
+        if (value === null) return "null (원문 값)";
+        return typeof value === "object"
+          ? JSON.stringify(value)
+          : String(value);
+      }
+      function renderConfigComparison(selector, requested, response) {
+        const rows = comparisonFields.map(
+          ([key, label, requestPath, effectivePath]) => {
+            const row = document.createElement("div");
+            row.className = "config-row";
+            row.dataset.field = key;
+            const title = document.createElement("dt");
+            title.textContent = label + " · " + key;
+            const requestCell = document.createElement("dd");
+            const effectiveCell = document.createElement("dd");
+            const requestedLabel = document.createElement("span");
+            requestedLabel.className = "config-label";
+            requestedLabel.textContent = response
+              ? "고정 요청"
+              : "현재 요청 초안";
+            const effectiveLabel = document.createElement("span");
+            effectiveLabel.className = "config-label";
+            effectiveLabel.textContent = response
+              ? "고정 응답의 실효값"
+              : "실효값";
+            const requestValue = document.createElement("span");
+            requestValue.className = "config-request-value";
+            requestValue.textContent = displayConfigValue(
+              configValue(requested, requestPath),
+            );
+            const effectiveValue = document.createElement("span");
+            effectiveValue.className = "config-effective-value";
+            let value = "검증 미연결 · 미조회";
+            if (response) {
+              const effective = response.effectiveConfig;
+              value = displayConfigValue(configValue(effective, effectivePath));
+              if (key === "universe.preset")
+                value =
+                  "presetApplied=" +
+                  effective.universe.presetApplied +
+                  " · selection=" +
+                  effective.universe.selection;
+              if (key === "universe.market")
+                value =
+                  "marketFilterApplied=" +
+                  effective.universe.marketFilterApplied +
+                  " · allocationMode=" +
+                  effective.universe.allocationMode;
+              if (key === "window.windowMonths" && effective.window.fixedWindow)
+                value +=
+                  " · fixedWindow metadata=" +
+                  effective.window.fixedWindow.windowMonths;
+              if (key === "riskDetails")
+                value =
+                  "constraints · riskPolicy · allocationPolicy: 아래 고정 실효값 전체에서 확인";
+              if (key === "costModel")
+                value =
+                  effective.costModel.modelVersion +
+                  " · execution=" +
+                  effective.costModel.executionModelVersion +
+                  " · feeBps=" +
+                  effective.costModel.executionPolicy.feeBps +
+                  " · taxBps=" +
+                  effective.costModel.executionPolicy.taxBps +
+                  " · slippageBps=" +
+                  effective.costModel.executionPolicy.slippageBps +
+                  " (전체 조건은 아래 원문)";
+              if (key === "sourceDataKind" || key === "dataAvailabilityChecked")
+                value = displayConfigValue(response[key]);
+            }
+            effectiveValue.textContent = value;
+            requestCell.append(requestedLabel, requestValue);
+            effectiveCell.append(effectiveLabel, effectiveValue);
+            row.append(title, requestCell, effectiveCell);
+            return row;
+          },
+        );
+        document.querySelector(selector).replaceChildren(...rows);
+      }
+      // Display raw form values only. Validation and effective normalization remain server-owned.
+      function renderDraftConfig(changed = false) {
+        const value = (id) => document.querySelector("#" + id).value;
+        const draft = {
+          mode: "paper_only",
+          runType: value("run-type"),
+          runCount: value("count"),
+          sourceDataDir: value("source"),
+          universe: { preset: "design-draft-metadata", market: "mixed_global" },
+          window: {
+            mode: "fixed_range",
+            seed: "design-draft-v1",
+            startAt: value("from"),
+            endAt: value("to"),
+            windowMonths: "1",
+          },
+          samplingPolicy: {
+            decisionFrequency:
+              { "주 1회": "once_per_week", "일 1회": "once_per_day" }[
+                value("sampling")
+              ] ?? value("sampling"),
+            stepSeconds: "86400",
+            maxDecisionCalls: "100",
+            maxCodexCallsPerRun: "31",
+          },
+          capital: { initialCashKrw: value("capital") },
+          decisionProvider: {
+            mode: "dry_run_fixture",
+            modelId: "draft-unused-model",
+            outputSchema: "schemas/virtual-decision.schema.json",
+          },
+          riskProfile: value("risk"),
+          paperExitPolicy: "none",
+          costModel: "standard",
+          benchmarkPolicy: "cash_equal_weight_initial_hold",
+        };
+        document.querySelector("#draft-config").textContent = JSON.stringify(
+          {
+            inputRepresentation: "raw form strings; not a validated API config",
+            requestedDraft: draft,
+            effectiveConfig: null,
+            effectiveStatus: "검증 미연결 · 미조회",
+            notices: null,
+            sourceDataKind: null,
+            dataAvailability: "미검증",
+          },
+          null,
+          2,
+        );
+        renderConfigComparison("#draft-comparison", draft, null);
+        document.querySelector("#summary-run-type").textContent = draft.runType;
+        if (changed)
+          document.querySelector("#draft-status").textContent =
+            "입력 변경됨 · 미검증";
+      }
+      const fixedValidationResponse = JSON.parse(
+        document.querySelector("#validation-response-example").textContent,
+      );
+      const fixedValidationProvenance = JSON.parse(
+        document.querySelector("#validation-response-provenance").textContent,
+      );
+      for (const [id, data] of [
+        ["fixed-requested-config", fixedValidationResponse.requestedConfig],
+        ["fixed-effective-config", fixedValidationResponse.effectiveConfig],
+        ["fixed-validation-response", fixedValidationResponse],
+        ["fixed-validation-provenance", fixedValidationProvenance],
+      ])
+        document.querySelector("#" + id).textContent = JSON.stringify(
+          data,
+          null,
+          2,
+        );
+      document.querySelector("#fixed-response-status").textContent =
+        "이 고정 예시에만 해당: status=" +
+        fixedValidationResponse.status +
+        " · sourceDataKind=" +
+        fixedValidationResponse.sourceDataKind +
+        " · dataAvailabilityChecked=" +
+        fixedValidationResponse.dataAvailabilityChecked +
+        " · replayRunnerStarted=" +
+        fixedValidationResponse.replayRunnerStarted;
+      renderConfigComparison(
+        "#fixed-comparison",
+        fixedValidationResponse.requestedConfig,
+        fixedValidationResponse,
+      );
+      const requestedExample = fixedValidationResponse.requestedConfig;
+      const effectiveExample = fixedValidationResponse.effectiveConfig;
+      for (const text of [
+        "runType=" +
+          requestedExample.runType +
+          " · runCount: " +
+          requestedExample.runCount +
+          " → " +
+          effectiveExample.runCount,
+        "fixture maxCodexCallsPerRun: " +
+          requestedExample.samplingPolicy.maxCodexCallsPerRun +
+          " → " +
+          effectiveExample.samplingPolicy.maxCodexCallsPerRun,
+        "고정 예시 source: " +
+          requestedExample.sourceDataDir +
+          " · riskProfile=" +
+          requestedExample.riskProfile,
+      ]) {
+        const item = document.createElement("li");
+        item.textContent = text;
+        document.querySelector("#fixed-normalization-differences").append(item);
+      }
+      for (const notice of fixedValidationResponse.notices) {
+        const item = document.createElement("li");
+        item.textContent =
+          notice.field + " · " + notice.code + ": " + notice.message;
+        document.querySelector("#fixed-validation-notices").append(item);
+      }
+      for (const id of [
+        "run-type",
+        "risk",
+        "source",
+        "from",
+        "to",
+        "capital",
+        "count",
+        "sampling",
+      ]) {
+        document
+          .querySelector("#" + id)
+          .addEventListener("input", () => renderDraftConfig(true));
+        document
+          .querySelector("#" + id)
+          .addEventListener("change", () => renderDraftConfig(true));
+      }
+      renderDraftConfig();
       document.querySelector(".skip").addEventListener("click", (event) => {
         event.preventDefault();
         const main = document.querySelector("#content");

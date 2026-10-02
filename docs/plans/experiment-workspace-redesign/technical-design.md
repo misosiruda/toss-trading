@@ -107,6 +107,45 @@ source 종류/coverage를 확인할 수 없으면 ‘자료 종류 미확인’�
    `available/unknown`만 있으면 접수 사실만 표시하고 생존·완료를 추정하지 않는다.
    `available/runner_failed`가 있으면 manifest 유무와 별개로 runner 실패 관측을 표시한다.
 
+### 최종 확인과 생성 제어
+
+실제품의 최종 단계는 검증 응답의 전체 `requestedConfig`, `effectiveConfig`, `notices`를 표시한다.
+runType·정규화된 runCount·window/timezone·stepSeconds·호출 한도·provider·constraints·riskPolicy·
+allocationPolicy·exit·cost·benchmark·tickDelayMs와 `sourceDataKind`/`dataAvailabilityChecked`를
+생략하지 않는다. 정상 응답이어도 single replay 횟수나 fixture Codex 한도가 요청과 달라질 수
+있으므로 차이를 드러내고 확인해야 한다. source 종류 unknown과 가용성 미검증은 valid와 별개다.
+
+생성 행동은 현재 typed candidate와 동일한 입력 identity/version에 대한 최신 validation 응답이
+성공하고 그 실효값·notices가 최종 단계에 표시된 뒤에만 활성화한다. 입력이 바뀌면 이전 응답을
+즉시 무효화하고 생성은 다시 막는다. 요청 identity가 다른 늦은 응답을 채택하지 않으며, 원래
+확인한 입력과 다른 body를 생성에 보내지 않는다. browser에서 backend의 실효값 정규화를
+재구현하지 않는다. validation은 runner 시작이나 source 가용성 보장이 아니다.
+
+### HTML 시안의 명시적 비목표
+
+이 문서의 `wireframes.html`은 validation API와 create API에 연결하지 않는다. 3단계는 다음
+두 자료를 서로 다른 이름과 영역으로 보여준다.
+
+- 현재 양식은 모든 요청 필드를 갖춘 **raw 초안**이다. 숫자도 편집 중 문자열로 보존하며 typed
+  API 요청·검증된 requestedConfig로 표현하지 않는다. 핵심 조건은 요청→미조회 비교 행으로,
+  모바일은 한 열의 조건 목록으로 보인다. effectiveConfig/notices/sourceDataKind는 미조회로 남긴다.
+  양식을 바꾸면 초안만 갱신되고 ‘입력 변경됨 · 미검증’을 유지한다.
+- [고정 서버 응답 원문](validation-response.example.json)은 문서 작성 시 별도 합성 입력으로
+  `validatePaperSimulationCandidate(config, {})`를 실제 호출한 결과다. 입력과 생성 모듈·source
+  commit/hash·빈 env는 시안에서도 확인할 수 있다. single_replay의 runCount 3→1,
+  fixture maxCodexCallsPerRun 31→0을 포함한 전체 실효값과 notices를 보존한다. 주요 조건은
+  requested→effective 비교 행으로 먼저 보이고, constraints/riskPolicy/allocationPolicy 전체와
+  각 JSON 원문은 마지막의 접힌 검사 영역에 둔다. 현재 양식값의 검증 결과가 아니며 양식 변경에
+  따라 다시 계산하지 않는다.
+
+고정 예시의 sourceDataKind는 unknown, dataAvailabilityChecked와 replayRunnerStarted는 false다.
+문서 작성 시 pure resolver만 실행했으며 source 자료 조회·runner·외부 AI 호출을 하지 않았다.
+시안 browser는 이미 포함된 JSON을 표시할 뿐 새 검증 요청을 보내지 않는다. ‘결과 시안 보기’는
+기존 합성 결과 화면으로 이동하는 preview이며 실행 CTA가 아니다. 실제 생성 제어와 validation
+오류·변경 입력 identity 검증은 후속 production UI PR에서 구현·검증한다.
+고정 예시 구획은 문서 검토 전용이며 생산 화면에 복사하지 않는다. 실제 UI는 현재 입력에 대한
+검증 대기·오류 또는 요청/실효 비교 상태 하나를 표시하고, 전체 원문 검사는 마지막에 둔다.
+
 UX-02a의 [입력 계약](../../contracts/paper-simulation-config.md)과 UX-02b의
 [접수·실패 관측](../../contracts/paper-simulation-observations.md)은 main에 구현·병합됐다.
 Runner promise rejection은 접수 응답과 분리된 batch 범위 관측이다. UI timeout이나 누락만으로

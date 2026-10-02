@@ -1,0 +1,219 @@
+{
+  "schemaVersion": "paper_simulation_validation.v1",
+  "mode": "paper_only",
+  "status": "valid",
+  "readOnly": true,
+  "storageMutationEnabled": false,
+  "liveTradingEnabled": false,
+  "orderPlacementEnabled": false,
+  "replayRunnerStarted": false,
+  "dataAvailabilityChecked": false,
+  "sourceDataKind": "unknown",
+  "requestedConfig": {
+    "mode": "paper_only",
+    "runType": "single_replay",
+    "runCount": 3,
+    "sourceDataDir": "data/validation-contract-example",
+    "universe": {
+      "preset": "fixed-synthetic-example-metadata",
+      "market": "mixed_global"
+    },
+    "window": {
+      "mode": "fixed_range",
+      "seed": "design-validation-example-v1",
+      "startAt": "2024-02-01",
+      "endAt": "2024-02-29",
+      "windowMonths": 1
+    },
+    "samplingPolicy": {
+      "decisionFrequency": "once_per_day",
+      "stepSeconds": 86400,
+      "maxDecisionCalls": 40,
+      "maxCodexCallsPerRun": 31
+    },
+    "capital": {
+      "initialCashKrw": 20000000
+    },
+    "decisionProvider": {
+      "mode": "dry_run_fixture",
+      "modelId": "example-unused-model",
+      "outputSchema": "schemas/virtual-decision.schema.json"
+    },
+    "riskProfile": "conservative",
+    "paperExitPolicy": "take_profit_stop_loss",
+    "costModel": "standard",
+    "benchmarkPolicy": "cash_equal_weight_initial_hold"
+  },
+  "effectiveConfig": {
+    "mode": "paper_only",
+    "runType": "single_replay",
+    "runCount": 1,
+    "sourceDataDir": "data/validation-contract-example",
+    "universe": {
+      "selection": "source_snapshots",
+      "presetApplied": false,
+      "marketFilterApplied": false,
+      "allocationMode": "split_target_kr_us"
+    },
+    "window": {
+      "mode": "fixed_range",
+      "seed": "design-validation-example-v1",
+      "rangeStartAt": "2024-01-31T15:00:00.000Z",
+      "rangeEndAt": "2024-02-29T14:59:59.999Z",
+      "windowMonths": null,
+      "fixedWindow": {
+        "seed": "design-validation-example-v1",
+        "rangeStart": "2024-01-31T15:00:00.000Z",
+        "rangeEnd": "2024-02-29T14:59:59.999Z",
+        "windowMonths": 1,
+        "timezoneOffsetMinutes": 540,
+        "candidateCount": 1,
+        "selectedCandidateIndex": 0,
+        "selectedMonth": "2024-02",
+        "localStartDate": "2024-02-01",
+        "localEndDate": "2024-02-29",
+        "startAt": "2024-01-31T15:00:00.000Z",
+        "endAt": "2024-02-29T14:59:59.999Z"
+      },
+      "timezoneOffsetMinutes": 540
+    },
+    "samplingPolicy": {
+      "decisionFrequency": "once_per_day",
+      "stepSeconds": 86400,
+      "maxDecisionCalls": 40,
+      "maxCodexCallsPerRun": 0
+    },
+    "capital": {
+      "initialCashKrw": 20000000
+    },
+    "decisionProvider": {
+      "mode": "dry_run_fixture",
+      "modelId": null,
+      "outputSchema": null
+    },
+    "riskProfile": "conservative",
+    "constraints": {
+      "maxNewPositions": 3,
+      "maxBudgetPerSymbolKrw": 2000000,
+      "allowedActions": [
+        "VIRTUAL_BUY",
+        "VIRTUAL_SELL",
+        "VIRTUAL_HOLD"
+      ]
+    },
+    "riskPolicy": {
+      "maxBudgetPerDecisionKrw": 2000000,
+      "maxSymbolExposureKrw": 4000000,
+      "targetExposureRatio": 0.35,
+      "maxPositionWeightRatio": 0.35,
+      "minCashReserveRatio": 0.1,
+      "minCashReserveKrw": 0
+    },
+    "allocationPolicy": {
+      "policyName": "conservative_allocation",
+      "targetExposureRatio": 0.35,
+      "minCashReserveRatio": 0.1,
+      "maxBudgetPerDecisionRatio": 0.1,
+      "maxSymbolExposureRatio": 0.2,
+      "marketTargetExposureRatios": {
+        "KR": 0.175,
+        "US": 0.175
+      }
+    },
+    "paperExitPolicy": {
+      "takeProfitMode": "full_exit",
+      "takeProfitRatio": 0.15,
+      "stopLossRatio": 0.08
+    },
+    "costModel": {
+      "modelVersion": "paper_cost_model.v5",
+      "executionModelVersion": "execution_simulator.v4",
+      "fillModel": "simple_fill_ratio_with_participation_cap",
+      "feeModel": "fixed_bps",
+      "taxModel": "sell_tax_bps",
+      "slippageModel": "linear_bps",
+      "spreadModel": "not_modeled",
+      "marketImpactModel": "not_modeled",
+      "volatilityAdjustmentModel": "not_modeled",
+      "liquidityModel": "conservative_when_available",
+      "executionPolicy": {
+        "fillPriceRule": "current_candidate_last_price",
+        "slippageBps": 0,
+        "feeBps": 0,
+        "taxBps": 0,
+        "halfSpreadBps": 0,
+        "fillRatio": 1,
+        "allowFractionalShares": true,
+        "maxVolumeParticipationRate": 0.1,
+        "minLiquidityFillRatio": 0.1,
+        "rejectStaleLiquidity": true,
+        "marketImpactBpsPerParticipationRate": 0
+      },
+      "costComponents": {
+        "fee": "fee_bps",
+        "tax": "sell_tax_bps",
+        "slippage": "slippage_bps",
+        "spread": "not_modeled",
+        "marketImpact": "not_modeled",
+        "volatilityAdjustment": "not_modeled"
+      },
+      "assumptions": [
+        "paper-only execution simulator",
+        "no live broker order",
+        "spread is an explicit zero placeholder",
+        "volatility-adjusted slippage is an explicit not-modeled placeholder",
+        "market impact is an explicit zero placeholder",
+        "volume participation cap applies only when candidate volume is available",
+        "missing volume preserves legacy fill behavior and is reported as not_modeled"
+      ]
+    },
+    "benchmarkPolicy": {
+      "mode": "fixed_report_benchmarks",
+      "names": [
+        "cashOnly",
+        "equalWeightBuyAndHold",
+        "initialPortfolioBuyAndHold"
+      ],
+      "equalWeightAvailability": "requires_priced_replay_packet"
+    },
+    "portfolioPolicyApplied": false,
+    "tickDelayMs": 0
+  },
+  "notices": [
+    {
+      "field": "universe.preset",
+      "code": "preset_not_applied",
+      "message": "The preset is retained request metadata; source snapshots determine the available symbols, without preset filtering."
+    },
+    {
+      "field": "universe.market",
+      "code": "allocation_only",
+      "message": "Market changes allocation targets only: mixed_global splits KR/US targets; kr and us retain risk-profile defaults. No market symbol filter is applied."
+    },
+    {
+      "field": "costModel",
+      "code": "workflow_execution_defaults",
+      "message": "standard means the existing workflow execution defaults shown in effectiveConfig.costModel, not a separate commission/slippage preset."
+    },
+    {
+      "field": "benchmarkPolicy",
+      "code": "fixed_report_benchmarks",
+      "message": "Reports compute cash, equal-weight and initial-portfolio benchmarks; equal-weight can be unavailable without a priced replay packet."
+    },
+    {
+      "field": "decisionProvider",
+      "code": "fixture_provider",
+      "message": "Fixture decisions use no external model, output schema file or Codex calls. Source data kind is not inferred from this provider."
+    },
+    {
+      "field": "runCount",
+      "code": "single_run_count",
+      "message": "single_replay always executes one replay."
+    },
+    {
+      "field": "window.windowMonths",
+      "code": "fixed_range_metadata_only",
+      "message": "Fixed dates determine the replay interval; windowMonths is retained only in fixed-window metadata."
+    }
+  ]
+}

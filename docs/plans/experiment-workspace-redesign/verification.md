@@ -17,7 +17,7 @@
 
 ## 자동 review finding 수정
 
-자동 review의 P2 열다섯 건을 반영했다.
+자동 review의 P2 열여섯 건을 반영했다.
 
 - 완료·진행·실패·미관측 모두 실행 ID가 포함된 상세 링크를 제공한다. 선택 ID의 이름·상태·
   관측 기록을 표시하며 완료 예시의 수치를 다른 실행에 재사용하지 않는다. 미확인 ID도 구분한다.
@@ -47,6 +47,9 @@
   첫 tab 선택을 실행 전환으로 오인해 focus를 section에 빼앗지 않으며 명시적 unknown ID는 유지한다.
 - 단계 버튼을 실제로 focus한 뒤 활성화하는 회귀를 추가했다. 단계 이동은 새 heading으로 focus를
   옮긴 뒤 마지막 단계의 기존 다음 버튼을 숨겨 hidden control에 focus가 남지 않게 한다.
+- 마지막 단계의 요청/실효값 확인 주장을 수정했다. 현재 raw 초안은 전체 요청 필드를 표시하되
+  effective/notices는 미조회로 유지하고, 별도 고정 pure validation 응답 예시는 원문 전체와 생성
+  근거를 표시한다. 두 입력을 혼동하지 않으며 새 검증·source 조회·runner를 실행하지 않는다.
 - HTML을 읽을 수 있게 포맷하고 임시 JSDOM 검증으로 desktop/mobile ID별 링크, 상태별 상세,
   미확인 ID, mobile menu의 이동/닫힘, 검색/필터/empty, 3단계 이동/입력 보존/요약 갱신,
   키보드 tab 이동, ID/ARIA 참조와 JavaScript error 부재를 확인했다.
@@ -60,7 +63,7 @@ JSDOM 검증은 DOM 동작 검사이며 실제 viewport·pixel·layout·browser 
 발견한 결함도 함께 수정했다.
 현재 route의 모바일 메뉴 재선택 닫기, 직접 query의 추가 `?` 보존, 선택 카드의 고정 위험 설정
 문구·개별 run 부분 실패 표시·landmark/focus 수정을 포함해 재검사한 HTML SHA256은
-`ee24a4a70414ce11fff697e57b8207077db4875bf5ad81a2c472be2eaf7095b8`다.
+`d9cdd32c2f2543279a7323dd33f7589a1a9eee9069ed313d1453345d34fbd6e1`다.
 
 70/70 통과 범위: desktop/mobile 및 viewport 전환 후 출발 run focus, 목록 scroll/filter/history,
 직접주소·새 문서의 tab/filter 복원, 6개 예시 상태·missing/empty, 단계 입력/요약, 키보드 tab,
@@ -77,6 +80,28 @@ skip link, 같은 menu 재선택, raw/encoded query 보존과 인코딩된 입�
 별도 검사다. 전체 gate 결과는 해당 PR의 검증 tree를 기준으로 기록한다.
 Scroll/focus는 stub 기반 DOM 검사다. 새 문서 로드에서는 문서 메모리의 scroll/focus 기록이 초기화된다.
 실제 browser pixel/layout/접근성이나 생산 API 통합이 완료됐다는 뜻은 아니다.
+
+## 최종 확인 필드·응답 provenance 회귀
+
+현재 HTML `d9cdd32c2f2543279a7323dd33f7589a1a9eee9069ed313d1453345d34fbd6e1`에서
+기존 247/247과 새 확인 단계 45/45, 총 292개 행렬 및 기본 DOM 검사를 통과했다.
+추가 검사 범위는 전체 raw 요청 필드, 변경 입력의 미검증 유지, 고정 응답 불변,
+runCount 3→1/Codex limit 31→0와 모든 notices, 실효 risk/exit/비용/benchmark/tick/source-kind,
+현재/고정 입력별 29개 조건 비교 행, 변경 초안과 고정 실효값의 분리, 전체 raw JSON을 마지막의
+접힌 검사에 두는 순서, 접기/펼치기 focus, 안전한 텍스트 렌더링, preview CTA 및 네트워크 부작용
+부재다. 한 열의 모바일 비교 행 CSS는 준비했지만 새 영역의 실제 overflow는 Chrome에서 재검증한다.
+
+[응답 원문](validation-response.example.json)의 SHA256은
+`096accd82104372e21739c66a9f670a3ad9f05fe4bda2590805a6ff80c4d71a6`다.
+commit `06c862b0d84a4c50c0fca69ed8a26daf7deea897`의 현재 source와 실행한 dist 모듈을
+in-memory transpile 결과로 대조했다. `validatePaperSimulationCandidate`를 고정 requestedConfig와
+빈 env로 호출해 원문과 deep equality를 확인했다. 해당 함수 호출 중 filesystem read/write,
+network, subprocess entry point를 감시해 호출 0을 확인했다. source data path는 존재를 조회하지
+않았고 fixture의 valid를 데이터 가용성/실행 성공으로 해석하지 않았다. 이 변경에서 production
+코드는 수정하지 않았다. repository 전체 gate 결과는 해당 PR의 최종 검증 tree를 기준으로 기록한다.
+
+**새 최종 확인 UI의 실제 Chrome 재검증은 대기 중이다. 아래 06c862b의 270개 통과는
+새 확인 UI를 포함하지 않으며 현재 후보의 browser 통과 증거로 재사용하지 않는다.**
 
 ## 실제 Windows Chrome 1차 검증 (9134619)
 
@@ -115,10 +140,21 @@ HTML SHA256 `7999b80f7531bbdeffd40c1811145b766efc7dbad074f699309680cfeaee7315`�
   × 3해상도에서 첫 tab click/arrow의 URL과 선택 tab은 정상이나 focus가 `#screen-detail`로 이동했다.
 - 즉 기존 matrix 통과가 모든 동선 통과는 아니다. 이 추가 결함도 수정 대상으로 유지했다.
 
-현재 수정 후보는 기본 상세의 실제 표시 ID를 lookup/route identity에 공통 사용하고 빈 ID의
-첫 tab URL도 canonical ID로 기록한다. 독립 DOM alias 84개와 기존 163개가 모두 통과했다.
-**이 최신 후보의 실제 Chrome 재검증은 대기 중이며 d60fc57의 252개 통과를 대신 쓰지 않는다.**
-최종 재검증은 새 기본 상세 18개와 기존 matrix를 모두 포함한다.
+기본 상세의 실제 표시 ID를 lookup/route identity에 공통 사용하고 빈 ID의 첫 tab URL도
+canonical ID로 기록하도록 수정했다. 독립 DOM alias 84개와 기존 163개가 모두 통과했다.
+
+### 실제 Windows Chrome 3차 검증 (06c862b)
+
+사용자 노트북의 검증 결과에서 commit `06c862b`, HTML SHA256
+`ee24a4a70414ce11fff697e57b8207077db4875bf5ad81a2c472be2eaf7095b8`의 exact 일치를 확인했다.
+
+- 기본 상세 alias 18개와 기존 matrix 252개를 합친 270/270 통과
+- 1440×1000 / 1024×900 / 390×844의 landmark·outline·focus 통과
+- axe 37상태 violation 0, console/page error 0, 가로 overflow 없음
+- screen reader, 다른 browser/device, production API 통합은 미검증
+
+이 결과는 위 exact HTML에 한정한다. 이후 추가한 최종 확인 필드/고정 응답 예시의 실제
+Chrome 검증은 새 후보에서 기존 matrix와 함께 다시 수행해야 한다.
 
 ### 최초 클라우드 검증 제한 기록
 
@@ -143,5 +179,6 @@ browser 검증 조건을 생략하지 않는다.
 - 실제 구현에서는 예시 dataset 대신 격리 fixture API와 같은 동선을 수행하고 create가 한 번만
   발생했는지, 같은 batch/run ID로 조회하는지 검증
 
-HTML 시안은 layout/prototype 예시이며 validation 또는 runner를 호출하지 않는다. 기능 명세의
+HTML 시안의 browser 동작은 layout/prototype 예시이며 validation 또는 runner를 호출하지 않는다.
+고정 validation 응답은 문서 작성 시 pure validator만 호출해 얻은 별도 자료다. 기능 명세의
 정본은 product-plan/technical-design이고 구현 PR의 완료 증거는 해당 PR에 따로 기록한다.
