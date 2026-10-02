@@ -8,7 +8,8 @@
    달라지면 먼저 문서 변경을 검토하고 다음 기능에 무관한 변경을 섞지 않음
 
 `EXP-00`~`EXP-04`는 이 문서의 작업 ID이며 GitHub PR 번호가 아니다. 구현 시 path 이름을
-조정할 수 있으나 책임·계약·AC는 유지한다. 모든 상태는 현재 미구현이며 예정 명령을 실행된
+조정할 수 있으나 책임·계약·AC는 유지한다. EXP-00은 PR #791로 병합되었다.
+EXP-01의 입력 계약·fixture·unit test만 구현했으며 EXP-02~04는 미구현이다. 예정 CLI 명령을 실행된
 증거로 읽지 않는다. 커밋 개수는 게시 조건이 아니다. schema/저장/실행/검토/테스트·문서의
 책임이 바뀌기 전에 검토 가능한 단위로 Korean Conventional Commit을 남긴다.
 
@@ -59,15 +60,30 @@
 
 수용 기준:
 
-- [ ] `EXP-01-AC1`: 같은 의미의 field 순서·UTC 정규화·동일 snapshot 집합에서 같은 normalized input/hash
-- [ ] `EXP-01-AC2`: fixture/source/cutoff/cost/Risk/strategy version 변경은 입력 식별 변경 또는 validation 실패
-- [ ] `EXP-01-AC3`: missing/empty/corrupt/duplicate/future-cutoff/unknown field·version·symbol reject
-- [ ] `EXP-01-AC4`: 2 MiB/100 snapshots/10 symbols/100 ticks/100 calls 상한과 경계값 검증;
+- [x] `EXP-01-AC1`: 같은 의미의 field 순서·UTC 정규화·동일 snapshot 집합에서 같은 normalized input/hash
+- [x] `EXP-01-AC2`: fixture/source/cutoff/cost/Risk/strategy version 변경은 입력 식별 변경 또는 validation 실패
+- [x] `EXP-01-AC3`: missing/empty/corrupt/duplicate/future-cutoff/unknown field·version·symbol reject
+- [x] `EXP-01-AC4`: 2 MiB/100 snapshots/10 symbols/100 ticks/100 calls 상한과 경계값 검증;
   ticks 배열 생성 전 상한 거절, session/random/AI mode·dynamic path 불허
-- [ ] `EXP-01-AC5`: module import/validation이 filesystem mutation·process spawn·network/AI/broker 호출 0
-- [ ] `EXP-01-AC6`: 실제 source·시장·전략 선택이나 credential 없이 golden fixture를 검증 가능
+- [x] `EXP-01-AC5`: module import/validation이 filesystem mutation·process spawn·network/AI/broker 호출 0
+- [x] `EXP-01-AC6`: 실제 source·시장·전략 선택이나 credential 없이 golden fixture를 검증 가능
 
 예정 집중 검증: `npm run build && node --test dist/replay/paperExperimentInput.test.js`
+
+로컬 구현 증거 (2026-10-02):
+
+- `paperExperimentInput.test.ts` 76개와 기존 `replayRunManifest` 13개,
+  `historicalReplayWorkflowPlan` 1개: build 후 90개 통과, 실패·skip 0
+- exact 2 MiB/100 snapshots/10 symbols/100 ticks/100 calls와 초과 입력, tick 할당 전 거절 검증
+- snapshot/object 순서·UTC 등가·정규화 JSON 재입력·freeze, cutoff/source/정책/version/identity 검증
+- fresh process의 UTC/Asia-Seoul/America-New-York 및 hostile AI/live 환경에서 동일 hash;
+  filesystem mutation·process spawn·network·wall clock·random 금지 spy와 함께 import/검증 통과
+- fixture는 3 tick의 합성 데이터이며 코드 identity context도 unit-test 고정 값이다.
+  실제 provider/runner/외부 source/AI/live 호출은 하지 않았다.
+
+위 AC 체크는 입력 계약의 unit 수용 증거다. aggregate/full profile과 독립/current-head 검수,
+원격 필수 check·보호 조건을 충족한 병합 결과는 실제 PR의 exact SHA 검증 기록을 따른다.
+EXP-02~04 및 Trainer/SPOM 최종 AC를 완료로 바꾸지 않는다.
 
 회귀: 기존 `replayRunManifest`, `historicalReplayWorkflowPlan` tests의 hash/config 의미 유지.
 rollback: 새 contract/fixture와 export만 revert. 기존 저장소 migration 없음, 미완료 입력은 실행되지 않음.
