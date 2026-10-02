@@ -24,6 +24,10 @@ function proof(artifact: ReviewArtifactKey, field: string) {
   return { artifact: basename(REVIEW_ARTIFACT_PATHS[artifact]), field,
     href: `../../${REVIEW_ARTIFACT_PATHS[artifact]}#${field}` };
 }
+function stateProof(field: string) {
+  return { artifact: "experiment-run.json", field, href: `../../experiment-run.json#${field}` };
+}
+function derivation(algorithm: string, inputs: ReturnType<typeof proof>[]) { return { algorithm, inputs }; }
 function claim<T>(value: T, artifact: ReviewArtifactKey, field: string) { return { value, evidence: proof(artifact, field) }; }
 
 /** Presentation redaction only: raw values remain in semantic comparison and source artifacts. */
@@ -34,7 +38,7 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
       const reference = item as { artifact: unknown; field: unknown; href: unknown };
       const path = [...Object.values(REVIEW_ARTIFACT_PATHS), "experiment-run.json"].find((path) => basename(path) === reference.artifact);
       if (Object.keys(item).length === 3 && path && typeof reference.field === "string"
-        && /^\/(?:[A-Za-z0-9_/-]*)$/.test(reference.field) && reference.href === `../../${path}#${reference.field}`) return item;
+        && /^(?:\/[A-Za-z0-9_/-]*)?$/.test(reference.field) && reference.href === `../../${path}#${reference.field}`) return item;
     }
     if (item !== null && typeof item === "object") return Object.fromEntries(Object.entries(item).map(([key, nested]) =>
       [redact(key), /^(?:password|secret|token|apiKey|authorization|cookie|accountNumber)$/i.test(key) ? "[비공개]" : visit(nested)]));
@@ -68,7 +72,10 @@ function projectEvidence(evidence: PaperExperimentReviewEvidence) {
     return { decisionHash: decision.decisionHash ?? null, packetHash: decision.packetHash ?? null,
       packetId: decision.packetId, simulatedAt: packet.generatedAt, item,
       evidence: proof("decisions", `/${decisionIndex}/decisions/${itemIndex}`),
-      packet: proof("packets", `/${packetIndex}`), risk: riskRows, trades,
+      decisionHashEvidence: proof("decisions", `/${decisionIndex}/decisionHash`),
+      packetHashEvidence: decision.packetHash === undefined ? null : proof("decisions", `/${decisionIndex}/packetHash`),
+      packet: proof("packets", `/${packetIndex}`),
+      simulatedAtEvidence: proof("packets", `/${packetIndex}/generatedAt`), risk: riskRows, trades,
       portfolio: evidence.timeline!.flatMap((row, index) => row.simulatedAt === packet.generatedAt
         ? [proof("timeline", `/${index}/portfolio`)] : []) };
   })) : null;
@@ -82,38 +89,47 @@ function projectEvidence(evidence: PaperExperimentReviewEvidence) {
         : evidence.artifacts.find((artifact) => artifact.errorCode)?.errorCode ?? (!verified ? "INCOMPLETE_EVIDENCE" : null)),
       terminationReason: inspection.state?.terminationReason ?? null,
       notice: "completed는 실행 기록의 완료이며 연구 품질·투자 성공을 뜻하지 않는다.",
-      evidence: { artifact: "experiment-run.json", field: "/status", href: "../../experiment-run.json#/status" } },
+      storedStatusEvidence: stateProof("/status"), terminationReasonEvidence: stateProof("/terminationReason"),
+      derivation: derivation("readPaperExperimentReviewEvidence/inspectPaperExperimentAttempt",
+        [stateProof(""), ...Object.keys(REVIEW_ARTIFACT_PATHS).map((key) => proof(key as ReviewArtifactKey, ""))]) },
     inputEligibility: { status: inspection.input?.preflight.status ?? "unavailable",
       integrity: inspection.input ? "verified" : "unavailable", inputHash: inspection.input?.inputHash ?? null,
       runtimeIdentity: inspection.state?.runtimeIdentity ?? null,
-      evidence: { artifact: "experiment-run.json", field: "/runtimeIdentity", href: "../../experiment-run.json#/runtimeIdentity" } },
+      runtimeIdentityEvidence: stateProof("/runtimeIdentity"), inputHashEvidence: stateProof("/inputHash"),
+      derivation: derivation("verifyExperimentInput/parsePaperExperimentInput", [proof("input", ""), proof("source", ""), stateProof("")]) },
     researchQuality: { status: quality, providerFailureCount: facts?.providerFailureCount ?? null,
-      noCandidateTickCount: facts?.noCandidateTickCount ?? null, decisionRejectedEventCount: facts?.decisionRejectedEventCount ?? null, evidence: facts ? proof("execution", "/auditEvents") : null,
+      noCandidateTickCount: facts?.noCandidateTickCount ?? null, decisionRejectedEventCount: facts?.decisionRejectedEventCount ?? null,
+      eventCountsEvidence: facts ? proof("execution", "/auditEvents") : null,
+      eventCountsDerivation: derivation("paperExperimentExecutionFacts", [proof("execution", "/auditEvents")]),
+      derivation: derivation("projectEvidence/paperExperimentExecutionFacts/parsePaperExperimentInput",
+        [stateProof(""), ...Object.keys(REVIEW_ARTIFACT_PATHS).map((key) => proof(key as ReviewArtifactKey, ""))]),
       statisticalConclusion: "판단 불가", investmentConclusion: "판단 불가" },
     question: input ? claim(input.question, "input", "/question") : null,
     scope: input ? claim({ mode: input.mode, fixture: input.fixture, provider: input.provider,
       clock: input.configuration.clock, evaluation: input.evaluation, universe: input.universe,
       coverageDescription: input.source.coverageDescription, sourceKind: input.source.kind,
-      sourceRefs: ["fixture:paper-experiment.v1"] }, "input", "/") : null,
-    coverage: inspection.input ? claim(inspection.input.preflight, "input", "/source/snapshots") : null,
+      sourceRefs: ["fixture:paper-experiment.v1"] }, "input", "") : null,
+    coverage: inspection.input ? { ...claim(inspection.input.preflight, "input", ""),
+      derivation: derivation("parsePaperExperimentInput", [proof("input", "")]) } : null,
     policy: input ? claim(input.configuration, "input", "/configuration") : null,
     costModel: input ? claim(input.costModel, "input", "/costModel") : null,
-    manifest: verified ? claim(evidence.manifest, "manifest", "/") : null,
+    manifest: verified ? claim(evidence.manifest, "manifest", "") : null,
     actions: decisions,
     outcomes: report ? claim({ replay: report.replaySummary, decision: report.decisionOutcome, risk: report.riskSummary,
-      sampling: report.samplingSummary, sourceWarnings: report.sourceWarningSummary }, "report", "/") : null,
-    operationalEvidence: receipt ? { facts: claim(facts, "execution", "/auditEvents"),
+      sampling: report.samplingSummary, sourceWarnings: report.sourceWarningSummary }, "report", "") : null,
+    operationalEvidence: receipt ? { facts: { ...claim(facts, "execution", "/auditEvents"),
+      derivation: derivation("paperExperimentExecutionFacts", [proof("execution", "/auditEvents")]) },
       events: receipt.auditEvents.map((event, index) => claim(event, "execution", `/auditEvents/${index}`)),
       sampling: claim(receipt.samplingDecisions, "execution", "/samplingDecisions"),
       warnings: claim(receipt.warnings, "execution", "/warnings") } : null,
     costs: report ? claim(report.costSummary, "report", "/costSummary") : null,
     benchmarks: report ? claim(report.benchmarks, "report", "/benchmarks") : null,
-    statistics: report ? claim({ advancedPerformance: report.advancedPerformance, sharpeValidation: report.sharpeValidation }, "report", "/") : null,
+    statistics: report ? claim({ advancedPerformance: report.advancedPerformance, sharpeValidation: report.sharpeValidation }, "report", "") : null,
     partialEvidence: { notice: "partial은 schema로 읽힌 일부 보존 파일이다. 완료된 결과·전체 건수의 증거로 사용하지 않는다.",
       artifacts: evidence.artifacts,
       progress: !verified && evidence.progress ? claim({ storedStatus: evidence.progress.status,
         tickIndex: evidence.progress.tickIndex, completedTickCount: evidence.progress.completedTickCount,
-        simulatedAt: evidence.progress.simulatedAt }, "progress", "/") : null },
+        simulatedAt: evidence.progress.simulatedAt }, "progress", "") : null },
     observations: verified ? ["고정 입력과 terminal inventory·execution receipt의 결속을 확인했다.",
       quality === "provider_failure" ? "보존된 provider 실패 event가 있다. 실행 완료를 유효한 연구 결과로 읽지 않는다."
         : quality === "insufficient_data" ? "입력 coverage gap이 있다. source의 충분성을 주장하지 않는다."
@@ -161,7 +177,7 @@ export function renderPaperExperimentReviewMarkdown(review: PaperExperimentRevie
   lines.push("", review.execution.notice, "상세 구조와 모든 값은 함께 생성된 [review.json](review.json)에 보존한다.", "");
   function ref(evidence: { artifact: string; field: string }): string {
     const path = [...Object.values(REVIEW_ARTIFACT_PATHS), "experiment-run.json"].find((path) => basename(path) === evidence.artifact);
-    return path && /^\/(?:[A-Za-z0-9_/-]*)$/.test(evidence.field)
+    return path && /^(?:\/[A-Za-z0-9_/-]*)?$/.test(evidence.field)
       ? `[${evidence.artifact} ${evidence.field}](../../${path}#${evidence.field})` : "근거 주소 없음";
   }
   const data = (value: unknown) => markdownText(JSON.stringify(value));
@@ -169,11 +185,17 @@ export function renderPaperExperimentReviewMarkdown(review: PaperExperimentRevie
   function field(label: string, value: unknown, evidence?: { artifact: string; field: string }) {
     lines.push(`- ${label}: ${data(value)}${evidence ? ` · 근거: ${ref(evidence)}` : ""}`);
   }
+  field("inputHash 근거", review.inputEligibility.inputHash, review.inputEligibility.inputHashEvidence);
+  field("저장 상태 근거", review.execution.storedStatus, review.execution.storedStatusEvidence);
+  field("입력 적격성 검증", review.inputEligibility.derivation);
+  field("실행 무결성 검증", review.execution.derivation);
+  field("연구 품질 분류", review.researchQuality.derivation);
   if (outcomes) lines.push(`요약 근거: ${ref(review.outcomes!.evidence)}, ${ref(review.costs!.evidence)}, ${ref(review.benchmarks!.evidence)}`, "");
   section("범위·source·coverage");
   field("범위", review.scope?.value ?? null, review.scope?.evidence);
   field("입력 적격성·tick별 coverage", review.coverage?.value ?? null, review.coverage?.evidence);
-  field("runtime 기준", review.inputEligibility.runtimeIdentity, review.inputEligibility.evidence);
+  field("coverage 산출 출처", review.coverage?.derivation ?? null);
+  field("runtime 기준", review.inputEligibility.runtimeIdentity, review.inputEligibility.runtimeIdentityEvidence);
   lines.push(""); section("고정 정책과 비용 모델");
   lines.push("정책의 null은 해당 설정의 미사용 상태일 수 있다. 결과의 null과 구분하며 기본값을 추정하지 않는다.");
   for (const [key, value] of Object.entries(review.policy?.value ?? {})) field(key, value, review.policy!.evidence);
@@ -184,8 +206,9 @@ export function renderPaperExperimentReviewMarkdown(review: PaperExperimentRevie
   else if (!review.actions.length) lines.push("검증된 decision 항목이 없다. 실패·skip event는 다음 절에서 확인한다.");
   for (const [index, action] of (review.actions ?? []).entries()) {
     lines.push(`### 행동 ${index + 1}: ${markdownText(action.item.action)} ${markdownText(action.item.symbol)}`, "");
-    field("시뮬레이션 시각", action.simulatedAt, action.packet);
-    field("decisionHash", action.decisionHash, action.evidence);
+    field("시뮬레이션 시각", action.simulatedAt, action.simulatedAtEvidence);
+    field("decisionHash", action.decisionHash, action.decisionHashEvidence);
+    field("packetHash", action.packetHash, action.packetHashEvidence ?? undefined);
     field("판단·dataRefs", action.item, action.evidence);
     for (const risk of action.risk) { const { evidence, ...value } = risk; field("Risk 판정", value, evidence); }
     for (const trade of action.trades) { const { evidence, ...value } = trade; field("paper fill·비용", value, evidence); }
@@ -195,6 +218,7 @@ export function renderPaperExperimentReviewMarkdown(review: PaperExperimentRevie
   section("skip·no candidate·provider 실패 근거");
   field("기존 결과 요약", outcomes ?? null, review.outcomes?.evidence);
   field("운영 event 분류", review.operationalEvidence?.facts.value ?? null, review.operationalEvidence?.facts.evidence);
+  field("event 건수 산출 출처", review.operationalEvidence?.facts.derivation ?? null);
   for (const event of review.operationalEvidence?.events ?? []) field("보존 event", event.value, event.evidence);
   field("sampling", review.operationalEvidence?.sampling.value ?? null, review.operationalEvidence?.sampling.evidence);
   field("warnings", review.operationalEvidence?.warnings.value ?? null, review.operationalEvidence?.warnings.evidence);

@@ -312,3 +312,47 @@ test("concurrent review publication allocates distinct complete generations", as
   assert.notEqual(results[0].reviewId, results[1].reviewId);
   for (const result of results) assert.equal((await json(join(run.artifactRoot, result.files.completion))).reviewId, result.reviewId);
 });
+
+test("claim references use exact hash fields and RFC JSON pointer roots for complete derivation inputs", async () => {
+  const options = await setup(); const run = await runPaperExperimentWorkflow(options);
+  const review = await createPaperExperimentReview(options, run.attemptId);
+  const input = await json(join(run.artifactRoot, PAPER_EXPERIMENT_ARTIFACTS.input));
+  const decisions = (await fs.readFile(join(run.artifactRoot, PAPER_EXPERIMENT_ARTIFACTS.decisions), "utf8"))
+    .trimEnd().split("\n").map((line) => JSON.parse(line));
+  const pointer = (document: unknown, field: string): unknown => {
+    assert.ok(field === "" || field.startsWith("/"));
+    return field === "" ? document : field.slice(1).split("/").reduce<unknown>((value, key) => {
+      assert.ok(value !== null && typeof value === "object");
+      return (value as Record<string, unknown>)[key.replace(/~1/g, "/").replace(/~0/g, "~")];
+    }, document);
+  };
+  for (const action of review.actions!) {
+    assert.equal(pointer(decisions, action.decisionHashEvidence.field), action.decisionHash);
+    assert.deepEqual(pointer(decisions, action.evidence.field), action.item);
+    assert.ok(action.packetHashEvidence); assert.equal(pointer(decisions, action.packetHashEvidence.field), action.packetHash);
+    const packets = (await fs.readFile(join(run.artifactRoot, PAPER_EXPERIMENT_ARTIFACTS.packets), "utf8")).trimEnd().split("\n").map((line) => JSON.parse(line));
+    assert.equal(pointer(packets, action.simulatedAtEvidence.field), action.simulatedAt);
+    assert.match(action.decisionHashEvidence.field, /^\/\d+\/decisionHash$/);
+    assert.ok(renderPaperExperimentReviewMarkdown(review).includes(`historical-replay-decisions.jsonl#${action.decisionHashEvidence.field})`));
+  }
+  assert.equal(pointer({}, "/"), undefined); // RFC 6901: slash selects an empty key, never the whole document.
+  assert.equal(review.coverage!.evidence.field, "");
+  const coverageInput = pointer(input, review.coverage!.evidence.field) as typeof input;
+  for (const field of ["source", "configuration", "universe", "evaluation"]) assert.deepEqual(coverageInput[field], input[field]);
+  assert.equal(review.coverage!.evidence.href, "../../input/experiment-input.json#");
+  assert.deepEqual(review.coverage!.derivation, { algorithm: "parsePaperExperimentInput", inputs: [review.coverage!.evidence] });
+  assert.equal(review.operationalEvidence!.facts.derivation.algorithm, "paperExperimentExecutionFacts");
+  const state = await json(join(run.artifactRoot, "experiment-run.json"));
+  assert.equal(pointer(state, review.inputEligibility.inputHashEvidence.field), review.inputEligibility.inputHash);
+  assert.deepEqual(pointer(state, review.inputEligibility.runtimeIdentityEvidence.field), review.inputEligibility.runtimeIdentity);
+  assert.equal(pointer(state, review.execution.storedStatusEvidence.field), review.execution.storedStatus);
+  assert.equal(pointer(state, review.execution.terminationReasonEvidence.field), review.execution.terminationReason);
+  assert.equal(review.execution.derivation.inputs.length, 13);
+  assert.equal(review.researchQuality.derivation.inputs.length, 13);
+  for (const name of ["experiment-run.json", "experiment-input.json", "paper-experiment-execution.json"]) {
+    assert.ok(review.researchQuality.derivation.inputs.some((row) => row.artifact === name));
+  }
+  assert.equal(review.scope!.evidence.field, ""); assert.equal(review.manifest!.evidence.field, "");
+  assert.equal(review.outcomes!.evidence.field, ""); assert.equal(review.statistics!.evidence.field, "");
+  assert.ok(renderPaperExperimentReviewMarkdown(review).includes("](../../input/experiment-input.json#)"));
+});

@@ -220,6 +220,12 @@ packet/decisionHash/dataRefs/Risk/fill/portfolio → HOLD·no-candidate·samplin
 artifact basename 및 JSON pointer/row로 연결한다. Local absolute path나 source가 제공한 링크를
 따라 읽지 않는다. 자유 문자열은 credential/경로 패턴을 가리고 Markdown/HTML을 data로 escape한다.
 숫자·비용·benchmark·통계는 기존 report에서 읽고 새 재무·통계 공식이나 AI 요약을 만들지 않는다.
+JSON pointer의 전체 문서는 RFC 6901의 빈 문자열(`""`)로 가리킨다. `/`는 빈 key를 뜻하므로
+root 별칭으로 사용하지 않는다. decisionHash/packetHash와 packet generatedAt은 각각 실제 field를
+따로 연결한다. Coverage는 clock/freshness/universe/cutoff를 포함한 전체 normalized input을 참조하고
+`parsePaperExperimentInput` 산출임을 `derivation`으로 표시한다. Event 건수도 원본 auditEvents와
+`paperExperimentExecutionFacts` 분류를 명시한다. Execution 무결성·입력 적격성·research quality의
+파생 상태는 raw storedStatus/runtime/inputHash field와 검증에 사용한 input/inventory/receipt를 구분한다.
 
 ### 세 상태를 따로 읽기
 
