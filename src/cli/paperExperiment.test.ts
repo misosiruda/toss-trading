@@ -145,13 +145,13 @@ test("clean supported launcher builds and binds real HEAD/lock/Node; fresh inspe
   const selfComparison = await cli(root, ["review", "--attempt", first.attemptId, "--compare-attempt", first.attemptId], { launcher: true });
   assert.equal(selfComparison.code, 1); assert.equal(last(selfComparison.stdout).review.comparison.status, "incomparable");
   assert.ok(last(selfComparison.stdout).review.comparison.reasons.includes("DISTINCT_ATTEMPTS_REQUIRED"));
-  for (const secretId of ["ghp_abcdefgh", "sk-abcdefgh", "22345678901234"]) {
+  for (const secretId of ["ghp_abcdefgh", "sk-abcdefgh", "ORD_ABCDEF123456", "EXEC_ABCDEF123456", "22345678901234"]) {
     const missing = await cli(root, ["review", "--attempt", first.attemptId, "--compare-attempt", secretId], { launcher: true });
     assert.equal(missing.code, 1); assert.ok(!missing.stdout.includes(secretId));
     const saved = last(missing.stdout);
     for (const relative of Object.values(saved.files) as string[]) assert.ok(!(await readFile(join(first.artifactRoot, relative), "utf8")).includes(secretId));
   }
-  for (const allocatedSecretId of ["ghp_abcdefgh", "12345678901234"]) {
+  for (const allocatedSecretId of ["ghp_abcdefgh", "ORD_ABCDEF123456", "12345678901234"]) {
   const allocate = `import {readFile} from 'node:fs/promises'; import {join} from 'node:path';
     const {verifyPaperExperimentBuild}=await import('./dist/replay/paperExperimentRuntime.js');
     const {runPaperExperimentWorkflow}=await import('./dist/workflows/paperExperimentWorkflow.js');

@@ -512,6 +512,51 @@ test("unlabeled account-like text is masked without changing numeric facts or ca
   assert.deepEqual(await tree(join(run.artifactRoot, "input")), before);
 });
 
+test("every known bare token prefix is case-insensitive and precedes canonical or wrapper exemptions", async () => {
+  const variants = (value: string): string[] => [...value].reduce<string[]>((values, letter) =>
+    /[a-z]/i.test(letter) ? values.flatMap((prefix) => [prefix + letter.toLowerCase(), prefix + letter.toUpperCase()])
+      : values.map((prefix) => prefix + letter), [""]);
+  const prefixes = ["ord_", "exec_", "sk-", ...["p", "o", "u", "s", "r"].map((type) => `gh${type}_`), "github_pat_"];
+  for (const prefix of prefixes) for (const form of variants(prefix)) {
+    const minimum = prefix === "ord_" || prefix === "exec_" ? 6 : 8;
+    assert.equal(safePaperExperimentReviewValue(form + "A".repeat(minimum - 1)), form + "A".repeat(minimum - 1));
+    for (const payload of ["A".repeat(minimum), "A".repeat(minimum - 1) + "-", "A".repeat(minimum - 1) + "_",
+      "ABCDEF123456", "12345678-1234-1234-1234-123456789012", "a".repeat(64)]) {
+      const token = form + payload;
+      for (const text of [token, `note: ${token}`, `_${token}_`, `__${token}__`, `word_${token}`, `\`${token}\``, JSON.stringify(token),
+        JSON.stringify(JSON.stringify(token)), `[${token}](safe)`, JSON.stringify(`note\n${token}`),
+        JSON.stringify(`note\t${token}`), JSON.stringify(`note\r${token}`), JSON.stringify(`note\u0000${token}`),
+        JSON.stringify(JSON.stringify(`note\n${token}`))]) assert.ok(!safePaperExperimentReviewValue(text).includes(payload), text);
+      assert.equal(safePaperExperimentReviewValue(token), "[비공개]");
+    }
+  }
+  for (const prefix of prefixes) {
+    const jwt = prefix.toUpperCase() + "a".repeat(24) + "." + "PRIVATEPAYLOAD".repeat(2) + "." + "PRIVATESIGNATURE".repeat(2);
+    assert.equal(safePaperExperimentReviewValue(jwt), "[비공개]");
+    for (let code = 0; code < 128; code++) {
+      const character = String.fromCharCode(code), token = prefix.toUpperCase() + "ABCDEF123456";
+      const encoded = "note\\u" + code.toString(16).padStart(4, "0") + token;
+      if (/[A-Za-z0-9]/.test(character)) assert.equal(safePaperExperimentReviewValue(encoded), encoded);
+      else for (const value of ["note" + character + token, encoded, JSON.stringify("note" + character + token)]) {
+        assert.ok(!safePaperExperimentReviewValue(value).includes("ABCDEF123456"), value);
+      }
+    }
+  }
+  for (const text of ["task-ABCDEFGH", "mask-ABCDEFGH", "executionModelVersion=paper_cost_model.v5", "paperStrategyVersion=v1"]) {
+    assert.equal(safePaperExperimentReviewValue(text), text);
+  }
+  const options = await setup(), input = JSON.parse(options.inputJson);
+  const tokens = ["ORD_ABCDEF123456", "EXEC_ABCDEF123456", "OrD_ABCDEF123456", "ExEc_ABCDEF123456", "SK-ABCDEF123456", "GHP_ABCDEF123456", "GITHUB_PAT_ABCDEF123456"];
+  input.question = tokens.join("; ");
+  const run = await runPaperExperimentWorkflow({ ...options, inputJson: JSON.stringify(input) });
+  const before = await tree(join(run.artifactRoot, "input")), written = await writePaperExperimentReview(options, run.attemptId);
+  for (const path of Object.values(written.files)) {
+    const text = await fs.readFile(join(run.artifactRoot, path), "utf8");
+    assert.ok(!text.includes("ABCDEF123456"));
+  }
+  assert.deepEqual(await tree(join(run.artifactRoot, "input")), before);
+});
+
 test("presentation masking never makes different raw identifiers reproducible", async () => {
   for (const questions of [["orderId=PRIVATE_FIRST", "orderId=PRIVATE_SECOND"], ["12345678901234", "22345678901234"]]) {
   const options = await setup(); const input = JSON.parse(options.inputJson);
@@ -528,7 +573,7 @@ test("presentation masking never makes different raw identifiers reproducible", 
 });
 
 test("final report assembly sanitizes valid secret-shaped primary/comparison IDs and completion metadata", async () => {
-  for (const attemptId of ["ghp_abcdefgh", "sk-abcdefgh", "12345678901234", "legacy_opaque_01"]) {
+  for (const attemptId of ["ghp_abcdefgh", "sk-abcdefgh", "ORD_ABCDEF123456", "EXEC_ABCDEF123456", "12345678901234", "legacy_opaque_01"]) {
     const options = await setup(); const run = await runPaperExperimentWorkflow({ ...options, attemptId });
     const before = { input: await tree(join(run.artifactRoot, "input")), replay: await tree(join(run.artifactRoot, "replay")),
       state: await fs.readFile(join(run.artifactRoot, "experiment-run.json"), "utf8") };

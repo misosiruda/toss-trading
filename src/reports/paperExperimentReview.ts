@@ -85,8 +85,10 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
   }
   function unlabeledText(text: string): string {
     // Known sensitive token classes take precedence over canonical hash/UUID shapes.
-    const sensitive = text.replace(/\b(?:ord|exec)_[A-Za-z0-9_-]{6,}\b|\b[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
-      (token) => maskSensitiveText(token));
+    // JWT first: a prefixed header must not expose the remaining payload/signature.
+    // Non-alphanumeric wrappers (including Markdown underscores) are not an exemption.
+    const sensitive = text.replace(/(?:(?<![A-Za-z0-9])|(?<=\\(?:[nrtbf]|u00(?:[012][0-9a-f]|3[a-f]|40|5[b-f]|60|7[b-f]))))(?:[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|(?:ord|exec)_[A-Za-z0-9_-]{6,}|sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_-]{8,}|github_pat_[A-Za-z0-9_-]{8,})(?![A-Za-z0-9])/gi,
+      "[비공개]");
     // Protect complete canonical tokens after labeled values and paths were removed.
     const canonical = /((?<![A-Za-z0-9_-])(?:[A-Za-z][A-Za-z0-9]*[-_])?[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}(?![A-Za-z0-9_-])|(?<![A-Za-z0-9_])(?:sha256:)?(?:[a-fA-F0-9]{64}|[a-fA-F0-9]{40})(?![A-Za-z0-9_])|\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})(?![A-Za-z0-9_]))/g;
     return sensitive.split(canonical).map((part, index) => index % 2 === 1
@@ -100,7 +102,7 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
     return typeof item === "string" ? redact(item) : item;
   }
   function redact(text: string) {
-    const cleaned = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+    const cleaned = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, " ");
     // Scan labels separately: a non-sensitive URL/label must not swallow a later credential.
     // Decode only key escapes for classification; do not decode or mutate safe source text.
     const labels = /(?:\\*["'])?((?:[A-Za-z]|\\+u[0-9A-Fa-f]{4})(?:[A-Za-z0-9_. \t-]|\\+u[0-9A-Fa-f]{4}|\\+t)*)(?:\\*["'])?\s*[:=]\s*/g;
@@ -120,7 +122,6 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
       cursor = end; labels.lastIndex = end;
     }
     return unlabeledText((masked + cleaned.slice(cursor))
-      .replace(/\b(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,})\b/g, "[비공개]")
       .replace(/"(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/)|(?:https?|file):\/\/)(?:\\[\s\S]|[^"\\])*"|'(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/)|(?:https?|file):\/\/)(?:\\[\s\S]|[^'\\])*'/gi, "[경로·주소 비공개]")
       .replace(/(?:https?|file):\/\/[^\s<>"']+/gi, "[외부 주소 비공개]")
       .replace(/(?:[A-Za-z]:[\\/]|\\\\)(?:\\(?:\r\n|[\s\S])|[^,;\r\n<>"'])+|(?<![A-Za-z0-9_.-])\/(?!\/)(?:\\(?:\r\n|[\s\S])|[^,;\r\n<>"'])+/g, "[로컬 경로 비공개]"));

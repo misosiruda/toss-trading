@@ -234,6 +234,16 @@ hyphen/dot/space/tab의 반복·혼합 그룹과 JSON 문자 escape를 포함하
 완전한 hash/UUID/ISO timestamp, 날짜와 문자에 붙은 identifier는 보존한다. Epoch·큰 금액을 문자열로
 쓴 값도 모호하면 가려질 수 있으나 typed numeric 비용·count에는 적용하지 않는다. 계좌 여부를 판정하는
 검증기가 아닌 표현 경계의 heuristic이며 원본과 비교용 숫자는 변하지 않는다.
+Bare `ord_`/`exec_`(payload 6자 이상), `sk-`/`gh[pousr]_`/`github_pat_`(8자 이상)는 대소문자와
+quote/backtick/Markdown underscore wrapper에 관계없이 가린다. JSON으로 표현한 공백·control escape
+및 non-alphanumeric ASCII punctuation escape 뒤의 literal prefix도 같은 경계로 처리한다.
+Unsafe 실제 control 문자는 공백으로 바꿔 단어와 민감 token을 붙이지 않으며 encoded ASCII
+문자·숫자를 구분자로 오인하지 않는다.
+Payload는 ASCII 문자·숫자·underscore·hyphen을 포함하며 끝의 구분자도 최소 길이에 포함한다.
+`word_ord_...`처럼 underscore로 연결된 known prefix도 가리되 prefix 앞에 ASCII 문자·숫자가
+직접 붙은 임의 단어는 known token이라고 추측하지 않는다. JWT 형태는 다른 prefix보다
+먼저 전체를 가려 header만 제거하고 payload/signature를 남기지 않는다. 이 알려진 민감 token 분류는
+canonical UUID/hash 보존보다 우선한다.
 최종 assembled review(비교 ID 포함), 직접 Markdown renderer 입력, CLI review envelope, completion marker와
 writer 반환 metadata에서 각각 출력 직전 sanitization을 적용한다. 내부 lookup/semantic 비교는 raw 값을
 사용하며 원본 evidence는 변경하지 않는다. 경로 마스킹 예외는 producer가 생성하는 고정 field와 bounded
