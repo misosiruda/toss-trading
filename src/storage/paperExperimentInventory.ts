@@ -17,30 +17,9 @@ import {
   PAPER_EXPERIMENT_ARTIFACTS, type PaperExperimentInventoryEntry, type PaperExperimentState
 } from "./paperExperimentContract.js";
 import { readExperimentFile, requireExperimentStorage } from "./paperExperimentFilesystem.js";
+import { paperExperimentReportSchema } from "./paperExperimentReportContract.js";
 
 const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
-const count = z.number().int().nonnegative().max(10_000);
-const object = z.record(z.string(), z.json());
-const reportReference = replayResearchManifestSchema.omit({
-  mode: true, runId: true, batchId: true, createdAt: true, universeSnapshotDate: true
-}).extend({ status: z.literal("available"), manifestPath: z.string().min(1) }).strict();
-
-// The legacy report has no Zod schema. Validate its storage envelope/count/reference sections;
-// retain and digest every raw nested field, without recalculating report analytics here.
-const reportSchema = z.object({
-  title: z.string().min(1), mode: z.literal("paper_only"), generatedAt: z.iso.datetime(),
-  simulatedRange: z.object({ startAt: z.iso.datetime().nullable(), endAt: z.iso.datetime().nullable(), tickCount: count }).strict(),
-  replaySummary: z.object({ packetCount: count, decisionProviderCallCount: count, decisionSkippedCount: count,
-    decisionRecordCount: count, decisionItemCount: count, tradeCount: count, rejectedCount: count }).strict(),
-  allocationPolicy: object.nullable(), paperExitPolicy: object.nullable(),
-  portfolio: object, portfolioConstruction: object, analytics: object, decisionOutcome: object,
-  tradeSummary: object.and(z.object({ tradeCount: count })), costSummary: object,
-  advancedPerformance: object, sharpeValidation: object,
-  riskSummary: object.and(z.object({ approvedCount: count, rejectedCount: count })),
-  samplingSummary: object, reproducibility: reportReference, benchmarks: object,
-  sourceWarningSummary: object, portfolioTimeline: z.array(object), disclaimer: z.string().min(1)
-}).strict();
-
 export type ExperimentPaths = ReturnType<typeof createPaperExperimentArtifactPaths>;
 
 export function parseExperimentJsonl(text: string, schema: z.ZodType): unknown[] {
@@ -95,7 +74,7 @@ export async function captureExperimentInventory(paths: ExperimentPaths, state: 
   const manifest = await json("manifest", "replay_research_manifest.v1", replayResearchManifestSchema);
   const metadata = await json("metadata", "historical_replay_run_metadata.v1", historicalReplayRunMetadataSchema);
   const progress = await json("progress", "HistoricalReplayProgressSnapshot", historicalReplayProgressSnapshotSchema);
-  const report = await json("report", "HistoricalReplayReport.storage.v1", reportSchema);
+  const report = await json("report", "HistoricalReplayReport.storage.v1", paperExperimentReportSchema);
   const packets = await jsonl("packets", "MarketPacket", marketPacketSchema);
   const decisions = await jsonl("decisions", "VirtualDecision", virtualDecisionSchema);
   const risks = await jsonl("riskDecisions", "VirtualRiskDecision", virtualRiskDecisionSchema);
@@ -153,6 +132,18 @@ export async function captureExperimentInventory(paths: ExperimentPaths, state: 
   equal(report.replaySummary.decisionItemCount, decisions.reduce((sum, row) => sum + row.decisions.length, 0));
   equal(report.replaySummary.decisionProviderCallCount, progress.decisionProviderCallCount);
   equal(report.replaySummary.decisionSkippedCount, progress.decisionSkippedCount);
-  requireExperimentStorage(timeline.length >= ticks && timeline.every((row) => row.tickIndex < ticks), "ARTIFACT_INTEGRITY");
+  requireExperimentStorage(new Set(timeline.map((row) => row.tickIndex)).size === ticks
+    && timeline.every((row) => row.tickIndex < ticks
+      && row.simulatedAt === input.preflight.ticks[row.tickIndex]?.simulatedAt
+      && row.portfolio.simulatedAt === row.simulatedAt), "ARTIFACT_INTEGRITY");
+  equal(report.portfolioTimeline.length, ticks);
+  for (const [index, row] of report.portfolioTimeline.entries()) {
+    equal(row.simulatedAt, input.preflight.ticks[index]?.simulatedAt);
+    const finalTickRecord = timeline.filter((entry) => entry.tickIndex === index).at(-1)?.portfolio;
+    requireExperimentStorage(finalTickRecord !== undefined, "ARTIFACT_INTEGRITY");
+    const { positions, ...summary } = finalTickRecord;
+    void positions;
+    equal(row, summary);
+  }
   return inventory;
 }
