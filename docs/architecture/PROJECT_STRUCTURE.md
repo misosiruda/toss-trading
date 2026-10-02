@@ -815,6 +815,7 @@ mutation을 제공한다. 조회 handler의 read-only 경계와 mutation guard�
 | `src/storage/paperExperimentStore.ts` | 고정 입력 보존, exclusive attempt 생성, owner lifecycle, read-only inspect와 새 attempt retry |
 | `src/storage/paperExperimentContract.ts`, `paperExperimentReportContract.ts` | attempt/runtime receipt/inventory 및 기존 report 저장 schema |
 | `src/storage/paperExperimentFilesystem.ts`, `paperExperimentInventory.ts` | 고정 artifact path confinement, bounded strict read, input/source와 완료 inventory 무결성 |
+| `src/reports/paperExperimentEvidence.ts` | retained log/input에서 기존 순수 helper로 report/progress projection·참조 정합성 검증, runner/새 공식 없음 |
 
 Artifact 역할:
 

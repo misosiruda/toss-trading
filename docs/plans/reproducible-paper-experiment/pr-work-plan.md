@@ -125,14 +125,20 @@ fs error injection은 directory 생성/input write/state replace/read 시점에 
 로컬 수용 증거 (2026-10-02):
 
 - `origin/main` PR #792 merge `4c1e179524d7ab31aa622cea18ed1c06e68bb52f`에서 isolated checkout 생성
-- Build 후 신규 저장 테스트 106개와 artifact path 테스트 7개, 총 113개 통과 (실패·skip 0)
+- Build 후 신규 저장 테스트 176개, artifact path 7개와 기존 report/progress 회귀 8개, 총 191개 통과 (실패·skip 0)
 - Separate-process 동시 생성 하나만 성공, 원 source 삭제/hostile env 뒤 같은 full input 복원,
   explicit retry의 새 identity·parent lineage와 원 attempt bytes 불변 검증
 - Existing empty/file/failed/completed dir 충돌, traversal·ancestor overlap·symlink·hardlink 거절
 - Input/source와 completed inventory 변조, complete-row truncation·잘못된 report shape·timeline 누락 검출
 - Directory/open/partial write/sync/rename/read fault와 준비 중 process 종료에서 완료 오판 없음
-- 자동 Code Review의 두 finding 보완: 최종 audit portfolio와 report/progress 요약의 일치,
-  malformed replay JSON/JSONL/schema/UTF-8의 `ARTIFACT_INTEGRITY` 분류와 실제 I/O 오류의 구분
+- 자동 Code Review finding과 인접 경계를 한 번에 확장 검토: 최종 audit portfolio와 report/progress
+  요약, canonical Risk/trade/decision 근거와 기존 순수 report projection, cross-log identity/time 대조
+- State/input/source/replay의 parse/schema/UTF-8/크기 손상을 소유 계층의 integrity code로 분류하고
+  실제 I/O 오류·path alias·잘못된 caller request와 구분
+- Nonempty decision·approved/rejected Risk·trade 및 97 tick/최근 50 decision의 positive fixture 검증
+- Mirrored progress도 같이 변조한 decision/packet hash·Risk/trade reference·simulated timestamp 거절 검증
+- 전체 warning/provider/sampling event의 부재를 숨기거나 0으로 대체하지 않고 기존 inventory로
+  검증 가능한 부분과 EXP-03 실행 receipt 의존성을 runbook에 명시
 - Import/inspect의 filesystem mutation·process spawn·network 호출 0과 read-only 보존 검증
 - 기존 recorder/report builder로 만든 synthetic 저장 evidence만 사용. Runner/provider/CLI 실행 없음
 

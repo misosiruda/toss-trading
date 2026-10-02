@@ -63,7 +63,8 @@ Read projection은 terminal 증거가 없으면 `incomplete`이고 저장된 마
 
 완료 전에 고정 allowlist 11개 artifact의 schema, identity/path, input/config, 비용 모델 hash,
 packet/decision/Risk/trade count, 모든 tick의 audit timeline과 report timeline을 대조한다.
-최종 audit portfolio는 report의 초기/최종 잔고·포지션 요약 및 progress의 full currentPortfolio와도 일치해야 한다.
+Report 초기 현금은 고정 input과 일치해야 한다. 최종 audit portfolio는 report의 최종 잔고·포지션
+요약 및 progress의 full currentPortfolio와 일치해야 한다.
 기존 report의 전체 nested shape를 strict하게 검사하고, 보존한 log·input에서 복원할 수 있는
 summary는 기존 report/portfolio/hash helper를 재사용한 순수 adapter로 대조한다. 새 재무·통계
 공식이나 Risk/매매 계산 구현을 만들지 않는다.
@@ -73,7 +74,9 @@ summary는 기존 report/portfolio/hash helper를 재사용한 순수 adapter로
 
 보존 근거로 확인 가능한 범위와 없는 범위를 구분한다. Decision/trade/cost/Risk 요약,
 portfolio/analytics/performance/benchmark와 progress의 tick·bounded recent projections는
-canonical logs·고정 input과 대조한다. 전체 provider 호출 결과·sampling event·warning·dust event 및
+canonical logs·고정 input과 대조한다. V1은 기존 recorder 기본 한도(최근 packets 10개,
+결정/Risk/trade 각 50개, timeline 1,500개)를 고정하며 custom limit은 받지 않는다.
+Packet의 tick, decision/packet hash, Risk/trade의 참조와 simulated timestamp도 대조한다. 전체 provider 호출 결과·sampling event·warning·dust event 및
 운영 timing의 원본은 현재 inventory에 모두 있지 않으므로 해당 값은 schema/상호 count·상한 검증과
 sealed digest까지만 확인한다. 존재하지 않는 event를 0으로 제조하지 않는다. 실행 시점의 사실성·
 완전한 receipt 결속은 EXP-03 adapter의 책임이며 이 저장 검증으로 공급자 성공을 보증하지 않는다.
@@ -107,7 +110,9 @@ bounded read를 확인한다. Stored path는 파일을 여는 권한이 아니�
 
 오류 출력은 고정 `PaperExperimentStorageError.code`만 노출한다. Filesystem path나 JSON/Zod 원문을
 그대로 error message에 포함하지 않는다. Malformed replay JSON/JSONL, schema 위반과 잘못된 UTF-8은
-`ARTIFACT_INTEGRITY`이며 실제 filesystem 접근 실패는 `IO_FAILURE`로 구분한다.
+`ARTIFACT_INTEGRITY`다. 보존 input/source의 parse/schema/UTF-8/크기 손상은 `INPUT_INTEGRITY`,
+state 손상은 `STATE_INVALID`, 잘못된 caller identity/token은 `INVALID_REQUEST`로 구분한다.
+경로 alias는 `PATH_UNSAFE`, 실제 filesystem 접근 실패는 `IO_FAILURE`다.
 실제 path는 backend owner handle에만 별도로 제공한다.
 
 ## 로컬 검증
