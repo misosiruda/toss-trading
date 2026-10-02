@@ -193,13 +193,14 @@ export async function readReplayResearchReport(
 export async function readBatchReplayRuns(
   storageBaseDir: string,
   limit: number,
-  options: { includeLatestRunArtifacts?: boolean; runId?: string | null } = {}
+  options: { includeLatestRunArtifacts?: boolean; runId?: string | null; observationRunId?: string | null } = {}
 ): Promise<Record<string, unknown>> {
   const paths = createStoragePaths(storageBaseDir);
   const aggregate = await readJsonFile(paths.batchReplayAggregateReportPath);
   const manifests = await readBatchReplayManifests(storageBaseDir);
   const lookupId = normalizeRunLookupId(options.runId ?? null);
-  const simulationObservation = options.runId == null ? null : await readPaperSimulationObservation(storageBaseDir, options.runId);
+  const observationLookupId = options.observationRunId === undefined ? (options.runId ?? null) : options.observationRunId;
+  const simulationObservation = observationLookupId === null ? null : await readPaperSimulationObservation(storageBaseDir, observationLookupId);
   const selectedManifest =
     lookupId === null
       ? (manifests[0] ?? null)

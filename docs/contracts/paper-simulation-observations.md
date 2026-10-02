@@ -61,7 +61,10 @@ fsync/close 또는 lock release 실패로 barrier가 남으면 조회는 `unavai
 - `status=unavailable`: 읽기 오류, alias, 조회 중 원본 변경 또는 남아 있는 writer barrier
 - runId query가 없으면 `simulationObservation=null`
 
-관측 조회는 raw query ID를 정규화·trim·truncate하지 않는다. exact 허용 ID만 경로로 사용하며
+HTTP routing은 legacy run 선택용 trim된 ID와 관측용 원시 `searchParams.get("runId")` 값을
+분리한다. 관측은 URL decoding 1회 뒤의 값을 정규화·trim·truncate하지 않는다. Query 누락은
+null이고 명시적 empty·공백·newline 및 percent-encoded 공백 alias는 invalid다.
+exact 허용 ID만 경로로 사용하며
 manifest/aggregate의 임의 source path에서 log를 찾지 않는다. legacy·개별 run ID는 새 접수 ID가
 아니므로 `invalid`일 수 있으나 기존 detail 조회는 유지된다. 기존 `runs`, `selectedRun`,
 `latestRunArtifacts`, status/count, manifest 선택과 aggregate fallback은 변경하지 않는다.
