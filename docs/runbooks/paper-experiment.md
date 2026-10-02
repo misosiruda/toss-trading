@@ -220,6 +220,9 @@ packet/decisionHash/dataRefs/Risk/fill/portfolio → HOLD·no-candidate·samplin
 artifact basename 및 JSON pointer/row로 연결한다. Local absolute path나 source가 제공한 링크를
 따라 읽지 않는다. 자유 문자열은 credential/경로 패턴을 가리고 Markdown/HTML을 data로 escape한다.
 숫자·비용·benchmark·통계는 기존 report에서 읽고 새 재무·통계 공식이나 AI 요약을 만들지 않는다.
+Account/order/execution identifier와 credential의 labeled 값(quoted/JSON-like/case/구분자 변형 포함)은
+보고서의 문자열·구조화 key에서 가린다. Authorization/Cookie header는 scheme·여러 cookie 값까지
+함께 가린다. 이 표현 단계 redaction은 원본 evidence와 raw semantic 비교에 적용하지 않는다.
 JSON pointer의 전체 문서는 RFC 6901의 빈 문자열(`""`)로 가리킨다. `/`는 빈 key를 뜻하므로
 root 별칭으로 사용하지 않는다. decisionHash/packetHash와 packet generatedAt은 각각 실제 field를
 따로 연결한다. Coverage는 clock/freshness/universe/cutoff를 포함한 전체 normalized input을 참조하고

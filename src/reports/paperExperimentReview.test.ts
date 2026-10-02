@@ -14,7 +14,7 @@ import { createPaperExperimentAttempt } from "../storage/paperExperimentStore.js
 import { EXPERIMENT_TEST_RUNTIME, experimentFixtureJson, writeExperimentEvidence } from "../storage/paperExperimentTestFixtures.js";
 import { runHistoricalReplayWorkflow } from "../workflows/historicalReplayWorkflow.js";
 import { createPaperExperimentFixtureProvider, runPaperExperimentWorkflow } from "../workflows/paperExperimentWorkflow.js";
-import { createPaperExperimentReview, renderPaperExperimentReviewMarkdown } from "./paperExperimentReview.js";
+import { createPaperExperimentReview, renderPaperExperimentReviewMarkdown, safePaperExperimentReviewValue } from "./paperExperimentReview.js";
 import { comparePaperExperimentEvidence, paperExperimentSemanticProjection, readPaperExperimentReviewEvidence } from "./paperExperimentReviewEvidence.js";
 import { writePaperExperimentReview } from "./paperExperimentReviewOutput.js";
 
@@ -355,4 +355,87 @@ test("claim references use exact hash fields and RFC JSON pointer roots for comp
   assert.equal(review.scope!.evidence.field, ""); assert.equal(review.manifest!.evidence.field, "");
   assert.equal(review.outcomes!.evidence.field, ""); assert.equal(review.statistics!.evidence.field, "");
   assert.ok(renderPaperExperimentReviewMarkdown(review).includes("](../../input/experiment-input.json#)"));
+});
+
+test("review redaction masks labeled account/order/execution IDs across text and structured aliases", async () => {
+  const cases = [
+    ["orderId=ORDER_PRIVATE_17", "ORDER_PRIVATE_17"],
+    ["executionId=EXECUTION_PRIVATE_28", "EXECUTION_PRIVATE_28"],
+    ["accountNumber=12345678901234", "12345678901234"],
+    ["ORDER_ID: 'QUOTED ORDER PRIVATE'", "QUOTED ORDER PRIVATE"],
+    ['{"Execution-Id":"QUOTED EXECUTION PRIVATE"}', "QUOTED EXECUTION PRIVATE"],
+    ['"account_number": "99887766554433"', "99887766554433"],
+    ["Account No=1122 3344 5566", "3344"],
+    ["order-number=ORDER_NUMBER_PRIVATE", "ORDER_NUMBER_PRIVATE"],
+    ["execution_no=EXECUTION_NUMBER_PRIVATE", "EXECUTION_NUMBER_PRIVATE"],
+    ["path:/home/private/identifier", "/home/private/identifier"],
+    ['"path":"/home/alice/PRIVATE_PATH"', "/home/alice/PRIVATE_PATH"],
+    ["Authorization: Bearer BEARER_PRIVATE", "BEARER_PRIVATE"],
+    ["Authorization: Basic BASIC_PRIVATE", "BASIC_PRIVATE"],
+    ["Cookie: a=COOKIE_A_PRIVATE; b=COOKIE_B_PRIVATE", "COOKIE_B_PRIVATE"],
+    ['"cookie":"a=QUOTED_COOKIE_PRIVATE; b=OTHER_COOKIE_PRIVATE"', "OTHER_COOKIE_PRIVATE"],
+    ["password=UNQUOTED MULTIWORD PRIVATE", "MULTIWORD PRIVATE"],
+    ["API-KEY: API_KEY_PRIVATE", "API_KEY_PRIVATE"],
+    ["access_token=PRIVATE_ACCESS", "PRIVATE_ACCESS"],
+    ["refreshToken: PRIVATE_REFRESH", "PRIVATE_REFRESH"],
+    ["client_secret=PRIVATE_CLIENT", "PRIVATE_CLIENT"],
+    ["authToken=PRIVATE_AUTH", "PRIVATE_AUTH"],
+    ['{"orderId":"head\\"PRIVATE_QUOTED_TAIL"}', "PRIVATE_QUOTED_TAIL"],
+    ['{"password":"head\\"PRIVATE_PASSWORD_TAIL"}', "PRIVATE_PASSWORD_TAIL"],
+    ['{"Authorization":"head\\"PRIVATE_AUTH_TAIL"}', "PRIVATE_AUTH_TAIL"],
+    ['{"Cookie":"head\\"PRIVATE_COOKIE_TAIL"}', "PRIVATE_COOKIE_TAIL"],
+    ['{"Cookie":"head\\\\\\"PRIVATE_COOKIE_ESCAPE_TAIL"}', "PRIVATE_COOKIE_ESCAPE_TAIL"],
+    ['"path":"/tmp/one PRIVATE_QUOTED_PATH"', "PRIVATE_QUOTED_PATH"],
+    ['a path "/tmp/one PRIVATE_STANDALONE_PATH" here', "PRIVATE_STANDALONE_PATH"],
+    ["path=/tmp/one PRIVATE_SPACED_PATH", "PRIVATE_SPACED_PATH"],
+    ["safe=ok orderId=PRIVATE_CHAIN", "PRIVATE_CHAIN"],
+    ["note: accountNumber=PRIVATE_NESTED", "PRIVATE_NESTED"],
+    ["sourceRef=fixture:paper-experiment.v1 token=PRIVATE_NESTED_TOKEN", "PRIVATE_NESTED_TOKEN"],
+    ["note: Password: PRIVATE_NESTED_PASSWORD", "PRIVATE_NESTED_PASSWORD"],
+    ['{"note":"orderId=PRIVATE_STRING_CHILD"}', "PRIVATE_STRING_CHILD"],
+    ['note="token=PRIVATE_TOKEN_IN_QUOTED_NOTE"', "PRIVATE_TOKEN_IN_QUOTED_NOTE"],
+    ['password="head\\\nPRIVATE_LF_TAIL"', "PRIVATE_LF_TAIL"],
+    ['orderId="head\\\r\nPRIVATE_CRLF_TAIL"', "PRIVATE_CRLF_TAIL"],
+    ['Authorization: "head\\\nPRIVATE_HEADER_LF_TAIL"', "PRIVATE_HEADER_LF_TAIL"],
+    ['Cookie: "head\\\r\nPRIVATE_HEADER_CRLF_TAIL"; other=PRIVATE_COOKIE_OTHER', "PRIVATE_COOKIE_OTHER"],
+    ['path="/tmp/head\\\nPRIVATE_PATH_LF_TAIL"', "PRIVATE_PATH_LF_TAIL"],
+    ['path="/tmp/head\\\r\nPRIVATE_PATH_CRLF_TAIL"', "PRIVATE_PATH_CRLF_TAIL"],
+    ["token=head\\\nPRIVATE_UNQUOTED_LF_TAIL", "PRIVATE_UNQUOTED_LF_TAIL"],
+    ["path=/tmp/head\\\r\nPRIVATE_PATH_UNQUOTED_CRLF", "PRIVATE_PATH_UNQUOTED_CRLF"]
+  ];
+  for (const [text, privateValue] of cases) assert.ok(!safePaperExperimentReviewValue(text!).includes(privateValue!), text);
+  const protectedValues = { orderId: "STRUCTURED_ORDER_PRIVATE", execution_id: "STRUCTURED_EXEC_PRIVATE",
+    "account-number": "STRUCTURED_ACCOUNT_PRIVATE", password: "STRUCTURED_PASSWORD_PRIVATE",
+    api_key: "STRUCTURED_API_PRIVATE", authToken: "STRUCTURED_TOKEN_PRIVATE", nested: [{ executionNo: "STRUCTURED_NUMBER_PRIVATE" }] };
+  assert.ok(!JSON.stringify(safePaperExperimentReviewValue(protectedValues)).includes("PRIVATE"));
+  for (const safe of ["fixture:paper-experiment.v1", "sha256:" + "a".repeat(64), "2025-01-01T00:00:00.000Z"]) {
+    assert.equal(safePaperExperimentReviewValue(safe), safe);
+  }
+  assert.equal(safePaperExperimentReviewValue({ executionModelVersion: "paper_cost_model.v5", packetId: "fixture_packet_1" }).executionModelVersion, "paper_cost_model.v5");
+  const options = await setup(), input = JSON.parse(options.inputJson);
+  input.question = cases.slice(0, 10).map(([text]) => text).join("\n");
+  input.source.coverageDescription = cases.slice(10, 20).map(([text]) => text).join("\n");
+  input.evaluation.reviewQuestions = Array.from({ length: Math.ceil((cases.length - 20) / 10) },
+    (_, index) => cases.slice(20 + index * 10, 30 + index * 10).map(([text]) => text).join("\n"));
+  const run = await runPaperExperimentWorkflow({ ...options, inputJson: JSON.stringify(input) });
+  const before = await tree(join(run.artifactRoot, "input"));
+  const written = await writePaperExperimentReview(options, run.attemptId);
+  for (const path of [written.files.json, written.files.markdown]) {
+    const output = await fs.readFile(join(run.artifactRoot, path), "utf8");
+    for (const [, privateValue] of cases) assert.ok(!output.includes(privateValue!), `${path}: ${privateValue}`);
+  }
+  assert.deepEqual(await tree(join(run.artifactRoot, "input")), before);
+});
+
+test("presentation masking never makes different raw identifiers reproducible", async () => {
+  const options = await setup(); const input = JSON.parse(options.inputJson);
+  input.question = "orderId=PRIVATE_FIRST";
+  const first = await runPaperExperimentWorkflow({ ...options, inputJson: JSON.stringify(input) });
+  input.question = "orderId=PRIVATE_SECOND";
+  const second = await runPaperExperimentWorkflow({ ...options, inputJson: JSON.stringify(input) });
+  const a = await createPaperExperimentReview(options, first.attemptId, { location: options, attemptId: second.attemptId });
+  const b = await createPaperExperimentReview(options, second.attemptId);
+  assert.equal(a.question!.value, b.question!.value);
+  assert.notEqual(a.inputEligibility.inputHash, b.inputEligibility.inputHash);
+  assert.equal(a.comparison!.status, "incomparable"); assert.ok(a.comparison!.reasons.includes("INPUT_MISMATCH"));
 });

@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
-import { maskSensitiveText } from "../security/masking.js";
+import { maskSensitiveText, maskSensitiveValue } from "../security/masking.js";
 import { PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN } from "../storage/artifactPaths.js";
 import { requireExperimentStorage } from "../storage/paperExperimentFilesystem.js";
 import { paperExperimentExecutionFacts } from "../storage/paperExperimentExecutionReceipt.js";
@@ -32,6 +32,11 @@ function claim<T>(value: T, artifact: ReviewArtifactKey, field: string) { return
 
 /** Presentation redaction only: raw values remain in semantic comparison and source artifacts. */
 export function safePaperExperimentReviewValue<T>(value: T): T {
+  function privateLabel(key: string): boolean {
+    const normalized = key.replace(/[_ -]/g, "");
+    return /(?:password|apikey|account|order(?:id|number|no)|execution(?:id|number|no))/i.test(normalized)
+      || maskSensitiveValue(normalized, null) !== null;
+  }
   function visit(item: unknown): unknown {
     if (Array.isArray(item)) return item.map(visit);
     if (item !== null && typeof item === "object" && "artifact" in item && "field" in item && "href" in item) {
@@ -41,15 +46,28 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
         && /^(?:\/[A-Za-z0-9_/-]*)?$/.test(reference.field) && reference.href === `../../${path}#${reference.field}`) return item;
     }
     if (item !== null && typeof item === "object") return Object.fromEntries(Object.entries(item).map(([key, nested]) =>
-      [redact(key), /^(?:password|secret|token|apiKey|authorization|cookie|accountNumber)$/i.test(key) ? "[비공개]" : visit(nested)]));
+      [redact(key), privateLabel(key) ? "[비공개]" : visit(nested)]));
     return typeof item === "string" ? redact(item) : item;
   }
   function redact(text: string) {
-    return maskSensitiveText(text).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
-      .replace(/\b(?:password|secret|token|api[_-]?key|authorization|cookie)\s*[:=]\s*[^\s,;]+/gi, "[비공개]")
+    const cleaned = maskSensitiveText(text).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+      // Headers include schemes and multiple cookie values; redact the entire header line.
+      .replace(/\b(?:authorization|proxy[_ -]*authorization|cookie|set[_ -]*cookie)["']?\s*[:=]\s*(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\\(?:\r\n|[\s\S])|[^\r\n])*/gi, "[비공개]");
+    // Scan labels separately: a non-sensitive URL/label must not swallow a later credential.
+    const labels = /["']?([A-Za-z][A-Za-z0-9_ -]*)["']?\s*[:=]\s*/g;
+    const quotedOrClause = /^(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|(?:\\(?:\r\n|[\s\S])|[^,;\r\n])+)/;
+    let masked = "", cursor = 0;
+    for (let match = labels.exec(cleaned); match !== null; match = labels.exec(cleaned)) {
+      if (!privateLabel(match[1]!)) continue;
+      const end = labels.lastIndex + (quotedOrClause.exec(cleaned.slice(labels.lastIndex))?.[0].length ?? 0);
+      masked += cleaned.slice(cursor, match.index) + "[비공개]";
+      cursor = end; labels.lastIndex = end;
+    }
+    return (masked + cleaned.slice(cursor))
       .replace(/\b(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,})\b/g, "[비공개]")
+      .replace(/"(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/)|(?:https?|file):\/\/)(?:\\[\s\S]|[^"\\])*"|'(?:[A-Za-z]:[\\/]|\\\\|\/(?!\/)|(?:https?|file):\/\/)(?:\\[\s\S]|[^'\\])*'/gi, "[경로·주소 비공개]")
       .replace(/(?:https?|file):\/\/[^\s<>"']+/gi, "[외부 주소 비공개]")
-      .replace(/(?:[A-Za-z]:[\\/]|\\\\)[^\s<>"']+|(?:^|[\s(=])\/(?!\/)[^\s<>"']+/g, " [로컬 경로 비공개]");
+      .replace(/(?:[A-Za-z]:[\\/]|\\\\)(?:\\(?:\r\n|[\s\S])|[^,;\r\n<>"'])+|(?<![A-Za-z0-9_.-])\/(?!\/)(?:\\(?:\r\n|[\s\S])|[^,;\r\n<>"'])+/g, "[로컬 경로 비공개]");
   }
   return visit(value) as T;
 }
