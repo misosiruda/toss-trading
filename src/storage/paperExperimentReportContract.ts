@@ -105,7 +105,7 @@ export const paperExperimentReportSchema = z.object({
   samplingSummary: z.object({ policy: historicalReplayRunConfigurationSchema.shape.samplingPolicy,
     decisionsRequested: count, decisionsSkipped: count, skipReasons: z.record(z.string(), count) }).strict(),
   reproducibility: replayResearchManifestSchema.omit({ mode: true, runId: true, batchId: true, createdAt: true, universeSnapshotDate: true })
-    .extend({ status: z.literal("available"), manifestPath: text }).strict(),
+    .extend({ status: z.literal("available"), manifestPath: text, warnings: strings }).strict(),
   benchmarks: z.object({ strategy: benchmark, cashOnly: benchmark, equalWeightBuyAndHold: benchmark.nullable(),
     initialPortfolioBuyAndHold: benchmark, comparisons: z.object({ strategyVsCashOnly: comparison,
       strategyVsEqualWeightBuyAndHold: comparison, strategyVsInitialPortfolioBuyAndHold: comparison }).strict(), notes: strings }).strict(),
