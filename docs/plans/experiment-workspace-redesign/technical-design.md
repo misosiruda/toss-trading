@@ -184,6 +184,15 @@ request identity/AbortController를 사용한다. retry는 GET에만 제한적�
 bucket 예시는 채택하지 않았다. 구현 명세의 정본은 검증한 `wireframes.html`과 이 계약이며
 이미지에 생성된 수치·문구가 backend capability를 추가하지 않는다.
 
+### 시안의 검증 범위와 비목표
+
+HTML 시안은 layout과 메뉴·목록 선택·단계 이동·tab·filter/history의 상호작용을 설명한다.
+편집 가능한 필드는 요약 갱신을 보여주는 예시이며 production schema validation, 실제 생성,
+runner/데이터 조회, 비교 계산, 시계열 replay를 구현한 것이 아니다. 화면의 확인 단계나 예시
+결과를 유효한 실행 설정 또는 실제 결과로 해석하지 않는다. 생산 UI의 완료 기준은 각 기능 PR에서
+API 통합·브라우저·접근성·시각 검증으로 충족해야 한다. 시안이 실제로 시연하는 navigation과
+맥락 보존의 결함은 이 비목표 설명으로 숨기지 않고 회귀 검증과 함께 수정한다.
+
 새 흰색/파란색 shell은 token으로 일관되게 적용하되 semantic danger/success를 덮어쓰지 않는다.
 기존 페이지 안의 중복 header/nav는 점진적으로 정리하고 같은 기능 PR에서 접근성 회귀를 확인한다.
 

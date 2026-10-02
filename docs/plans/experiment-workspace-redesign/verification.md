@@ -17,7 +17,7 @@
 
 ## 자동 review finding 수정
 
-자동 review의 P2 아홉 건을 반영했다.
+자동 review의 P2 열 건을 반영했다.
 
 - 완료·진행·실패·미관측 모두 실행 ID가 포함된 상세 링크를 제공한다. 선택 ID의 이름·상태·
   관측 기록을 표시하며 완료 예시의 수치를 다른 실행에 재사용하지 않는다. 미확인 ID도 구분한다.
@@ -32,12 +32,26 @@
 - 목록 adapter의 activeRun/runId 결합·terminal 우선 dedupe와 서버 count 분리를 문서화했다.
 - endpoint status와 fetch wrapper status를 분리하고 running 상태에서도 corruptLineCount 진단을 유지한다.
 - filter 변경의 replaceState 직후에도 모든 목록 navigation 링크를 동기화하여 stale query 초기화를 막는다.
+- 같은 문서 내 목록→상세→뒤로/목록 복귀 시 필터별 scroll 위치와 출발 링크 focus를 복원한다.
+  새 화면은 위에서 시작하고 tab-only 이동에는 scroll/focus를 바꾸지 않는다. 저장은 문서 메모리뿐이다.
 - HTML을 읽을 수 있게 포맷하고 임시 JSDOM 검증으로 desktop/mobile ID별 링크, 상태별 상세,
   미확인 ID, mobile menu의 이동/닫힘, 검색/필터/empty, 3단계 이동/입력 보존/요약 갱신,
   키보드 tab 이동, ID/ARIA 참조와 JavaScript error 부재를 확인했다.
 
 JSDOM 검증은 DOM 동작 검사이며 실제 viewport·pixel·layout·browser 접근성 검사와 다르다.
 이 검증 도구는 repo dependency에 추가하지 않았고 production 코드도 변경하지 않았다.
+
+## 통합 DOM 동선 행렬
+
+다음 push 전에 독립 행렬 70개를 한 번에 점검하고, 발견한 작은 결함도 함께 수정했다.
+현재 route의 모바일 메뉴 재선택 닫기, 직접 query의 추가 `?` 보존, 선택 카드의 고정 위험 설정
+문구를 수정한 최종 HTML SHA256은 `622f4a948ea4e05c727bfa6d77f205455a67b2d82155545a1669d2d14b17ecb5`다.
+
+70/70 통과 범위: desktop/mobile 및 viewport 전환 후 출발 run focus, 목록 scroll/filter/history,
+직접주소·새 문서의 tab/filter 복원, 6개 예시 상태·missing/empty, 단계 입력/요약, 키보드 tab,
+skip link, 같은 menu 재선택, raw/encoded query 보존과 인코딩된 입력의 DOM 비실행.
+Scroll/focus는 stub 기반 DOM 검사다. 새 문서 로드에서는 문서 메모리의 scroll/focus 기록이 초기화된다.
+실제 browser pixel/layout/접근성이나 생산 API 통합이 완료됐다는 뜻은 아니다.
 
 ## 아직 통과하지 못한 확인
 

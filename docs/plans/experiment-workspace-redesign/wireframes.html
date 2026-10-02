@@ -1057,7 +1057,7 @@
               <h2>어떤 조건으로 실행할까요?</h2>
               <div class="choice chosen">
                 <strong>기본 paper replay</strong
-                ><small>기존 historical runner · balanced 위험 설정</small>
+                ><small>기존 historical runner · 선택한 위험 설정 적용</small>
               </div>
               <div class="choice disabled-choice">
                 <strong>저장된 포트폴리오 정책</strong
@@ -1637,8 +1637,27 @@
         document.querySelector("#empty").hidden = shown.length !== 0;
       }
       let lastRouteIdentity = "";
+      let currentListKey = "#list";
+      const listPositions = new Map();
+      if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+      function rememberListPosition(originHref) {
+        if (document.querySelector("#screen-list").hidden) return;
+        const previous = listPositions.get(currentListKey);
+        listPositions.set(currentListKey, {
+          y: window.scrollY,
+          originHref:
+            originHref === undefined ? previous?.originHref : originHref,
+        });
+      }
+      function routeParts() {
+        const hash = location.hash.slice(1);
+        const separator = hash.indexOf("?");
+        return separator < 0
+          ? [hash, ""]
+          : [hash.slice(0, separator), hash.slice(separator + 1)];
+      }
       function showScreen() {
-        const [path, query = ""] = location.hash.slice(1).split("?");
+        const [path, query] = routeParts();
         const [route, runId, tabId] = path.split("/");
         const params = new URLSearchParams(query);
         if (route === "list" || query) {
@@ -1650,6 +1669,7 @@
             ? status
             : "all";
           renderList();
+          currentListKey = "#list" + filterQuery();
         }
         syncListLinks();
         const screen = [
@@ -1733,8 +1753,18 @@
           if (!heading.id) heading.id = `screen-${screen}-heading`;
           activeScreen.setAttribute("tabindex", "-1");
           activeScreen.setAttribute("aria-labelledby", heading.id);
-          activeScreen.focus({ preventScroll: true });
-          window.scrollTo(0, 0);
+          const saved =
+            screen === "list" ? listPositions.get(currentListKey) : null;
+          const listRoot = window.matchMedia?.("(max-width: 767px)").matches
+            ? document.querySelector("#mobile-runs")
+            : document.querySelector("#rows");
+          const origin = saved?.originHref
+            ? [...listRoot.querySelectorAll("a")].find(
+                (link) => link.getAttribute("href") === saved.originHref,
+              )
+            : null;
+          (origin ?? activeScreen).focus({ preventScroll: true });
+          window.scrollTo(0, saved?.y ?? 0);
         }
         lastRouteIdentity = identity;
       }
@@ -1774,7 +1804,7 @@
           .querySelectorAll(".tabpanel")
           .forEach((el) => (el.hidden = el.id !== `panel-${id}`));
         if (persist) {
-          const [path, query = ""] = location.hash.slice(1).split("?");
+          const [path, query] = routeParts();
           const runId = path.split("/")[1] ?? runs[0].id;
           const nextHash =
             "#detail/" + runId + "/" + id + (query ? "?" + query : "");
@@ -1790,8 +1820,30 @@
       function updateFilters() {
         history.replaceState(null, "", "#list" + filterQuery());
         renderList();
+        currentListKey = "#list" + filterQuery();
         syncListLinks();
       }
+      document.addEventListener("click", (event) => {
+        const link =
+          event.target instanceof Element
+            ? event.target.closest('a[href^="#"]')
+            : null;
+        const href = link?.getAttribute("href");
+        if (href && !href.startsWith("#list") && href !== "#content") {
+          rememberListPosition(href.startsWith("#detail/") ? href : null);
+        }
+      });
+      document.querySelectorAll(".mobile-menu a").forEach((link) => {
+        link.addEventListener("click", () => {
+          document.querySelector(".mobile-menu").open = false;
+          document
+            .querySelector(".mobile-menu summary")
+            .focus({ preventScroll: true });
+        });
+      });
+      addEventListener("scroll", () => rememberListPosition(), {
+        passive: true,
+      });
       document
         .querySelector("#search")
         .addEventListener("input", updateFilters);
