@@ -1,6 +1,8 @@
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { writePaperExperimentReview } from "../reports/paperExperimentReviewOutput.js";
+import { safePaperExperimentReviewValue } from "../reports/paperExperimentReview.js";
 import { PAPER_EXPERIMENT_LIMITS, parsePaperExperimentInput, PaperExperimentValidationError } from "../replay/paperExperimentInput.js";
 import { PaperExperimentRuntimeError, verifyPaperExperimentBuild } from "../replay/paperExperimentRuntime.js";
 import { PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN } from "../storage/artifactPaths.js";
@@ -12,11 +14,17 @@ import { PaperExperimentExecutionError, runPaperExperimentWorkflow } from "../wo
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const location = { rootDir: join(repositoryRoot, "data/paper-experiments"),
   protectedPaths: [join(repositoryRoot, "src"), join(repositoryRoot, "data/paper"), join(repositoryRoot, "data/historical")] };
-export const PAPER_EXPERIMENT_HELP = "validate|run --input <fixture.json> | inspect|retry --attempt <id>\nFixture only. cancel/resume unsupported; Ctrl+C leaves partial artifacts. retry creates a new attempt.";
+export const PAPER_EXPERIMENT_HELP = "validate|run --input <fixture.json> | inspect|retry --attempt <id> | review --attempt <id> [--compare-attempt <id>]\nFixture only. cancel/resume unsupported; Ctrl+C leaves partial artifacts. retry creates a new attempt.";
 
-export function parsePaperExperimentArguments(args: string[]): { command: "help" } | { command: "run"; input: string } | { command: "validate"; input: string } | { command: "inspect"; attempt: string } | { command: "retry"; attempt: string } {
+export function parsePaperExperimentArguments(args: string[]): { command: "help" } | { command: "run"; input: string } | { command: "validate"; input: string } | { command: "inspect"; attempt: string } | { command: "retry"; attempt: string } | { command: "review"; attempt: string; compareAttempt?: string } {
   if (args.length === 0 || (args.length === 1 && ["help", "--help"].includes(args[0]!))) return { command: "help" as const };
   const [command, flag, value] = args;
+  if (command === "review" && flag === "--attempt" && value && PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN.test(value)) {
+    if (args.length === 3) return { command, attempt: value };
+    if (args.length === 5 && args[3] === "--compare-attempt" && PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN.test(args[4]!)) {
+      return { command, attempt: value, compareAttempt: args[4]! };
+    }
+  }
   if (args.length !== 3 || !value || value.startsWith("-")) throw new PaperExperimentStorageError("INVALID_REQUEST");
   if ((command === "run" || command === "validate") && flag === "--input") return { command, input: value };
   if ((command === "inspect" || command === "retry") && flag === "--attempt" && PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN.test(value)) return { command, attempt: value };
@@ -29,6 +37,12 @@ export async function paperExperimentMain(args: string[]): Promise<number> {
   try {
     const parsed = parsePaperExperimentArguments(args);
     if (parsed.command === "help") { console.log(PAPER_EXPERIMENT_HELP); return 0; }
+    if (parsed.command === "review") {
+      const result = await writePaperExperimentReview(location, parsed.attempt, parsed.compareAttempt);
+      output(safePaperExperimentReviewValue({ attemptId: parsed.attempt, ...result }));
+      return result.review.execution.integrity === "verified"
+        && (!result.review.comparison || result.review.comparison.status === "identical") ? 0 : 1;
+    }
     if (parsed.command === "inspect") {
       const inspection = await inspectPaperExperimentAttempt(location, parsed.attempt);
       if (inspection.status !== "completed" || !inspection.state?.executionReceiptRequired) {

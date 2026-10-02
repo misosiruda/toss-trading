@@ -9,7 +9,8 @@
 
 `EXP-00`~`EXP-04`는 이 문서의 작업 ID이며 GitHub PR 번호가 아니다. 구현 시 path 이름을
 조정할 수 있으나 책임·계약·AC는 유지한다. EXP-00은 PR #791로 병합되었다.
-EXP-01 PR #792와 EXP-02 PR #793이 병합되었고 EXP-03 runner/CLI를 구현했다. EXP-04 review/compare는 미구현이다.
+EXP-01 PR #792, EXP-02 PR #793과 EXP-03 PR #794가 병합되었고 EXP-04 review/compare를 구현했다.
+EXP-04 검증 체크는 fixture engineering 증거이며 최종 PR merge를 뜻하지 않는다.
 각 단계의 구현·실행 증거와 최종 병합 gate는 아래 해당 절 및 PR exact SHA 기록을 따른다. 커밋 개수는 게시 조건이 아니다. schema/저장/실행/검토/테스트·문서의
 책임이 바뀌기 전에 검토 가능한 단위로 Korean Conventional Commit을 남긴다.
 
@@ -242,19 +243,19 @@ EXP-03 로컬 수용 증거 (2026-10-02):
 
 수용 기준:
 
-- [ ] `EXP-04-AC1`: 질문·범위·입력→각 행동/거절/HOLD/skip→정책/비용/결과 근거가 추적됨
-- [ ] `EXP-04-AC2`: 기존 cashOnly 기준선과 cost breakdown을 정확히 읽음;
+- [x] `EXP-04-AC1`: 질문·범위·입력→각 행동/거절/HOLD/skip→정책/비용/결과 근거가 추적됨
+- [x] `EXP-04-AC2`: 기존 cashOnly 기준선과 cost breakdown을 정확히 읽음;
   equal-weight/initial-hold의 무비용·packet 표본 차이, synthetic/calendar/FX/통계 한계 표시
-- [ ] `EXP-04-AC3`: missing/corrupt/hash mismatch·provider failure를 0 또는 성공으로 표시하지 않음;
+- [x] `EXP-04-AC3`: missing/corrupt/hash mismatch·provider failure를 0 또는 성공으로 표시하지 않음;
   진행 중/중단 실행도 partial evidence와 stored state를 구분해 검토 가능
-- [ ] `EXP-04-AC4`: 같은 inputHash/코드 기준의 두 attempt는 허용된 identity/path/timing만 제외해 비교;
+- [x] `EXP-04-AC4`: 같은 inputHash/코드 기준의 두 attempt는 허용된 identity/path/timing만 제외해 비교;
   비용·Risk·dataRefs/coverage 차이는 불일치, backend runtime identity/lock hash/Node 불일치와
   다른 입력 조건은 성과 순위 대신 incomparable; caller의 revision 자기 선언만으로 비교 허용하지 않음
-- [ ] `EXP-04-AC5`: report가 attempt 밖 경로를 열거나 source/replay artifacts를 바꾸지 않음;
+- [x] `EXP-04-AC5`: report가 attempt 밖 경로를 열거나 source/replay artifacts를 바꾸지 않음;
   재생성도 review 산출물만 별도 안전하게 작성하고 원본 evidence 불변
-- [ ] `EXP-04-AC6`: CLI validate→run→inspect→review→retry→compare를 빈 root에서 수행;
+- [x] `EXP-04-AC6`: CLI validate→run→inspect→review→retry→compare를 빈 root에서 수행;
   별도 root의 동일 실험 semantic 결과 일치와 실패 시나리오를 full gate에서 확인
-- [ ] `EXP-04-AC7`: TR-MVP 증거는 공급한 범위만 갱신. AI·실제 전략·cooperative cancel·사용자 학습
+- [x] `EXP-04-AC7`: TR-MVP 증거는 공급한 범위만 갱신. AI·실제 전략·cooperative cancel·사용자 학습
   수용 미검증을 숨기거나 기존 TR-MVP/SPOM 최종 체크박스를 일괄 완료하지 않음
 
 예정 집중 검증:
@@ -264,9 +265,19 @@ npm run build
 node --test dist/reports/paperExperimentReview.test.js dist/cli/paperExperiment.test.js
 ```
 
-예정 명령: `npm run paper:experiment -- review --attempt <id> --compare-attempt <other-id>`.
+구현 명령: `npm run paper:experiment -- review --attempt <id> --compare-attempt <other-id>`.
 두 번째 ID는 선택이다. Markdown의 투자 권유·수익 보장·실거래 적합 표현 부재와 evidence 링크를
 snapshot/구조 assertion으로 검사한다. 보고서가 기존 outcome의 숫자를 다시 계산하지 않는지 검토한다.
+구현 evidence:
+
+- `paperExperimentReviewEvidence.ts`: allowlist strict read, terminal digest 재대조, stable read snapshot과 명시적 semantic projection
+- `paperExperimentReview.ts`: 실행/입력/연구 품질 분리, nullable 결과, 고정 artifact field 링크, escaped 한국어 보고서
+- `paperExperimentReviewOutput.ts`: exclusive generation·atomic 파일·최종 completion marker, 원본 불변
+- CLI test: 실제 validate→run→inspect→review→retry→compare, distinct empty root, source/build receipt 없는 review,
+  self-comparison 거절, SIGINT/SIGKILL partial evidence. `paperExperimentReview.test.ts`는 각 negative/비교/출력 경계를 검사
+- [실제 실행 기록과 semantic 제외 field](../../runbooks/paper-experiment.md#exp-04-근거-검토와-반복-비교)
+- TR-MVP evidence map만 갱신하며 기존 TR-MVP/SPOM 최종 체크박스는 그대로 미완료 유지
+
 rollback: review entry point/projection만 revert. 실행/input/legacy report는 그대로 읽을 수 있고 삭제하지 않음.
 
 ## 단계 간 완료 증거
