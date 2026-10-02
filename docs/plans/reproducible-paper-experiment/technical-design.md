@@ -98,7 +98,9 @@ EXP-02의 디스크 exclusive-write/무결성 보장을 이미 구현했다는 �
   v1에서는 모든 universe member에 최소 한 source row를 요구한다. 이는 기존 universe parser의
   일반 조건을 바꾸지 않는 이 contract의 제한이다. 중복·알 수 없는 symbol과 명시된 asset metadata
   불일치는 거절한다. 양쪽에 명시된 `riskTags`는 set으로 비교·정규화하여 충돌을 거절한다.
-  시간별 미래·stale·가격 없는 일부 source는 coverage에 그대로 남는다.
+  시간별 미래·stale source는 coverage에 그대로 남는다. `lastPriceKrw`는 양수만
+  허용한다. 가격 0인 row는 다른 유효 row가 있어도 admission에서 거절하여 후속 provider가
+  이를 선택해 source gap을 Risk rejection으로 바꾸지 않도록 한다.
 - universe의 `lifecycleStatus`는 명시적인 effective 값으로 보존하고 parser 내부 파생 필드
   `lifecycleStatusSource`는 JSON input에 넣지 않는다. 후속 runner adapter는 보존된 universe를
   기존 universe parser로 다시 읽어 runtime용 provenance를 복원해야 한다. Golden fixture의
@@ -119,7 +121,7 @@ EXP-02의 디스크 exclusive-write/무결성 보장을 이미 구현했다는 �
   version 또는 값 변조를 거절한다. 정규화 입력을 JSON으로 저장한 뒤 같은 context로 재검증하면
   동일한 payload/hash를 얻는다.
 - `preflight`는 tick 수, call 상한, source/symbol 수와 tick별 usable snapshot ID 및
-  `future_only`/`stale`/`price_unavailable` 이유를 보존한다. 모든 tick에서 usable 가격이 없으면
+  `future_only`/`stale` 이유를 보존한다. 모든 tick에서 usable 가격이 없으면
   입력 거절, 일부 결측은 `insufficient_data`다. 이는 decision/HOLD/Risk 결과가 아니다.
 - 오류는 고정 `PaperExperimentValidationError.code`만 노출하며 입력 값·unknown key·path나
   Zod/resolver 원문 오류를 출력하지 않는다. Byte cap은 JSON parsing 전에 검사하고 잘못된 UTF-8도 거절한다.

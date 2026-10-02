@@ -321,10 +321,17 @@ test("paper experiment rejects all-unusable sources and preserves partial covera
   input.configuration.clock.endAt = "2025-01-01T00:00:00Z";
   rejects(input, "NO_USABLE_SOURCE");
   input.source.snapshots = fixture().source.snapshots.map((snapshot) => ({ ...snapshot, lastPriceKrw: 0 }));
-  rejects(input, "NO_USABLE_SOURCE");
-  input.configuration.clock.endAt = "2025-01-03T00:00:00Z";
-  input.source.snapshots[1]!.lastPriceKrw = 1;
-  assert.equal(parse(input).preflight.ticks[0]!.missing[0]!.reason, "price_unavailable");
+  rejects(input, "INVALID_INPUT");
+});
+
+test("paper experiment rejects every zero-price row before it can become a downstream Risk outcome", () => {
+  const input = fixture();
+  input.universe.symbols.push({ ...input.universe.symbols[0]!, symbol: "FIXTURE_B" });
+  input.source.snapshots.push({ ...input.source.snapshots[0]!, symbol: "FIXTURE_B", snapshotId: "zero_price", lastPriceKrw: 0 });
+  rejects(input, "INVALID_INPUT");
+  input.source.snapshots.at(-1)!.lastPriceKrw = 1;
+  assert.doesNotThrow(() => parse(input));
+  rejects(changed("source.snapshots.1.lastPriceKrw", 0), "INVALID_INPUT");
 });
 
 test("paper experiment requires caller identity and rejects mismatched requested revisions", () => {

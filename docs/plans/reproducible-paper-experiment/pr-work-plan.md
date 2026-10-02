@@ -72,10 +72,12 @@ EXP-01의 입력 계약·fixture·unit test만 구현했으며 EXP-02~04는 미�
 
 로컬 구현 증거 (2026-10-02):
 
-- `paperExperimentInput.test.ts` 79개와 기존 `replayRunManifest` 13개,
-  `historicalReplayWorkflowPlan` 1개: build 후 93개 통과, 실패·skip 0
+- `paperExperimentInput.test.ts` 80개와 기존 `replayRunManifest` 13개,
+  `historicalReplayWorkflowPlan` 1개: build 후 94개 통과, 실패·skip 0
 - 독립 검토에서 확인한 positive freshness, 파생 timestamp 범위, 유한 bps/volume 상한,
   명시적 riskTags 충돌 검증을 입력 계층에 보완하고 회귀 테스트를 추가
+- 자동 Code Review finding에 따라 가격 0인 row를 strict admission에서 거절하여
+  source gap이 후속 Risk rejection으로 바뀌는 경로를 차단
 - exact 2 MiB/100 snapshots/10 symbols/100 ticks/100 calls와 초과 입력, tick 할당 전 거절 검증
 - snapshot/object 순서·UTC 등가·정규화 JSON 재입력·freeze, cutoff/source/정책/version/identity 검증
 - fresh process의 UTC/Asia-Seoul/America-New-York 및 hostile AI/live 환경에서 동일 hash;

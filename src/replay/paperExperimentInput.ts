@@ -84,6 +84,7 @@ const configurationSchema = baseConfiguration.extend({
 });
 const snapshotSchema = historicalMarketSnapshotSchema.safeExtend({
   snapshotId: fixtureTokenSchema,
+  lastPriceKrw: historicalMarketSnapshotSchema.shape.lastPriceKrw.positive(),
   symbol: fixtureSymbolSchema,
   observedAt: explicitTimestampSchema,
   createdAt: explicitTimestampSchema,
@@ -299,15 +300,14 @@ function assessSourceCoverage(input: EffectivePaperExperimentInput) {
   const index = new HistoricalMarketSnapshotIndex(input.source.snapshots);
   const coverage = ticks.map((tick) => {
     const fresh = index.latestFreshSnapshots({ simulatedAt: new Date(tick.epochMs), maxSnapshotAgeSeconds });
-    const usable = fresh.filter((snapshot) => snapshot.lastPriceKrw > 0);
+    // Admission rejects zero prices, so every fresh source remains usable downstream.
+    const usable = fresh;
     const usableKeys = new Set(usable.map(symbolKey));
     const missing = input.universe.symbols.filter((member) => !usableKeys.has(symbolKey(member)))
       .map((member) => {
         const history = input.source.snapshots.filter((snapshot) => symbolKey(snapshot) === symbolKey(member));
         const latest = history.filter((snapshot) => Date.parse(snapshot.observedAt) <= tick.epochMs).at(-1);
-        const reason = latest === undefined ? "future_only" as const
-          : tick.epochMs - Date.parse(latest.observedAt) > maxSnapshotAgeSeconds * 1000 ? "stale" as const
-          : "price_unavailable" as const;
+        const reason = latest === undefined ? "future_only" as const : "stale" as const;
         return { market: member.market, symbol: member.symbol, reason };
       });
     return {
