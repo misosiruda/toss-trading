@@ -17,7 +17,7 @@
 
 ## 자동 review finding 수정
 
-자동 review의 P2 열여섯 건을 반영했다.
+자동 review의 P2 열일곱 건을 반영했다.
 
 - 완료·진행·실패·미관측 모두 실행 ID가 포함된 상세 링크를 제공한다. 선택 ID의 이름·상태·
   관측 기록을 표시하며 완료 예시의 수치를 다른 실행에 재사용하지 않는다. 미확인 ID도 구분한다.
@@ -38,6 +38,8 @@
   남은 focus는 선택 tab으로 복구한다. DOM 회귀로 이를 구분했다.
 - 목록 adapter의 activeRun/runId 결합·terminal 우선 dedupe와 서버 count 분리를 문서화했다.
 - endpoint status와 fetch wrapper status를 분리하고 running 상태에서도 corruptLineCount 진단을 유지한다.
+- persisted child 상태 네 값과 manifest-derived running, bucket queued, 조회 missing/unknown의
+  출처·guard를 분리했다. 불가능한 저장 상태를 정상 row로 받아들이지 않는 테스트 계약을 명시했다.
 - 병합된 UX-02b 관측 mapping을 추가했다. index missing과 runner_failed의 동시 존재는 runner 실패
   관측으로 알리며, accepted-only unknown·관측 판독 오류·batch/child 상태를 서로 덮지 않는다.
 - filter 변경의 replaceState 직후에도 모든 목록 navigation 링크를 동기화하여 stale query 초기화를 막는다.
@@ -100,8 +102,28 @@ network, subprocess entry point를 감시해 호출 0을 확인했다. source da
 않았고 fixture의 valid를 데이터 가용성/실행 성공으로 해석하지 않았다. 이 변경에서 production
 코드는 수정하지 않았다. repository 전체 gate 결과는 해당 PR의 최종 검증 tree를 기준으로 기록한다.
 
-**새 최종 확인 UI의 실제 Chrome 재검증은 대기 중이다. 아래 06c862b의 270개 통과는
-새 확인 UI를 포함하지 않으며 현재 후보의 browser 통과 증거로 재사용하지 않는다.**
+이 전체 조건 표시 버전은 이후 f481eb5의 실제 Chrome에서 기능·접근성 426개 검사를
+통과했지만 모바일 확인 화면의 지나친 세로 길이가 사용성 실패로 확인됐다. 아래 기록처럼
+통과 범위와 이 실패를 분리하며, 간결한 새 후보의 Chrome 검증은 별도로 기다린다.
+
+### 간결한 확인 단계 후보의 DOM 회귀
+
+현재 후보 HTML SHA256은
+`79fd5b4691660436743905e428f5aab59f02e1e49be048bdf733b46d063172af`다.
+기존 292/292와 간결한 확인 단계 18/18, 총 310개 행렬 및 기본 DOM 검사를 통과했다.
+
+- 기본 화면은 현재 요청의 8개 핵심 묶음, 미검증·source 미조회, 고정 예시의 3→1/31→0
+  정규화 차이와 preset/시장 필터 미적용 경고만 표시한다.
+- 현재 전체 29조건, 현재 입력과 무관한 고정 응답 예시, 원문/생성 근거를 닫힌 details로 분리했다.
+  고정 예시 안의 전체 29조건도 별도로 펼친다. 자료·원문 hash·계약·서버 실효값 계산은 바꾸지 않았다.
+- 3단계에서는 중복 입력 요약 aside를 숨기고 이전 편집 단계로 돌아가면 복구한다.
+- 추가 회귀는 닫힌 상세의 실제 DOM 가시성, 순차 펼치기/닫기와 focus, 전체 필드·notices·원문
+  접근, 변경 입력 요약, preview/history 이후 문맥, network·runtime 오류 부재를 확인했다.
+- 390×844의 기본 확인 화면을 1–3화면 안에서 검토하는 것을 목표로 한다. DOM 검사는 pixel
+  높이를 측정하지 못하므로 목표 달성·세로 길이·가로 overflow·실제 키보드는 새 Chrome에서 확인한다.
+
+**현재 간결한 후보의 실제 Chrome QA는 대기 중이다. f481eb5의 426개 통과를 새 후보의
+통과나 세로 길이 문제 해결로 재사용하지 않는다.**
 
 ## 실제 Windows Chrome 1차 검증 (9134619)
 
@@ -155,6 +177,19 @@ canonical ID로 기록하도록 수정했다. 독립 DOM alias 84개와 기존 1
 
 이 결과는 위 exact HTML에 한정한다. 이후 추가한 최종 확인 필드/고정 응답 예시의 실제
 Chrome 검증은 새 후보에서 기존 matrix와 함께 다시 수행해야 한다.
+
+### 실제 Windows Chrome 4차 검증 (f481eb5)
+
+대상 HTML SHA256은
+`d9cdd32c2f2543279a7323dd33f7589a1a9eee9069ed313d1453345d34fbd6e1`이다.
+
+- 기존 270개와 새 확인 단계 156개, 합계 426/426 기능·접근성 검사 통과
+- axe 43상태 violation 0, console/page error 0, 가로 overflow 없음
+- **별도 사용성 실패:** 390×844 기본 확인 화면이 11,542px, 모두 펼치면 22,075px였다.
+  가로 overflow·기능 테스트 통과가 확인 화면의 세로 길이와 검토 편의성을 보장하지 않았다.
+- 이 결과를 근거로 기본 요약과 점진적 펼치기로 재구성한다. 새 후보는 기존 전체 검증과 함께
+  기본 높이, 핵심 조건·경고 노출, 전체 조건/고정 예시 열람, 모바일 keyboard/focus를 재검증해야 한다.
+- screen reader, 다른 browser/device, production API 통합은 여전히 미검증이다.
 
 ### 최초 클라우드 검증 제한 기록
 

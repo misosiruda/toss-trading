@@ -417,6 +417,38 @@
         grid-template-columns: 1fr 1fr;
         gap: 16px;
       }
+      .form-layout.review-step {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .review-overview {
+        margin-top: 16px;
+      }
+      .review-overview > div {
+        grid-template-columns: minmax(0, 88px) minmax(0, 1fr);
+        gap: 12px;
+        padding: 9px 0;
+        margin: 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .review-overview dd {
+        min-width: 0;
+      }
+      .review-warnings {
+        margin: 16px 0;
+        padding-left: 18px;
+        color: #74551a;
+        font-size: 12px;
+      }
+      .review-warnings li {
+        margin: 6px 0;
+      }
+      .review-disclosure > .validation-section {
+        margin-top: 0;
+        border-top: 0;
+        padding: 12px;
+      }
       .validation-section {
         margin-top: 28px;
         padding-top: 24px;
@@ -1228,132 +1260,130 @@
             </div>
             <div class="form-step" data-step="3" hidden>
               <h2>실행 전 확인</h2>
-              <ul class="checklist">
-                <li>
-                  <span class="check">✓</span>기본 paper replay · fixture 판단
-                </li>
-                <li><span class="check">✓</span>실제 주문 경로 없음</li>
-                <li>
-                  <span class="unknown">미검증</span> · 현재 입력의 실제 적용
-                  조건은 미조회
-                </li>
-                <li>
-                  <span class="unknown">확인 필요</span> · 데이터 가용성은
-                  미검증
-                </li>
-              </ul>
-              <div class="notice">
-                이 화면은 설계 예시입니다. 검증이나 실행 요청을 보내지 않으며,
-                ‘결과 시안 보기’는 실행 버튼이 아닙니다
-              </div>
-              <section
-                class="validation-section"
-                aria-labelledby="draft-heading"
-              >
-                <h3 id="draft-heading">현재 입력 초안 · 서버 검증 미연결</h3>
-                <p class="sub" id="draft-status">초기 입력 · 미검증</p>
-                <p class="help">
-                  아래 raw 초안은 현재 양식값과 시안의 고정 요청 필드를 모두
-                  표시합니다. 숫자는 편집 중 문자열이며 API에 제출 가능한
-                  requestedConfig나 검증 결과가 아닙니다
-                </p>
-                <dl>
-                  <div>
-                    <dt>effectiveConfig</dt>
-                    <dd id="draft-effective-status">검증 미연결 · 미조회</dd>
-                  </div>
-                  <div>
-                    <dt>notices</dt>
-                    <dd>검증 미연결 · 미조회</dd>
-                  </div>
-                  <div>
-                    <dt>sourceDataKind / 가용성</dt>
-                    <dd>미조회 / 미검증</dd>
-                  </div>
-                  <div>
-                    <dt>tickDelayMs · 위험 수치</dt>
-                    <dd>서버 실효값 미조회</dd>
-                  </div>
-                </dl>
-                <dl id="draft-comparison" class="config-comparison"></dl>
-              </section>
-              <section
-                class="validation-section"
-                aria-labelledby="fixed-validation-heading"
-              >
-                <h3 id="fixed-validation-heading">
-                  별도 고정 입력의 서버 응답 예시
+              <p class="help">
+                paper-only · 실제 주문 없음 · ‘결과 시안 보기’는 실행 버튼이
+                아닙니다
+              </p>
+              <section aria-labelledby="draft-heading">
+                <h3 id="draft-heading" style="margin-top: 16px">
+                  현재 입력 초안
                 </h3>
-                <p class="sub">
-                  현재 양식과 무관한 고정 합성 입력입니다. 위 입력을 바꿔도 이
-                  예시는 바뀌지 않습니다
+                <p class="help" id="draft-status">초기 입력 · 미검증</p>
+                <p class="help" id="draft-effective-status">
+                  검증 미연결 · 실효값/자료 종류/가용성 미조회
                 </p>
-                <div class="notice">
-                  문서 작성 시 validatePaperSimulationCandidate(고정 config,
-                  env={})를 실행해 얻은 원문입니다. browser는 저장된 예시만
-                  표시하며 validator·source 조회·runner를 호출하지 않습니다.
-                  예시의 valid는 현재 초안이나 데이터 가용성을 검증한 결과가
-                  아닙니다
-                </div>
-                <p class="help" id="fixed-response-status"></p>
-                <ul
-                  class="validation-notices"
-                  id="fixed-normalization-differences"
-                ></ul>
-
-                <dl id="fixed-comparison" class="config-comparison"></dl>
-                <h3 style="margin-top: 20px">이 고정 응답의 notices</h3>
-                <ul
-                  class="validation-notices"
-                  id="fixed-validation-notices"
-                ></ul>
+                <dl id="draft-overview" class="review-overview"></dl>
+                <ul class="review-warnings">
+                  <li>
+                    숫자는 편집 중 요청값입니다. 서버 검증·실행은 연결되지
+                    않았습니다
+                  </li>
+                  <li id="normalization-warning"></li>
+                  <li>
+                    고정 응답의 preset·시장 필터는 미적용입니다. 전체 notices는
+                    별도 예시에서 확인하세요
+                  </li>
+                </ul>
+                <details id="draft-all-conditions" class="validation-details">
+                  <summary>현재 요청 전체 29조건 · 실효값 미조회</summary>
+                  <dl id="draft-comparison" class="config-comparison"></dl>
+                </details>
               </section>
-              <section
-                class="validation-section"
-                aria-labelledby="raw-inspection-heading"
+              <details
+                id="fixed-response-details"
+                class="validation-details review-disclosure"
               >
-                <h3 id="raw-inspection-heading">검사용 전체 자료</h3>
-                <p class="help">
-                  현재 raw 초안과 별도 고정 응답을 각각 펼쳐 확인할 수 있습니다
-                </p>
-                <details class="validation-details">
-                  <summary>현재 전체 raw 요청 초안 · effective 미조회</summary>
-                  <pre id="draft-config" class="validation-json"></pre>
-                </details>
-                <details class="validation-details">
-                  <summary>별도 고정 requestedConfig 전체</summary>
-                  <pre
-                    id="fixed-requested-config"
-                    class="validation-json"
-                  ></pre>
-                </details>
-                <details class="validation-details">
-                  <summary>
-                    별도 고정 effectiveConfig 전체 ·
-                    constraints/riskPolicy/allocationPolicy 포함
-                  </summary>
-                  <pre
-                    id="fixed-effective-config"
-                    class="validation-json"
-                  ></pre>
-                </details>
-                <details class="validation-details">
-                  <summary>
-                    별도 고정 서버 응답 원문 · 모든 안전 상태 포함
-                  </summary>
-                  <pre
-                    id="fixed-validation-response"
-                    class="validation-json"
-                  ></pre>
-                </details>
-                <details class="validation-details">
-                  <summary>고정 응답 생성 근거</summary>
-                  <pre
-                    id="fixed-validation-provenance"
-                    class="validation-json"
-                  ></pre>
-                </details>
-              </section>
+                <summary>별도 고정 서버 응답 예시 · 현재 입력과 무관</summary>
+                <section
+                  class="validation-section"
+                  aria-labelledby="fixed-validation-heading"
+                >
+                  <h3 id="fixed-validation-heading">
+                    별도 고정 입력의 서버 응답 예시
+                  </h3>
+                  <p class="sub">
+                    현재 양식과 무관한 고정 합성 입력입니다. 위 입력을 바꿔도 이
+                    예시는 바뀌지 않습니다
+                  </p>
+                  <div class="notice">
+                    문서 작성 시 validatePaperSimulationCandidate(고정 config,
+                    env={})를 실행해 얻은 원문입니다. browser는 저장된 예시만
+                    표시하며 validator·source 조회·runner를 호출하지 않습니다.
+                    예시의 valid는 현재 초안이나 데이터 가용성을 검증한 결과가
+                    아닙니다
+                  </div>
+                  <p class="help" id="fixed-response-status"></p>
+                  <ul
+                    class="validation-notices"
+                    id="fixed-normalization-differences"
+                  ></ul>
+
+                  <details id="fixed-all-conditions" class="validation-details">
+                    <summary>고정 requested → effective 전체 29조건</summary>
+                    <dl id="fixed-comparison" class="config-comparison"></dl>
+                  </details>
+                  <h3 style="margin-top: 20px">이 고정 응답의 notices</h3>
+                  <ul
+                    class="validation-notices"
+                    id="fixed-validation-notices"
+                  ></ul>
+                </section>
+              </details>
+              <details
+                id="raw-inspection-details"
+                class="validation-details review-disclosure"
+              >
+                <summary>검사용 원문 JSON · 생성 근거</summary>
+                <section
+                  class="validation-section"
+                  aria-labelledby="raw-inspection-heading"
+                >
+                  <h3 id="raw-inspection-heading">검사용 전체 자료</h3>
+                  <p class="help">
+                    현재 raw 초안과 별도 고정 응답을 각각 펼쳐 확인할 수
+                    있습니다
+                  </p>
+                  <details class="validation-details">
+                    <summary>
+                      현재 전체 raw 요청 초안 · effective 미조회
+                    </summary>
+                    <pre id="draft-config" class="validation-json"></pre>
+                  </details>
+                  <details class="validation-details">
+                    <summary>별도 고정 requestedConfig 전체</summary>
+                    <pre
+                      id="fixed-requested-config"
+                      class="validation-json"
+                    ></pre>
+                  </details>
+                  <details class="validation-details">
+                    <summary>
+                      별도 고정 effectiveConfig 전체 ·
+                      constraints/riskPolicy/allocationPolicy 포함
+                    </summary>
+                    <pre
+                      id="fixed-effective-config"
+                      class="validation-json"
+                    ></pre>
+                  </details>
+                  <details class="validation-details">
+                    <summary>
+                      별도 고정 서버 응답 원문 · 모든 안전 상태 포함
+                    </summary>
+                    <pre
+                      id="fixed-validation-response"
+                      class="validation-json"
+                    ></pre>
+                  </details>
+                  <details class="validation-details">
+                    <summary>고정 응답 생성 근거</summary>
+                    <pre
+                      id="fixed-validation-provenance"
+                      class="validation-json"
+                    ></pre>
+                  </details>
+                </section>
+              </details>
             </div>
           </div>
           <aside class="summary" aria-label="입력 요약">
@@ -2367,6 +2397,10 @@
           heading.setAttribute("tabindex", "-1");
           heading.focus();
         }
+        document.querySelector("#screen-new .summary").hidden = step === 3;
+        document
+          .querySelector("#screen-new .form-layout")
+          .classList.toggle("review-step", step === 3);
         document.querySelector("#next").hidden = step === 3;
         document.querySelector("#preview-result").hidden = step !== 3;
         document.querySelector("#next").textContent =
@@ -2739,6 +2773,42 @@
           null,
           2,
         );
+        const overview = [
+          ["실행", draft.runType + " · 요청 " + draft.runCount + "회"],
+          ["기간", draft.window.startAt + "–" + draft.window.endAt],
+          ["자료", draft.sourceDataDir],
+          [
+            "판단",
+            draft.decisionProvider.mode +
+              " · " +
+              value("sampling") +
+              " · step " +
+              draft.samplingPolicy.stepSeconds +
+              "초",
+          ],
+          [
+            "호출 한도",
+            "판단 " +
+              draft.samplingPolicy.maxDecisionCalls +
+              " · Codex " +
+              draft.samplingPolicy.maxCodexCallsPerRun,
+          ],
+          [
+            "자금·위험",
+            draft.capital.initialCashKrw + " KRW · " + draft.riskProfile,
+          ],
+          ["exit·비용", draft.paperExitPolicy + " · " + draft.costModel],
+          ["benchmark", draft.benchmarkPolicy],
+        ].map(([label, text]) => {
+          const row = document.createElement("div");
+          const title = document.createElement("dt");
+          const description = document.createElement("dd");
+          title.textContent = label;
+          description.textContent = text;
+          row.append(title, description);
+          return row;
+        });
+        document.querySelector("#draft-overview").replaceChildren(...overview);
         renderConfigComparison("#draft-comparison", draft, null);
         document.querySelector("#summary-run-type").textContent = draft.runType;
         if (changed)
@@ -2778,6 +2848,16 @@
       );
       const requestedExample = fixedValidationResponse.requestedConfig;
       const effectiveExample = fixedValidationResponse.effectiveConfig;
+      document.querySelector("#normalization-warning").textContent =
+        "고정 예시의 정규화: runCount " +
+        requestedExample.runCount +
+        "→" +
+        effectiveExample.runCount +
+        ", fixture Codex 한도 " +
+        requestedExample.samplingPolicy.maxCodexCallsPerRun +
+        "→" +
+        effectiveExample.samplingPolicy.maxCodexCallsPerRun +
+        ". 현재 초안의 검증 결과는 아닙니다";
       for (const text of [
         "runType=" +
           requestedExample.runType +

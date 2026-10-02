@@ -109,7 +109,9 @@ source 종류/coverage를 확인할 수 없으면 ‘자료 종류 미확인’�
 
 ### 최종 확인과 생성 제어
 
-실제품의 최종 단계는 검증 응답의 전체 `requestedConfig`, `effectiveConfig`, `notices`를 표시한다.
+실제품의 최종 단계는 검증 응답의 전체 `requestedConfig`, `effectiveConfig`, `notices`를 열람할 수 있게 한다.
+기본 화면에는 핵심 6–8개 조건 묶음과 중요한 변경·정규화·미지원 경고를 먼저 보이고, 전체 조건과
+원문은 접근 가능한 접힌 검사로 제공한다. 모든 필드를 처음부터 펼쳐 검토 흐름을 압도하지 않는다.
 runType·정규화된 runCount·window/timezone·stepSeconds·호출 한도·provider·constraints·riskPolicy·
 allocationPolicy·exit·cost·benchmark·tickDelayMs와 `sourceDataKind`/`dataAvailabilityChecked`를
 생략하지 않는다. 정상 응답이어도 single replay 횟수나 fixture Codex 한도가 요청과 달라질 수
@@ -127,15 +129,17 @@ allocationPolicy·exit·cost·benchmark·tickDelayMs와 `sourceDataKind`/`dataAv
 두 자료를 서로 다른 이름과 영역으로 보여준다.
 
 - 현재 양식은 모든 요청 필드를 갖춘 **raw 초안**이다. 숫자도 편집 중 문자열로 보존하며 typed
-  API 요청·검증된 requestedConfig로 표현하지 않는다. 핵심 조건은 요청→미조회 비교 행으로,
-  모바일은 한 열의 조건 목록으로 보인다. effectiveConfig/notices/sourceDataKind는 미조회로 남긴다.
+  API 요청·검증된 requestedConfig로 표현하지 않는다. 기본은 핵심 8개 묶음과 미검증·정규화·필터
+  경고이며 전체 29조건의 요청→미조회 비교는 접어서 제공한다. 모바일은 한 열 목록으로 보인다.
+  effectiveConfig/notices/sourceDataKind는 미조회로 남긴다.
   양식을 바꾸면 초안만 갱신되고 ‘입력 변경됨 · 미검증’을 유지한다.
 - [고정 서버 응답 원문](validation-response.example.json)은 문서 작성 시 별도 합성 입력으로
   `validatePaperSimulationCandidate(config, {})`를 실제 호출한 결과다. 입력과 생성 모듈·source
   commit/hash·빈 env는 시안에서도 확인할 수 있다. single_replay의 runCount 3→1,
-  fixture maxCodexCallsPerRun 31→0을 포함한 전체 실효값과 notices를 보존한다. 주요 조건은
-  requested→effective 비교 행으로 먼저 보이고, constraints/riskPolicy/allocationPolicy 전체와
-  각 JSON 원문은 마지막의 접힌 검사 영역에 둔다. 현재 양식값의 검증 결과가 아니며 양식 변경에
+  fixture maxCodexCallsPerRun 31→0을 포함한 전체 실효값과 notices를 보존한다. 고정 예시는 별도
+  닫힌 구획에 두고, 펼치면 해당 예시의 경고와 requested→effective 전체 비교를 열람한다.
+  constraints/riskPolicy/allocationPolicy 전체와 각 JSON 원문은 마지막의 접힌 검사에 둔다.
+  현재 양식값의 검증 결과가 아니며 양식 변경에
   따라 다시 계산하지 않는다.
 
 고정 예시의 sourceDataKind는 unknown, dataAvailabilityChecked와 replayRunnerStarted는 false다.
@@ -145,6 +149,8 @@ allocationPolicy·exit·cost·benchmark·tickDelayMs와 `sourceDataKind`/`dataAv
 오류·변경 입력 identity 검증은 후속 production UI PR에서 구현·검증한다.
 고정 예시 구획은 문서 검토 전용이며 생산 화면에 복사하지 않는다. 실제 UI는 현재 입력에 대한
 검증 대기·오류 또는 요청/실효 비교 상태 하나를 표시하고, 전체 원문 검사는 마지막에 둔다.
+시안의 3단계는 중복 입력 요약 aside를 숨기고 이전 단계로 돌아가면 복구한다. 390×844의 기본
+확인 범위를 1–3화면 안에 두는 것을 시각 검증 목표로 삼되, 중요한 경고를 숨겨 높이만 줄이지 않는다.
 
 UX-02a의 [입력 계약](../../contracts/paper-simulation-config.md)과 UX-02b의
 [접수·실패 관측](../../contracts/paper-simulation-observations.md)은 main에 구현·병합됐다.
@@ -156,27 +162,57 @@ failed를 만들어내지 않으며 아래 관측 mapping과 기존 artifact 상
 | 구분 | 예 | UI 의미 |
 | --- | --- | --- |
 | 요청 | idle / validating / submitting / accepted / rejected / response_unknown | browser 요청 lifecycle, runner 상태 아님 |
-| 실행 `run_state` | queued / running / completed / completed_with_failures / failed / skipped / missing | 원본 artifact 계약에서만 취함 |
+| 저장된 child run `runs[].status` | completed / completed_with_failures / failed / skipped | `BatchReplayRunStatus`의 네 값만 허용 |
+| batch manifest 상태 | running / completed / completed_with_failures | child 상태가 아닌 `BatchReplayManifestStatus`; endpoint 판독 상태와도 구분 |
+| active 표시 | running | `batchStatus=running`과 같은 batch의 유효한 `activeRun`에서만 파생 |
+| 별도 bucket 테스트 | queued | strategy-bucket 저장 계약이며 replay run 목록의 상태가 아님 |
+| 조회 부재·불확실성 | missing / unknown | endpoint/artifact 부재나 마지막 관측의 불확실성; 저장 run status가 아님 |
 | fetch wrapper `status` | ok / offline / invalid | HTTP/네트워크·payload guard 결과, 실행 생존/성공 아님 |
 | endpoint `status` | ok / running / missing / blocked / degraded | `/batch/replay/runs` 원본 상태, wrapper와 별도 보존 |
 | 접수·runner 관측 | simulationObservation.status + outcome | exact simulation/batch ID의 관측이며 child run_state 아님 |
-| 자료 판독 조건 | available / missing / blocked / degraded / unavailable | endpoint·corruptLineCount·개별 artifact 결과를 보존 |
+| JSON artifact 원본 판독 | ok / missing / corrupt | report/progress 등 JSON 읽기 결과를 해당 field에 보존 |
+| JSONL artifact 원본 판독 | ok / missing / degraded | decisions/risk/trades 등의 줄 손상·개수를 함께 보존 |
+| artifact 경로/guard 결과 | blocked / invalid | blocked는 경로 차단, invalid는 frontend payload guard의 계약 오류로 구별 |
+| 파생 판독 표시 | available / unavailable 등 | 원본 판독 값의 UI 설명이며 서버 enum으로 검증하지 않음 |
 | 관측 | fetchedAt / heartbeatAt / artifactUpdatedAt | 각각 자료 조회·실행 heartbeat·원본 갱신 시각 |
 | 결과 완전성 | complete / partial / missing / unsupported | 완료된 실행도 결과 일부가 빠질 수 있음 |
 
-`run_state`는 UI adapter상의 개념명이며 기존 서버 field를 근거 없이 rename/migrate하지 않는다.
+원본 status와 화면 표시 상태를 하나의 허용 enum으로 합치지 않는다. 목록 adapter는 저장된
+run과 manifest active 항목의 출처를 먼저 구별한 뒤 각각의 guard를 적용한다. 저장 record의
+`running`/`queued`/`missing`/`unknown` 또는 기타 비허용 status는 계약 불일치로 표시하며,
+값을 정상화해 유효한 실행 row로 받아들이지 않는다. endpoint가 해당 문자열을 전달하거나
+statusCounts에 포함해도 저장 계약의 새 상태가 생기는 것은 아니다.
+
+`batchStatus=null`은 batch 상태 미관측이고, 정상 세 값 이외의 문자열은 계약 경고다. Reader는
+string/null을 그대로 전달할 수 있으므로 어느 쪽도 running/terminal로 추정하지 않는다.
+이 경고 때문에 별도로 유효한 child terminal 기록을 지우지 않는다. activeRun 자체에는 batchId나
+status가 없으므로 같은 응답의 검증된 manifest 문맥과 실제 child ID로 결속한다. batchStatus가
+null/미인식이거나 batch identity가 확인되지 않으면 active running row를 만들지 않는다.
+
+active 항목은 가짜 terminal record를 만들지 않고 manifest 관측으로 표시한다. child ID가
+없으면 임의 ID로 row를 만들지 않는다. bucket queued는 전략·정책 화면에 남기며 실험 목록으로
+섞지 않는다. missing은 해당 source/선택 실행이 없는 판독 상태다. unknown 예시는 이전에
+확인한 ID의 현재 조회를 확인하지 못하는 화면 상태이며, API runs에 unknown record가 존재한다는
+뜻이 아니다. 이전 row를 보존할 때에도 출처와 마지막 관측 시각을 함께 유지한다.
+
+문서의 `run_state` 표현은 설명용 UI 용어이며 위 provenance 구분을 생략하는 서버 field나
+통합 schema 이름으로 구현하지 않는다. 실제 서버 계약은 rename/migrate하지 않는다.
 `completed_with_failures`는 부분 실패이며 성공 완료로 합치지 않는다. 개별 run은
 `summary.aiDecisionFailureCount`와 남아 있는 summary/report, 근거의 누락·연결 상태를 표시한다.
 완료/실패/skip 건수는 여러 실행을 집계하는 batch 문맥에서만 표시하며 개별 run의 결과로 쓰지 않는다.
 끝난 실행의 오래된 timestamp는 그대로 표시한다. 갱신 지연은 마지막 관측 이후의 경고일 뿐
-생존·중단 증거가 아니다. 알려진 총량이 있을 때만 `processed/total`을 표시하며 total=0과 missing을 구분한다.
+생존·중단 증거가 아니다. 제공되지 않은 heartbeat는 미관측이며 fetchedAt이나 artifact 갱신
+시각을 heartbeat로 복사하지 않는다. 알려진 총량이 있을 때만 `processed/total`을 표시하며 total=0과 missing을 구분한다.
 
 ## 데이터 읽기·오류·history
 
-목록은 우선 기존 `GET /batch/replay/runs` 범위만 사용한다. 현재 기본 응답은 최신 manifest의
-run 목록이며 `totalCount`도 해당 batch 내부 건수다. 따라서 ‘최신 batch의 실행 N개’로 표시하고
-‘전체 실험’ 건수나 검색처럼 표현하지 않는다. 여러 batch의 안정적인 목록을 요구하는 경우
-명시적 cursor/source contract를 별도 최소 backend PR로 먼저 추가한다. 파일시스템을 browser에서 열지 않는다.
+목록은 우선 기존 `GET /batch/replay/runs` 범위만 사용한다. 최신 manifest와 반환 기록의 batch
+결속이 확인된 경우에만 ‘최신 batch의 실행 N개’로 표시한다. manifest가 없거나 runsPath가 없으면
+aggregate의 sourceRunsPath로 fallback할 수 있다. batch 문맥이 확인되지 않은 응답은
+‘조회된 저장 기록 · batch 문맥 미확인’이며 전체 목록의 최신 batch를 추정하지 않는다.
+`totalCount`도 선택한 source JSONL의 기록 건수이지 전체 실험 수가 아니다. 여러 batch의 안정적인
+목록/검색이 필요하면 명시적 cursor/source contract를 별도 최소 backend PR로 먼저 추가한다.
+파일시스템을 browser에서 열지 않는다.
 
 기존 Risk/audit/validation ViewModel은 전체 storage 기준이며 runId로 한정하지 않는다.
 Fallback 링크에는 ‘전체 운영 기록’이라고 쓰고 선택 실행의 근거인 것처럼 붙이지 않는다.
@@ -187,13 +223,19 @@ UX-05의 run-scoped read-model은 record별 명시적 참조와 source run ident
 `runs`는 이미 append된 개별 실행 기록이며 진행 중인 실행은 manifest의 `activeRun`으로 따로
 온다(`src/api/localOperationsReaders.ts:263–305`). 다음 규칙을 UX-01의 순수 adapter에서 검증한다.
 
-1. 반환된 batchId와 결속된 activeRun의 runId/필수 필드를 검증한다. 임의 ID를 만들지 않는다.
+1. 반환된 manifest 문맥의 batchId와 activeRun의 실제 runId/필수 필드를 검증한다. activeRun에
+   없는 batchId/status 필드를 요구하거나 임의 ID를 만들지 않는다. batchId 또는 batchStatus가
+   null/미확인이면 active를 만들지 않는다. known batch에 record.batchId가 누락·불일치하면
+   그 record를 해당 batch의 정상 row로 편입하지 않고 별도 불일치 진단을 보인다. 유효한
+   원본 ID와 기존 exact detail 접근 경로는 보존하되, ID 자체가 불명확한 경우 링크를 만들지 않는다.
 2. `batchStatus=running`이고 유효한 activeRun이 있으면 runs와 runId 기준으로 결합한다.
 3. 같은 runId의 terminal record가 도착하면 그 기록을 우선하고 active 항목을 제거한다.
    한 실행을 running+completed 두 줄로 표시하거나 active 값으로 terminal 결과를 덮지 않는다.
 4. terminal batch에 activeRun이 남거나 ID가 모순되면 불일치 경고다. 가짜 running을 추가하지 않는다.
-5. count/totalCount/statusCounts는 원래 저장 기록의 값이다. 표시 목록에 active 1개를 추가했다고
-   서버 전체 건수처럼 바꾸지 않고 ‘저장된 N개 · 진행 중 1개’ 등 범위를 분리한다.
+5. count/totalCount/statusCounts는 서버가 반환한 source 기록 범위의 값 그대로 보존한다.
+   UI guard 이후 표시 건수·제외 건수·active 건수는 별도다. active를 추가하거나 불일치 row를
+   제외했다고 원본 집계값을 바꾸지 않는다. record의 검증된 batchId는 보존하되, fallback의
+   개별 ID만으로 전체 목록이 최신 batch에 속한다고 결론내리지 않는다.
 
 fetch wrapper와 endpoint 상태는 다음처럼 구분한다. endpoint 값을 wrapper union으로 검증해
 정상 running을 invalid로 바꾸지 않는다.
@@ -213,6 +255,17 @@ fetch wrapper와 endpoint 상태는 다음처럼 구분한다. endpoint 값을 w
 batchStatus, endpoint status, wrapper status, 개별 run_state와 개별 artifact 판독 상태를 하나의
 배지로 합치지 않는다. UX-01 검증 fixture는 empty running batch/active-only/terminal 전환 중복,
 missing/blocked/degraded/unknown endpoint, offline/invalid wrapper, running+corruptLineCount를 포함한다.
+JSON/JSONL의 원본 판독 값과 UI available/unavailable 설명도 분리한다.
+`latestRunArtifacts.status=ok`는 개별 report/progress/decision/risk/trade가 모두 온전하다는
+뜻이 아니다. 각 field의 missing/corrupt/degraded와 손상 건수, blocked/guard invalid를 그대로
+표시하고 이를 child 실행의 실패·성공으로 바꾸지 않는다.
+검증에는 상위 artifact ok + 하위 JSON corrupt/missing, JSONL degraded, 경로 blocked,
+미인식 하위 판독값의 guard invalid, batchStatus null/미인식 + 유효 child 결과를 포함한다.
+또한 persisted-status 네 값의 양성 사례와 runs의 running/queued/missing/unknown 거부, 유효한
+manifest active에서만 running 생성, child ID 없는 active 거부, bucket queued 미혼입, 조회 부재·
+이전 관측 warning이 persisted 상태를 덮지 않는 사례를 source별로 검사한다. manifest 없음+
+aggregate 저장 기록, manifest runsPath 없음+다른 batch fallback, known batch/record 불일치,
+limit으로 잘린 count와 전체 source totalCount/statusCounts의 차이도 검사한다.
 
 ### UX-03/04: 접수 ID의 관측 mapping과 우선순위
 
