@@ -549,3 +549,213 @@ for (const format of ["json-syntax", "json-schema", "jsonl-syntax", "jsonl-schem
     assert.deepEqual(await bytes(owner.paths.attemptDir), before);
   });
 }
+
+test("nonempty stored decisions, approved/rejected Risk and trade complete with canonical report projections", async (t) => {
+  const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+  await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+  await owner.complete(EXPERIMENT_TEST_TIME);
+  assert.equal((await inspectPaperExperimentAttempt(options, owner.attemptId)).status, "completed");
+  const report = JSON.parse(await fs.readFile(paths.historicalReplayReportPath, "utf8"));
+  assert.equal(report.replaySummary.decisionRecordCount, 3); assert.equal(report.tradeSummary.tradeCount, 1);
+  assert.equal(report.riskSummary.approvedCount, 1); assert.equal(report.riskSummary.rejectedCount, 1);
+});
+
+test("default recent-record capacities work across 97 nonempty ticks without accepting a shorter custom projection", async (t) => {
+  const { options } = await setup(t); const input = JSON.parse(options.inputJson);
+  input.configuration.clock.stepSeconds = 1800; input.configuration.samplingPolicy.maxDecisionCalls = 100;
+  const owner = await createPaperExperimentAttempt({ ...options, inputJson: JSON.stringify(input) });
+  await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+  await owner.complete(EXPERIMENT_TEST_TIME);
+  assert.equal((await inspectPaperExperimentAttempt(options, owner.attemptId)).status, "completed");
+  const progress = JSON.parse(await fs.readFile(paths.historicalReplayProgressPath, "utf8"));
+  assert.equal(progress.recentPackets.length, 10); assert.equal(progress.recentDecisions.length, 50);
+  assert.equal(progress.portfolioTimeline.length, 97);
+  await patchJson(paths.historicalReplayProgressPath, (value) => { value.recentPackets.pop(); });
+  assert.equal((await inspectPaperExperimentAttempt(options, owner.attemptId)).errorCode, "ARTIFACT_INTEGRITY");
+});
+
+const summaryMutations: Array<[string, string, (value: any) => void]> = [
+  ["report", "risk reject-code reasons", (v) => { v.riskSummary.rejectCodes = { FAKE_REASON: 1 }; }],
+  ["report", "risk policy affected symbols", (v) => { v.riskSummary.policySummary.dynamicCashReserve.affectedSymbols = ["OTHER"]; }],
+  ["metadata", "metadata Risk policy summary", (v) => { v.riskPolicySummary.hedge.hedgeCostKrw += 1; }],
+  ["report", "meaningful Risk rejects", (v) => { v.riskSummary.meaningfulRejectCount += 1; }],
+  ["report", "decision outcome actions", (v) => { v.decisionOutcome.byAction.VIRTUAL_BUY += 1; }],
+  ["report", "decision outcome confidence", (v) => { v.decisionOutcome.averageConfidence = 0.6; }],
+  ["report", "trade buy amount", (v) => { v.tradeSummary.virtualBuyAmountKrw += 1; }],
+  ["report", "trade symbols", (v) => { v.tradeSummary.symbols = ["OTHER"]; }],
+  ["report", "cost component", (v) => { v.costSummary.feeKrw += 1; }],
+  ["report", "cost bucket", (v) => { v.costSummary.byStrategyBucket[0].totalCostKrw += 1; }],
+  ["report", "portfolio analytics", (v) => { v.analytics.cashKrw += 1; }],
+  ["report", "portfolio construction", (v) => { v.portfolioConstruction.avgCashRatio = 0.5; }],
+  ["report", "advanced performance", (v) => { v.advancedPerformance.totalReturnRatio = 0.2; }],
+  ["report", "Sharpe sample", (v) => { v.sharpeValidation.sample.returnSampleCount += 1; }],
+  ["report", "benchmark metric", (v) => { v.benchmarks.cashOnly.finalNetWorthKrw += 1; }],
+  ["report", "allocation policy", (v) => { v.allocationPolicy.minCashReserveRatio = 0.2; }],
+  ["report", "exit policy", (v) => { v.paperExitPolicy = { takeProfitMode: "full_exit", takeProfitRatio: 0.1 }; }],
+  ["report", "sampling policy", (v) => { v.samplingSummary.policy.maxDecisionCalls += 1; }],
+  ["report", "sampling requested count", (v) => { v.samplingSummary.decisionsRequested += 1; }],
+  ["report", "sampling skip count", (v) => { v.samplingSummary.skipReasons.FAKE_REASON = 1; }],
+  ["report", "warning recent count", (v) => { v.sourceWarningSummary.recentWarnings = ["invented warning"]; }],
+  ["report", "warning lookahead state", (v) => { v.sourceWarningSummary.lookaheadGuardStatus = "future_snapshots_excluded"; }],
+  ["report", "generated timestamp", (v) => { v.generatedAt = "2026-01-01T00:00:00.000Z"; }],
+  ["metadata", "window start", (v) => { v.window.startAt = "2024-01-01T00:00:00.000Z"; }],
+  ["progress", "last tick index", (v) => { v.tickIndex = 0; }],
+  ["progress", "last simulated timestamp", (v) => { v.simulatedAt = "2025-01-01T00:00:00.000Z"; }],
+  ["progress", "progress timeline", (v) => { v.portfolioTimeline[0].cashKrw += 1; }],
+  ["progress", "recent packet", (v) => { v.recentPackets[0].candidates = []; }],
+  ["progress", "recent decision", (v) => { v.recentDecisions[0].summary = "changed"; }],
+  ["progress", "recent risk", (v) => { v.recentRiskDecisions[0].rejectCodes = []; }],
+  ["progress", "recent trade", (v) => { v.recentTrades[0].amountKrw += 1; }],
+  ["progress", "recent event unknown packet", (v) => { v.recentEvents = [{ eventId: "fake", eventType: "RISK_REJECTED",
+    simulatedAt: "2025-01-01T00:00:00.000Z", tickIndex: 0, packetId: "unknown", market: "KR", symbol: "FIXTURE_A",
+    action: "VIRTUAL_BUY", approved: false, rejectCodes: ["REJECTED"], summary: "Stored event" }]; }]
+];
+for (const [artifact, label, mutate] of summaryMutations) {
+  test(`pre-completion ${label} must agree with retained evidence`, async (t) => {
+    const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+    await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+    const path = artifact === "report" ? paths.historicalReplayReportPath : artifact === "metadata"
+      ? paths.historicalReplayRunMetadataPath : paths.historicalReplayProgressPath;
+    await patchJson(path, mutate);
+    const before = await bytes(owner.paths.attemptDir);
+    await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+    assert.deepEqual(await bytes(owner.paths.attemptDir), before);
+  });
+}
+
+for (const mutation of ["decision-hash", "packet-hash", "decision-packet", "risk-packet", "risk-symbol", "trade-packet", "trade-risk", "trade-rejected-risk", "timeline-order", "timeline-position-count"] as const) {
+  test(`canonical log ${mutation} cannot be sealed as complete`, async (t) => {
+    const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+    await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+    const path = mutation.startsWith("decision") || mutation === "packet-hash" ? paths.historicalReplayDecisionLogPath
+      : mutation.startsWith("risk") ? paths.historicalReplayRiskDecisionLogPath
+        : mutation.startsWith("trade") ? paths.historicalReplayTradeLogPath : paths.historicalReplayPortfolioTimelinePath;
+    const rows = (await fs.readFile(path, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    if (mutation === "decision-hash") rows[0].decisionHash = `sha256:${"0".repeat(64)}`;
+    else if (mutation === "packet-hash") {
+      rows[0].packetHash = `sha256:${"0".repeat(64)}`;
+      const { createVirtualDecisionHash } = await import("../paper/decisionHash.js");
+      rows[0].decisionHash = createVirtualDecisionHash(rows[0]);
+    } else if (mutation.endsWith("packet")) rows[0].packetId = "unknown-packet";
+    else if (mutation === "risk-symbol") rows[0].symbol = "OTHER";
+    else if (mutation === "trade-risk") rows[0].decisionId = "unknown-risk";
+    else if (mutation === "trade-rejected-risk") rows[0].decisionId = "risk-1";
+    else if (mutation === "timeline-order") [rows[0], rows[1]] = [rows[1], rows[0]];
+    else rows[0].portfolio.positionCount += 1;
+    await fs.writeFile(path, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
+    await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+  });
+}
+
+for (const target of ["state", "input", "source"] as const) {
+  for (const corruption of ["syntax", "schema", "utf8", "size"] as const) {
+    test(`persisted ${target} ${corruption} uses its owning integrity code and never repairs`, async (t) => {
+      const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+      const path = target === "state" ? owner.paths.statePath : target === "input" ? owner.paths.inputPath : owner.paths.sourcePath;
+      if (corruption === "syntax") await fs.writeFile(path, target === "source" ? '{"partial":\n' : '{"partial":');
+      else if (corruption === "schema") await fs.writeFile(path, target === "source" ? '{}\n' : '{}');
+      else if (corruption === "utf8") await fs.writeFile(path, Buffer.from([0xc3, 0x28]));
+      else await fs.writeFile(path, "x".repeat(target === "state" ? 64 * 1024 + 1 : 2 * 1024 * 1024 + 1));
+      const before = await bytes(owner.paths.attemptDir);
+      const inspected = await inspectPaperExperimentAttempt(options, owner.attemptId);
+      assert.equal(inspected.status, "incomplete");
+      assert.equal(inspected.errorCode, target === "state" ? "STATE_INVALID" : "INPUT_INTEGRITY");
+      assert.deepEqual(await bytes(owner.paths.attemptDir), before);
+      const original = fs.open.bind(fs);
+      t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+        if (String(args[0]) === path) throw Object.assign(new Error("synthetic EIO"), { code: "EIO" });
+        return original(...args);
+      }); syncBuiltinESMExports();
+      try {
+        // Size is checked before open, so a size-corrupt file still has the more specific integrity failure.
+        if (corruption !== "size") assert.equal((await inspectPaperExperimentAttempt(options, owner.attemptId)).errorCode, "IO_FAILURE");
+      } finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+    });
+  }
+}
+
+test("admission and retry reject malformed caller input/identity as INVALID_REQUEST before allocation", async (t) => {
+  const { options, temp } = await setup(t); const before = await bytes(temp);
+  for (const overrides of [{ inputJson: "{" }, { attemptId: "../bad" }, { runtimeIdentity: { ...options.runtimeIdentity, nodeVersion: "bad" } }]) {
+    await assert.rejects(createPaperExperimentAttempt({ ...options, ...overrides }), assertCode("INVALID_REQUEST"));
+  }
+  assert.deepEqual(await bytes(temp), before);
+  const owner = await createPaperExperimentAttempt(options);
+  await assert.rejects(retryPaperExperimentAttempt({ ...options, parentAttemptId: owner.attemptId, attemptId: "new",
+    runtimeIdentity: { ...options.runtimeIdentity, nodeVersion: "bad" } }), assertCode("INVALID_REQUEST"));
+});
+
+test("unretained warning history is preserved with explicit bounded consistency rather than invented zero", async (t) => {
+  const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+  await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+  await patchJson(paths.historicalReplayReportPath, (report) => {
+    report.sourceWarningSummary.warningCount = 15;
+    report.sourceWarningSummary.recentWarnings = Array.from({ length: 10 }, (_, index) => `synthetic warning ${index}`);
+  });
+  await owner.complete(EXPERIMENT_TEST_TIME);
+  assert.equal((await inspectPaperExperimentAttempt(options, owner.attemptId)).status, "completed");
+});
+
+test("unknown zero-count skip reason is not a valid bounded sampling summary", async (t) => {
+  const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+  await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+  await patchJson(paths.historicalReplayReportPath, (report) => { report.samplingSummary.skipReasons.FAKE = 0; });
+  await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+});
+
+for (const artifact of ["packets", "riskDecisions", "trades"] as const) {
+  test(`canonical ${artifact} timestamp must match its input tick and referenced packet`, async (t) => {
+    const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+    await owner.start(EXPERIMENT_TEST_TIME); await writeExperimentEvidence(owner, { nonempty: true });
+    const path = join(owner.paths.attemptDir, PAPER_EXPERIMENT_ARTIFACTS[artifact]);
+    const rows = (await fs.readFile(path, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    rows[0][artifact === "packets" ? "generatedAt" : artifact === "riskDecisions" ? "createdAt" : "executedAt"] = "2024-01-01T00:00:00.000Z";
+    await fs.writeFile(path, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
+    await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+  });
+}
+
+test("invalid inspect and retry attempt tokens are caller errors", async (t) => {
+  const { options } = await setup(t);
+  assert.equal((await inspectPaperExperimentAttempt(options, "../bad")).errorCode, "INVALID_REQUEST");
+  await assert.rejects(retryPaperExperimentAttempt({ ...options, parentAttemptId: "../bad", attemptId: "new" }), assertCode("INVALID_REQUEST"));
+});
+
+for (const mutation of ["decision-hash", "packet-hash", "risk-packet", "trade-risk", "packet-time", "risk-time", "trade-time"] as const) {
+  test(`coherently mirrored ${mutation} still fails its canonical hash/reference/time check`, async (t) => {
+    const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+    await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+    const readRows = async (path: string) => (await fs.readFile(path, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    const packets = await readRows(paths.historicalReplayPacketLogPath);
+    const decisions = await readRows(paths.historicalReplayDecisionLogPath);
+    const risks = await readRows(paths.historicalReplayRiskDecisionLogPath);
+    const trades = await readRows(paths.historicalReplayTradeLogPath);
+    const { createVirtualDecisionHash } = await import("../paper/decisionHash.js");
+    const { createMarketPacketHash } = await import("../market/packetHash.js");
+    if (mutation === "decision-hash") decisions[0].decisionHash = `sha256:${"0".repeat(64)}`;
+    else if (mutation === "packet-hash") {
+      decisions[0].packetHash = `sha256:${"0".repeat(64)}`;
+      decisions[0].decisionHash = createVirtualDecisionHash(decisions[0]);
+    } else if (mutation === "risk-packet") risks[0].packetId = "unknown-packet";
+    else if (mutation === "trade-risk") trades[0].decisionId = "unknown-risk";
+    else if (mutation === "packet-time") {
+      packets[0].generatedAt = "2024-01-01T00:00:00.000Z";
+      risks[0].createdAt = packets[0].generatedAt; trades[0].executedAt = packets[0].generatedAt;
+      decisions[0].packetHash = createMarketPacketHash(packets[0]);
+      decisions[0].decisionHash = createVirtualDecisionHash(decisions[0]);
+    } else if (mutation === "risk-time") {
+      risks[0].createdAt = "2025-01-02T00:00:00.000Z"; trades[0].executedAt = risks[0].createdAt;
+    } else trades[0].executedAt = "2025-01-02T00:00:00.000Z";
+    for (const [path, rows] of [[paths.historicalReplayPacketLogPath, packets], [paths.historicalReplayDecisionLogPath, decisions],
+      [paths.historicalReplayRiskDecisionLogPath, risks], [paths.historicalReplayTradeLogPath, trades]] as const) {
+      await fs.writeFile(path, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
+    }
+    await patchJson(paths.historicalReplayProgressPath, (progress) => {
+      progress.recentPackets = packets.slice().reverse(); progress.recentDecisions = decisions.slice().reverse();
+      progress.recentRiskDecisions = risks.slice().reverse(); progress.recentTrades = trades.slice().reverse();
+    });
+    const before = await bytes(owner.paths.attemptDir);
+    await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+    assert.deepEqual(await bytes(owner.paths.attemptDir), before);
+  });
+}
