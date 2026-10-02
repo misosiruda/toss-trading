@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
+import { expectPortfolioHedgeDisplay, expectPortfolioPolicyApi } from "../portfolio-policy/assertions";
+import { missingPolicyWarning } from "../portfolio-policy/scenarios.mjs";
 
 const DASHBOARD_MUTATION_TOKEN = "playwright-dashboard-mutation-token";
 const DASHBOARD_BOUNDARY_ROUTES = [
@@ -226,8 +228,9 @@ test("renders component catalog without backend mutation controls", async ({
 });
 
 test("renders portfolio compliance detail without mutation controls", async ({
-  page,
+  page, request,
 }) => {
+  await expectPortfolioPolicyApi(request, "http://127.0.0.1:8789", "missing");
   await page.goto("/dashboard/portfolio");
 
   await expect(
@@ -250,14 +253,7 @@ test("renders portfolio compliance detail without mutation controls", async ({
   await expect(
     page.getByRole("heading", { name: "Compliance Breaches" })
   ).toBeVisible();
-  await expect(page.getByTestId("portfolio-breach-hedge")).toContainText(
-    "ineffective"
-  );
-  await expect(
-    page.getByTestId("portfolio-breach-hedge").getByText("ineffective")
-  ).toHaveClass(
-    /text-\[var\(--danger\)\]/
-  );
+  await expectPortfolioHedgeDisplay(page, "missing");
   await expect(
     page.getByRole("heading", { name: "Compliance Analytics" })
   ).toBeVisible();
@@ -289,7 +285,7 @@ test("renders portfolio compliance detail without mutation controls", async ({
   await expect(page.getByText("Reject Codes")).toBeVisible();
   await expect(
     page.getByText(
-      "portfolio policy artifact is not available; target weights are reported as missing"
+      missingPolicyWarning
     )
   ).toBeVisible();
 
