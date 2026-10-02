@@ -277,3 +277,16 @@ test("batch replay runs artifact resolver accepts only runs JSONL under artifact
     null
   );
 });
+
+test("paper experiment paths preserve strict attempt identity without sanitizer aliases", async () => {
+  const { createPaperExperimentArtifactPaths } = await import("./artifactPaths.js");
+  const paths = createPaperExperimentArtifactPaths("data/paper-experiments", "exp_01");
+  assert.equal(paths.attemptDir, resolve("data/paper-experiments/exp_01"));
+  assert.equal(paths.inputPath, join(paths.attemptDir, "input", "experiment-input.json"));
+  assert.equal(paths.sourcePath, join(paths.attemptDir, "input", "historical-market-snapshots.jsonl"));
+  assert.equal(paths.statePath, join(paths.attemptDir, "experiment-run.json"));
+  assert.equal(paths.replayDir, join(paths.attemptDir, "replay"));
+  assert.equal(paths.reviewDir, join(paths.attemptDir, "review"));
+  assert.throws(() => createPaperExperimentArtifactPaths("data", "exp:01"));
+  assert.throws(() => createPaperExperimentArtifactPaths("data", "../exp_01"));
+});
