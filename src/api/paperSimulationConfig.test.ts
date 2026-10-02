@@ -162,3 +162,54 @@ test("validation preserves path, schema, date, pacing and disabled Codex rejecti
   assert.throws(() => resolvePaperSimulationConfig(codex, {}), { code: "codex_provider_disabled" });
   assert.throws(() => resolvePaperSimulationConfig(codex, { AI_DECISION_ENABLED: "true", AI_DECISION_MODE: "live" }), { code: "invalid_ai_decision_mode" });
 });
+
+
+test("simulation calendar dates reject rollover at either window boundary", () => {
+  for (const value of [
+    "2025-02-29", "2025-02-30", "2024-02-30", "2025-04-31",
+    "1900-02-29", "2100-02-29", "2025-00-01", "2025-13-01",
+    "2025-01-00", "2025-01-32", " 2025-02-30 ",
+    "2025-02-30T12:00:00Z", "2025-04-31T23:30:00-08:00"
+  ]) {
+    for (const boundary of ["startAt", "endAt"] as const) {
+      const config = simulationConfig();
+      config.window.startAt = "1800-01-01";
+      config.window.endAt = "2500-12-31";
+      config.window[boundary] = value;
+      assert.throws(() => resolvePaperSimulationConfig(config, {}),
+        { code: "invalid_simulation_date", statusCode: 400 }, `${boundary}: ${value}`);
+    }
+  }
+});
+
+test("valid leap days and month ends retain date-only +09:00 start and end semantics", () => {
+  for (const value of [
+    "2000-02-29", "2024-02-29", "2400-02-29", "2025-02-28",
+    "2025-04-30", "2025-01-01", "2025-12-31"
+  ]) {
+    const config = simulationConfig();
+    config.window.mode = "fixed_range";
+    config.window.startAt = value;
+    config.window.endAt = value;
+    const effective = resolvePaperSimulationConfig(config, {}).effectiveConfig;
+    assert.equal(effective.window.rangeStartAt, new Date(`${value}T00:00:00.000+09:00`).toISOString());
+    assert.equal(effective.window.rangeEndAt, new Date(`${value}T23:59:59.999+09:00`).toISOString());
+    assert.equal(effective.window.fixedWindow?.localStartDate, value);
+    assert.equal(effective.window.fixedWindow?.localEndDate, value);
+  }
+});
+
+test("valid timestamp offsets and existing timestamp formats keep their exact instant", () => {
+  for (const value of [
+    "2024-02-29T23:30:00-08:00", "2024-03-01T00:15:00+14:00",
+    "2024-02-29T12:00:00.123Z", "2024-02-29T12:00:00+0900",
+    "2024-02-29T12:00:00", "Thu, 29 Feb 2024 12:00:00 GMT"
+  ]) {
+    const config = simulationConfig();
+    config.window.startAt = value;
+    config.window.endAt = value;
+    const effective = resolvePaperSimulationConfig(config, {}).effectiveConfig;
+    assert.equal(effective.window.rangeStartAt, new Date(value).toISOString());
+    assert.equal(effective.window.rangeEndAt, new Date(value).toISOString());
+  }
+});

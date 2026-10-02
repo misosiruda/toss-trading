@@ -236,7 +236,11 @@ function parseSimulationDate(value: string, endOfDay: boolean): Date {
     ? `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}+09:00`
     : value;
   const date = new Date(normalized);
-  if (!Number.isFinite(date.getTime())) {
+  const calendarDate = /^(\d{4}-\d{2}-\d{2})(?:$|[Tt\s])/.exec(value.trim())?.[1];
+  if (
+    !Number.isFinite(date.getTime()) ||
+    (calendarDate !== undefined && !isValidSimulationCalendarDate(calendarDate))
+  ) {
     throw new PaperSimulationRequestError(
       "simulation window dates must be valid dates",
       400,
@@ -244,6 +248,14 @@ function parseSimulationDate(value: string, endOfDay: boolean): Date {
     );
   }
   return date;
+}
+
+function isValidSimulationCalendarDate(value: string): boolean {
+  // Check the written calendar day independently of any timestamp timezone.
+  // Date.UTC(year, ...) would incorrectly map years 00–99 into 1900–1999.
+  const midnight = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(midnight.getTime()) &&
+    midnight.toISOString().slice(0, 10) === value;
 }
 
 function fixedReplayWindow(

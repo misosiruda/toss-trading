@@ -37,7 +37,7 @@ create/runner의 동일 입력 매핑. 새 비용/benchmark/종목 필터, Portf
 | `sourceDataDir` | 프로젝트 `data` 아래 상대 경로를 runner에 전달. 존재·symlink·종류·coverage는 검증하지 않음 |
 | `universe.preset` | 모든 기존 문자열을 요청 metadata로 유지. `presetApplied=false`; source snapshot 종목을 preset으로 필터링하지 않음 |
 | `universe.market` | mixed_global은 profile 목표 exposure를 KR/US로 반분. kr/us는 기존 profile allocation을 유지. 모두 `marketFilterApplied=false` |
-| `window` | 날짜만 있으면 +09:00 하루 시작/끝으로 정규화. random은 seed·월 길이·범위로 기존 sampler 사용. fixed는 날짜가 구간을 결정하며 windowMonths는 fixedWindow metadata에만 유지 |
+| `window` | 날짜만 있으면 +09:00 하루 시작/끝으로 정규화. YYYY-MM-DD 달력 날짜는 round-trip 검증하여 존재하지 않는 날짜의 자동 rollover를 거부하며 ISO datetime도 offset과 독립적으로 날짜 부분을 검증. random은 seed·월 길이·범위로 기존 sampler 사용. fixed는 날짜가 구간을 결정하며 windowMonths는 fixedWindow metadata에만 유지 |
 | `samplingPolicy` | 빈도·stepSeconds·maxDecisionCalls 그대로 적용. Codex call cap은 Codex provider에만 적용하고 fixture의 실효 cap은 0 |
 | `capital`, `riskProfile` | initialCashKrw와 profile로 기존 constraints/riskPolicy/allocationPolicy를 결정하고 값 공개 |
 | `paperExitPolicy` | none=null; take_profit_stop_loss=0.15/0.08; rebalance_threshold=max position weight 0.4. 기존 full_exit 정규화 유지 |

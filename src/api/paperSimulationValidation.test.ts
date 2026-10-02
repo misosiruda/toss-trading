@@ -190,3 +190,59 @@ test("validate and accepted create share the exact runner contract without claim
     await rm(root, { recursive: true, force: true });
   }
 });
+
+
+test("invalid calendar days reject validation and creation without runner, provider or storage effects", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "simulation-invalid-calendar-"));
+  await writeFile(join(root, "marker"), "unchanged");
+  let runnerCalls = 0;
+  const provider = context.mock.method(CodexCliDecisionProvider.prototype, "decide", async () => {
+    throw new Error("invalid dates must not call a provider");
+  });
+  const server = await simulationServer({
+    storageBaseDir: join(root, "untouched"),
+    env: { AI_DECISION_ENABLED: "true", AI_DECISION_MODE: "paper_only" },
+    paperSimulationRunner: async () => {
+      runnerCalls += 1;
+      throw new Error("invalid dates must not run");
+    }
+  });
+  try {
+    for (const value of [
+      "2025-02-29", "2025-02-30", "2024-02-30", "2025-04-31",
+      "2025-02-30T12:00:00Z"
+    ]) {
+      for (const boundary of ["startAt", "endAt"] as const) {
+        const config = simulationConfig();
+        config.window.startAt = "2024-01-01";
+        config.window.endAt = "2026-12-31";
+        config.window[boundary] = value;
+        config.decisionProvider.mode = "codex_paper_only";
+        config.samplingPolicy.maxCodexCallsPerRun = 3;
+        for (const [route, operation] of [
+          [validationRoute, "paper-simulation-validate"],
+          ["/paper/simulations", "paper-simulation-create"]
+        ]) {
+          const response = await fetch(`${server.baseUrl}${route}`, {
+            method: "POST", headers: simulationHeaders(server.baseUrl, operation),
+            body: JSON.stringify(config)
+          });
+          const result = await response.json() as Record<string, unknown>;
+          assert.equal(response.status, 400, `${route}: ${boundary}: ${value}`);
+          assert.equal(result["error"], "invalid_simulation_date");
+          if (route === validationRoute) {
+            assert.equal(result["storageMutationEnabled"], false);
+            assert.equal(result["replayRunnerStarted"], false);
+            assert.equal(result["dataAvailabilityChecked"], false);
+          }
+        }
+      }
+    }
+    assert.equal(runnerCalls, 0);
+    assert.equal(provider.mock.callCount(), 0);
+    assert.deepEqual(await readdir(root), ["marker"]);
+  } finally {
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
