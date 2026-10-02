@@ -225,3 +225,23 @@ EXP-04까지의 완료는 fixture engineering slice의 완료다. cooperative ca
 
 기획·설계·source 대조와 문서 검증 결과는 이 절에 기록한다. 게시·병합 상태는 원격 PR의
 실제 current head/check/review 결과를 따른다. 이 절은 구현 네 PR의 통과 증거가 아니다.
+
+2026-10-02 문서 검증:
+
+- `origin/main`을 fetch하여 baseline `bc1423bd992171cf86b5c5d288e9c1c915cc2333` 확인
+- 변경 6개 모두 `docs/` Markdown. production, test/fixture, schema, dependency, 설정 diff 없음
+- 변경 문서의 상대 링크/anchor 142개와 baseline 고정 source path/line range 23개 검사 통과
+- 기존 `TR-MVP` 8개 및 `SPOM-AC` 12개 문장·순서·미완료 상태 보존 검사 통과
+- `git diff --check` 통과
+- 초안 `6905e63`의 `npm run check:review` 통과 (Node v24.19.0, Linux x64)
+  - build/quality 통과, tooling tests 23 통과, `changed=6 mode=none tests=0` (docs-only)
+  - 애플리케이션 전체 suite 통과 증거가 아님
+- source 독립 검토에서 실제 runtime identity와 완료 artifact 무결성 경계를 보완
+  - caller revision 자기 선언과 stale compiled dist를 실제 코드 증거로 사용하지 않음
+  - complete-row JSONL truncation과 schema-valid report 변조를 terminal inventory로 검사하도록 설계
+- 의존성은 동일 `package-lock.json`을 확인한 기존 checkout에서 새 isolated checkout으로 복사;
+  원래 checkout/lockfile을 수정하지 않음
+
+simulation, Codex CLI, 외부 AI/source 호출, 실제 거래는 실행하지 않았다. 문서 외 구현도 없다.
+최종 후보의 full check·current-head review·원격 필수 check·게시/병합 결과는 해당 PR의 검증
+기록으로 확인한다. 이 문서의 계획과 초기 review-profile 통과를 최종 merge 완료로 읽지 않는다.
