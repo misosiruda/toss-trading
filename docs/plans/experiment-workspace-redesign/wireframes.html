@@ -1286,104 +1286,136 @@
             id="panel-summary"
             aria-labelledby="tab-summary"
           >
-            <div class="metrics">
-              <div class="metric">
-                <span>관측 표본</span
-                ><strong>240<span class="example-tag">예시</span></strong>
+            <div data-run-content="completed">
+              <div class="metrics">
+                <div class="metric">
+                  <span>관측 표본</span
+                  ><strong>240<span class="example-tag">예시</span></strong>
+                </div>
+                <div class="metric">
+                  <span>모의 체결</span><strong>18건</strong>
+                </div>
+                <div class="metric">
+                  <span>Risk 차단</span><strong>3건</strong>
+                </div>
+                <div class="metric">
+                  <span>자료 범위</span><strong>합성 예시</strong>
+                </div>
               </div>
-              <div class="metric">
-                <span>모의 체결</span><strong>18건</strong>
+              <div class="chart-head">
+                <h2>자산 변화<small>가상 자금 지수 · 시작 100</small></h2>
+                <span class="legend">━ 실험 예시 &nbsp; ┄ 기준선 예시</span>
               </div>
-              <div class="metric">
-                <span>Risk 차단</span><strong>3건</strong>
-              </div>
-              <div class="metric">
-                <span>자료 범위</span><strong>합성 예시</strong>
-              </div>
-            </div>
-            <div class="chart-head">
-              <h2>자산 변화<small>가상 자금 지수 · 시작 100</small></h2>
-              <span class="legend">━ 실험 예시 &nbsp; ┄ 기준선 예시</span>
-            </div>
-            <svg
-              class="chart"
-              viewBox="0 0 1000 220"
-              preserveAspectRatio="none"
-              role="img"
-              aria-label="설계 예시 자산 지수가 100에서 102로 변화하는 선형 차트. 실제 결과가 아닙니다"
-            >
-              <defs>
-                <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
-                  <stop stop-color="#dceaff" />
-                  <stop offset="1" stop-color="#fff" />
-                </linearGradient>
-              </defs>
-              <g stroke="#e5e8eb">
-                <path
-                  d="M0 20H1000M0 75H1000M0 130H1000M0 185H1000M0 20V185M250 20V185M500 20V185M750 20V185M1000 20V185"
-                />
-              </g>
-              <path
-                d="M0 130L90 120L180 143L280 111L390 102L500 122L600 95L700 79L800 100L900 84L1000 67V185H0Z"
-                fill="url(#area)"
-              />
-              <path
-                d="M0 130L90 120L180 143L280 111L390 102L500 122L600 95L700 79L800 100L900 84L1000 67"
-                stroke="#3182f6"
-                stroke-width="2.5"
-                fill="none"
-              />
-              <path
-                d="M0 130L250 137L500 127L750 126L1000 120"
-                stroke="#72839c"
-                stroke-dasharray="6 6"
-                stroke-width="1.5"
-                fill="none"
-              />
-            </svg>
-            <div class="axis-labels">
-              <span>01.01</span><span>01.08</span><span>01.15</span
-              ><span>01.22</span><span>01.31</span>
-            </div>
-            <h3 style="margin-top: 20px">
-              낙폭
-              <span class="muted" style="font-size: 12px; font-weight: 400"
-                >예시 · 0%–2%</span
+              <svg
+                class="chart"
+                viewBox="0 0 1000 220"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label="설계 예시 자산 지수가 100에서 102로 변화하는 선형 차트. 실제 결과가 아닙니다"
               >
-            </h3>
-            <svg
-              class="chart drawdown"
-              viewBox="0 0 1000 100"
-              preserveAspectRatio="none"
-              role="img"
-              aria-label="설계 예시 낙폭 차트. 같은 기간의 최대 2% 범위"
-            >
-              <path d="M0 5H1000M0 45H1000M0 85H1000" stroke="#e5e8eb" />
-              <path
-                d="M0 5L90 5L180 55L250 5L320 12L400 5L500 48L600 5L700 5L800 40L900 20L1000 5Z"
-                fill="#dceaff"
-                stroke="#9ec6ff"
-              />
-            </svg>
-            <p class="result-note">
-              합성 데이터로 구성한 시안입니다. 비용 조건과 투자 성과를 증명하지
-              않습니다
-            </p>
-            <hr class="rule" />
-            <div class="chart-head">
-              <h2>최근 판단과 제약</h2>
-              <button class="secondary" type="button" id="show-evidence">
-                판단 근거 보기 →
+                <defs>
+                  <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+                    <stop stop-color="#dceaff" />
+                    <stop offset="1" stop-color="#fff" />
+                  </linearGradient>
+                </defs>
+                <g stroke="#e5e8eb">
+                  <path
+                    d="M0 20H1000M0 75H1000M0 130H1000M0 185H1000M0 20V185M250 20V185M500 20V185M750 20V185M1000 20V185"
+                  />
+                </g>
+                <path
+                  d="M0 130L90 120L180 143L280 111L390 102L500 122L600 95L700 79L800 100L900 84L1000 67V185H0Z"
+                  fill="url(#area)"
+                />
+                <path
+                  d="M0 130L90 120L180 143L280 111L390 102L500 122L600 95L700 79L800 100L900 84L1000 67"
+                  stroke="#3182f6"
+                  stroke-width="2.5"
+                  fill="none"
+                />
+                <path
+                  d="M0 130L250 137L500 127L750 126L1000 120"
+                  stroke="#72839c"
+                  stroke-dasharray="6 6"
+                  stroke-width="1.5"
+                  fill="none"
+                />
+              </svg>
+              <div class="axis-labels">
+                <span>01.01</span><span>01.08</span><span>01.15</span
+                ><span>01.22</span><span>01.31</span>
+              </div>
+              <h3 style="margin-top: 20px">
+                낙폭
+                <span class="muted" style="font-size: 12px; font-weight: 400"
+                  >예시 · 0%–2%</span
+                >
+              </h3>
+              <svg
+                class="chart drawdown"
+                viewBox="0 0 1000 100"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label="설계 예시 낙폭 차트. 같은 기간의 최대 2% 범위"
+              >
+                <path d="M0 5H1000M0 45H1000M0 85H1000" stroke="#e5e8eb" />
+                <path
+                  d="M0 5L90 5L180 55L250 5L320 12L400 5L500 48L600 5L700 5L800 40L900 20L1000 5Z"
+                  fill="#dceaff"
+                  stroke="#9ec6ff"
+                />
+              </svg>
+              <p class="result-note">
+                합성 데이터로 구성한 시안입니다. 비용 조건과 투자 성과를 증명하지
+                않습니다
+              </p>
+              <hr class="rule" />
+              <div class="chart-head">
+                <h2>최근 판단과 제약</h2>
+                <button class="secondary" type="button" id="show-evidence">
+                  판단 근거 보기 →
+                </button>
+              </div>
+              <div class="event">
+                <span>예시 사건 01</span
+                ><span>위험 한도 초과로 모의 체결 차단</span
+                ><span class="state unknown">Risk 차단</span>
+              </div>
+              <div class="event">
+                <span>예시 사건 02</span><span>검증된 판단과 모의 체결 연결</span
+                ><span class="state completed">근거 확인</span>
+              </div>
+            </div>
+            <div data-run-content="completed_with_failures" hidden>
+              <h2>부분 실패 결과 요약</h2>
+              <p class="sub"><span class="partial-run-id"></span> · 합성 설계 예시</p>
+              <div class="notice">
+                불완전한 판단 결과 · 실행은 종료됐지만 판단 provider 실패가 있어
+                결과 해석에 한계가 있습니다. 이 실행의 summary와 report가 있는
+                상태를 보여주는 예시입니다
+              </div>
+              <div class="metrics">
+                <div class="metric">
+                  <span>판단 provider 호출</span><strong id="partial-call-count"></strong>
+                </div>
+                <div class="metric">
+                  <span>판단 실패</span><strong id="partial-failure-count"></strong>
+                </div>
+                <div class="metric">
+                  <span>모의 체결</span><strong id="partial-trade-count"></strong>
+                </div>
+                <div class="metric">
+                  <span>자료 범위</span><strong>합성 예시</strong>
+                </div>
+              </div>
+              <p class="result-note">
+                위 건수는 이 실행만의 합성 summary 값입니다. 자산·낙폭 시계열은
+                이 예시에 넣지 않았으며, 다른 실행의 차트나 0으로 대체하지 않습니다
+              </p>
+              <button class="secondary" type="button" id="show-partial-evidence">
+                판단 실패 근거 보기 →
               </button>
-            </div>
-            <div class="event">
-              <span>예시 사건 01</span
-              ><span>위험 한도 초과로 모의 체결 차단</span
-              ><span class="state unknown">Risk 차단</span>
-            </div>
-            <div class="event">
-              <span>예시 사건 02</span><span>검증된 판단과 모의 체결 연결</span
-              ><span class="state completed">근거 확인</span>
             </div>
           </div>
           <div
@@ -1410,28 +1442,46 @@
             aria-labelledby="tab-evidence"
             hidden
           >
-            <h2>판단 근거</h2>
-            <p class="sub">예시 사건 01 · 위험 한도 초과</p>
-            <div class="event">
-              <span>1. 후보</span><span>합성 후보 입력</span
-              ><span class="muted">예시</span>
+            <div data-run-content="completed">
+              <h2>판단 근거</h2>
+              <p class="sub">예시 사건 01 · 위험 한도 초과</p>
+              <div class="event">
+                <span>1. 후보</span><span>합성 후보 입력</span
+                ><span class="muted">예시</span>
+              </div>
+              <div class="event">
+                <span>2. 판단 provider</span><span>fixture 판단 결과</span
+                ><span class="muted">AI 호출 없음</span>
+              </div>
+              <div class="event">
+                <span>3. Risk</span><span>설정된 위험 한도 초과로 차단</span
+                ><span class="state unknown">차단</span>
+              </div>
+              <div class="event">
+                <span>4. 모의 체결</span><span>차단되어 생성되지 않음</span
+                ><span class="muted">없음</span>
+              </div>
+              <p class="result-note">
+                AI 설명과 deterministic 검증을 구별하고 같은 사건의 참조로만
+                연결합니다
+              </p>
             </div>
-            <div class="event">
-              <span>2. 판단 provider</span><span>fixture 판단 결과</span
-              ><span class="muted">AI 호출 없음</span>
+            <div data-run-content="completed_with_failures" hidden>
+              <h2>부분 실패 판단 근거</h2>
+              <p class="sub"><span class="partial-run-id"></span> · 합성 설계 예시</p>
+              <div class="notice">
+                근거 일부 미연결 · summary의 판단 실패 관측만 보여줍니다
+              </div>
+              <dl>
+                <div><dt>관측 필드</dt><dd>summary.aiDecisionFailureCount</dd></div>
+                <div><dt>마지막 실패 요약</dt><dd id="partial-failure-reason"></dd></div>
+                <div><dt>판단 provider</dt><dd>fixture 판단 · 외부 AI 호출 없음</dd></div>
+              </dl>
+              <p class="result-note">
+                이 예시에는 원본 audit 사건·Risk·모의 체결의 연결 참조가 없습니다.
+                다른 실행의 사건을 가져오거나 같은 판단으로 추정해 연결하지 않습니다
+              </p>
             </div>
-            <div class="event">
-              <span>3. Risk</span><span>설정된 위험 한도 초과로 차단</span
-              ><span class="state unknown">차단</span>
-            </div>
-            <div class="event">
-              <span>4. 모의 체결</span><span>차단되어 생성되지 않음</span
-              ><span class="muted">없음</span>
-            </div>
-            <p class="result-note">
-              AI 설명과 deterministic 검증을 구별하고 같은 사건의 참조로만
-              연결합니다
-            </p>
           </div>
           <div
             class="tabpanel"
@@ -1440,28 +1490,48 @@
             aria-labelledby="tab-record"
             hidden
           >
-            <h2>실행 기록</h2>
-            <dl>
-              <div>
-                <dt>ID</dt>
-                <dd>run-demo-001 (예시)</dd>
+            <div data-run-content="completed">
+              <h2>실행 기록</h2>
+              <dl>
+                <div>
+                  <dt>ID</dt>
+                  <dd>run-demo-001 (예시)</dd>
+                </div>
+                <div>
+                  <dt>요청 설정</dt>
+                  <dd>balanced · fixture 판단</dd>
+                </div>
+                <div>
+                  <dt>원본 자료</dt>
+                  <dd>합성 설계 예시</dd>
+                </div>
+                <div>
+                  <dt>실제 backend</dt>
+                  <dd>연결되지 않음</dd>
+                </div>
+              </dl>
+              <div class="notice">
+                실제 제품에서는 입력·코드 버전·자료 출처·산출물·audit를
+                보여줍니다. 이 문서는 artifact를 생성하지 않습니다
               </div>
-              <div>
-                <dt>요청 설정</dt>
-                <dd>balanced · fixture 판단</dd>
+            </div>
+            <div data-run-content="completed_with_failures" hidden>
+              <h2>부분 실패 실행 기록</h2>
+              <p class="sub">기록 연결 일부 미구현 · 합성 설계 예시</p>
+              <dl>
+                <div><dt>ID</dt><dd class="partial-run-id"></dd></div>
+                <div><dt>실행 상태</dt><dd>completed_with_failures</dd></div>
+                <div><dt>요청 설정</dt><dd>balanced · fixture 판단</dd></div>
+                <div><dt>summary</dt><dd>이 실행의 요약 있음 (합성 예시)</dd></div>
+                <div><dt>report</dt><dd>이 실행의 report 있음 (합성 예시)</dd></div>
+                <div><dt>원본 자료</dt><dd>합성 설계 예시</dd></div>
+                <div><dt>실제 backend</dt><dd>연결되지 않음</dd></div>
+              </dl>
+              <div class="notice">
+                부분 실패도 summary와 report를 보존하는 계약을 나타냅니다.
+                이 시안은 실제 파일을 생성하거나 조회하지 않으며 원본 artifact
+                링크는 연결되지 않았습니다
               </div>
-              <div>
-                <dt>원본 자료</dt>
-                <dd>합성 설계 예시</dd>
-              </div>
-              <div>
-                <dt>실제 backend</dt>
-                <dd>연결되지 않음</dd>
-              </div>
-            </dl>
-            <div class="notice">
-              실제 제품에서는 입력·코드 버전·자료 출처·산출물·audit를
-              보여줍니다. 이 문서는 artifact를 생성하지 않습니다
             </div>
           </div>
         </div>
@@ -1564,34 +1634,40 @@
           state: "running",
           label: "진행 중",
           setting: "conservative",
-          result: "자료 읽기 · 12 / 30 시점",
+          result: "리플레이 진행 · 12 / 30 시점",
           observed: "13:42 UTC",
         },
         {
-          name: "기록 확인이 필요한 실행",
+          name: "현재 조회를 확인할 수 없는 실행",
           id: "run-demo-003",
           state: "unknown",
           label: "확인 필요",
           setting: "balanced",
-          result: "접수됨 · 실행 기록 미관측",
+          result: "기존 실행 · 마지막 관측 이후 상태 미확인",
           observed: "13:38 UTC",
         },
         {
-          name: "입력 범위 오류 예시",
+          name: "리플레이 처리 오류 예시",
           id: "run-demo-004",
           state: "failed",
           label: "실패",
           setting: "balanced",
-          result: "저장된 오류 · 기간 확인 필요",
+          result: "저장된 리플레이 처리 오류",
           observed: "13:32 UTC",
         },
         {
-          name: "일부 실행이 실패한 batch",
+          name: "판단 일부가 실패한 실행",
           id: "run-demo-005",
           state: "completed_with_failures",
           label: "부분 실패",
           setting: "balanced",
-          result: "완료 2 · 실패 1 · 건너뜀 1",
+          result: "판단 호출 3 · 판단 실패 1 · 모의 체결 0건",
+          summary: {
+            decisionProviderCallCount: 3,
+            aiDecisionFailureCount: 1,
+            tradeCount: 0,
+            lastAiDecisionFailureSummary: "fixture provider 응답 실패 (합성 예시)",
+          },
           observed: "13:30 UTC",
         },
         {
@@ -1700,8 +1776,26 @@
         if (screen === "detail") {
           const run =
             runs.find((r) => r.id === runId) ?? (runId ? null : runs[0]);
-          const complete = run?.state === "completed";
-          if (complete) selectTab(tabId ?? "summary", false, false);
+          const hasResults =
+            run?.state === "completed" ||
+            run?.state === "completed_with_failures";
+          document.querySelectorAll("[data-run-content]").forEach((panel) => {
+            panel.hidden = panel.dataset.runContent !== run?.state;
+          });
+          if (run?.state === "completed_with_failures") {
+            document.querySelectorAll(".partial-run-id").forEach((element) => {
+              element.textContent = run.id;
+            });
+            document.querySelector("#partial-call-count").textContent =
+              run.summary.decisionProviderCallCount + "건";
+            document.querySelector("#partial-failure-count").textContent =
+              run.summary.aiDecisionFailureCount + "건";
+            document.querySelector("#partial-trade-count").textContent =
+              run.summary.tradeCount + "건";
+            document.querySelector("#partial-failure-reason").textContent =
+              run.summary.lastAiDecisionFailureSummary;
+          }
+          if (hasResults) selectTab(tabId ?? "summary", false, false);
           document.querySelector("#run-title").textContent =
             run?.name ?? "실행을 찾을 수 없음";
           document.querySelector("#run-state").textContent = run
@@ -1715,11 +1809,11 @@
           document.querySelector("#run-observed-at").textContent = run
             ? "2024.01.01–01.31 · 합성 예시 · 마지막 관측 10.02 " + run.observed
             : "해당 ID의 예시 자료가 없습니다";
-          document.querySelector(".tabs").hidden = !complete;
-          document.querySelector(".detail-body").hidden = !complete;
+          document.querySelector(".tabs").hidden = !hasResults;
+          document.querySelector(".detail-body").hidden = !hasResults;
           const observed = document.querySelector("#observed-detail");
-          observed.hidden = complete;
-          if (!complete) {
+          observed.hidden = hasResults;
+          if (!hasResults) {
             observed.replaceChildren();
             const heading = document.createElement("h2");
             heading.textContent =
@@ -1727,13 +1821,11 @@
                 ? "관측된 진행"
                 : run?.state === "failed"
                   ? "저장된 실패"
-                  : run?.state === "completed_with_failures"
-                    ? "일부 실패를 포함한 완료"
-                    : run?.state === "skipped"
-                      ? "건너뛴 실행"
-                      : run
-                        ? "접수 후 기록 확인"
-                        : "자료 없음";
+                  : run?.state === "skipped"
+                    ? "건너뛴 실행"
+                    : run
+                      ? "실행 조회 미확인"
+                      : "자료 없음";
             const detail = document.createElement("p");
             detail.textContent =
               run?.result ?? "목록으로 돌아가 실행 ID를 확인하세요";
@@ -1903,8 +1995,10 @@
         }
       });
       document
-        .querySelector("#show-evidence")
-        .addEventListener("click", () => selectTab("evidence", true));
+        .querySelectorAll("#show-evidence, #show-partial-evidence")
+        .forEach((button) => {
+          button.addEventListener("click", () => selectTab("evidence", true));
+        });
       for (const id of ["from", "to", "capital", "count", "sampling"]) {
         document.querySelector("#" + id).addEventListener("input", () => {
           document.querySelector("#summary-dates").textContent =

@@ -8,6 +8,8 @@
 - [MCP tool 목록](mcp-tools.md)
 - [Codex CLI paper provider](codex-cli-paper-trading.md)
 - [Automation boundary](automation.md)
+- [Paper simulation 입력·실효 조건](paper-simulation-config.md)
+- [Paper simulation 접수·runner 실패 관측](paper-simulation-observations.md)
 
 ## Backend와 데이터
 

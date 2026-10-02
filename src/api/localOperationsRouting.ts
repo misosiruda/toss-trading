@@ -84,7 +84,8 @@ const LOCAL_OPERATIONS_ROUTE_HANDLERS: Record<
     readBatchReplayRuns(options.storageBaseDir, readLimit(url), {
       includeLatestRunArtifacts:
         url.searchParams.get("includeLatestRunArtifacts") === "1",
-      runId: readRunLookupId(url)
+      runId: readRunLookupId(url),
+      observationRunId: url.searchParams.get("runId")
     }),
   "/dashboard/view-model/live-readiness": (_url, options) =>
     readDashboardLiveReadinessViewModel(options.env, readNow(options)),

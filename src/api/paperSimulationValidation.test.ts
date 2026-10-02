@@ -138,7 +138,7 @@ test("validate and accepted create share the exact runner contract without claim
   let finish!: (result: PaperSimulationRunnerResult) => void;
   const running = new Promise<PaperSimulationRunnerResult>((resolve) => { finish = resolve; });
   const server = await simulationServer({
-    storageBaseDir: root, env: { PAPER_SIMULATION_TICK_DELAY_MS: "25" },
+    storageBaseDir: join(root, "paper"), env: { PAPER_SIMULATION_TICK_DELAY_MS: "25" },
     paperSimulationRunner: async (input) => { inputs.push(input); return running; }
   });
   const config = simulationConfig();

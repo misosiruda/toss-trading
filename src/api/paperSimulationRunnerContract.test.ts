@@ -9,6 +9,7 @@ import type { MarketPacket } from "../domain/schemas.js";
 import { historicalReplayRunMetadataSchema } from "../replay/historicalReplayAuditLog.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
+import { readPaperSimulationObservation } from "../storage/paperSimulationObservationStore.js";
 import { createBatchReplayArtifactPaths } from "../storage/artifactPaths.js";
 import { createStoragePaths, FileHistoricalMarketSnapshotStore } from "../storage/repositories.js";
 import type { BatchReplayManifest, BatchReplayRunRecord } from "../workflows/historicalBatchReplayWorkflow.js";
@@ -41,7 +42,7 @@ test("default runner persists the validated effective contract on synthetic fixe
       config.window.endAt = mode === "fixed_range" ? "2024-01-02" : "2024-01-31";
       config.samplingPolicy.maxDecisionCalls = 2;
       const validated = validatePaperSimulationCandidate(config, {});
-      const accepted = createPaperSimulationRun(config, {
+      const accepted = await createPaperSimulationRun(config, {
         storageBaseDir: join(root, mode, "paper"), env: {},
         now: () => new Date("2026-10-02T00:00:00.000Z")
       });
@@ -52,6 +53,9 @@ test("default runner persists the validated effective contract on synthetic fixe
       assert.equal(manifest.status, "completed");
       assert.equal(manifest.completedCount, 1);
       assert.equal(manifest.batchId, accepted.simulationRunId);
+      const observation = await readPaperSimulationObservation(join(root, mode, "paper"), accepted.simulationRunId);
+      assert.equal(observation.status, "available");
+      assert.equal(observation.status === "available" && observation.outcome, "unknown");
       assert.equal(manifest.sourceDataDir, config.sourceDataDir);
       assert.equal(manifest.runCount, validated.effectiveConfig.runCount);
       assert.equal(manifest.initialCashKrw, validated.effectiveConfig.capital.initialCashKrw);
@@ -86,6 +90,39 @@ test("default runner persists the validated effective contract on synthetic fixe
       const packets = (await readFile(runPaths.historicalReplayPacketLogPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as MarketPacket);
       assert.deepEqual([...new Set(packets.flatMap((packet) => packet.candidates.map((candidate) => candidate.market)))].sort(), ["KR", "US"]);
     }
+  } finally {
+    await rm(source, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("default runner keeps skipped partial research evidence separate from accepted observation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "simulation-skipped-contract-"));
+  await mkdir("data", { recursive: true });
+  const source = await mkdtemp(join("data", "ux02b-empty-fixture-"));
+  const storageBaseDir = join(root, "paper");
+  try {
+    const config = simulationConfig();
+    config.sourceDataDir = relative(process.cwd(), source);
+    config.window.mode = "fixed_range";
+    config.window.endAt = "2024-01-02";
+    const accepted = await createPaperSimulationRun(config, {
+      storageBaseDir, env: {}, now: () => new Date("2026-10-02T00:00:00.000Z")
+    });
+    const paths = createBatchReplayArtifactPaths(accepted.outputBaseDir, accepted.batchId);
+    const manifest = await waitForManifest(paths.manifestPath);
+    assert.equal(manifest.status, "completed");
+    assert.equal(manifest.completedCount, 0);
+    assert.equal(manifest.skippedCount, 1);
+    assert.equal(manifest.failedCount, 0);
+    const records = (await readFile(paths.runsPath, "utf8")).trim().split("\n")
+      .map((line) => JSON.parse(line) as BatchReplayRunRecord);
+    assert.equal(records[0]?.status, "skipped");
+    assert.equal(records[0]?.researchManifest.status, "partial");
+    assert.equal(records[0]?.skipReason, "DATA_INSUFFICIENT");
+    const observation = await readPaperSimulationObservation(storageBaseDir, accepted.simulationRunId);
+    assert.equal(observation.status === "available" && observation.outcome, "unknown");
+    assert.equal(observation.status === "available" && observation.runnerFailure, null);
   } finally {
     await rm(source, { recursive: true, force: true });
     await rm(root, { recursive: true, force: true });

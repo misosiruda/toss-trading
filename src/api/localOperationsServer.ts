@@ -601,7 +601,7 @@ async function handlePaperSimulationCreate(
       createError: (message, statusCode, code) =>
         new PaperSimulationRequestError(message, statusCode, code)
     });
-    const payload = createPaperSimulationRun(body, options);
+    const payload = await createPaperSimulationRun(body, options);
     writeJson(response, 202, payload);
   } catch (error) {
     if (error instanceof PaperSimulationRequestError) {

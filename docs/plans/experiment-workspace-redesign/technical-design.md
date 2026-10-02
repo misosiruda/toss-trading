@@ -112,7 +112,9 @@ failed를 만들어내지 않는다. 실제 오류 기록 API가 없다면 ‘�
 | 결과 완전성 | complete / partial / missing / unsupported | 완료된 실행도 결과 일부가 빠질 수 있음 |
 
 `run_state`는 UI adapter상의 개념명이며 기존 서버 field를 근거 없이 rename/migrate하지 않는다.
-`completed_with_failures`는 부분 실패이며 성공 완료로 합치지 않는다. 완료/실패/skip 건수를 함께 표시한다.
+`completed_with_failures`는 부분 실패이며 성공 완료로 합치지 않는다. 개별 run은
+`summary.aiDecisionFailureCount`와 남아 있는 summary/report, 근거의 누락·연결 상태를 표시한다.
+완료/실패/skip 건수는 여러 실행을 집계하는 batch 문맥에서만 표시하며 개별 run의 결과로 쓰지 않는다.
 끝난 실행의 오래된 timestamp는 그대로 표시한다. 갱신 지연은 마지막 관측 이후의 경고일 뿐
 생존·중단 증거가 아니다. 알려진 총량이 있을 때만 `processed/total`을 표시하며 total=0과 missing을 구분한다.
 

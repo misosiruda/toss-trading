@@ -17,13 +17,19 @@
 
 ## 자동 review finding 수정
 
-자동 review의 P2 열한 건을 반영했다.
+자동 review의 P2 열세 건을 반영했다.
 
 - 완료·진행·실패·미관측 모두 실행 ID가 포함된 상세 링크를 제공한다. 선택 ID의 이름·상태·
   관측 기록을 표시하며 완료 예시의 수치를 다른 실행에 재사용하지 않는다. 미확인 ID도 구분한다.
 - 모바일에 접이식 주메뉴를 추가해 실험/전략·정책/비교/데이터/설정 구성을 유지한다.
   세부 메뉴는 production 기능이 아니라 기존 기능 이전표로 이어지는 명시적 구성 안내다.
-- 부분 실패(`completed_with_failures`)와 건너뜀 예시/필터/상세를 추가하고 완료·실패·skip counts를 보인다.
+- 부분 실패(`completed_with_failures`)와 건너뜀 예시/필터/상세를 구분한다. 부분 실패는 개별 run의
+  `summary.aiDecisionFailureCount`를 사용하고 batch 완료·실패·skip 집계를 run 결과로 표시하지 않는다.
+- `historicalBatchReplayWorkflow.ts`의 상태 생성·summary 보존 계약과 provider 실패 테스트를 읽어
+  부분 실패 run에도 summary/report가 남는 것을 확인했다. 별도 합성 partial summary/근거/기록을
+  연결하고 완전한 실행의 차트·지표·사건·ID를 재사용하지 않는다. 실제 backend 테스트 실행을 뜻하지 않는다.
+- 같은 계약 대조에서 기존 run 조회 미확인과 생성 accepted를 분리했다. failed 예시는 저장된
+  리플레이 처리 오류로, running 예시는 리플레이 진행 관측으로 고쳐 미지원 phase를 만들지 않는다.
 - 상세 tab과 목록 filter를 URL에 보존한다. 직접 링크·새 문서 로드·뒤로/앞으로에서도 같은 tab과 조건을 복원한다.
 - 별도 DOM 검토에서 찾은 skip link의 hash 충돌을 수정했다. 본문 이동은 현재 실행·tab·filter를
   바꾸지 않고 main에 focus를 옮긴다. 직접/reload 링크와 filter를 유지하는 뒤로/앞으로를 재검증했다.
@@ -46,10 +52,10 @@ JSDOM 검증은 DOM 동작 검사이며 실제 viewport·pixel·layout·browser 
 
 ## 통합 DOM 동선 행렬
 
-다음 push 전에 독립 동선 행렬 70개와 실제 focus 후 활성화 회귀 52개를 한 번에 점검하고,
+다음 push 전에 동선 행렬 70개와 실제 focus 후 활성화 회귀 52개, 부분 실패 계약 회귀 41개를 점검하고,
 발견한 결함도 함께 수정했다.
 현재 route의 모바일 메뉴 재선택 닫기, 직접 query의 추가 `?` 보존, 선택 카드의 고정 위험 설정
-문구를 수정한 최종 HTML SHA256은 `3f6e8fb5d7dcef86e30ad406748f42999dfc2794c11d098eece7aab1032d26ae`다.
+문구와 개별 run 부분 실패 표시를 수정한 HTML SHA256은 `7999b80f7531bbdeffd40c1811145b766efc7dbad074f699309680cfeaee7315`다.
 
 70/70 통과 범위: desktop/mobile 및 viewport 전환 후 출발 run focus, 목록 scroll/filter/history,
 직접주소·새 문서의 tab/filter 복원, 6개 예시 상태·missing/empty, 단계 입력/요약, 키보드 tab,
@@ -57,6 +63,11 @@ skip link, 같은 menu 재선택, raw/encoded query 보존과 인코딩된 입�
 추가 52/52 통과 범위: focus 후 next/previous·최종 단계 전환, tab/summary CTA·history,
 목록 복귀, skip link와 모바일 메뉴 활성화. 같은 실행의 summary 버튼에서 Back으로 evidence에
 복귀할 때 focus가 숨겨진 panel에 남는 독립 검토 결함도 선택 tab으로 복구하도록 수정했다.
+추가 41/41 통과 범위: 완료→부분 실패→완료 전환, 부분 실패의 각 tab 직접주소/reload/back/forward,
+개별 run의 판단 실패·호출·모의 체결 수, 별도 incomplete 근거/기록, 완료 예시 chart·ID·사건의
+비노출, 부분 실패 CTA와 숨겨진 panel focus 복구, 필터별 목록 복귀 및 비완료·미확인 ID 회귀다.
+기본 DOM 검사도 통과했다. 전체 163개 행렬은 임시 검사 도구로 수행했으며 전체 Node gate와는
+별도 검사다. 전체 gate 결과는 해당 PR의 검증 tree를 기준으로 기록한다.
 Scroll/focus는 stub 기반 DOM 검사다. 새 문서 로드에서는 문서 메모리의 scroll/focus 기록이 초기화된다.
 실제 browser pixel/layout/접근성이나 생산 API 통합이 완료됐다는 뜻은 아니다.
 
