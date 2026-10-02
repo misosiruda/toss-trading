@@ -20,6 +20,14 @@ import { captureExperimentInventory, verifyExperimentInput, type ExperimentPaths
 export { PaperExperimentStorageError } from "./paperExperimentFilesystem.js";
 export type { PaperExperimentRuntimeIdentity, PaperExperimentState } from "./paperExperimentContract.js";
 
+/** Only emitted after exclusive directory allocation; admission/collision errors never claim a new attempt. */
+export class PaperExperimentPreparationError extends PaperExperimentStorageError {
+  constructor(code: PaperExperimentStorageCode, readonly attemptId: string,
+    readonly artifactRoot: string, readonly failureRecorded: boolean) {
+    super(code); this.name = "PaperExperimentPreparationError";
+  }
+}
+
 export interface PaperExperimentStoreLocation {
   /** Backend-controlled namespace, not an input JSON field or a replay/source directory. */
   rootDir: string;
@@ -32,6 +40,8 @@ export interface CreatePaperExperimentAttemptOptions extends PaperExperimentStor
   /** The execution adapter observes/verifies this receipt; storage never reads Git, env or package files. */
   runtimeIdentity: PaperExperimentRuntimeIdentity;
   createdAt: Date;
+  /** EXP-03 adapter requires its fixed, versioned execution receipt. No generic artifact extension. */
+  executionReceiptRequired?: true;
   /** Optional trusted backend allocator output. CLI/input must never expose it as an output path. */
   attemptId?: string;
 }
@@ -128,7 +138,8 @@ export async function retryPaperExperimentAttempt(options: Omit<CreatePaperExper
     requireExperimentStorage(runtime.success, "INVALID_REQUEST");
     requireExperimentStorage(createReplayResearchHash(runtime.data) === createReplayResearchHash(parent.runtimeIdentity), "RUNTIME_MISMATCH");
     requireExperimentStorage(instant(options.createdAt) >= parent.createdAt, "INVALID_REQUEST");
-    return await createAttempt({ ...options, inputJson: JSON.stringify(input.normalizedInput) }, parent.attemptId);
+    return await createAttempt({ ...options, inputJson: JSON.stringify(input.normalizedInput),
+      ...((parent.executionReceiptRequired || options.executionReceiptRequired) ? { executionReceiptRequired: true } : {}) }, parent.attemptId);
   } catch (error) { throw storageError(error); }
 }
 
@@ -137,6 +148,7 @@ async function createAttempt(options: CreatePaperExperimentAttemptOptions, paren
   let paths: ExperimentPaths;
   let input: ReturnType<typeof parsePaperExperimentInput>;
   let serializedInput: string;
+  let allocated: { attemptId: string; artifactRoot: string } | null = null;
   try {
     const runtime = paperExperimentRuntimeIdentitySchema.safeParse(options.runtimeIdentity);
     requireExperimentStorage(runtime.success, "INVALID_REQUEST");
@@ -152,7 +164,8 @@ async function createAttempt(options: CreatePaperExperimentAttemptOptions, paren
     requireExperimentStorage(attemptId !== parentAttemptId, "ATTEMPT_EXISTS");
     state = paperExperimentStateSchema.parse({
       schemaVersion: "paper_experiment_attempt.v1", attemptId, runId: attemptId, parentAttemptId,
-      inputHash: input.inputHash, runtimeIdentity, status: "preparing", createdAt,
+      inputHash: input.inputHash, runtimeIdentity,
+      ...(options.executionReceiptRequired ? { executionReceiptRequired: true } : {}), status: "preparing", createdAt,
       startedAt: null, endedAt: null, terminationReason: null, generation: 0, artifactInventory: null
     });
     await ensureExperimentDirectory(root);
@@ -161,8 +174,13 @@ async function createAttempt(options: CreatePaperExperimentAttemptOptions, paren
       if (hasFsCode(error, "EEXIST")) throw new PaperExperimentStorageError("ATTEMPT_EXISTS");
       throw error;
     }
+    allocated = { attemptId, artifactRoot: paths.attemptDir };
     await writeExclusiveExperimentFile(paths.statePath, `${JSON.stringify(state)}\n`);
-  } catch (error) { throw storageError(error); }
+  } catch (error) {
+    if (allocated !== null) throw new PaperExperimentPreparationError(storageError(error).code,
+      allocated.attemptId, allocated.artifactRoot, false);
+    throw storageError(error);
+  }
 
   let busy = false;
   async function transition(next: PaperExperimentState): Promise<void> {
@@ -194,8 +212,9 @@ async function createAttempt(options: CreatePaperExperimentAttemptOptions, paren
     await transition({ ...state, status: "prepared", generation: state.generation + 1 });
   } catch (error) {
     // Retain all partial artifacts. Failure-record failure never creates a completed marker.
-    try { await fail("preparation_failed", options.createdAt); } catch { /* Read-only inspection reports incomplete. */ }
-    throw storageError(error);
+    let failureRecorded = false;
+    try { await fail("preparation_failed", options.createdAt); failureRecorded = true; } catch { /* Inspection reports incomplete. */ }
+    throw new PaperExperimentPreparationError(storageError(error).code, state.attemptId, paths.attemptDir, failureRecorded);
   }
   return Object.freeze({
     attemptId: state.attemptId,

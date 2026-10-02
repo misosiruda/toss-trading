@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PAPER_EXPERIMENT_EXECUTION_RECEIPT_PATH } from "./paperExperimentExecutionReceipt.js";
 
 import { sha256HashSchema } from "../domain/schemas.js";
 import {
@@ -38,7 +39,7 @@ export const paperExperimentRuntimeIdentitySchema = z.object({
 export type PaperExperimentRuntimeIdentity = z.infer<typeof paperExperimentRuntimeIdentitySchema>;
 
 export const paperExperimentInventoryEntrySchema = z.object({
-  relativePath: z.enum(Object.values(PAPER_EXPERIMENT_ARTIFACTS)),
+  relativePath: z.enum([...Object.values(PAPER_EXPERIMENT_ARTIFACTS), PAPER_EXPERIMENT_EXECUTION_RECEIPT_PATH]),
   contract: z.string().regex(/^[A-Za-z0-9_.]+$/).max(100),
   format: z.enum(["json", "jsonl"]),
   recordCount: z.number().int().nonnegative().max(10_000),
@@ -55,16 +56,18 @@ export const paperExperimentStateSchema = z.object({
   parentAttemptId: attemptId.nullable(),
   inputHash: sha256HashSchema,
   runtimeIdentity: paperExperimentRuntimeIdentitySchema,
+  executionReceiptRequired: z.literal(true).optional(),
   status: z.enum(["preparing", "prepared", "running", "completed", "failed"]),
   createdAt: instant,
   startedAt: instant.nullable(),
   endedAt: instant.nullable(),
   terminationReason: z.enum(["completed", "preparation_failed", "execution_failed", "artifact_integrity_failed"]).nullable(),
   generation: z.number().int().nonnegative().max(4),
-  artifactInventory: z.array(paperExperimentInventoryEntrySchema).length(Object.keys(PAPER_EXPERIMENT_ARTIFACTS).length).nullable()
+  artifactInventory: z.array(paperExperimentInventoryEntrySchema).min(Object.keys(PAPER_EXPERIMENT_ARTIFACTS).length).max(Object.keys(PAPER_EXPERIMENT_ARTIFACTS).length + 1).nullable()
 }).strict().superRefine((state, ctx) => {
   const terminal = state.status === "completed" || state.status === "failed";
-  if (state.attemptId !== state.runId || state.parentAttemptId === state.attemptId
+  if ((state.artifactInventory !== null && state.artifactInventory.length !== Object.keys(PAPER_EXPERIMENT_ARTIFACTS).length + (state.executionReceiptRequired ? 1 : 0))
+    || state.attemptId !== state.runId || state.parentAttemptId === state.attemptId
     || (state.status === "completed") !== (state.artifactInventory !== null)
     || terminal !== (state.endedAt !== null) || terminal !== (state.terminationReason !== null)
     || (state.status === "completed" && (state.startedAt === null || state.terminationReason !== "completed"))

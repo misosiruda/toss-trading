@@ -9,8 +9,8 @@
 
 `EXP-00`~`EXP-04`는 이 문서의 작업 ID이며 GitHub PR 번호가 아니다. 구현 시 path 이름을
 조정할 수 있으나 책임·계약·AC는 유지한다. EXP-00은 PR #791로 병합되었다.
-EXP-01 PR #792 병합 후 EXP-02의 입력 보존·격리 저장·unit test를 구현했으며 EXP-03~04는 미구현이다. 예정 CLI 명령을 실행된
-증거로 읽지 않는다. 커밋 개수는 게시 조건이 아니다. schema/저장/실행/검토/테스트·문서의
+EXP-01 PR #792와 EXP-02 PR #793이 병합되었고 EXP-03 runner/CLI를 구현했다. EXP-04 review/compare는 미구현이다.
+각 단계의 구현·실행 증거와 최종 병합 gate는 아래 해당 절 및 PR exact SHA 기록을 따른다. 커밋 개수는 게시 조건이 아니다. schema/저장/실행/검토/테스트·문서의
 책임이 바뀌기 전에 검토 가능한 단위로 Korean Conventional Commit을 남긴다.
 
 공통 verification/merge gate:
@@ -145,7 +145,8 @@ fs error injection은 directory 생성/input write/state replace/read 시점에 
 
 체크한 AC는 저장 library의 unit 수용 범위다. Exact candidate의 aggregate/full 검증과
 독립/current-head 검수·원격 보호 조건·병합 결과는 실제 PR 증거를 따른다.
-실제 runtime/build identity 관측과 manifest/options 결속은 EXP-03의 책임이며 아직 실행되지 않았다.
+이 EXP-02 검증 시점에는 runtime/build identity 관측과 manifest/options 결속을 실행하지 않았다.
+해당 실제 실행 검증은 아래 EXP-03 절에 별도로 기록한다.
 현재 API/오류·저장 한계는 [runbook](../../runbooks/paper-experiment.md)에 기록한다.
 rollback: 신규 writer를 되돌리고 기존 attempt는 보존. reader 지원이 없어도 old runtime이 새 directory를
 자동 소비하지 않는다. 저장 데이터를 지우거나 이전 공유 저장소로 합치는 migration은 하지 않는다.
@@ -170,21 +171,21 @@ rollback: 신규 writer를 되돌리고 기존 attempt는 보존. reader 지원�
 
 수용 기준:
 
-- [ ] `EXP-03-AC1`: 고정 fixture가 기존 packet→decision→Risk→fill→report 경로로 완료됨
-- [ ] `EXP-03-AC2`: test-only static provider/fixture 변형으로 HOLD·Risk denial·no-candidate·provider failure
+- [x] `EXP-03-AC1`: 고정 fixture가 기존 packet→decision→Risk→fill→report 경로로 완료됨
+- [x] `EXP-03-AC2`: test-only static provider/fixture 변형으로 HOLD·Risk denial·no-candidate·provider failure
   각각 구분. static 결정에도 기존 schema/semantic/candidate scope/Risk가 적용되고 잘못된 fill 없음
-- [ ] `EXP-03-AC3`: 요청 cost/policy와 runner options·manifest hash·실제 비용 결과가 대응;
+- [x] `EXP-03-AC3`: 요청 cost/policy와 runner options·manifest hash·실제 비용 결과가 대응;
   defaults를 실행 시 재선택하지 않음; backend-observed HEAD/lock hash/Node version을 보존하고
   요청·실행 identity 불일치 및 stale/unbound compiled dist 거절
-- [ ] `EXP-03-AC4`: runner/manifest/progress/audit 시작·완료·검증 fault가 failed/incomplete로 남음;
+- [x] `EXP-03-AC4`: runner/manifest/progress/audit 시작·완료·검증 fault가 failed/incomplete로 남음;
   부분 report만으로 completed를 만들지 않음; terminal inventory digest/count와
   report/log 간 counts 검증 후에만 completed 기록
-- [ ] `EXP-03-AC5`: 기존 portfolio sentinel이 있는 dir는 runner 0회, source·기존 attempt 불변;
+- [x] `EXP-03-AC5`: 기존 portfolio sentinel이 있는 dir는 runner 0회, source·기존 attempt 불변;
   다른 output에 동일 입력을 재실행해 semantic 결과 및 기존 manifest hash가 동일
-- [ ] `EXP-03-AC6`: hostile env의 AI/live enable 값으로 provider가 바뀌지 않음;
+- [x] `EXP-03-AC6`: hostile env의 AI/live enable 값으로 provider가 바뀌지 않음;
   provider subprocess/외부 network/broker 호출 0 (검증된 code identity의 fixed-argv Git 조회 및
   CLI를 실행하는 테스트 child process와 구분)
-- [ ] `EXP-03-AC7`: unsupported cancel 명령은 mutation 없이 실패. SIGINT/강제 종료 후 partial artifacts
+- [x] `EXP-03-AC7`: unsupported cancel 명령은 mutation 없이 실패. SIGINT/강제 종료 후 partial artifacts
   보존, fresh-process inspect가 성공으로 오판하지 않고 retry는 새 attempt만 사용
 
 예정 집중 검증:
@@ -198,7 +199,7 @@ node --test dist/workflows/paperExperimentWorkflow.test.js dist/cli/paperExperim
 Risk/execution/manifest 관련 tests는 `check:review` 영향 분석 및 최종 full profile로 검증한다.
 negative provider는 테스트 주입만 허용하며 production config가 임의 executable을 고르는 surface는 없다.
 
-예정 사용자 명령 계약 (현재 존재하지 않음):
+EXP-03 사용자 명령 계약:
 
 ```sh
 npm run paper:experiment -- validate --input src/replay/fixtures/paper-experiment.v1.json
@@ -211,6 +212,18 @@ npm run paper:experiment -- retry --attempt <returned-attempt-id>
 command를 받지 않는다. cancel/resume 미지원·Ctrl+C 중단 한계는 실행 전 help/runbook에 표시한다.
 rollback: 새 entry point/adapter만 revert, 기존 engine/version과 artifacts 유지. retry로 원래 artifact를
 덮어쓰지 않으며 새 형식을 모르는 old CLI는 fail-closed 한다.
+
+EXP-03 로컬 수용 증거 (2026-10-02):
+
+- EXP-02 merge `1398c314c8692e2be0dee82ee01da4373d441fca`의 isolated checkout에서 구현
+- 실제 기존 single workflow의 golden 결과는 3 packets / 3 decisions / 1 paper fill / 2 Risk rejections
+- Fixture-only provider는 기존 static identity·packet hash와 schema/semantic validator를 사용하며 모든 실행은 Risk gate를 유지
+- 별도 root 반복/새 attempt retry의 semantic payload와 기존 manifest hash 동일, 원 source/부모 bytes 불변
+- Fixed execution receipt로 기존 backend event/warning/sampling을 보존하고 terminal inventory에 포함
+- Linux x64 / Node v24.19.0에서 지원 launcher build, direct CLI binding reject, fresh-process inspect,
+  SIGINT/SIGKILL partial 보존과 새 attempt retry 검증. Windows 실행·signal semantics는 미검증
+- Focused 결과는 구현 검증이며 최종 aggregate/full, independent/current-head review와 원격 보호 조건은 exact PR 기록을 따름
+- 한국어 결과 review/compare, API/dashboard, cooperative cancel/resume, AI/live·실제 source는 미구현/미실행
 
 ## EXP-04. 근거 검토 보고서와 반복 비교
 

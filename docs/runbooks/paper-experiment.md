@@ -2,8 +2,8 @@
 
 ## 현재 사용 가능한 범위
 
-EXP-01 입력 검증과 EXP-02 격리 저장 library만 구현했다. Runner/CLI/API 연결, 실제 fixture 실행과
-한국어 결과 검토는 EXP-03~04의 후속 범위다. `paper:experiment` npm 명령은 아직 없다.
+EXP-01 입력 검증, EXP-02 격리 저장과 EXP-03 fixture runner/CLI를 구현했다. 기존 single historical
+workflow를 사용하며 API/dashboard 연결은 없다. 한국어 검토 보고서·반복 비교 명령은 EXP-04 범위다.
 계획은 [기획](../plans/reproducible-paper-experiment/product-plan.md),
 [기술 설계](../plans/reproducible-paper-experiment/technical-design.md),
 [PR 작업 계획](../plans/reproducible-paper-experiment/pr-work-plan.md)을 따른다.
@@ -38,7 +38,7 @@ Root의 부모는 필요하면 생성하지만 attempt 자체는 non-recursive e
 
 Runtime receipt에는 `implementationRevision`, `dependencyLockHash`, `nodeVersion`을 저장한다.
 저장 library는 caller가 검증한 receipt를 보존한다. 실제 clean HEAD/lockfile/Node와 compiled build를
-관측·결속하는 책임은 EXP-03 adapter에 남아 있다. 이 단계의 고정 test receipt는 실제 실행 증명이 아니다.
+관측·결속은 아래 EXP-03 지원 entry point가 담당한다. 저장 unit test의 고정 receipt는 실제 실행 증명이 아니다.
 
 ```text
 <backend root>/<attemptId>/
@@ -75,16 +75,22 @@ summary는 기존 report/portfolio/hash helper를 재사용한 순수 adapter로
 공식이나 Risk/매매 계산 구현을 만들지 않는다.
 그 다음 input/source, 기존 manifest/metadata/progress/report, 5개 JSONL의 contract/format/record count와
 기존 `createReplayResearchHash`의 parsed payload digest를 state의 `artifactInventory`에 기록한다.
-기존 manifest의 세부 hash와 실행 options 간 결속 검증은 EXP-03에서 연결한다.
+EXP-03 adapter는 기존 `createWorkflowResearchManifest`를 재사용하여 예상 full manifest와 실제 파일을 대조한다.
+기존 report builder의 반환 payload와 저장 파일, recorder가 부여한 decision hash까지 대조한 뒤 완료한다.
 
 보존 근거로 확인 가능한 범위와 없는 범위를 구분한다. Decision/trade/cost/Risk 요약,
 portfolio/analytics/performance/benchmark와 progress의 tick·bounded recent projections는
 canonical logs·고정 input과 대조한다. V1은 기존 recorder 기본 한도(최근 packets 10개,
 결정/Risk/trade 각 50개, timeline 1,500개)를 고정하며 custom limit은 받지 않는다.
-Packet의 tick, decision/packet hash, Risk/trade의 참조와 simulated timestamp도 대조한다. 전체 provider 호출 결과·sampling event·warning·dust event 및
-운영 timing의 원본은 현재 inventory에 모두 있지 않으므로 해당 값은 schema/상호 count·상한 검증과
-sealed digest까지만 확인한다. 존재하지 않는 event를 0으로 제조하지 않는다. 실행 시점의 사실성·
-완전한 receipt 결속은 EXP-03 adapter의 책임이며 이 저장 검증으로 공급자 성공을 보증하지 않는다.
+Packet의 tick, decision/packet hash, Risk/trade의 참조와 simulated timestamp도 대조한다. EXP-02만 사용한 저장 evidence에는 전체 provider/sampling/warning 원본이 없으므로
+그 값을 schema/상호 count·상한과 sealed digest까지만 검사한다. EXP-03 실행은 별도의 고정
+`replay/paper-experiment-execution.json` (`paper_experiment_execution.v1`)을 반드시 남긴다.
+기존 runner의 `auditEvents`, `warnings`, `samplingDecisions`를 그대로 보존하며 input/run ID,
+예상 manifest와 manifest/report/packet/decision/Risk/trade digest를 결속한다. `executionReceiptRequired: true`
+attempt는 이 파일을 12번째 terminal inventory 항목으로 검사하고 누락·변조를 완료로 읽지 않는다.
+Legacy 저장-only 호출의 11개 inventory는 유지되지만 CLI는 이를 실제 실행 완료로 승격하지 않는다.
+Provider failure는 실제 `HISTORICAL_AI_DECISION_FAILED`, no-candidate는 `HISTORICAL_PACKET_SKIPPED`
+event에서 읽으며 호출 수와 decision 수의 차이로 실패를 추측하지 않는다. 새로운 금융 계산은 없다.
 
 
 JSONL은 존재해야 하며 invalid/blank/torn line을 건너뛰지 않는다. 빈 log는 실제 파일이 있고
@@ -108,6 +114,8 @@ bounded read를 확인한다. Stored path는 파일을 여는 권한이 아니�
 
 - Admission 실패: attempt를 만들기 전에 거절
 - 준비/실행/완료 기록 실패: 가능한 실패 상태와 partial artifacts 보존, 성공으로 추정하지 않음
+- Exclusive attempt 할당 뒤 준비 실패는 `stage: preparation`, attempt ID/artifact root와 failureRecorded를 반환한다.
+  최초 state write 또는 실패 marker까지 실패해도 partial 위치를 잃지 않는다. Admission/collision 실패에는 새 attempt를 주장하지 않는다
 - report만 있고 terminal inventory가 없거나 무결성 불일치: `incomplete`
 - 기존 attempt에 append/resume/overwrite/삭제 없음. Retry에는 새 identity가 필요함
 - 입력을 복원할 수 없는 부모는 retry도 거절. 검증된 새 입력으로 별도 attempt를 준비해야 함
@@ -118,7 +126,7 @@ bounded read를 확인한다. Stored path는 파일을 여는 권한이 아니�
 `ARTIFACT_INTEGRITY`다. 보존 input/source의 parse/schema/UTF-8/크기 손상은 `INPUT_INTEGRITY`,
 state 손상은 `STATE_INVALID`, 잘못된 caller identity/token은 `INVALID_REQUEST`로 구분한다.
 경로 alias는 `PATH_UNSAFE`, 실제 filesystem 접근 실패는 `IO_FAILURE`다.
-실제 path는 backend owner handle에만 별도로 제공한다.
+실제 path는 backend owner handle 및 CLI가 할당한 attempt의 `artifactRoot`에만 별도로 제공한다.
 
 ## 로컬 검증
 
@@ -133,4 +141,55 @@ write/sync/rename/read fault, malformed report, timeline 누락과 완료 뒤 �
 저장 fixture 생성에는 기존 recorder/report builder만 사용하며 workflow/runner/provider를 실행하지
 않는다. 외부 AI/Codex CLI/broker/live/source 호출은 하지 않는다.
 최종 candidate의 aggregate/full 및 independent/current-head review 결과는 해당 PR의 exact SHA
-검증 기록을 따른다. EXP-03~04나 Trainer/SPOM 최종 AC의 완료 증거로 읽지 않는다.
+검증 기록을 따른다. 저장 unit test만으로 EXP-03~04나 Trainer/SPOM 최종 AC를 완료로 읽지 않는다.
+
+
+## EXP-03 지원 CLI와 build 결속
+
+의존성을 lockfile 기준으로 준비한 clean Git checkout에서 실행한다. Node 22 이상이 필요하다.
+
+```sh
+npm run paper:experiment -- validate --input src/replay/fixtures/paper-experiment.v1.json
+npm run paper:experiment -- run --input src/replay/fixtures/paper-experiment.v1.json
+npm run paper:experiment -- inspect --attempt <returned-attempt-id>
+npm run paper:experiment -- retry --attempt <returned-attempt-id>
+```
+
+- Root는 repository의 `data/paper-experiments/`로 고정하며 ID는 backend가 할당한다
+- CLI는 output/provider/model/raw command/attempt allocator 옵션을 받지 않는다
+- `validate/run/retry` launcher는 clean HEAD를 확인하고 현재 source를 새로 build한다. Build 전후 source와
+  HEAD를 대조하며 build 실패는 이전 receipt를 남겨 유효한 실행으로 사용하지 않는다
+- `dist/paper-experiment-build.json`은 HEAD, normalized lock hash, 실제 Node version, tracked source bytes와
+  모든 compiled JS bytes의 기존 research hash를 결속한다. 실제 entry는 이를 다시 확인하고 dirty source,
+  미추적/ignored TS source, stale/추가/tampered compiled JS, missing receipt, lock/Node/revision 불일치를 거절한다
+- Git 조회는 shell 없는 fixed argv이며 상속 `GIT_*` redirection/config와 fsmonitor를 사용하지 않는다.
+  Source/output ancestor와 dist 내부 symlink/hardlink는 compiler 실행 전에 거절한다. Compiler subprocess도 고정 Node/tsc 인자다. Provider/Codex CLI/외부 source/broker subprocess가 아니다
+- `inspect`는 기존 built CLI만 사용하여 재build·Git 확인·source 재읽기 없이 retained evidence를 읽는다.
+  `dist`가 없는 checkout에서는 먼저 `npm run build`가 필요하다. 다른 코드에서 retry는 거절되지만 inspect는 가능하다
+- `run`은 준비 직후 attempt ID/artifact root와 중단 제한을 JSON으로 출력한다. 성공 상태와 provider failure/
+  insufficient-data quality는 별개이며 inspect가 이를 구분한다. HOLD/Risk 결과는 기존 decision/Risk/report에 남는다
+- `cancel/resume`과 알려지지 않은 옵션은 build/storage mutation 전에 실패한다. Ctrl+C/SIGKILL은 partial
+  artifact를 보존하는 프로세스 중단이다. inspect는 preparing/prepared/running을 incomplete로 읽고 상태를 고치지 않는다
+- retry는 원 입력과 같은 runtime identity만 허용하며 새 ID와 parent lineage를 기록한다. 이전 파일은 변하지 않는다
+
+Build receipt는 임의 외부 writer나 변조된 설치 의존성·컴파일러를 인증하는 보안 장치가 아니다.
+Dependency lock hash만으로 설치된 `node_modules`의 모든 byte를 입증하지 않는다. 동시에 source/dist를
+수정하는 외부 process와 hostile filesystem race는 지원하지 않는다. 직접 compiled 파일을 실행하여
+지원 launcher를 우회해도 실행 admission은 receipt를 요구하지만 임의 JS 자체를 안전하게 sandbox하지는 않는다.
+실제 Linux x64 / Node v24.19.0에서 CLI child process·SIGINT·SIGKILL·새 process inspect/retry를 검증한다.
+Windows용 shell 없는 argv/경로와 Git null-device 처리는 있지만 Windows 실행 증거는 아직 없다.
+POSIX signal test는 Windows에서 명시적으로 skip하며 Windows 종료 semantics를 검증했다고 주장하지 않는다.
+
+EXP-03 집중 검증:
+
+```sh
+npm run build
+node --test dist/workflows/paperExperimentWorkflow.test.js dist/cli/paperExperiment.test.js
+```
+
+Synthetic golden fixture는 3 packet / 3 decision / 1 paper fill / 2 Risk rejection을 남긴다. 이는
+안전한 backend 연결의 관찰이며 전략 우월성·수익률·실제 시장 적합성 주장이 아니다. 정적 테스트 결정도
+기존 schema, static identity/packet hash, semantic/candidate scope와 Risk gate를 통과해야 한다.
+검증은 별도 output의 동일 semantic 결과·manifest hash, 비용 변경과 실제 fill cost, HOLD/Risk denial/
+no-candidate/provider failure, 시작·완료 recorder fault, receipt 손상, fresh-process 중단·retry를 포함한다.
+AI/live hostile env에서도 external process/network 호출 0이며 실제 계좌·broker·외부 AI/source를 실행하지 않는다.

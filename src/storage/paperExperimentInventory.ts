@@ -18,6 +18,7 @@ import {
   PAPER_EXPERIMENT_ARTIFACTS, type PaperExperimentInventoryEntry, type PaperExperimentState
 } from "./paperExperimentContract.js";
 import { PaperExperimentStorageError, readExperimentFile, requireExperimentStorage } from "./paperExperimentFilesystem.js";
+import { PAPER_EXPERIMENT_EXECUTION_RECEIPT_PATH, paperExperimentExecutionReceiptSchema, paperExperimentExecutionFacts } from "./paperExperimentExecutionReceipt.js";
 import { paperExperimentReportSchema } from "./paperExperimentReportContract.js";
 
 const MAX_ARTIFACT_BYTES = 16 * 1024 * 1024;
@@ -171,5 +172,28 @@ export async function captureExperimentInventory(paths: ExperimentPaths, state: 
   try {
     verifyPaperExperimentRetainedEvidence({ input, metadata, progress, report, packets, decisions, risks, trades, timeline });
   } catch { throw new PaperExperimentStorageError("ARTIFACT_INTEGRITY"); }
+  if (state.executionReceiptRequired) {
+    const receiptText = await readExperimentFile(join(paths.attemptDir, PAPER_EXPERIMENT_EXECUTION_RECEIPT_PATH), MAX_ARTIFACT_BYTES);
+    const { raw, value: receipt } = parseExperimentArtifact(receiptText, paperExperimentExecutionReceiptSchema);
+    equal(receipt.runId, state.runId); equal(receipt.inputHash, state.inputHash);
+    equal(receipt.expectedManifest, manifest);
+    for (const [key, digest] of Object.entries(receipt.artifactDigests)) {
+      equal(digest, inventory.find((entry) => entry.relativePath === PAPER_EXPERIMENT_ARTIFACTS[key as keyof typeof PAPER_EXPERIMENT_ARTIFACTS])?.digest);
+    }
+    const facts = paperExperimentExecutionFacts(receipt);
+    equal(facts.noCandidateTickCount, ticks - packets.length);
+    equal(receipt.auditEvents.filter((event) => event.eventType === "HISTORICAL_MARKET_PACKET_CREATED").length, packets.length);
+    equal(receipt.auditEvents.filter((event) => event.eventType === "VIRTUAL_DECISION_RECORDED").length, decisions.length);
+    requireExperimentStorage(facts.providerFailureCount <= progress.decisionProviderCallCount - decisions.length, "ARTIFACT_INTEGRITY");
+    requireExperimentStorage(receipt.auditEvents.every((event) => input.preflight.ticks.some((tick) => tick.simulatedAt === event.createdAt)), "ARTIFACT_INTEGRITY");
+    equal(receipt.samplingDecisions.length, packets.length);
+    equal(receipt.samplingDecisions.filter((row) => row.shouldEvaluate).length, progress.decisionProviderCallCount);
+    equal(receipt.samplingDecisions.filter((row) => !row.shouldEvaluate).length, progress.decisionSkippedCount);
+    receipt.samplingDecisions.forEach((row, index) => {
+      equal(row.packetId, packets[index]?.packetId); equal(row.simulatedAt, packets[index]?.generatedAt);
+    });
+    inventory.push({ relativePath: PAPER_EXPERIMENT_EXECUTION_RECEIPT_PATH, contract: "paper_experiment_execution.v1",
+      format: "json", recordCount: 1, digest: createReplayResearchHash(raw) });
+  }
   return inventory;
 }

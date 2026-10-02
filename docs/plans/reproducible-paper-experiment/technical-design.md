@@ -3,7 +3,7 @@
 ## 상태와 결정
 
 [기획](product-plan.md)을 구현하기 위한 설계다. EXP-01의 입력 계약과 EXP-02의 입력 보존·격리 저장을
-구현했으며 실행·CLI·결과 검토는 후속 EXP-03~04 설계다.
+구현했고 EXP-03은 기존 single workflow 연결·실행 receipt·CLI를 구현했다. 결과 검토는 후속 EXP-04 설계다.
 저장 API와 실제 보장/비보장 경계는 [runbook](../../runbooks/paper-experiment.md)에 정리한다.
 코드 관찰 기준은 `bc1423bd992171cf86b5c5d288e9c1c915cc2333`이다.
 구현 순서·검증 명령은 [PR 작업 계획](pr-work-plan.md)에 둔다.
@@ -216,7 +216,11 @@ Risk·trade·portfolio의 semantic payload가 같아야 한다. attempt/run iden
 `completed`는 필수 artifact 검증 후 마지막에 쓴다. 이때 고정 allowlist의 필수 input/manifest/
 metadata/report/log마다 상대 경로·schema/version·record count·기존 `createReplayResearchHash`로
 계산한 parsed payload digest를 `artifactInventory`에 보존한다. JSONL은 전체 row sequence를
-검증·hash하고 packet/decision/Risk/trade 수와 report summary도 대조한다. inventory 자체와
+검증·hash하고 packet/decision/Risk/trade 수와 report summary도 대조한다. EXP-03 실행은 추가로 고정 `replay/paper-experiment-execution.json`을 요구한다. 이 versioned receipt는
+기존 runner의 auditEvents/warnings/samplingDecisions와 input/run ID, 예상 full manifest, 기존 artifact
+payload digest를 보존한다. `executionReceiptRequired: true` state는 이 파일을 12번째 inventory로 검증하며
+legacy EXP-02 저장-only 호출의 11개 inventory를 실제 실행 증거로 승격하지 않는다. Generic extra-artifact
+hook이나 새로운 보고서/금융 계산은 만들지 않는다. inventory 자체와
 재생성 가능한 review 산출물은 자기 참조 hash 대상에서 제외한다. reader는 completed를 신뢰하기
 전에 같은 inventory를 재검증하므로 유효 JSONL row 경계에서 잘린 파일이나 schema-valid 숫자
 변조도 탐지한다. allowlist 밖 파일을 재귀로 읽거나 별도 hash 알고리즘을 만들지 않는다.
