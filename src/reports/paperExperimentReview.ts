@@ -1,0 +1,216 @@
+import { basename } from "node:path";
+
+import { createReplayResearchHash } from "../replay/replayRunManifest.js";
+import { maskSensitiveText } from "../security/masking.js";
+import { PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN } from "../storage/artifactPaths.js";
+import { requireExperimentStorage } from "../storage/paperExperimentFilesystem.js";
+import { paperExperimentExecutionFacts } from "../storage/paperExperimentExecutionReceipt.js";
+import type { PaperExperimentStoreLocation } from "../storage/paperExperimentStore.js";
+import { comparePaperExperimentEvidence, readPaperExperimentReviewEvidence, REVIEW_ARTIFACT_PATHS,
+  type PaperExperimentReviewEvidence, type ReviewArtifactKey } from "./paperExperimentReviewEvidence.js";
+
+const LIMITATIONS = [
+  "Synthetic fixture의 engineering 재현 검토이며 실제 시장·전략·수익성 또는 실거래 적합성의 증거가 아니다.",
+  "거래일 calendar, FX, lifecycle와 실제 시장 coverage는 검증하지 않았다.",
+  "cashOnly는 동일 초기 현금·평가 tick의 no-trade 기준선으로 비용이 0이다.",
+  "equalWeightBuyAndHold와 initialPortfolioBuyAndHold는 비용 0 및 packet 표본 기반 보조 진단이다. 전략과 비용·sampling 동등성을 주장하지 않는다.",
+  "단일 fixture의 Sharpe·유의성·우월성·일반화는 결론낼 수 없다. 기존 통계의 null/unavailable 상태를 유지한다.",
+  "Hash는 보존 payload의 일치 확인 수단이다. source 사실성·전체 이력·외부 공격자에 대한 인증을 증명하지 않는다.",
+  "Execution receipt는 기존 runner가 반환한 bounded 운영 events/warnings/sampling을 보존한다. provider 내부 전체 이력은 포함하지 않는다.",
+  "진행 중인지 중단됐는지는 저장 상태만으로 판정하지 않는다. cancel/resume은 미지원이며 retry는 새 attempt다."
+] as const;
+
+function proof(artifact: ReviewArtifactKey, field: string) {
+  return { artifact: basename(REVIEW_ARTIFACT_PATHS[artifact]), field,
+    href: `../../${REVIEW_ARTIFACT_PATHS[artifact]}#${field}` };
+}
+function claim<T>(value: T, artifact: ReviewArtifactKey, field: string) { return { value, evidence: proof(artifact, field) }; }
+
+/** Presentation redaction only: raw values remain in semantic comparison and source artifacts. */
+export function safePaperExperimentReviewValue<T>(value: T): T {
+  function visit(item: unknown): unknown {
+    if (Array.isArray(item)) return item.map(visit);
+    if (item !== null && typeof item === "object" && "artifact" in item && "field" in item && "href" in item) {
+      const reference = item as { artifact: unknown; field: unknown; href: unknown };
+      const path = [...Object.values(REVIEW_ARTIFACT_PATHS), "experiment-run.json"].find((path) => basename(path) === reference.artifact);
+      if (Object.keys(item).length === 3 && path && typeof reference.field === "string"
+        && /^\/(?:[A-Za-z0-9_/-]*)$/.test(reference.field) && reference.href === `../../${path}#${reference.field}`) return item;
+    }
+    if (item !== null && typeof item === "object") return Object.fromEntries(Object.entries(item).map(([key, nested]) =>
+      [redact(key), /^(?:password|secret|token|apiKey|authorization|cookie|accountNumber)$/i.test(key) ? "[비공개]" : visit(nested)]));
+    return typeof item === "string" ? redact(item) : item;
+  }
+  function redact(text: string) {
+    return maskSensitiveText(text).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+      .replace(/\b(?:password|secret|token|api[_-]?key|authorization|cookie)\s*[:=]\s*[^\s,;]+/gi, "[비공개]")
+      .replace(/\b(?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|github_pat_[A-Za-z0-9_]{8,})\b/g, "[비공개]")
+      .replace(/(?:https?|file):\/\/[^\s<>"']+/gi, "[외부 주소 비공개]")
+      .replace(/(?:[A-Za-z]:[\\/]|\\\\)[^\s<>"']+|(?:^|[\s(=])\/(?!\/)[^\s<>"']+/g, " [로컬 경로 비공개]");
+  }
+  return visit(value) as T;
+}
+
+function projectEvidence(evidence: PaperExperimentReviewEvidence) {
+  const { inspection, verified } = evidence;
+  const input = inspection.input?.normalizedInput;
+  const report = verified ? evidence.report : null;
+  const receipt = verified ? evidence.execution : null;
+  const facts = receipt ? paperExperimentExecutionFacts(receipt) : null;
+  const quality = !verified ? "unavailable" : facts!.providerFailureCount > 0 ? "provider_failure"
+    : inspection.input?.preflight.status === "insufficient_data" ? "insufficient_data" : "usable_fixture";
+  const decisions = verified ? evidence.decisions!.flatMap((decision, decisionIndex) => decision.decisions.map((item, itemIndex) => {
+    const packetIndex = evidence.packets!.findIndex((packet) => packet.packetId === decision.packetId);
+    const riskRows = evidence.risks!.flatMap((risk, index) => risk.packetId === decision.packetId
+      && (risk.symbol === undefined || risk.symbol === item.symbol) ? [{ ...risk, evidence: proof("riskDecisions", `/${index}`) }] : []);
+    const trades = evidence.trades!.flatMap((trade, index) => riskRows.some((risk) => risk.riskDecisionId === trade.decisionId)
+      ? [{ ...trade, evidence: proof("trades", `/${index}`) }] : []);
+    const packet = evidence.packets![packetIndex]!;
+    return { decisionHash: decision.decisionHash ?? null, packetHash: decision.packetHash ?? null,
+      packetId: decision.packetId, simulatedAt: packet.generatedAt, item,
+      evidence: proof("decisions", `/${decisionIndex}/decisions/${itemIndex}`),
+      packet: proof("packets", `/${packetIndex}`), risk: riskRows, trades,
+      portfolio: evidence.timeline!.flatMap((row, index) => row.simulatedAt === packet.generatedAt
+        ? [proof("timeline", `/${index}/portfolio`)] : []) };
+  })) : null;
+  return {
+    schemaVersion: "paper_experiment_review.v1" as const, language: "ko" as const,
+    title: "고정 fixture paper 실험 근거 검토",
+    attemptId: inspection.state?.attemptId ?? null,
+    execution: { status: verified ? "completed" : inspection.status === "failed" ? "failed" : "incomplete",
+      storedStatus: inspection.storedStatus, integrity: verified ? "verified" : "unverified",
+      errorCode: inspection.errorCode ?? (!inspection.state?.executionReceiptRequired ? "EXECUTION_RECEIPT_REQUIRED"
+        : evidence.artifacts.find((artifact) => artifact.errorCode)?.errorCode ?? (!verified ? "INCOMPLETE_EVIDENCE" : null)),
+      terminationReason: inspection.state?.terminationReason ?? null,
+      notice: "completed는 실행 기록의 완료이며 연구 품질·투자 성공을 뜻하지 않는다.",
+      evidence: { artifact: "experiment-run.json", field: "/status", href: "../../experiment-run.json#/status" } },
+    inputEligibility: { status: inspection.input?.preflight.status ?? "unavailable",
+      integrity: inspection.input ? "verified" : "unavailable", inputHash: inspection.input?.inputHash ?? null,
+      runtimeIdentity: inspection.state?.runtimeIdentity ?? null,
+      evidence: { artifact: "experiment-run.json", field: "/runtimeIdentity", href: "../../experiment-run.json#/runtimeIdentity" } },
+    researchQuality: { status: quality, providerFailureCount: facts?.providerFailureCount ?? null,
+      noCandidateTickCount: facts?.noCandidateTickCount ?? null, decisionRejectedEventCount: facts?.decisionRejectedEventCount ?? null, evidence: facts ? proof("execution", "/auditEvents") : null,
+      statisticalConclusion: "판단 불가", investmentConclusion: "판단 불가" },
+    question: input ? claim(input.question, "input", "/question") : null,
+    scope: input ? claim({ mode: input.mode, fixture: input.fixture, provider: input.provider,
+      clock: input.configuration.clock, evaluation: input.evaluation, universe: input.universe,
+      coverageDescription: input.source.coverageDescription, sourceKind: input.source.kind,
+      sourceRefs: ["fixture:paper-experiment.v1"] }, "input", "/") : null,
+    coverage: inspection.input ? claim(inspection.input.preflight, "input", "/source/snapshots") : null,
+    policy: input ? claim(input.configuration, "input", "/configuration") : null,
+    costModel: input ? claim(input.costModel, "input", "/costModel") : null,
+    manifest: verified ? claim(evidence.manifest, "manifest", "/") : null,
+    actions: decisions,
+    outcomes: report ? claim({ replay: report.replaySummary, decision: report.decisionOutcome, risk: report.riskSummary,
+      sampling: report.samplingSummary, sourceWarnings: report.sourceWarningSummary }, "report", "/") : null,
+    operationalEvidence: receipt ? { facts: claim(facts, "execution", "/auditEvents"),
+      events: receipt.auditEvents.map((event, index) => claim(event, "execution", `/auditEvents/${index}`)),
+      sampling: claim(receipt.samplingDecisions, "execution", "/samplingDecisions"),
+      warnings: claim(receipt.warnings, "execution", "/warnings") } : null,
+    costs: report ? claim(report.costSummary, "report", "/costSummary") : null,
+    benchmarks: report ? claim(report.benchmarks, "report", "/benchmarks") : null,
+    statistics: report ? claim({ advancedPerformance: report.advancedPerformance, sharpeValidation: report.sharpeValidation }, "report", "/") : null,
+    partialEvidence: { notice: "partial은 schema로 읽힌 일부 보존 파일이다. 완료된 결과·전체 건수의 증거로 사용하지 않는다.",
+      artifacts: evidence.artifacts,
+      progress: !verified && evidence.progress ? claim({ storedStatus: evidence.progress.status,
+        tickIndex: evidence.progress.tickIndex, completedTickCount: evidence.progress.completedTickCount,
+        simulatedAt: evidence.progress.simulatedAt }, "progress", "/") : null },
+    observations: verified ? ["고정 입력과 terminal inventory·execution receipt의 결속을 확인했다.",
+      quality === "provider_failure" ? "보존된 provider 실패 event가 있다. 실행 완료를 유효한 연구 결과로 읽지 않는다."
+        : quality === "insufficient_data" ? "입력 coverage gap이 있다. source의 충분성을 주장하지 않는다."
+          : "이 fixture 범위의 결과 근거를 읽을 수 있다. 실제 시장 또는 통계 검증은 남아 있다."]
+      : ["완료 무결성을 확인하지 못했다. 결과·비용·기준선을 0으로 대체하지 않고 사용할 수 없음으로 남긴다."],
+    limitations: LIMITATIONS,
+    nextQuestions: input ? claim(input.evaluation.reviewQuestions, "input", "/evaluation/reviewQuestions") : null,
+    semanticProjectionVersion: "paper_experiment_semantic.v1",
+    evidenceDigest: verified ? createReplayResearchHash(inspection.state!.artifactInventory) : null
+  };
+}
+
+export async function createPaperExperimentReview(location: PaperExperimentStoreLocation, attemptId: string,
+  compare?: { location: PaperExperimentStoreLocation; attemptId: string }) {
+  requireExperimentStorage(PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN.test(attemptId)
+    && (compare === undefined || PAPER_EXPERIMENT_ATTEMPT_ID_PATTERN.test(compare.attemptId)), "INVALID_REQUEST");
+  const evidence = await readPaperExperimentReviewEvidence(location, attemptId);
+  const comparison = compare ? { attemptId: compare.attemptId,
+    ...comparePaperExperimentEvidence(evidence, await readPaperExperimentReviewEvidence(compare.location, compare.attemptId)),
+    notice: "같은 입력·runtime의 engineering 재현 비교다. 다른 조건의 성과 순위는 제공하지 않는다." } : null;
+  // Do not redact canonical references that we generated, but redact every source-supplied value.
+  const projected = projectEvidence(evidence);
+  return { ...safePaperExperimentReviewValue(projected), comparison };
+}
+export type PaperExperimentReview = Awaited<ReturnType<typeof createPaperExperimentReview>>;
+
+function markdownText(value: unknown): string {
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/[\\`*_{}\[\]()#+.!|~-]/g, "\\$&").replace(/\r?\n/g, "<br>");
+}
+/** Korean labels with escaped data. Only code-generated fixed artifact references become links. */
+export function renderPaperExperimentReviewMarkdown(review: PaperExperimentReview): string {
+  const lines = [`# ${review.title}`, "", "## 핵심 확인", "",
+    `- 질문: ${markdownText(review.question?.value ?? "사용할 수 없음")}`,
+    `- attempt: ${markdownText(review.attemptId ?? "사용할 수 없음")}`,
+    `- 실행: ${markdownText(review.execution.status)} / 저장 상태: ${markdownText(review.execution.storedStatus)} / 무결성: ${review.execution.integrity}`,
+    `- 입력 적격성: ${review.inputEligibility.status} / 연구 품질: ${review.researchQuality.status}`,
+    `- inputHash: ${markdownText(review.inputEligibility.inputHash)}`];
+  const outcomes = review.outcomes?.value;
+  if (outcomes && review.costs && review.benchmarks) lines.push(
+    `- 기존 보고서: packet ${outcomes.replay.packetCount}, decision ${outcomes.replay.decisionRecordCount}, paper fill ${outcomes.replay.tradeCount}, Risk 거절 ${outcomes.risk.rejectedCount}, sampling skip ${outcomes.sampling.decisionsSkipped}`,
+    `- 기존 비용 합계: ${review.costs.value.totalCostKrw} KRW / cashOnly 최종 가상 자산: ${review.benchmarks.value.cashOnly.finalNetWorthKrw} KRW`,
+    `- 보존 event: provider 실패 ${review.researchQuality.providerFailureCount}, no candidate ${review.researchQuality.noCandidateTickCount}`);
+  else lines.push("- 결과·비용·기준선: 사용할 수 없음 (null). 누락 근거를 0으로 바꾸지 않는다.");
+  lines.push("", review.execution.notice, "상세 구조와 모든 값은 함께 생성된 [review.json](review.json)에 보존한다.", "");
+  function ref(evidence: { artifact: string; field: string }): string {
+    const path = [...Object.values(REVIEW_ARTIFACT_PATHS), "experiment-run.json"].find((path) => basename(path) === evidence.artifact);
+    return path && /^\/(?:[A-Za-z0-9_/-]*)$/.test(evidence.field)
+      ? `[${evidence.artifact} ${evidence.field}](../../${path}#${evidence.field})` : "근거 주소 없음";
+  }
+  const data = (value: unknown) => markdownText(JSON.stringify(value));
+  function section(title: string) { lines.push(`## ${title}`, ""); }
+  function field(label: string, value: unknown, evidence?: { artifact: string; field: string }) {
+    lines.push(`- ${label}: ${data(value)}${evidence ? ` · 근거: ${ref(evidence)}` : ""}`);
+  }
+  if (outcomes) lines.push(`요약 근거: ${ref(review.outcomes!.evidence)}, ${ref(review.costs!.evidence)}, ${ref(review.benchmarks!.evidence)}`, "");
+  section("범위·source·coverage");
+  field("범위", review.scope?.value ?? null, review.scope?.evidence);
+  field("입력 적격성·tick별 coverage", review.coverage?.value ?? null, review.coverage?.evidence);
+  field("runtime 기준", review.inputEligibility.runtimeIdentity, review.inputEligibility.evidence);
+  lines.push(""); section("고정 정책과 비용 모델");
+  lines.push("정책의 null은 해당 설정의 미사용 상태일 수 있다. 결과의 null과 구분하며 기본값을 추정하지 않는다.");
+  for (const [key, value] of Object.entries(review.policy?.value ?? {})) field(key, value, review.policy!.evidence);
+  field("비용 모델", review.costModel?.value ?? null, review.costModel?.evidence);
+  field("manifest", review.manifest?.value ?? null, review.manifest?.evidence);
+  lines.push(""); section("행동·거절·HOLD와 결과 근거");
+  if (review.actions === null) lines.push("사용할 수 없음 (null)");
+  else if (!review.actions.length) lines.push("검증된 decision 항목이 없다. 실패·skip event는 다음 절에서 확인한다.");
+  for (const [index, action] of (review.actions ?? []).entries()) {
+    lines.push(`### 행동 ${index + 1}: ${markdownText(action.item.action)} ${markdownText(action.item.symbol)}`, "");
+    field("시뮬레이션 시각", action.simulatedAt, action.packet);
+    field("decisionHash", action.decisionHash, action.evidence);
+    field("판단·dataRefs", action.item, action.evidence);
+    for (const risk of action.risk) { const { evidence, ...value } = risk; field("Risk 판정", value, evidence); }
+    for (const trade of action.trades) { const { evidence, ...value } = trade; field("paper fill·비용", value, evidence); }
+    if (!action.trades.length) lines.push("- 연결된 paper fill 없음. HOLD·Risk·운영 event의 근거를 함께 읽는다.");
+    lines.push(`- portfolio 근거: ${action.portfolio.map(ref).join(", ")}`, "");
+  }
+  section("skip·no candidate·provider 실패 근거");
+  field("기존 결과 요약", outcomes ?? null, review.outcomes?.evidence);
+  field("운영 event 분류", review.operationalEvidence?.facts.value ?? null, review.operationalEvidence?.facts.evidence);
+  for (const event of review.operationalEvidence?.events ?? []) field("보존 event", event.value, event.evidence);
+  field("sampling", review.operationalEvidence?.sampling.value ?? null, review.operationalEvidence?.sampling.evidence);
+  field("warnings", review.operationalEvidence?.warnings.value ?? null, review.operationalEvidence?.warnings.evidence);
+  lines.push(""); section("기존 비용·기준선·통계");
+  field("비용 breakdown", review.costs?.value ?? null, review.costs?.evidence);
+  for (const [key, value] of Object.entries(review.benchmarks?.value ?? {})) field(key, value, review.benchmarks!.evidence);
+  field("기존 통계", review.statistics?.value ?? null, review.statistics?.evidence);
+  lines.push(""); section("반복 비교"); field("동일 조건 확인", review.comparison);
+  lines.push(""); section("부분 근거와 오류");
+  field("오류", review.execution.errorCode); lines.push(review.partialEvidence.notice);
+  for (const artifact of review.partialEvidence.artifacts) field(artifact.artifact, { status: artifact.status, recordCount: artifact.recordCount, errorCode: artifact.errorCode });
+  field("부분 progress", review.partialEvidence.progress?.value ?? null, review.partialEvidence.progress?.evidence);
+  lines.push(""); section("관찰과 한계");
+  for (const observation of review.observations) lines.push(`- ${markdownText(observation)}`);
+  for (const limitation of review.limitations) lines.push(`- ${markdownText(limitation)}`);
+  lines.push(""); section("다음 검증 질문");
+  field("입력에 보존한 질문", review.nextQuestions?.value ?? null, review.nextQuestions?.evidence);
+  return lines.join("\n") + "\n";
+}
