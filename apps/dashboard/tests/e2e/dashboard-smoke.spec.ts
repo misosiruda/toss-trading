@@ -42,7 +42,7 @@ type AxeRunResult = {
   }>;
 };
 
-for (const route of ["/dashboard", "/dashboard/operations"]) {
+for (const route of ["/dashboard/operations"]) {
   test(`renders paper-only dashboard readiness without live mutation controls at ${route}`, async ({
     page,
   }) => {

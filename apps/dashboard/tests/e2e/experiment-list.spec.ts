@@ -1,0 +1,115 @@
+import { expect, test, type Page } from "@playwright/test";
+import axe from "axe-core";
+
+// These tests use playwright.config.ts and its existing isolated REAL Operations
+// API fixture. Do not populate the list by changing prepare-e2e-data.mjs: detail
+// tests depend on that fixture's original single completed child.
+const CHILD = "paper_sim_single_run_000000";
+const CHILD_HREF = `/dashboard/lab/runs/${CHILD}`;
+
+test("real API child list supports filters, direct reload, and exact detail Back", async ({ page, request }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  const response = await request.get("http://127.0.0.1:8789/batch/replay/runs?limit=100");
+  expect(response.ok()).toBe(true);
+  const source = await response.json();
+  expect(source).toMatchObject({ mode: "paper_only", readOnly: true, batchId: "paper_sim_single", count: 1, totalCount: 1 });
+  expect(source.runs).toHaveLength(1);
+  expect(source.runs[0]).toMatchObject({ runId: CHILD, status: "completed" });
+
+  await page.goto("/dashboard");
+  await expect(page).toHaveTitle("Toss Trading Dashboard");
+  await expect(page.getByRole("heading", { name: "실험", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByRole("main")).toHaveCount(1);
+  await expect(page.getByTestId("experiment-row")).toHaveCount(1);
+  await expect(page.getByText("API가 선택한 batch / 최신 여부 미확인", { exact: true })).toBeVisible();
+  const row = page.getByTestId("experiment-row").filter({ has: page.getByRole("link", { name: CHILD, exact: true }) });
+  await expect(row).toContainText("완료");
+  await expect(row).toContainText("2024-01-01");
+  await expect(row).toContainText("2024-02-01");
+  await expect(row.getByRole("link", { name: CHILD, exact: true })).toHaveAttribute("href", CHILD_HREF);
+  await expect(page.locator('a[href="/dashboard/lab/runs/paper_sim_single"]')).toHaveCount(0);
+  await expect(page.getByLabel("실험 데이터 출처")).toContainText("전체 1개");
+  await expect(page.getByLabel("실험 데이터 출처")).toContainText("terminal 1개");
+  await expectNoOverflow(page);
+  await testInfo.attach("real-api-first-viewport", { body: await page.screenshot({ fullPage: false }), contentType: "image/png" });
+
+  await page.getByLabel("실험 ID 검색", { exact: true }).fill(CHILD);
+  await page.getByRole("button", { name: "검색", exact: true }).click();
+  await page.getByLabel("실험 상태", { exact: true }).selectOption("completed");
+  await expect(page).toHaveURL(new RegExp(`q=${CHILD}&status=completed$`));
+  await page.reload();
+  await expect(page.getByLabel("실험 ID 검색", { exact: true })).toHaveValue(CHILD);
+  await expect(page.getByLabel("실험 상태", { exact: true })).toHaveValue("completed");
+  await expect(page.getByTestId("experiment-row")).toHaveCount(1);
+
+  await page.getByRole("link", { name: CHILD, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${CHILD_HREF}$`));
+  await expect(page.getByRole("heading", { name: "Run Detail", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: CHILD, exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`q=${CHILD}&status=completed$`));
+  await expect(page.getByLabel("실험 ID 검색", { exact: true })).toHaveValue(CHILD);
+  await expect(page.getByTestId("experiment-row")).toHaveCount(1);
+
+  await page.getByLabel("실험 ID 검색", { exact: true }).fill("no_matching_fixture_child");
+  await page.getByRole("button", { name: "검색", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "조건에 맞는 실험이 없어요" })).toBeVisible();
+  await expect(page.getByTestId("experiment-row")).toHaveCount(0);
+  await page.getByRole("button", { name: "필터 초기화", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByTestId("experiment-row")).toHaveCount(1);
+  await expect(page.getByLabel("실험 ID 검색", { exact: true })).toBeFocused();
+
+  await page.addScriptTag({ content: axe.source });
+  const accessibility = await page.evaluate(async () => {
+    const result = await (window as unknown as { axe: { run: typeof axe.run } }).axe.run();
+    return { violations: result.violations, incomplete: result.incomplete };
+  });
+  await testInfo.attach("real-api-axe-incomplete", { body: JSON.stringify(accessibility.incomplete, null, 2), contentType: "application/json" });
+  expect(accessibility.violations).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test("experiment navigation retains live existing destinations and anchored reports", async ({ page, isMobile }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  await page.goto("/dashboard");
+  await expect(page.getByRole("link", { name: "기존 실행 설정", exact: true })).toHaveAttribute("href", "/dashboard/lab/policies");
+  await expect(page.getByText(/PortfolioPolicy 실행은 지원하지 않음/)).toBeVisible();
+
+  for (const [label, anchor] of [["비교", "candidate-comparison"], ["데이터", "data-universe-coverage"]] as const) {
+    if (isMobile) await openMobileMenu(page);
+    const navigation = page.getByRole("navigation", { name: isMobile ? "모바일 주 메뉴" : "주 메뉴", exact: true });
+    const link = navigation.getByRole("link", { name: new RegExp(`^${label}`) });
+    await expect(link).toHaveAttribute("href", `/dashboard/validation#${anchor}`);
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`/dashboard/validation#${anchor}$`));
+    await expect(page.locator(`#${anchor}`)).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole("heading", { name: "실험", exact: true })).toBeVisible();
+  }
+
+  if (isMobile) await openMobileMenu(page);
+  await page.locator("summary:visible").filter({ hasText: "설정·운영" }).click();
+  await page.getByRole("link", { name: "기존 운영 요약", exact: true }).filter({ visible: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/operations$/);
+  await expect(page.getByRole("heading", { name: "Paper-only Dashboard", exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "실험", exact: true })).toBeVisible();
+  await expectNoOverflow(page);
+  await testInfo.attach("real-navigation-browser-errors", { body: JSON.stringify(errors), contentType: "application/json" });
+  expect(errors).toEqual([]);
+});
+
+async function expectNoOverflow(page: Page) {
+  const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
+  expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width + 1);
+}
+
+async function openMobileMenu(page: Page) {
+  const summary = page.locator("summary").filter({ hasText: /^메뉴$/ });
+  if (!(await summary.evaluate((element) => (element.parentElement as HTMLDetailsElement).open))) await summary.click();
+}
