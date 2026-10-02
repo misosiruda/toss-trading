@@ -113,5 +113,7 @@ Enabled/disabled는 production factory로 source policy, immutable dependency, r
 활성화는 snapshot의 as-of와 정확히 같은 시각이며 API가 각각 `active/true`, `active/false`인지 먼저 검증합니다.
 Enabled는 기존 `ineffective` breach와 danger class를 확인하고, disabled는 breach 부재와 `ineffective` analytics 유지를 확인합니다.
 모든 scenario에서 read-only 경계와 axe 검사를 유지하며 SSR 응답을 `page.route` 등으로 대체하지 않습니다.
+Portfolio의 두 가로 스크롤 표는 이름 있는 region으로 제공하며 Tab으로 진입하고 방향키로 스크롤할 수 있습니다.
+기본 smoke와 세 scenario는 표의 Tab/Shift+Tab 순서, 보이는 focus outline, overflow 시 실제 키보드 스크롤도 검증합니다.
 별도 API 회귀는 유효한 정책의 activation만 as-of보다 1ms 이후인 경우를 생성해 정책이 아직 missing임을 확인합니다.
 기본 전체 E2E와 repository 최종 merge 검증은 이 focused command로 대체하지 않습니다.

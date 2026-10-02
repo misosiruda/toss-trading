@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
-import { expectPortfolioHedgeDisplay, expectPortfolioPolicyApi } from "../portfolio-policy/assertions";
+import { expectPortfolioHedgeDisplay, expectPortfolioPolicyApi, expectPortfolioTableKeyboardAccess } from "../portfolio-policy/assertions";
 import { missingPolicyWarning } from "../portfolio-policy/scenarios.mjs";
 
 const DASHBOARD_MUTATION_TOKEN = "playwright-dashboard-mutation-token";
@@ -254,6 +254,7 @@ test("renders portfolio compliance detail without mutation controls", async ({
     page.getByRole("heading", { name: "Compliance Breaches" })
   ).toBeVisible();
   await expectPortfolioHedgeDisplay(page, "missing");
+  await expectPortfolioTableKeyboardAccess(page);
   await expect(
     page.getByRole("heading", { name: "Compliance Analytics" })
   ).toBeVisible();

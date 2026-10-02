@@ -47,3 +47,28 @@ export async function expectNoAxeViolations(page: Page) {
   ).axe.run());
   expect(accessibility.violations).toEqual([]);
 }
+
+export async function expectPortfolioTableKeyboardAccess(page: Page) {
+  const allocation = page.getByRole("region", { name: "Bucket allocation table scroll area", exact: true });
+  const costs = page.getByRole("region", { name: "Bucket cost and turnover table scroll area", exact: true });
+  // Enter from the preceding navigation control using the native tab order.
+  await page.getByRole("navigation", { name: "Portfolio compliance navigation" })
+    .getByRole("link", { name: "Audit", exact: true }).focus();
+  for (const area of [allocation, costs]) {
+    await page.keyboard.press("Tab");
+    await expect(area).toBeFocused();
+    await expect(area).toHaveAttribute("tabindex", "0");
+    await expect(area).toHaveCSS("outline-style", "solid");
+    await expect(area).toHaveCSS("outline-width", "2px");
+    const overflow = await area.evaluate((element) => element.scrollWidth > element.clientWidth);
+    // Both fixtures overflow on mobile; desktop may fit the narrower cost table.
+    if ((page.viewportSize()?.width ?? 0) < 500) expect(overflow).toBe(true);
+    if (overflow) {
+      await page.keyboard.press("ArrowRight");
+      await expect.poll(() => area.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    }
+  }
+  // Focus can leave the second region in reverse order without a scroll trap.
+  await page.keyboard.press("Shift+Tab");
+  await expect(allocation).toBeFocused();
+}

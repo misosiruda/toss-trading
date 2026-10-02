@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
-  expectNoAxeViolations, expectPortfolioHedgeDisplay, expectPortfolioPolicyApi
+  expectNoAxeViolations, expectPortfolioHedgeDisplay, expectPortfolioPolicyApi,
+  expectPortfolioTableKeyboardAccess
 } from "./assertions";
 import { missingPolicyWarning, readPortfolioScenario } from "./scenarios.mjs";
 
@@ -22,5 +23,6 @@ test(`portfolio hedge contract with ${scenario} policy stays read-only and acces
   }
   await expect(page.getByRole("button", { name: /order|trade|buy|sell/i })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /order|trade|buy|sell/i })).toHaveCount(0);
+  await expectPortfolioTableKeyboardAccess(page);
   await expectNoAxeViolations(page);
 });
