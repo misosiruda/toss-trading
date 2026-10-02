@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { lstat } from "node:fs/promises";
+import { join, parse, resolve } from "node:path";
 import { z } from "zod";
 
 import { marketPacketSchema, replayResearchManifestSchema, virtualDecisionSchema, virtualRiskDecisionSchema, virtualTradeSchema } from "../domain/schemas.js";
@@ -7,7 +8,7 @@ import { historicalReplayProgressSnapshotSchema } from "../replay/historicalRepl
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { PAPER_EXPERIMENT_ARTIFACTS } from "../storage/paperExperimentContract.js";
 import { PAPER_EXPERIMENT_EXECUTION_RECEIPT_PATH, paperExperimentExecutionReceiptSchema } from "../storage/paperExperimentExecutionReceipt.js";
-import { readExperimentFile, storageError } from "../storage/paperExperimentFilesystem.js";
+import { assertExperimentPath, assertExperimentPathSyntax, readExperimentFile, requireExperimentStorage, storageError } from "../storage/paperExperimentFilesystem.js";
 import { parseExperimentJsonl } from "../storage/paperExperimentInventory.js";
 import { paperExperimentReportSchema } from "../storage/paperExperimentReportContract.js";
 import { inspectPaperExperimentAttempt, type PaperExperimentStoreLocation } from "../storage/paperExperimentStore.js";
@@ -23,7 +24,14 @@ export interface ReviewArtifactStatus {
 
 /** Read only fixed paths. Persisted path strings are never followed. No engine/provider imports. */
 export async function readPaperExperimentReviewEvidence(location: PaperExperimentStoreLocation, attemptId: string) {
-  const inspection = await inspectPaperExperimentAttempt(location, attemptId);
+  let admitted = { ...location, protectedPaths: Array.isArray(location.protectedPaths) ? [...location.protectedPaths] : location.protectedPaths };
+  try {
+    assertExperimentPathSyntax(admitted.rootDir);
+    requireExperimentStorage(Array.isArray(admitted.protectedPaths), "INVALID_REQUEST");
+    for (const path of admitted.protectedPaths) assertExperimentPathSyntax(path);
+    admitted = { rootDir: resolve(admitted.rootDir), protectedPaths: admitted.protectedPaths.map((path) => resolve(path)) };
+  } catch { /* Preserve invalid spelling for the existing inspector's fail-closed error projection. */ }
+  const inspection = await inspectPaperExperimentAttempt(admitted, attemptId);
   const artifacts: ReviewArtifactStatus[] = (["input", "source"] as const).map((key) => ({
     artifact: REVIEW_ARTIFACT_PATHS[key], status: inspection.input ? "verified" : "unavailable",
     recordCount: inspection.input ? key === "input" ? 1 : inspection.input.preflight.snapshotCount : null,
@@ -32,6 +40,18 @@ export async function readPaperExperimentReviewEvidence(location: PaperExperimen
   let verified = inspection.status === "completed" && inspection.state?.executionReceiptRequired === true;
   const canRead = inspection.state !== null && inspection.input !== null
     && !["PATH_UNSAFE", "PATH_OVERLAP", "INVALID_REQUEST", "INPUT_INTEGRITY", "STATE_INVALID"].includes(inspection.errorCode ?? "");
+  const root = canRead ? admitted.rootDir : null;
+  async function storageOrigin(): Promise<string | null> {
+    if (root === null) return null;
+    try {
+      await assertExperimentPath(root);
+      const directory = await lstat(root, { bigint: true });
+      requireExperimentStorage(directory.isDirectory() && !directory.isSymbolicLink() && directory.ino > 0n, "PATH_UNSAFE");
+      return createReplayResearchHash({ device: String(directory.dev), inode: String(directory.ino),
+        volume: process.platform === "win32" ? parse(root).root.toLowerCase() : null });
+    } catch { return null; }
+  }
+  const originBefore = await storageOrigin();
   async function read<T>(key: Exclude<ReviewArtifactKey, "input" | "source">, schema: z.ZodType<T>, jsonl = false): Promise<T | null> {
     const artifact = REVIEW_ARTIFACT_PATHS[key];
     if (!canRead) {
@@ -39,7 +59,7 @@ export async function readPaperExperimentReviewEvidence(location: PaperExperimen
       return null;
     }
     try {
-      const text = await readExperimentFile(join(location.rootDir, attemptId, artifact), 16 * 1024 * 1024);
+      const text = await readExperimentFile(join(root!, attemptId, artifact), 16 * 1024 * 1024);
       let raw: unknown;
       let value: T;
       try {
@@ -74,14 +94,16 @@ export async function readPaperExperimentReviewEvidence(location: PaperExperimen
   const timeline = await rows("timeline", historicalReplayPortfolioTimelineRecordSchema);
   const execution = await read("execution", paperExperimentExecutionReceiptSchema);
   // A reader can race an active writer. It never promotes a mixed or changed snapshot to completed.
-  const after = await inspectPaperExperimentAttempt(location, attemptId);
-  const stable = createReplayResearchHash(after) === createReplayResearchHash(inspection);
+  const after = await inspectPaperExperimentAttempt(admitted, attemptId);
+  const originAfter = await storageOrigin();
+  const originStable = originBefore !== null && originBefore === originAfter;
+  const stable = createReplayResearchHash(after) === createReplayResearchHash(inspection) && (!canRead || originStable);
   if (!stable) verified = false;
   if (!verified) for (const artifact of artifacts) {
     const isInput = artifact.artifact === REVIEW_ARTIFACT_PATHS.input || artifact.artifact === REVIEW_ARTIFACT_PATHS.source;
     if (artifact.status === "verified" && (!isInput || !stable)) artifact.status = "partial";
   }
-  return { inspection: stable ? inspection : { ...inspection, status: "incomplete" as const,
+  return { storageOrigin: originStable ? originBefore : null, inspection: stable ? inspection : { ...inspection, status: "incomplete" as const,
     input: null, errorCode: "ARTIFACT_INTEGRITY" as const }, verified, artifacts, manifest, metadata, progress, report, packets, decisions, risks, trades, timeline, execution };
 }
 export type PaperExperimentReviewEvidence = Awaited<ReturnType<typeof readPaperExperimentReviewEvidence>>;
@@ -110,7 +132,11 @@ export function paperExperimentSemanticProjection(evidence: PaperExperimentRevie
 
 export function comparePaperExperimentEvidence(left: PaperExperimentReviewEvidence, right: PaperExperimentReviewEvidence) {
   const reasons: string[] = [];
-  if (left.inspection.state?.attemptId === right.inspection.state?.attemptId) reasons.push("DISTINCT_ATTEMPTS_REQUIRED");
+  const originsKnown = [left, right].every((evidence) => typeof evidence.storageOrigin === "string"
+    && /^sha256:[a-f0-9]{64}$/.test(evidence.storageOrigin));
+  if (!originsKnown) reasons.push("VERIFIED_STORAGE_ORIGIN_REQUIRED");
+  if (originsKnown && left.storageOrigin === right.storageOrigin
+    && left.inspection.state?.attemptId === right.inspection.state?.attemptId) reasons.push("DISTINCT_ATTEMPTS_REQUIRED");
   if (!left.verified || !right.verified) reasons.push("VERIFIED_EXECUTION_REQUIRED");
   if (left.inspection.state?.inputHash !== right.inspection.state?.inputHash) reasons.push("INPUT_MISMATCH");
   if (createReplayResearchHash(left.inspection.state?.runtimeIdentity ?? null)

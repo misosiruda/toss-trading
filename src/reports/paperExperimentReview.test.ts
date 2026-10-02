@@ -3,7 +3,7 @@ import childProcess from "node:child_process";
 import fs from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { test } from "node:test";
 
 import { FirstPricedHistoricalDecisionProvider } from "../replay/historicalReplayRunner.js";
@@ -89,6 +89,53 @@ test("same fixed input in separate empty roots and retry compare identically wit
   const retry = await runPaperExperimentWorkflow({ ...retryOptions, parentAttemptId: first.attemptId, createdAt: new Date() });
   assert.equal((await createPaperExperimentReview(a, first.attemptId, { location: a, attemptId: retry.attemptId })).comparison!.status, "identical");
   assert.deepEqual(await tree(first.artifactRoot), before); assert.deepEqual(await tree(second.artifactRoot), otherBefore);
+});
+
+test("comparison identity includes validated physical storage namespace without publishing it", async (t) => {
+  const parent = await fs.mkdtemp(join(tmpdir(), "paper-experiment-origin-")), base = await setup();
+  const attemptId = "exp-same-backend-id", a = { ...base, rootDir: join(parent, "Case") };
+  const first = await runPaperExperimentWorkflow({ ...a, attemptId });
+  let caseAlias = false;
+  try { caseAlias = (await fs.stat(join(parent, "case"))).ino === (await fs.stat(a.rootDir)).ino; }
+  catch { /* Case-distinct path does not exist yet. */ }
+  const b = { ...base, rootDir: join(parent, caseAlias ? "Other" : "case") };
+  const second = await runPaperExperimentWorkflow({ ...b, attemptId });
+  t.diagnostic(caseAlias ? "case-insensitive alias also self-rejects" : "case-distinct roots remain distinct");
+  const before = await tree(first.artifactRoot), otherBefore = await tree(second.artifactRoot);
+  const left = await readPaperExperimentReviewEvidence(a, attemptId), right = await readPaperExperimentReviewEvidence(b, attemptId);
+  assert.notEqual(left.storageOrigin, right.storageOrigin);
+  assert.equal(comparePaperExperimentEvidence(left, right).status, "identical");
+  assert.deepEqual(paperExperimentSemanticProjection(left), paperExperimentSemanticProjection(right));
+  const review = await createPaperExperimentReview(a, attemptId, { location: b, attemptId });
+  assert.equal(review.comparison!.status, "identical");
+  for (const output of [JSON.stringify(review), renderPaperExperimentReviewMarkdown(review), JSON.stringify(paperExperimentSemanticProjection(left))]) {
+    assert.ok(!output.includes("storageOrigin")); assert.ok(!output.includes(left.storageOrigin!));
+  }
+  for (const rootDir of [a.rootDir, a.rootDir + "/.", a.rootDir + "//", ...(caseAlias ? [join(parent, "case")] : [])]) {
+    const self = await createPaperExperimentReview(a, attemptId, { location: { ...a, rootDir }, attemptId });
+    assert.equal(self.comparison!.status, "incomparable"); assert.ok(self.comparison!.reasons.includes("DISTINCT_ATTEMPTS_REQUIRED"));
+  }
+  const previous = process.cwd();
+  try {
+    process.chdir(dirname(a.rootDir));
+    const relative = await createPaperExperimentReview({ ...a, rootDir: basename(a.rootDir) }, attemptId, { location: a, attemptId });
+    assert.ok(relative.comparison!.reasons.includes("DISTINCT_ATTEMPTS_REQUIRED"));
+  } finally { process.chdir(previous); }
+  for (const origin of [null, undefined, "", "sha256:invalid"]) {
+    const unknown = { ...right, storageOrigin: origin } as typeof right;
+    assert.ok(comparePaperExperimentEvidence(left, unknown).reasons.includes("VERIFIED_STORAGE_ORIGIN_REQUIRED"));
+  }
+  const linked = join(parent, "linked"); await fs.symlink(a.rootDir, linked, process.platform === "win32" ? "junction" : "dir");
+  for (const rootDir of [linked, join(parent, "missing"), a.rootDir + "/../Case"]) {
+    const invalid = await createPaperExperimentReview(a, attemptId, { location: { ...a, rootDir }, attemptId });
+    assert.equal(invalid.comparison!.status, "incomparable");
+    assert.ok(invalid.comparison!.reasons.includes("VERIFIED_STORAGE_ORIGIN_REQUIRED"));
+  }
+  assert.deepEqual(await tree(first.artifactRoot), before); assert.deepEqual(await tree(second.artifactRoot), otherBefore);
+  const receipt = join(second.artifactRoot, PAPER_EXPERIMENT_EXECUTION_RECEIPT_PATH), bytes = await fs.readFile(receipt);
+  await fs.writeFile(receipt, "{}");
+  try { assert.ok((await createPaperExperimentReview(a, attemptId, { location: b, attemptId })).comparison!.reasons.includes("VERIFIED_EXECUTION_REQUIRED")); }
+  finally { await fs.writeFile(receipt, bytes); }
 });
 
 test("comparison rejects input, code, dependency lock and Node differences instead of ranking returns", async () => {
@@ -304,6 +351,46 @@ test("a changing read snapshot cannot retain trusted execution or input eligibil
     assert.equal(review.execution.status, "incomplete"); assert.equal(review.inputEligibility.integrity, "unavailable");
     assert.equal(review.costs, null); assert.equal(review.researchQuality.providerFailureCount, null);
   } finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+});
+
+test("reader snapshots relative location and protected paths before awaiting filesystem reads", async (t) => {
+  const options = await setup(), run = await runPaperExperimentWorkflow(options);
+  const baseline = await readPaperExperimentReviewEvidence(options, run.attemptId);
+  const previous = process.cwd(), original = fs.open.bind(fs);
+  const location = { rootDir: basename(options.rootDir), protectedPaths: [] as string[] };
+  let changed = false;
+  t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    if (!changed && String(args[0]) === join(run.artifactRoot, "experiment-run.json")) {
+      changed = true; location.rootDir = "missing"; location.protectedPaths.push(options.rootDir); process.chdir(previous);
+    }
+    return original(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    process.chdir(dirname(options.rootDir));
+    const evidence = await readPaperExperimentReviewEvidence(location, run.attemptId);
+    assert.ok(changed); assert.equal(evidence.verified, true); assert.equal(evidence.storageOrigin, baseline.storageOrigin);
+  } finally { process.chdir(previous); t.mock.restoreAll(); syncBuiltinESMExports(); }
+});
+
+test("a physically replaced namespace cannot retain a stable verified read", async (t) => {
+  const options = await setup(), run = await runPaperExperimentWorkflow(options);
+  const before = await tree(run.artifactRoot), replacement = options.rootDir + "-replacement", originalRoot = options.rootDir + "-original";
+  await fs.cp(options.rootDir, replacement, { recursive: true });
+  const original = fs.open.bind(fs); let stateReads = 0;
+  t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    if (String(args[0]) === join(run.artifactRoot, "experiment-run.json") && ++stateReads === 2) {
+      await fs.rename(options.rootDir, originalRoot); await fs.rename(replacement, options.rootDir);
+    }
+    return original(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    const evidence = await readPaperExperimentReviewEvidence(options, run.attemptId);
+    assert.equal(evidence.verified, false); assert.equal(evidence.storageOrigin, null); assert.equal(evidence.inspection.input, null);
+    assert.equal(evidence.inspection.errorCode, "ARTIFACT_INTEGRITY");
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+  assert.deepEqual(await tree(run.artifactRoot), before); assert.deepEqual(await tree(join(originalRoot, run.attemptId)), before);
 });
 
 test("concurrent review publication allocates distinct complete generations", async () => {

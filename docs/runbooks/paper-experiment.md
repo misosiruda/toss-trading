@@ -295,6 +295,13 @@ Provider failure/no-candidate는 고정 실행 receipt의 해당 event를 분류
 결과는 `identical`, `mismatch` 또는 `incomparable`이다. 입력/runtime/완료 무결성 불일치와 같은
 attempt의 자기 비교(`DISTINCT_ATTEMPTS_REQUIRED`)는 `incomparable`이다. 다른 조건의 성과 순위나
 전략 추천은 제공하지 않는다. `mismatch`는 다른 의미의 최상위 evidence section을 표시한다.
+Self identity는 attempt ID 단독이 아니라 검증된 실제 storage namespace와 ID의 쌍이다. 별도 root에서
+독립 할당한 같은 ID는 비교할 수 있고 같은 directory의 relative/absolute/`.`/trailing separator
+표기는 자기 비교다. Reader는 허용된 root의 directory dev/inode를 읽기 전후 확인하고 Windows에서는
+resolved drive/UNC volume root도 구분에 포함한다. Symlink/traversal은 기존 경로 검증에서 거절하며
+origin이 없거나 불안정하면 `VERIFIED_STORAGE_ORIGIN_REQUIRED` 또는 무결성 실패로 비교를 거절한다.
+Origin은 내부 hash로만 유지하고 report/Markdown/semantic payload에 넣지 않는다. 현재 host의 보존
+위치를 구분할 뿐 cross-host 인증, 특수 volume alias 동일성이나 독립 실행 사실 자체를 증명하지 않는다.
 CLI exit 0은 verified review 및 요청한 비교의 `identical`만 뜻한다. 불완전·mismatch·incomparable은
 보고서를 남기되 exit 1이다. Provider failure가 기록된 completed execution은 quality 필드도 함께 읽는다.
 
