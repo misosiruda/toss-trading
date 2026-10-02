@@ -526,6 +526,10 @@
         white-space: nowrap;
         color: var(--muted);
       }
+      .tabs button:focus-visible {
+        /* Keep the full focus indicator inside the horizontally scrolling strip. */
+        outline-offset: -4px;
+      }
       .tabs button.active {
         color: var(--blue);
         border-bottom-color: var(--blue);
@@ -936,16 +940,33 @@
   </head>
   <body>
     <a class="skip" href="#content">본문으로</a>
-    <div class="demo">
-      <span
-        >레이아웃 시안 · 모든 데이터는 합성 예시이며 실행 API와 연결되지
-        않습니다</span
-      >
-      <nav aria-label="시안 화면">
-        <a href="#list">목록</a><a href="#new">새 실험</a
-        ><a href="#detail">실행 상세</a>
-      </nav>
-    </div>
+    <header aria-label="시안 안내와 모바일 탐색">
+      <div class="demo">
+        <span
+          >레이아웃 시안 · 모든 데이터는 합성 예시이며 실행 API와 연결되지
+          않습니다</span
+        >
+        <nav aria-label="시안 화면">
+          <a href="#list">목록</a><a href="#new">새 실험</a
+          ><a href="#detail">실행 상세</a>
+        </nav>
+      </div>
+      <div class="mobile-brand">
+        <div>
+          <strong>toss-trading</strong><br /><span
+            >paper-only · 실제 주문 없음</span
+          >
+        </div>
+        <details class="mobile-menu">
+          <summary>메뉴</summary>
+          <nav aria-label="모바일 주메뉴">
+            <a href="#list">실험</a><a href="#policies">전략·정책</a
+            ><a href="#compare">비교</a><a href="#data">데이터</a
+            ><a href="#settings">설정</a>
+          </nav>
+        </details>
+      </div>
+    </header>
     <aside class="sidebar" aria-label="설계된 메뉴 구성">
       <div class="brand"><i aria-hidden="true"></i>toss-trading</div>
       <div class="nav-list">
@@ -966,21 +987,6 @@
         <div class="paper">paper-only · 실제 주문 없음</div>
       </div>
     </aside>
-    <div class="mobile-brand">
-      <div>
-        <strong>toss-trading</strong><br /><span
-          >paper-only · 실제 주문 없음</span
-        >
-      </div>
-      <details class="mobile-menu">
-        <summary>메뉴</summary>
-        <nav aria-label="모바일 주메뉴">
-          <a href="#list">실험</a><a href="#policies">전략·정책</a
-          ><a href="#compare">비교</a><a href="#data">데이터</a
-          ><a href="#settings">설정</a>
-        </nav>
-      </details>
-    </div>
     <main id="content" tabindex="-1">
       <section id="screen-list" class="screen">
         <header class="page-head">
@@ -1367,8 +1373,8 @@
                 />
               </svg>
               <p class="result-note">
-                합성 데이터로 구성한 시안입니다. 비용 조건과 투자 성과를 증명하지
-                않습니다
+                합성 데이터로 구성한 시안입니다. 비용 조건과 투자 성과를
+                증명하지 않습니다
               </p>
               <hr class="rule" />
               <div class="chart-head">
@@ -1383,13 +1389,16 @@
                 ><span class="state unknown">Risk 차단</span>
               </div>
               <div class="event">
-                <span>예시 사건 02</span><span>검증된 판단과 모의 체결 연결</span
+                <span>예시 사건 02</span
+                ><span>검증된 판단과 모의 체결 연결</span
                 ><span class="state completed">근거 확인</span>
               </div>
             </div>
             <div data-run-content="completed_with_failures" hidden>
               <h2>부분 실패 결과 요약</h2>
-              <p class="sub"><span class="partial-run-id"></span> · 합성 설계 예시</p>
+              <p class="sub">
+                <span class="partial-run-id"></span> · 합성 설계 예시
+              </p>
               <div class="notice">
                 불완전한 판단 결과 · 실행은 종료됐지만 판단 provider 실패가 있어
                 결과 해석에 한계가 있습니다. 이 실행의 summary와 report가 있는
@@ -1397,13 +1406,16 @@
               </div>
               <div class="metrics">
                 <div class="metric">
-                  <span>판단 provider 호출</span><strong id="partial-call-count"></strong>
+                  <span>판단 provider 호출</span
+                  ><strong id="partial-call-count"></strong>
                 </div>
                 <div class="metric">
-                  <span>판단 실패</span><strong id="partial-failure-count"></strong>
+                  <span>판단 실패</span
+                  ><strong id="partial-failure-count"></strong>
                 </div>
                 <div class="metric">
-                  <span>모의 체결</span><strong id="partial-trade-count"></strong>
+                  <span>모의 체결</span
+                  ><strong id="partial-trade-count"></strong>
                 </div>
                 <div class="metric">
                   <span>자료 범위</span><strong>합성 예시</strong>
@@ -1411,9 +1423,14 @@
               </div>
               <p class="result-note">
                 위 건수는 이 실행만의 합성 summary 값입니다. 자산·낙폭 시계열은
-                이 예시에 넣지 않았으며, 다른 실행의 차트나 0으로 대체하지 않습니다
+                이 예시에 넣지 않았으며, 다른 실행의 차트나 0으로 대체하지
+                않습니다
               </p>
-              <button class="secondary" type="button" id="show-partial-evidence">
+              <button
+                class="secondary"
+                type="button"
+                id="show-partial-evidence"
+              >
                 판단 실패 근거 보기 →
               </button>
             </div>
@@ -1468,18 +1485,30 @@
             </div>
             <div data-run-content="completed_with_failures" hidden>
               <h2>부분 실패 판단 근거</h2>
-              <p class="sub"><span class="partial-run-id"></span> · 합성 설계 예시</p>
+              <p class="sub">
+                <span class="partial-run-id"></span> · 합성 설계 예시
+              </p>
               <div class="notice">
                 근거 일부 미연결 · summary의 판단 실패 관측만 보여줍니다
               </div>
               <dl>
-                <div><dt>관측 필드</dt><dd>summary.aiDecisionFailureCount</dd></div>
-                <div><dt>마지막 실패 요약</dt><dd id="partial-failure-reason"></dd></div>
-                <div><dt>판단 provider</dt><dd>fixture 판단 · 외부 AI 호출 없음</dd></div>
+                <div>
+                  <dt>관측 필드</dt>
+                  <dd>summary.aiDecisionFailureCount</dd>
+                </div>
+                <div>
+                  <dt>마지막 실패 요약</dt>
+                  <dd id="partial-failure-reason"></dd>
+                </div>
+                <div>
+                  <dt>판단 provider</dt>
+                  <dd>fixture 판단 · 외부 AI 호출 없음</dd>
+                </div>
               </dl>
               <p class="result-note">
-                이 예시에는 원본 audit 사건·Risk·모의 체결의 연결 참조가 없습니다.
-                다른 실행의 사건을 가져오거나 같은 판단으로 추정해 연결하지 않습니다
+                이 예시에는 원본 audit 사건·Risk·모의 체결의 연결 참조가
+                없습니다. 다른 실행의 사건을 가져오거나 같은 판단으로 추정해
+                연결하지 않습니다
               </p>
             </div>
           </div>
@@ -1519,17 +1548,38 @@
               <h2>부분 실패 실행 기록</h2>
               <p class="sub">기록 연결 일부 미구현 · 합성 설계 예시</p>
               <dl>
-                <div><dt>ID</dt><dd class="partial-run-id"></dd></div>
-                <div><dt>실행 상태</dt><dd>completed_with_failures</dd></div>
-                <div><dt>요청 설정</dt><dd>balanced · fixture 판단</dd></div>
-                <div><dt>summary</dt><dd>이 실행의 요약 있음 (합성 예시)</dd></div>
-                <div><dt>report</dt><dd>이 실행의 report 있음 (합성 예시)</dd></div>
-                <div><dt>원본 자료</dt><dd>합성 설계 예시</dd></div>
-                <div><dt>실제 backend</dt><dd>연결되지 않음</dd></div>
+                <div>
+                  <dt>ID</dt>
+                  <dd class="partial-run-id"></dd>
+                </div>
+                <div>
+                  <dt>실행 상태</dt>
+                  <dd>completed_with_failures</dd>
+                </div>
+                <div>
+                  <dt>요청 설정</dt>
+                  <dd>balanced · fixture 판단</dd>
+                </div>
+                <div>
+                  <dt>summary</dt>
+                  <dd>이 실행의 요약 있음 (합성 예시)</dd>
+                </div>
+                <div>
+                  <dt>report</dt>
+                  <dd>이 실행의 report 있음 (합성 예시)</dd>
+                </div>
+                <div>
+                  <dt>원본 자료</dt>
+                  <dd>합성 설계 예시</dd>
+                </div>
+                <div>
+                  <dt>실제 backend</dt>
+                  <dd>연결되지 않음</dd>
+                </div>
               </dl>
               <div class="notice">
-                부분 실패도 summary와 report를 보존하는 계약을 나타냅니다.
-                이 시안은 실제 파일을 생성하거나 조회하지 않으며 원본 artifact
+                부분 실패도 summary와 report를 보존하는 계약을 나타냅니다. 이
+                시안은 실제 파일을 생성하거나 조회하지 않으며 원본 artifact
                 링크는 연결되지 않았습니다
               </div>
             </div>
@@ -1666,7 +1716,8 @@
             decisionProviderCallCount: 3,
             aiDecisionFailureCount: 1,
             tradeCount: 0,
-            lastAiDecisionFailureSummary: "fixture provider 응답 실패 (합성 예시)",
+            lastAiDecisionFailureSummary:
+              "fixture provider 응답 실패 (합성 예시)",
           },
           observed: "13:30 UTC",
         },

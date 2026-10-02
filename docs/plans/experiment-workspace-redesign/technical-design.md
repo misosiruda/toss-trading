@@ -29,6 +29,14 @@ preset 문자열과 kr/us allocation은 호환 유지하면서 preset/market fil
 존재하지 않는 ISO 달력 날짜의 rollover도 차단한다. 이 변경은 UI 연결이나 PortfolioPolicy 적용,
 데이터 가용성, accepted 이후 실패 관측을 완료한 것이 아니다.
 
+### 현재 반영된 UX-02b (`9235ab7`, PR #798)
+
+[접수·runner 실패 관측](../../contracts/paper-simulation-observations.md)이 병합됐다.
+접수 사실을 runner 시작 전에 저장하고, runner promise rejection은 고정 이유의 batch 범위
+관측으로 남긴다. exact simulation ID 조회에는 manifest 없이도 `simulationObservation`이
+추가된다. accepted-only는 unknown이며 기존 child run 상태·결과를 변경하지 않는다.
+UI 연결·heartbeat·scheduler·자동 복구는 구현하지 않았다. 아래 UX-03/04 mapping이 이 API를 사용한다.
+
 ## 기존 기능 이전표
 
 기존 경로는 migration 동안 직접 열 수 있어야 한다. 새 menu가 예전 page를 감싸는 경우
@@ -86,18 +94,23 @@ source 종류/coverage를 확인할 수 없으면 ‘자료 종류 미확인’�
 1. 서버가 허용된 선택과 고정값, 미지원 이유를 정의한다. frontend label을 capability 증거로 삼지 않는다.
 2. source/기간/step/capital/risk/exit/provider/비용/benchmark의 requested→effective 대응을 명시한다.
 3. schema가 값을 허용해도 runner가 적용하지 않는 값은 UI 지원 목록에 포함하지 않는다.
-4. 기존 runner가 비용/benchmark/universe 선택을 지원하면 명시적 전달과 결과 provenance를 검증한다.
-   지원하지 않으면 서버에서 그 선택을 거부하고 effective default/미지원 의미를 정확히 보존한다.
-   화면만 값을 숨겨 API의 silent ignored input을 정당화하지 않는다.
+4. 현재 비용 `high_cost`와 benchmark `cash_only`는 서버에서 400으로 거부한다.
+   `universe.preset`은 호환 metadata, `universe.market`은 allocation target으로 유지하며
+   종목군/시장 필터 적용으로 표시하지 않는다. validation의 effective config/notices를 확인한다.
+   미래의 새 실행 선택은 전달·결과 provenance를 검증한 별도 기능 PR 뒤에만 노출한다.
 5. 저장 PortfolioPolicy, 단일 bucket 실제 실행, CLI EXP 입력은 실제 adapter와 tests 전까지 실행 옵션이 아니다.
-6. validation-only endpoint가 없으면 새 작은 계약을 먼저 추가한다. GET 페이지 로딩/단계 이동이
-   실행을 시작하면 안 된다. preflight는 실행 가능성을 보장하지 않으며 source unavailable을 별도 분류한다.
+6. 기존 `POST /paper/simulations/validate`를 사용한다. GET 페이지 로딩/단계 이동이
+   실행을 시작하면 안 된다. 이 validation은 자료 존재·coverage나 실행 성공을 확인하지 않으며,
+   실제 source unavailable은 별도 실행/조회 증거로 분류한다.
 7. 실행 응답 ID를 그대로 read에 사용한다. 서버가 반환하는 legacy `activeUrl`을 Next route처럼 사용하지 않는다.
-8. `accepted` 뒤 아직 manifest가 없으면 ‘접수됨 · 실행 기록 대기’이며 완료·실패·running을 추정하지 않는다.
+8. `accepted` 뒤 exact simulation ID로 UX-02b의 `simulationObservation`을 읽는다.
+   `available/unknown`만 있으면 접수 사실만 표시하고 생존·완료를 추정하지 않는다.
+   `available/runner_failed`가 있으면 manifest 유무와 별개로 runner 실패 관측을 표시한다.
 
-현재 runner promise rejection은 요청 자체의 응답과 분리된다. 생성 직후 runner가 manifest 전에
-실패한 경우 증거를 남기는 작은 API 개선을 UX-02에 포함할지 source tests로 판정한다. UI timeout으로
-failed를 만들어내지 않는다. 실제 오류 기록 API가 없다면 ‘상태를 확인할 수 없음’과 마지막 관측을 보인다.
+UX-02a의 [입력 계약](../../contracts/paper-simulation-config.md)과 UX-02b의
+[접수·실패 관측](../../contracts/paper-simulation-observations.md)은 main에 구현·병합됐다.
+Runner promise rejection은 접수 응답과 분리된 batch 범위 관측이다. UI timeout이나 누락만으로
+failed를 만들어내지 않으며 아래 관측 mapping과 기존 artifact 상태를 함께 보인다.
 
 ## 상태 모델
 
@@ -107,6 +120,7 @@ failed를 만들어내지 않는다. 실제 오류 기록 API가 없다면 ‘�
 | 실행 `run_state` | queued / running / completed / completed_with_failures / failed / skipped / missing | 원본 artifact 계약에서만 취함 |
 | fetch wrapper `status` | ok / offline / invalid | HTTP/네트워크·payload guard 결과, 실행 생존/성공 아님 |
 | endpoint `status` | ok / running / missing / blocked / degraded | `/batch/replay/runs` 원본 상태, wrapper와 별도 보존 |
+| 접수·runner 관측 | simulationObservation.status + outcome | exact simulation/batch ID의 관측이며 child run_state 아님 |
 | 자료 판독 조건 | available / missing / blocked / degraded / unavailable | endpoint·corruptLineCount·개별 artifact 결과를 보존 |
 | 관측 | fetchedAt / heartbeatAt / artifactUpdatedAt | 각각 자료 조회·실행 heartbeat·원본 갱신 시각 |
 | 결과 완전성 | complete / partial / missing / unsupported | 완료된 실행도 결과 일부가 빠질 수 있음 |
@@ -151,7 +165,7 @@ fetch wrapper와 endpoint 상태는 다음처럼 구분한다. endpoint 값을 w
 | wrapper invalid | payload 계약 불일치 | 확인하지 못한 payload로 상태를 추정하지 않음 |
 | wrapper ok + endpoint ok | 판독 가능 | 각 record의 상태만 사용 |
 | wrapper ok + endpoint running | batch 진행 관측 | 유효 activeRun을 결합; 모든 row를 running으로 바꾸지 않음 |
-| wrapper ok + endpoint missing | source/run index 미관측 | 신규 accepted의 실패나 0건 성공으로 바꾸지 않음 |
+| wrapper ok + endpoint missing | source/run index 미관측 | 이 값만으로 실패/0건 성공을 추론하지 않음; 별도 simulationObservation의 runner 실패는 아래 규칙대로 표시 |
 | wrapper ok + endpoint blocked | 허용 artifact 경계에서 조회 차단 | 대체 경로 우회 없이 이유를 표시 |
 | wrapper ok + endpoint degraded | 일부 기록 손상/불완전 | 검증된 항목만 partial로 표시, 누락을 0으로 바꾸지 않음 |
 | 어떤 endpoint 상태든 corruptLineCount > 0 | 판독 경고/degraded를 함께 보존 | top-level running이 손상 진단을 숨기지 않게 함 |
@@ -160,6 +174,47 @@ fetch wrapper와 endpoint 상태는 다음처럼 구분한다. endpoint 값을 w
 batchStatus, endpoint status, wrapper status, 개별 run_state와 개별 artifact 판독 상태를 하나의
 배지로 합치지 않는다. UX-01 검증 fixture는 empty running batch/active-only/terminal 전환 중복,
 missing/blocked/degraded/unknown endpoint, offline/invalid wrapper, running+corruptLineCount를 포함한다.
+
+### UX-03/04: 접수 ID의 관측 mapping과 우선순위
+
+`simulationObservation`은 endpoint 판독 상태와 독립적으로 검증한다. 생성 응답의
+`simulationRunId=batchId`를 exact query ID로 사용하며, 개별 child runId와 합치지 않는다.
+`available` 자료의 schemaVersion·identity·acceptedAt·outcome·runnerFailure는
+[관측 계약](../../contracts/paper-simulation-observations.md)의 shape와 일치해야 한다.
+관측의 두 ID는 조회한 simulation ID와 같아야 하며, endpoint의 batchId가 null이어도 이
+일치는 검증할 수 있다. 다른 batch/child의 evidence를 현재 요청에 붙이지 않는다.
+기존 child/legacy run ID는 이 관측의 대상이 아니다. 그 ID로 같은 endpoint를 읽어 반환된
+관측 `invalid`를 유효한 child artifact 전체의 오류로 승격하지 않는다. batch 관측이 필요하면
+검증된 simulation batchId로 별도 조회하며 child ID를 변형해 접수 ID를 만들지 않는다.
+
+| 유효한 wrapper 응답의 관측 값 | 표시 | 금지되는 추론 |
+| --- | --- | --- |
+| null / 필드 없음 | 관측 요청 없음 또는 미지원으로 구별 | accepted/실패가 없다고 확정하지 않음 |
+| available + unknown | acceptedAt의 접수 관측, 이후 실행 상태 미확인 | running/heartbeat/completed로 승격하지 않음 |
+| available + runner_failed | runnerFailure.observedAt의 runner 실패 관측과 고정 reasonCode | child run을 모두 failed로 덮거나 batch 결과를 소급 삭제하지 않음 |
+| missing | 접수 관측 원본 없음 | route ID나 missing만으로 접수/실패를 만들어내지 않음 |
+| invalid / unavailable | 관측 자료 불일치 또는 판독 불가 | accepted prefix를 정상 근거처럼 복원하지 않음 |
+
+우선순위는 하나의 통합 status가 아니라 근거별 표시 규칙이다.
+
+1. wrapper offline/invalid이면 새 payload의 관측을 사용하지 않는다. 기존 확인 자료가 있으면
+   마지막 관측임을 명시하고 fetchedAt과 원본 acceptedAt/observedAt을 구분한다.
+2. wrapper ok에서 `available/runner_failed`를 확인하면 endpoint가 missing/blocked/degraded여도
+   일반 ‘실행 기록 대기’ 문구보다 runner 실패 관측을 먼저 알린다. 예: index missing + failure
+   관측이면 ‘runner 실패 관측 · 실행 index 없음’이며 가짜 running·빈 성공 결과가 아니다.
+3. 같은 batch의 manifest/child run이 있으면 각 artifact의 원래 상태와 결과를 그대로 보존한다.
+   완료·부분 결과와 runner rejection이 함께 있으면 batch 범위의 실패 관측과 child 결과를 병기한다.
+   관측의 outcome을 child run_state나 결과 완전성 값으로 복사하지 않는다.
+4. `available/unknown`은 더 구체적인 같은-ID manifest/child artifact 상태를 덮지 않는다.
+   원본이 없을 때만 접수 이후 상태 미확인으로 설명한다. local 202의 접수 사실과 서버의
+   missing/invalid/unavailable 관측도 별도다. 재조회 실패나 timeout은 runner 실패 증거가 아니다.
+5. 최신 batch 목록에서 관측 조회 ID가 없으면 null이 정상이다. accepted batch를 가짜 child row로
+   추가하지 않으며, UX-03/04의 exact-ID 상세에서 이 mapping을 적용한다. POST 자동 retry는 없다.
+
+UX-03/04 테스트는 index missing + runner_failed, accepted-only unknown, manifest/child partial·terminal
+결과와 batch failure 동시 존재, null/필드 없음, missing/invalid/unavailable, wrong-ID/잘못된
+outcome shape, offline/invalid wrapper, 재조회 시 원본 관측 시각 보존을 포함한다. 기준 source는
+`paperSimulationObservations.test.ts`의 before-manifest failure와 `paperSimulationObservation.ts`다.
 
 공유 query에 filter와 selection을 보존한다. 새 query가 도착하면 이전 read 결과가 덮어쓰지 못하도록
 request identity/AbortController를 사용한다. retry는 GET에만 제한적으로 제공하며 POST 자동 반복 금지.

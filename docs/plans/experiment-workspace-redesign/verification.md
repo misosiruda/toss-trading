@@ -17,7 +17,7 @@
 
 ## 자동 review finding 수정
 
-자동 review의 P2 열세 건을 반영했다.
+자동 review의 P2 열네 건을 반영했다.
 
 - 완료·진행·실패·미관측 모두 실행 ID가 포함된 상세 링크를 제공한다. 선택 ID의 이름·상태·
   관측 기록을 표시하며 완료 예시의 수치를 다른 실행에 재사용하지 않는다. 미확인 ID도 구분한다.
@@ -38,6 +38,8 @@
   남은 focus는 선택 tab으로 복구한다. DOM 회귀로 이를 구분했다.
 - 목록 adapter의 activeRun/runId 결합·terminal 우선 dedupe와 서버 count 분리를 문서화했다.
 - endpoint status와 fetch wrapper status를 분리하고 running 상태에서도 corruptLineCount 진단을 유지한다.
+- 병합된 UX-02b 관측 mapping을 추가했다. index missing과 runner_failed의 동시 존재는 runner 실패
+  관측으로 알리며, accepted-only unknown·관측 판독 오류·batch/child 상태를 서로 덮지 않는다.
 - filter 변경의 replaceState 직후에도 모든 목록 navigation 링크를 동기화하여 stale query 초기화를 막는다.
 - 같은 문서 내 목록→상세→뒤로/목록 복귀 시 필터별 scroll 위치와 출발 링크 focus를 복원한다.
   새 화면은 위에서 시작하고 tab-only 이동에는 scroll을 바꾸지 않는다. 저장은 문서 메모리뿐이다.
@@ -55,7 +57,8 @@ JSDOM 검증은 DOM 동작 검사이며 실제 viewport·pixel·layout·browser 
 다음 push 전에 동선 행렬 70개와 실제 focus 후 활성화 회귀 52개, 부분 실패 계약 회귀 41개를 점검하고,
 발견한 결함도 함께 수정했다.
 현재 route의 모바일 메뉴 재선택 닫기, 직접 query의 추가 `?` 보존, 선택 카드의 고정 위험 설정
-문구와 개별 run 부분 실패 표시를 수정한 HTML SHA256은 `7999b80f7531bbdeffd40c1811145b766efc7dbad074f699309680cfeaee7315`다.
+문구·개별 run 부분 실패 표시·landmark/focus 수정을 포함해 재검사한 HTML SHA256은
+`03d74eabb941e398eab081d85f3d7b4ba5c8ec85eb3ac15c920a990a8f176502`다.
 
 70/70 통과 범위: desktop/mobile 및 viewport 전환 후 출발 run focus, 목록 scroll/filter/history,
 직접주소·새 문서의 tab/filter 복원, 6개 예시 상태·missing/empty, 단계 입력/요약, 키보드 tab,
@@ -71,22 +74,45 @@ skip link, 같은 menu 재선택, raw/encoded query 보존과 인코딩된 입�
 Scroll/focus는 stub 기반 DOM 검사다. 새 문서 로드에서는 문서 메모리의 scroll/focus 기록이 초기화된다.
 실제 browser pixel/layout/접근성이나 생산 API 통합이 완료됐다는 뜻은 아니다.
 
-## 아직 통과하지 못한 확인
+## 실제 Windows Chrome 1차 검증 (9134619)
 
-1440/1024/390px의 실제 HTML screenshot, browser interaction, overflow, axe, console 검증은
-현재 환경 제한으로 실행되지 않았다. CSS가 반응형으로 작성됐다는 사실을 시각 검증 통과로
-보고하지 않는다. Desktop/mobile의 최종 배치와 터치·키보드 동작은 구현 전후 browser에서
-검증해야 한다.
+사용자 노트북에서 정식 실행 권한 승인 후 격리한 headless Chrome으로 확인했다.
+보안 설정 변경이나 클라우드 접근 제한 우회는 없었다. 검증 대상은 commit `9134619`,
+HTML SHA256 `7999b80f7531bbdeffd40c1811145b766efc7dbad074f699309680cfeaee7315`다.
+환경은 Windows Chrome `154.0.8037.93`, Playwright `1.61.1`, axe `4.12.1`이다.
 
-확인한 실패:
+- 1440×1000 / 1024×900 / 390×844: 목록, 생성 3단계, 001/005의 summary/evidence/record
+- pointer·keyboard focus, 입력/요약, 방향키·Home/End tab, skip link, Back/Forward, filter,
+  목록 scroll 복원(47/228/400px), 모바일 메뉴·touch 동선 통과
+- 가로 overflow 없음, console/page error 0, 외부 API 요청 0
+- 계산한 아이콘 contrast 4.97–7.11 통과
+- 전체 252 checks 중 212 pass / 40 fail. 반복된 실패는 아래 두 종류이며 완료로 보고하지 않는다.
+  1. axe region: `.demo > span`, 모바일 `.mobile-brand > div`가 landmark 밖에 있음
+     (37개 상태에서 moderate best-practice 실패)
+  2. detail tab focus outline의 위·아래가 clip됨 (3개 해상도). partial005 summary의 요약 tab에서
+     Left로 기록 tab에 이동할 때 재현. focus 이동 자체는 정상이다.
+- `.steps[aria-label]`은 Chrome 접근성 트리에서 name이 확인됐지만 screen reader 동작은
+  미검증이다. 이를 보편적인 접근성 통과로 해석하지 않는다.
+
+수정 후보는 시안 안내·모바일 branding을 하나의 banner landmark 안에 묶고, 가로 스크롤이
+필요한 tab의 focus outline은 control 안쪽으로 표시한다. **이 후보의 실제 Chrome 재검증은
+아직 대기 중이며 1차 결과를 수정 후 통과로 재사용하지 않는다.**
+
+다른 browser/device, screen reader, production API 통합은 실행하지 않았다. 실제 제품에서는
+예시 데이터 대신 격리 fixture API로 검증해야 한다.
+
+### 최초 클라우드 검증 제한 기록
+
+초기에는 아래 제한으로 실제 HTML browser 검증을 실행하지 못했다. 이후 연결된 사용자
+노트북에서 위 1차 검증을 수행했으며 아래 제한을 우회한 것은 아니다.
 
 1. Cloud browser의 local preview: `net::ERR_BLOCKED_BY_CLIENT`
 2. Cloud browser의 local file 문서: 지원 protocol이 http/https로 제한되어 거절됨
 3. 설치된 Chromium의 Playwright launch: `socket() failed: Operation not permitted`
 4. 지원된 실행 권한 요청 후 재시도에서도 같은 Chromium socket 오류
 
-위 접근 제한을 우회하지 않았다. 새 배포/외부 hosting 또는 계정 변경도 하지 않았다.
-문서 draft PR 게시와 production UI의 완료·병합을 구별하며 browser 검증 조건을 생략하지 않는다.
+새 배포/외부 hosting 또는 계정 변경은 없었다. 시안 검증과 production UI 완료·병합을 구별하며
+browser 검증 조건을 생략하지 않는다.
 
 ## 재개 시 검증 동선
 
