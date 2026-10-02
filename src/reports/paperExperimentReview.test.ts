@@ -360,6 +360,14 @@ test("claim references use exact hash fields and RFC JSON pointer roots for comp
 test("review redaction masks labeled account/order/execution IDs across text and structured aliases", async () => {
   const cases = [
     ["orderId=ORDER_PRIVATE_17", "ORDER_PRIVATE_17"],
+    ["order.id=ORDER_DOT_PRIVATE_17", "ORDER_DOT_PRIVATE_17"],
+    ["execution.id=EXEC_DOT_PRIVATE_28", "EXEC_DOT_PRIVATE_28"],
+    ["account.number=22345678901234", "22345678901234"],
+    ['{"broker.order.id":"head\\\"PRIVATE_DOTTED_TAIL"}', "PRIVATE_DOTTED_TAIL"],
+    ["note: Proxy.Authorization: Basic PRIVATE_DOTTED_AUTH", "PRIVATE_DOTTED_AUTH"],
+    ["Set.Cookie: a=PRIVATE_DOTTED_COOKIE_A; b=PRIVATE_DOTTED_COOKIE_B", "PRIVATE_DOTTED_COOKIE_B"],
+    ['{"order\\u002eid":"PRIVATE_ESCAPED_KEY"}', "PRIVATE_ESCAPED_KEY"],
+    [JSON.stringify(JSON.stringify({ "execution.id": 'head, PRIVATE_ENCODED_TAIL; "more"' })), "PRIVATE_ENCODED_TAIL"],
     ["executionId=EXECUTION_PRIVATE_28", "EXECUTION_PRIVATE_28"],
     ["accountNumber=12345678901234", "12345678901234"],
     ["ORDER_ID: 'QUOTED ORDER PRIVATE'", "QUOTED ORDER PRIVATE"],
@@ -427,6 +435,38 @@ test("review redaction masks labeled account/order/execution IDs across text and
   assert.deepEqual(await tree(join(run.artifactRoot, "input")), before);
 });
 
+test("all labeled-key separators share normalization across text, structured values and header spans", () => {
+  const keys = [["order", "id"], ["execution", "number"], ["account", "no"], ["api", "key"],
+    ["access", "token"], ["refresh", "token"], ["client", "secret"], ["auth", "token"],
+    ["pass", "word"], ["proxy", "authorization"], ["set", "cookie"]];
+  const separators = ["", ".", "..", "_", "-", " ", "\t", "._- \t"];
+  for (const parts of keys) for (const separator of separators) for (const upper of [false, true]) {
+    const key = parts.join(separator), label = upper ? key.toUpperCase() : key;
+    const secret = "PRIVATE_SEPARATOR_SENTINEL";
+    for (const text of [`${label}=${secret}`, `"${label}":"${secret}"`, `safe=ok ${label}='${secret}'`,
+      `note: broker.${label}=${secret}`, `note="${label}=${secret}"`,
+      `"${label}":"head\\\"${secret}"`, `${label}="head\\\n${secret}"`,
+      JSON.stringify(JSON.stringify({ [label]: secret })),
+      JSON.stringify(JSON.stringify(JSON.stringify({ [label]: secret }))),
+      JSON.stringify(JSON.stringify({ [label]: `head, ${secret}; \"tail\"` })),
+      JSON.stringify(JSON.stringify(JSON.stringify({ [label]: `head, ${secret}; \\tail\nmore` }))),
+      `{"${label.replace(/./g, (letter) => "\\u" + letter.charCodeAt(0).toString(16).padStart(4, "0"))}":"${secret}"}`]) {
+      assert.ok(!safePaperExperimentReviewValue(text).includes(secret), text);
+    }
+    assert.equal(safePaperExperimentReviewValue({ [label]: secret })[label], "[비공개]");
+    if (parts.at(-1) === "cookie" || parts.at(-1) === "authorization") {
+      const header = `${label}: a=FIRST; b=${secret}`;
+      assert.ok(!safePaperExperimentReviewValue(header).includes(secret), header);
+    }
+  }
+  const safe = { "execution.model.version": "paper_cost_model.v5", "source.ref": "fixture:paper-experiment.v1",
+    "cost.model": { feeRate: 0.001 }, packetId: "fixture_packet_1", "policy.max.orders": 3 };
+  assert.deepEqual(safePaperExperimentReviewValue(safe), safe);
+  for (const text of ["source.ref=fixture:paper-experiment.v1", "execution.model.version=paper_cost_model.v5",
+    JSON.stringify(JSON.stringify(safe)), '{"source\\u002eref":"fixture:paper-experiment.v1"}',
+    "sha256:" + "a".repeat(64), "2025-01-01T00:00:00.000Z"]) assert.equal(safePaperExperimentReviewValue(text), text);
+});
+
 test("presentation masking never makes different raw identifiers reproducible", async () => {
   const options = await setup(); const input = JSON.parse(options.inputJson);
   input.question = "orderId=PRIVATE_FIRST";
@@ -468,10 +508,11 @@ test("direct Markdown rendering sanitizes the complete input and rejects forged 
   const options = await setup(); const run = await runPaperExperimentWorkflow(options);
   const review = await createPaperExperimentReview(options, run.attemptId, { location: options, attemptId: "exp-missing" });
   review.attemptId = "ghp_abcdefgh"; review.comparison!.attemptId = "sk-abcdefgh";
+  review.question!.value = JSON.stringify(JSON.stringify({ "account.number": "head, PRIVATE_RENDERED_DOT; more" }));
   review.policy!.evidence = { artifact: "experiment-input.json", field: "/sk-PRIVATESECRET123",
     href: "../../input/experiment-input.json#/sk-PRIVATESECRET123" };
   const text = renderPaperExperimentReviewMarkdown(review);
-  for (const secret of ["ghp_abcdefgh", "sk-abcdefgh", "PRIVATESECRET123"]) assert.ok(!text.includes(secret));
+  for (const secret of ["ghp_abcdefgh", "sk-abcdefgh", "PRIVATESECRET123", "PRIVATE_RENDERED_DOT"]) assert.ok(!text.includes(secret));
   assert.match(text, /근거 주소 없음/);
   assert.ok(!JSON.stringify(safePaperExperimentReviewValue(review.policy!.evidence)).includes("PRIVATESECRET123"));
 });

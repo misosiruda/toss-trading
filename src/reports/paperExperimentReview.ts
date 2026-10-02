@@ -54,8 +54,14 @@ function isCanonicalReviewReference(value: unknown): boolean {
 
 /** Presentation redaction only: raw values remain in semantic comparison and source artifacts. */
 export function safePaperExperimentReviewValue<T>(value: T): T {
+  // The labeled-key grammar accepts ASCII letters/digits plus dot, underscore,
+  // hyphen and horizontal whitespace. Use the same normalization for every route.
+  function normalizeLabel(key: string): string {
+    return key.replace(/\\+u([0-9A-Fa-f]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\\+t/g, "\t").replace(/[._ \t-]/g, "");
+  }
   function privateLabel(key: string): boolean {
-    const normalized = key.replace(/[_ -]/g, "");
+    const normalized = normalizeLabel(key);
     return /(?:password|apikey|account|order(?:id|number|no)|execution(?:id|number|no))/i.test(normalized)
       || maskSensitiveValue(normalized, null) !== null;
   }
@@ -67,16 +73,22 @@ export function safePaperExperimentReviewValue<T>(value: T): T {
     return typeof item === "string" ? redact(item) : item;
   }
   function redact(text: string) {
-    const cleaned = maskSensitiveText(text).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
-      // Headers include schemes and multiple cookie values; redact the entire header line.
-      .replace(/\b(?:authorization|proxy[_ -]*authorization|cookie|set[_ -]*cookie)["']?\s*[:=]\s*(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\\(?:\r\n|[\s\S])|[^\r\n])*/gi, "[비공개]");
+    const cleaned = maskSensitiveText(text).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
     // Scan labels separately: a non-sensitive URL/label must not swallow a later credential.
-    const labels = /["']?([A-Za-z][A-Za-z0-9_ -]*)["']?\s*[:=]\s*/g;
+    // Decode only key escapes for classification; do not decode or mutate safe source text.
+    const labels = /(?:\\*["'])?((?:[A-Za-z]|\\+u[0-9A-Fa-f]{4})(?:[A-Za-z0-9_. \t-]|\\+u[0-9A-Fa-f]{4}|\\+t)*)(?:\\*["'])?\s*[:=]\s*/g;
     const quotedOrClause = /^(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|(?:\\(?:\r\n|[\s\S])|[^,;\r\n])+)/;
+    // Headers include schemes and multiple cookies, including quoted/continued lines.
+    const headerValue = /^(?:"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\\(?:\r\n|[\s\S])|[^\r\n])*/;
     let masked = "", cursor = 0;
     for (let match = labels.exec(cleaned); match !== null; match = labels.exec(cleaned)) {
       if (!privateLabel(match[1]!)) continue;
-      const end = labels.lastIndex + (quotedOrClause.exec(cleaned.slice(labels.lastIndex))?.[0].length ?? 0);
+      const remainder = cleaned.slice(labels.lastIndex);
+      // Encoded quoted values may contain delimiters and multiple escaping levels.
+      // Conservatively redact the logical line instead of guessing a closing quote.
+      const span = /(?:authorization|cookie)/i.test(normalizeLabel(match[1]!)) || /^\\+["']/.test(remainder)
+        ? headerValue : quotedOrClause;
+      const end = labels.lastIndex + (span.exec(remainder)?.[0].length ?? 0);
       masked += cleaned.slice(cursor, match.index) + "[비공개]";
       cursor = end; labels.lastIndex = end;
     }

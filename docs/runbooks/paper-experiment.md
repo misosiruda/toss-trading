@@ -223,6 +223,10 @@ artifact basename 및 JSON pointer/row로 연결한다. Local absolute path나 s
 Account/order/execution identifier와 credential의 labeled 값(quoted/JSON-like/case/구분자 변형 포함)은
 보고서의 문자열·구조화 key에서 가린다. Authorization/Cookie header는 scheme·여러 cookie 값까지
 함께 가린다. 이 표현 단계 redaction은 원본 evidence와 raw semantic 비교에 적용하지 않는다.
+Labeled key 문법은 ASCII 문자·숫자와 dot/underscore/hyphen/수평 공백(space/tab)의 단일·반복·혼합
+구분자를 지원하며 같은 정규화로 문자열·구조화 key·header를 분류한다. JSON-like quoted key의
+Unicode escape 및 중첩 JSON 문자열의 escaped quote도 이 key 분류에만 반영한다. 안전한 source/version
+문자열을 통째로 decode하지 않으며, 임의의 unlabeled 민감 정보를 모두 탐지한다고 보장하지 않는다.
 최종 assembled review(비교 ID 포함), 직접 Markdown renderer 입력, CLI review envelope, completion marker와
 writer 반환 metadata에서 각각 출력 직전 sanitization을 적용한다. 내부 lookup/semantic 비교는 raw 값을
 사용하며 원본 evidence는 변경하지 않는다. 경로 마스킹 예외는 producer가 생성하는 고정 field와 bounded
