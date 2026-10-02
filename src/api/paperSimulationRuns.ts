@@ -11,6 +11,11 @@ import {
   safeArtifactPathPart
 } from "../storage/artifactPaths.js";
 import {
+  acceptPaperSimulation,
+  PaperSimulationObservationConflict,
+  recordPaperSimulationRunnerFailure
+} from "../storage/paperSimulationObservationStore.js";
+import {
   runHistoricalBatchReplay,
   type BatchReplayResult
 } from "../workflows/historicalBatchReplayWorkflow.js";
@@ -79,8 +84,6 @@ export interface PaperSimulationCreateResponse {
 
 interface InFlightPaperSimulationRun {
   simulationRunId: string;
-  startedAt: string;
-  promise: Promise<PaperSimulationRunnerResult>;
 }
 
 const inFlightRunsByOptions = new WeakMap<
@@ -92,10 +95,10 @@ export function isPaperSimulationMutationRoute(pathname: string): boolean {
   return pathname === PAPER_SIMULATION_CREATE_ROUTE;
 }
 
-export function createPaperSimulationRun(
+export async function createPaperSimulationRun(
   body: unknown,
   options: LocalOperationsServerOptions
-): PaperSimulationCreateResponse {
+): Promise<PaperSimulationCreateResponse> {
   const { requestedConfig: config, effectiveConfig, notices } =
     resolvePaperSimulationConfig(body, options.env ?? process.env);
   const tickDelayMs = effectiveConfig.tickDelayMs;
@@ -124,21 +127,30 @@ export function createPaperSimulationRun(
     config
   };
   const runner = options.paperSimulationRunner ?? runPaperSimulationFromConfig;
-  const promise = Promise.resolve().then(() => runner(runnerInput));
-
-  inFlightRunsByOptions.set(options, {
-    simulationRunId,
-    startedAt: createdAt.toISOString(),
-    promise
-  });
-  void promise
-    .catch(() => undefined)
-    .finally(() => {
-      const latest = inFlightRunsByOptions.get(options);
-      if (latest?.simulationRunId === simulationRunId) {
-        inFlightRunsByOptions.delete(options);
-      }
-    });
+  // Reserve this options object before the first await. Only its exact owner may release it.
+  const token: InFlightPaperSimulationRun = { simulationRunId };
+  inFlightRunsByOptions.set(options, token);
+  const release = () => {
+    if (inFlightRunsByOptions.get(options) === token) inFlightRunsByOptions.delete(options);
+  };
+  const acceptedAt = createdAt.toISOString();
+  try {
+    await acceptPaperSimulation(runnerInput.storageBaseDir, simulationRunId, acceptedAt);
+  } catch (error) {
+    release();
+    if (error instanceof PaperSimulationObservationConflict) {
+      throw new PaperSimulationRequestError("paper simulation identity already exists", 409, "paper_simulation_id_conflict");
+    }
+    throw new PaperSimulationRequestError("paper simulation acceptance could not be persisted", 503, "paper_simulation_admission_failed");
+  }
+  // The append lock has been released before invoking a provider/runner.
+  void Promise.resolve().then(() => runner(runnerInput)).catch(async () => {
+    try {
+      await recordPaperSimulationRunnerFailure(
+        runnerInput.storageBaseDir, simulationRunId, acceptedAt, (options.now?.() ?? new Date()).toISOString()
+      );
+    } catch { /* Preserve the last durable evidence/barrier; no retry or raw error persistence. */ }
+  }).finally(release);
 
   return {
     mode: "paper_only",

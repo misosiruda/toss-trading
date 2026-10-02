@@ -2,7 +2,8 @@
 
 UX-02a 범위: 기존 historical batch runner의 동작을 설명하는 side-effect-free 검증과
 create/runner의 동일 입력 매핑. 새 비용/benchmark/종목 필터, PortfolioPolicy 실행,
-실패 저장, UI, 외부 AI 실행이나 데이터 수집은 포함하지 않는다.
+UI, 외부 AI 실행이나 데이터 수집은 포함하지 않는다.
+UX-02b 접수·실패 관측의 별도 범위는 [관측 계약](paper-simulation-observations.md)을 따른다.
 
 ## 검증과 생성
 
