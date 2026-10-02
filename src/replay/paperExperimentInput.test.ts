@@ -310,7 +310,7 @@ test("paper experiment cutoff applies to observedAt, not fixture creation or fir
 test("paper experiment rejects all-unusable sources and preserves partial coverage reasons", () => {
   const input = fixture();
   input.source.snapshots = [input.source.snapshots[1]!];
-  input.configuration.maxSnapshotAgeSeconds = 0;
+  input.configuration.maxSnapshotAgeSeconds = 1;
   const result = parse(input);
   assert.equal(result.preflight.status, "insufficient_data");
   assert.equal(result.preflight.usableTickCount, 1);
@@ -334,6 +334,55 @@ test("paper experiment requires caller identity and rejects mismatched requested
     assert.throws(() => parsePaperExperimentInput(fixtureText, context as typeof identity), { code: "INVALID_EXECUTION_IDENTITY" });
   }
   assert.notEqual(parsePaperExperimentInput(fixtureText, { implementationRevision: "a".repeat(40) }).inputHash, goldenHash);
+});
+
+
+test("paper experiment narrows freshness and derived timestamp arithmetic to the runner domain", () => {
+  rejects(changed("configuration.maxSnapshotAgeSeconds", 0));
+  rejects(changed("configuration.maxSnapshotAgeSeconds", -1));
+  rejects(changed("configuration.maxSnapshotAgeSeconds", 9_007_199_254_740), "TIMESTAMP_RANGE");
+  rejects(changed("configuration.packetExpiresInSeconds", 9_007_199_254_740), "TIMESTAMP_RANGE");
+  rejects(changed("evaluation.generatedAt", "9999-12-31T23:59:59.999Z"), "TIMESTAMP_RANGE");
+  const boundary = fixture();
+  boundary.evaluation.generatedAt = "9999-12-31T23:54:59.999Z";
+  assert.doesNotThrow(() => parse(boundary));
+  boundary.evaluation.generatedAt = "9999-12-31T23:55:00.000Z";
+  rejects(boundary, "TIMESTAMP_RANGE");
+  boundary.evaluation.generatedAt = fixture().evaluation.generatedAt;
+  boundary.source.snapshots[0]!.observedAt = "9999-12-30T23:59:59.999Z";
+  boundary.evaluation.evidenceCutoff = "9999-12-31T23:59:59.999Z";
+  assert.doesNotThrow(() => parse(boundary));
+  boundary.source.snapshots[0]!.observedAt = "9999-12-31T00:00:00.000Z";
+  rejects(boundary, "TIMESTAMP_RANGE");
+});
+
+test("paper experiment bounds finite execution bps and volume before downstream arithmetic", () => {
+  for (const field of ["slippageBps", "feeBps", "taxBps", "halfSpreadBps", "marketImpactBpsPerParticipationRate"]) {
+    assert.doesNotThrow(() => parse(changed(`configuration.executionPolicy.${field}`, PAPER_EXPERIMENT_LIMITS.costBps)));
+    rejects(changed(`configuration.executionPolicy.${field}`, PAPER_EXPERIMENT_LIMITS.costBps + 1));
+    rejects(changed(`configuration.executionPolicy.${field}`, 1e308));
+  }
+  assert.doesNotThrow(() => parse(changed("source.snapshots.0.volume", PAPER_EXPERIMENT_LIMITS.snapshotVolume)));
+  rejects(changed("source.snapshots.0.volume", PAPER_EXPERIMENT_LIMITS.snapshotVolume + 1));
+  rejects(changed("source.snapshots.0.volume", 1e308));
+});
+
+test("paper experiment checks explicit universe risk tags as sets without requiring absent metadata", () => {
+  const input = fixture();
+  input.universe.symbols[0]!.riskTags = ["leveraged"];
+  input.source.snapshots[0]!.riskTags = ["inverse"];
+  rejects(input, "UNIVERSE_MISMATCH");
+  input.universe.symbols[0]!.riskTags = ["leveraged", "inverse"];
+  input.source.snapshots[0]!.riskTags = ["inverse", "leveraged"];
+  const original = parse(input);
+  input.universe.symbols[0]!.riskTags.reverse();
+  input.source.snapshots[0]!.riskTags.reverse();
+  assert.deepEqual(parse(input), original);
+  delete input.universe.symbols[0]!.riskTags;
+  assert.doesNotThrow(() => parse(input));
+  delete input.source.snapshots[0]!.riskTags;
+  input.universe.symbols[0]!.riskTags = ["leveraged"];
+  assert.doesNotThrow(() => parse(input));
 });
 
 test("paper experiment import and admission are pure under hostile environment in fresh processes", () => {

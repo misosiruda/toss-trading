@@ -21,7 +21,9 @@ export const PAPER_EXPERIMENT_LIMITS = Object.freeze({
   symbols: 10,
   ticks: 100,
   decisionCalls: 100,
-  minimumStepSeconds: 60
+  minimumStepSeconds: 60,
+  costBps: 10_000,
+  snapshotVolume: 1_000_000_000_000
 });
 export const PAPER_EXPERIMENT_LIMITATIONS = Object.freeze([
   "synthetic_fixture_only",
@@ -38,8 +40,15 @@ const fixtureSymbolSchema = z.string().regex(/^FIXTURE_[A-Z0-9_]{1,32}$/);
 const fixtureTokenSchema = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/);
 const boundedTextSchema = z.string().trim().min(1).max(2000);
 const baseConfiguration = historicalReplayRunConfigurationSchema;
-const executionPolicySchema = baseConfiguration.shape.executionPolicy.unwrap()
-  .extend({ fillRatio: z.number().min(0).max(1) });
+const baseExecutionPolicy = baseConfiguration.shape.executionPolicy.unwrap();
+const executionPolicySchema = baseExecutionPolicy.extend({
+  fillRatio: baseExecutionPolicy.shape.fillRatio.max(1),
+  slippageBps: baseExecutionPolicy.shape.slippageBps.max(PAPER_EXPERIMENT_LIMITS.costBps),
+  feeBps: baseExecutionPolicy.shape.feeBps.max(PAPER_EXPERIMENT_LIMITS.costBps),
+  taxBps: baseExecutionPolicy.shape.taxBps.max(PAPER_EXPERIMENT_LIMITS.costBps),
+  halfSpreadBps: baseExecutionPolicy.shape.halfSpreadBps.unwrap().max(PAPER_EXPERIMENT_LIMITS.costBps).default(0),
+  marketImpactBpsPerParticipationRate: baseExecutionPolicy.shape.marketImpactBpsPerParticipationRate.max(PAPER_EXPERIMENT_LIMITS.costBps)
+});
 const riskPolicySchema = baseConfiguration.shape.riskPolicy.unwrap().pick({
   maxBudgetPerDecisionKrw: true,
   maxSymbolExposureKrw: true,
@@ -64,7 +73,7 @@ const configurationSchema = baseConfiguration.extend({
   packetIdPrefix: fixtureTokenSchema,
   packetExpiresInSeconds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER / 1000),
   maxCandidates: z.number().int().min(1).max(PAPER_EXPERIMENT_LIMITS.symbols),
-  maxSnapshotAgeSeconds: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER / 1000),
+  maxSnapshotAgeSeconds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER / 1000),
   executionPolicy: executionPolicySchema.partial().optional(),
   strategyPreset: z.null(),
   candidateStrategyBucket: z.null(),
@@ -78,6 +87,7 @@ const snapshotSchema = historicalMarketSnapshotSchema.safeExtend({
   symbol: fixtureSymbolSchema,
   observedAt: explicitTimestampSchema,
   createdAt: explicitTimestampSchema,
+  volume: historicalMarketSnapshotSchema.shape.volume.unwrap().max(PAPER_EXPERIMENT_LIMITS.snapshotVolume).optional(),
   sourceRefs: z.tuple([z.literal(PAPER_EXPERIMENT_SOURCE_REF)])
 });
 const universeSchema = historicalUniverseManifestSchema.refine(
@@ -138,7 +148,7 @@ type EffectivePaperExperimentInput = ReturnType<typeof normalizeInput>;
 export type NormalizedPaperExperimentInput = DeepReadonly<EffectivePaperExperimentInput>;
 export type PaperExperimentValidationCode =
   | "INPUT_SIZE" | "INVALID_JSON" | "INVALID_INPUT" | "INVALID_EXECUTION_IDENTITY"
-  | "REVISION_MISMATCH" | "INVALID_WINDOW" | "TICK_LIMIT" | "SOURCE_CONFLICT"
+  | "REVISION_MISMATCH" | "INVALID_WINDOW" | "TICK_LIMIT" | "TIMESTAMP_RANGE" | "SOURCE_CONFLICT"
   | "SOURCE_CUTOFF" | "UNIVERSE_MISMATCH" | "NO_USABLE_SOURCE" | "COST_MODEL_MISMATCH";
 
 export class PaperExperimentValidationError extends Error {
@@ -192,6 +202,12 @@ function normalizeInput(
   requireInput(endMs >= startMs, "INVALID_WINDOW");
   const tickCount = Math.floor((endMs - startMs) / (config.clock.stepSeconds * 1000)) + 1;
   requireInput(Number.isSafeInteger(tickCount) && tickCount <= PAPER_EXPERIMENT_LIMITS.ticks, "TICK_LIMIT");
+  // The existing packet builder derives expiry/freshness timestamps with these additions.
+  const latestTimestampMs = Date.parse("9999-12-31T23:59:59.999Z");
+  requireInput(Math.max(endMs, Date.parse(input.evaluation.generatedAt))
+    + config.packetExpiresInSeconds * 1000 <= latestTimestampMs, "TIMESTAMP_RANGE");
+  requireInput(input.source.snapshots.every((snapshot) => Date.parse(snapshot.observedAt)
+    + config.maxSnapshotAgeSeconds * 1000 <= latestTimestampMs), "TIMESTAMP_RANGE");
   const profile = resolvePaperRiskProfile({
     name: config.riskProfile,
     initialCashKrw: config.initialCashKrw,
@@ -221,9 +237,15 @@ function normalizeInput(
   }).metadata();
   const symbols = input.universe.symbols.map(({ lifecycleStatusSource, ...member }) => {
     void lifecycleStatusSource; // Parser-derived provenance is not an input-schema field.
-    return member;
+    return {
+      ...member,
+      ...(member.riskTags === undefined ? {} : { riskTags: [...new Set(member.riskTags)].sort(compareText) })
+    };
   }).sort((a, b) => compareText(symbolKey(a), symbolKey(b)));
-  const snapshots = [...input.source.snapshots].sort((a, b) =>
+  const snapshots = input.source.snapshots.map((snapshot) => ({
+    ...snapshot,
+    ...(snapshot.riskTags === undefined ? {} : { riskTags: [...new Set(snapshot.riskTags)].sort(compareText) })
+  })).sort((a, b) =>
     compareText(a.market, b.market) || compareText(a.symbol, b.symbol)
     || compareText(a.observedAt, b.observedAt) || compareText(a.snapshotId, b.snapshotId));
   const seenIds = new Set<string>();
@@ -238,6 +260,10 @@ function normalizeInput(
     requireInput(Date.parse(snapshot.observedAt) <= cutoffMs, "SOURCE_CUTOFF");
     const member = members.get(symbolKey(snapshot));
     requireInput(member !== undefined, "UNIVERSE_MISMATCH");
+    if (member.riskTags !== undefined && snapshot.riskTags !== undefined) {
+      requireInput(createReplayResearchHash([...new Set(member.riskTags)].sort(compareText))
+        === createReplayResearchHash([...new Set(snapshot.riskTags)].sort(compareText)), "UNIVERSE_MISMATCH");
+    }
     for (const key of ["assetType", "assetClass", "region", "strategyBucket", "sector"] as const) {
       requireInput(member?.[key] === undefined || snapshot[key] === undefined
         || member[key] === snapshot[key], "UNIVERSE_MISMATCH");

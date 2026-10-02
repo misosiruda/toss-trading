@@ -97,7 +97,8 @@ EXP-02의 디스크 exclusive-write/무결성 보장을 이미 구현했다는 �
 - snapshot은 기존 schema를 재사용하며 symbol은 `FIXTURE_` 접두사, sourceRefs는 고정 fixture ref만 허용한다.
   v1에서는 모든 universe member에 최소 한 source row를 요구한다. 이는 기존 universe parser의
   일반 조건을 바꾸지 않는 이 contract의 제한이다. 중복·알 수 없는 symbol과 명시된 asset metadata
-  불일치는 거절한다. 시간별 미래·stale·가격 없는 일부 source는 coverage에 그대로 남는다.
+  불일치는 거절한다. 양쪽에 명시된 `riskTags`는 set으로 비교·정규화하여 충돌을 거절한다.
+  시간별 미래·stale·가격 없는 일부 source는 coverage에 그대로 남는다.
 - universe의 `lifecycleStatus`는 명시적인 effective 값으로 보존하고 parser 내부 파생 필드
   `lifecycleStatusSource`는 JSON input에 넣지 않는다. 후속 runner adapter는 보존된 universe를
   기존 universe parser로 다시 읽어 runtime용 provenance를 복원해야 한다. Golden fixture의
@@ -107,7 +108,12 @@ EXP-02의 디스크 exclusive-write/무결성 보장을 이미 구현했다는 �
   session/random/provider path와 strategy preset·candidate bucket·exit/regime 확장은 받지 않는다.
 - Risk는 기존 profile resolver와 여섯 기본 Risk 값만 조합한다. allocation은 기존 resolver/schema를
   재사용하고 execution은 기존 resolver의 모든 effective 숫자·boolean을 보존한다. 음수·비유한 수는
-  resolver 전에 거절하며 `fillRatio`는 0~1로 제한한다. 초기 positions는 항상 빈 배열이다.
+  resolver 전에 거절하며 `fillRatio`는 0~1로 제한한다. 작은 v1 fixture의 추가 범위로
+  모든 비용 bps는 0~10,000, snapshot volume은 0~1,000,000,000,000으로 제한하여
+  기존 cost/volume 연산에 거대한 유한 수를 넘기지 않는다. 초기 positions는 항상 빈 배열이다.
+- 기존 packet builder와 같이 `maxSnapshotAgeSeconds`는 양수다. clock 최종 tick 또는
+  `generatedAt` + packet expiry와 각 `observedAt` + freshness가 UTC 9999년 마지막 밀리초를
+  넘으면 admission에서 거절한다. 설정 값 자체가 유한해도 파생 timestamp가 넘치는 입력은 받지 않는다.
 - `costModel`은 기존 `createPaperCostModel`의 버전·가정·full execution policy로 생성한다.
   재입력에 `costModel`이 있으면 helper가 계산한 전체 payload와 hash가 같아야 하며 unknown field,
   version 또는 값 변조를 거절한다. 정규화 입력을 JSON으로 저장한 뒤 같은 context로 재검증하면
