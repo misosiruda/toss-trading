@@ -58,6 +58,17 @@ fixture decision call 100회다. step은 최소 60초, end ≥ start를 요구�
 `session`은 현재 replay run config에 전부 저장되지 않으므로 v1에서 명시적으로 reject한다.
 경로·사용자 이름·secret/raw input은 validation error에 그대로 출력하지 않는다.
 
+implementation revision은 raw input의 자기 선언을 신뢰하지 않는다. 순수 normalizer는 호출자가
+제공한 검증된 execution identity context를 받아 고정하며 unit test는 고정 context를 주입한다.
+repository CLI는 fixed-argv read-only Git 조회로 실제 clean HEAD와 dependency lockfile 기준을
+확인하여 기록하고, 확인 불가/dirty/요청 revision 불일치는 실행 거절한다. 사용자 문자열을 command로
+실행하지 않으며 Codex/provider subprocess를 만들지 않는다. 재시도도 원래 code revision과 맞아야
+한다. 다른 코드에서 재평가하려면 새 입력으로 명시하고 같은 실험 재현 성공으로 분류하지 않는다.
+clean Git HEAD만으로 ignored `dist/`의 코드를 입증하지 않는다. 지원 CLI entry point는 현재
+source의 build를 선행하고 그 build 결과와 HEAD/lock/Node를 결속한 build receipt 또는 동등한
+검증을 요구한다. 실제 로딩한 compiled code와의 결속을 확인할 수 없거나 오래된 dist이면 실행을
+거절한다. 일반 기존 CLI/build 동작을 일괄 변경하지 않고 새 실험 entry point에만 적용한다.
+
 첫 golden fixture는 `KR:FIXTURE_A` 같은 가상 symbol, 3개 synthetic 일별 snapshot,
 고정된 3 tick·빈 portfolio·1,000,000 KRW 가상 현금으로 충분하다. 거래일/calendar/FX의
 사실성을 주장하지 않으며 정확한 값은 EXP-01의 tracked fixture와 테스트로 확정한다.
@@ -108,6 +119,10 @@ data/paper-experiments/<attemptId>/
 `experiment-input.json`은 hash 계산의 원문인 정규화된 전체 payload이고 새 연구 manifest가 아니다.
 `experiment-run.json`은 inputHash, attempt/run ID, parentAttemptId(명시적 retry만),
 단계·종료 원인, 기존 manifest reference와 제한된 상대 artifact 경로를 연결하는 얇은 기록이다.
+attempt에는 backend가 관측한 `runtimeIdentity`(clean HEAD revision, 기존 hash helper로 계산한
+normalized dependency lock hash, Node version)를 별도로 보존한다. requested identity와 실제
+실행 identity가 다르면 시작을 거절하고 비교에서도 같은 조건으로 취급하지 않는다. 의존성은 해당
+lockfile 기준으로 준비·검증하며 lock hash만으로 임의로 변조된 설치까지 증명한다고 주장하지 않는다.
 매매·잔고·결정은 이 파일에 재구현하지 않는다. 기존 replay manifest·audit·report가 해당 근거의 정본이다.
 
 입력 immutability는 exclusive create와 이후 갱신 금지로 보장하는 애플리케이션 계약이다.
@@ -141,7 +156,14 @@ Risk·trade·portfolio의 semantic payload가 같아야 한다. attempt/run iden
 이번 adapter에서 호출하지 않는다.
 
 운영 중 mutable status는 단일 owner가 같은 directory의 temp+rename으로 원자 교체하고,
-`completed`는 필수 artifact 검증 후 마지막에 쓴다. 이 계약은 기존 replay의 모든 JSONL write를
+`completed`는 필수 artifact 검증 후 마지막에 쓴다. 이때 고정 allowlist의 필수 input/manifest/
+metadata/report/log마다 상대 경로·schema/version·record count·기존 `createReplayResearchHash`로
+계산한 parsed payload digest를 `artifactInventory`에 보존한다. JSONL은 전체 row sequence를
+검증·hash하고 packet/decision/Risk/trade 수와 report summary도 대조한다. inventory 자체와
+재생성 가능한 review 산출물은 자기 참조 hash 대상에서 제외한다. reader는 completed를 신뢰하기
+전에 같은 inventory를 재검증하므로 유효 JSONL row 경계에서 잘린 파일이나 schema-valid 숫자
+변조도 탐지한다. allowlist 밖 파일을 재귀로 읽거나 별도 hash 알고리즘을 만들지 않는다.
+이 계약은 기존 replay의 모든 JSONL write를
 transactional 또는 power-loss durable하게 바꾸지 않는다. torn/missing artifact는 검토 시
 `incomplete`로 표시하고 성공으로 추측하지 않는다. source·이전 attempt의 bytes는 변경하지 않는다.
 
@@ -215,7 +237,7 @@ inputHash/costModelHash와 실제 fill costs가 함께 바뀌는지 테스트한
 | 근거 | 확인한 책임·경계 |
 | --- | --- |
 | [queued schema와 저장](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/api/strategyBucketTestRuns.ts#L68-L111), [record 생성](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/api/strategyBucketTestRuns.ts#L361-L423) | full config 미보존, runId null, runnerStarted false |
-| [simulation schema](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/api/paperSimulationRuns.ts#L42-L78), [adapter](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/api/paperSimulationRuns.ts#L255-L339) | cost/benchmark 입력과 적용의 차이, batch 호출 |
+| [simulation schema](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/api/paperSimulationRuns.ts#L42-L80), [adapter](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/api/paperSimulationRuns.ts#L255-L339) | cost/benchmark 입력과 적용의 차이, batch 호출 |
 | [simulation in-flight 처리](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/api/paperSimulationRuns.ts#L126-L233) | process-local WeakMap, durable attempt/cancel 아님 |
 | [single workflow](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/workflows/historicalReplayWorkflow.ts#L59-L168) | 기존 portfolio/source read, start write, runner/report/failure 순서 |
 | [plan options와 초기 상태](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/workflows/historicalReplayWorkflowPlan.ts#L31-L142), [metadata config](https://github.com/misosiruda/toss-trading/blob/bc1423bd992171cf86b5c5d288e9c1c915cc2333/src/workflows/historicalReplayWorkflowPlan.ts#L185-L210) | 재사용 옵션, storedPortfolio 우선, clock session 미포함 |

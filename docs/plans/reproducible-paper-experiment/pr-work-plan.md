@@ -92,7 +92,8 @@ rollback: 새 contract/fixture와 export만 revert. 기존 저장소 migration �
 - [ ] `EXP-02-AC1`: 새 process가 원래 source/env 없이 보존된 full input으로 같은 normalized config 복원
 - [ ] `EXP-02-AC2`: 동일 attempt 동시 생성은 하나만 성공. 기존 파일·비어 있는 기존 dir도 변경 없이 충돌
 - [ ] `EXP-02-AC3`: source/shared root/기존 attempt의 bytes 불변; traversal·symlink·ancestor overlap 거절
-- [ ] `EXP-02-AC4`: materialized source와 inputHash 일치; 변조·부분 JSONL·누락은 incomplete/error
+- [ ] `EXP-02-AC4`: materialized source와 inputHash 일치; 변조·부분 JSONL·누락은 incomplete/error;
+  completed inventory 검증에서 complete-row 경계 truncation과 schema-valid report 변조도 탐지
 - [ ] `EXP-02-AC5`: crash/write fault에서 completed 오판 없음. read/inspect는 어떤 상태도 자동 보정하지 않음
 - [ ] `EXP-02-AC6`: retry는 새 attempt와 parentAttemptId만 생성, 원래 attempt append/resume/삭제 없음
 
@@ -116,7 +117,8 @@ rollback: 신규 writer를 되돌리고 기존 attempt는 보존. reader 지원�
   - `src/workflows/paperExperimentWorkflow.ts`, `src/workflows/paperExperimentWorkflow.test.ts` (신규)
   - `src/cli/paperExperiment.ts`, `src/cli/paperExperiment.test.ts` (신규)
   - 필요한 기존 manifest payload helper의 최소 추출 및 대응 tests
-  - `package.json`에 `paper:experiment` script, `docs/runbooks/paper-experiment.md` (신규)
+  - `package.json`에 `paper:experiment` script와 그 entry point의 build identity 결속 helper,
+    `docs/runbooks/paper-experiment.md` (신규)
 - 계약: [설계 4~5절](technical-design.md#4-저장-격리와-실행-adapter); fresh replay dir만 사용,
   Risk/engine 계산 재사용, 외부 AI 호출 0, completed와 evidence quality를 분리
 
@@ -126,13 +128,16 @@ rollback: 신규 writer를 되돌리고 기존 attempt는 보존. reader 지원�
 - [ ] `EXP-03-AC2`: test-only static provider/fixture 변형으로 HOLD·Risk denial·no-candidate·provider failure
   각각 구분. static 결정에도 기존 schema/semantic/candidate scope/Risk가 적용되고 잘못된 fill 없음
 - [ ] `EXP-03-AC3`: 요청 cost/policy와 runner options·manifest hash·실제 비용 결과가 대응;
-  defaults를 실행 시 재선택하지 않음
+  defaults를 실행 시 재선택하지 않음; backend-observed HEAD/lock hash/Node version을 보존하고
+  요청·실행 identity 불일치 및 stale/unbound compiled dist 거절
 - [ ] `EXP-03-AC4`: runner/manifest/progress/audit 시작·완료·검증 fault가 failed/incomplete로 남음;
-  부분 report만으로 completed를 만들지 않음
+  부분 report만으로 completed를 만들지 않음; terminal inventory digest/count와
+  report/log 간 counts 검증 후에만 completed 기록
 - [ ] `EXP-03-AC5`: 기존 portfolio sentinel이 있는 dir는 runner 0회, source·기존 attempt 불변;
   다른 output에 동일 입력을 재실행해 semantic 결과 및 기존 manifest hash가 동일
 - [ ] `EXP-03-AC6`: hostile env의 AI/live enable 값으로 provider가 바뀌지 않음;
-  subprocess/외부 network/broker 호출 0 (CLI를 실행하는 테스트 child process와 구분)
+  provider subprocess/외부 network/broker 호출 0 (검증된 code identity의 fixed-argv Git 조회 및
+  CLI를 실행하는 테스트 child process와 구분)
 - [ ] `EXP-03-AC7`: unsupported cancel 명령은 mutation 없이 실패. SIGINT/강제 종료 후 partial artifacts
   보존, fresh-process inspect가 성공으로 오판하지 않고 retry는 새 attempt만 사용
 
@@ -184,7 +189,8 @@ rollback: 새 entry point/adapter만 revert, 기존 engine/version과 artifacts 
 - [ ] `EXP-04-AC3`: missing/corrupt/hash mismatch·provider failure를 0 또는 성공으로 표시하지 않음;
   진행 중/중단 실행도 partial evidence와 stored state를 구분해 검토 가능
 - [ ] `EXP-04-AC4`: 같은 inputHash/코드 기준의 두 attempt는 허용된 identity/path/timing만 제외해 비교;
-  비용·Risk·dataRefs/coverage 차이는 불일치, 다른 조건은 성과 순위 대신 incomparable
+  비용·Risk·dataRefs/coverage 차이는 불일치, backend runtime identity/lock hash/Node 불일치와
+  다른 입력 조건은 성과 순위 대신 incomparable; caller의 revision 자기 선언만으로 비교 허용하지 않음
 - [ ] `EXP-04-AC5`: report가 attempt 밖 경로를 열거나 source/replay artifacts를 바꾸지 않음;
   재생성도 review 산출물만 별도 안전하게 작성하고 원본 evidence 불변
 - [ ] `EXP-04-AC6`: CLI validate→run→inspect→review→retry→compare를 빈 root에서 수행;
