@@ -1786,6 +1786,7 @@
       function showScreen() {
         const [path, query] = routeParts();
         const [route, runId, tabId] = path.split("/");
+        const resolvedRunId = runId || runs[0].id;
         const params = new URLSearchParams(query);
         if (route === "list" || query) {
           document.querySelector("#search").value = params.get("q") ?? "";
@@ -1825,8 +1826,7 @@
           );
         document.querySelector(".mobile-menu").open = false;
         if (screen === "detail") {
-          const run =
-            runs.find((r) => r.id === runId) ?? (runId ? null : runs[0]);
+          const run = runs.find((r) => r.id === resolvedRunId) ?? null;
           const hasResults =
             run?.state === "completed" ||
             run?.state === "completed_with_failures";
@@ -1889,7 +1889,8 @@
             observed.append(heading, detail, note);
           }
         }
-        const identity = screen + "/" + (runId ?? "");
+        const identity =
+          screen + "/" + (screen === "detail" ? resolvedRunId : (runId ?? ""));
         if (lastRouteIdentity !== identity) {
           const activeScreen = document.querySelector(`#screen-${screen}`);
           const heading = activeScreen.querySelector("h1");
@@ -1958,7 +1959,7 @@
         }
         if (persist) {
           const [path, query] = routeParts();
-          const runId = path.split("/")[1] ?? runs[0].id;
+          const runId = path.split("/")[1] || runs[0].id;
           const nextHash =
             "#detail/" + runId + "/" + id + (query ? "?" + query : "");
           if (location.hash !== nextHash) location.hash = nextHash;

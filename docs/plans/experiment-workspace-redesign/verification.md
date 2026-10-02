@@ -17,7 +17,7 @@
 
 ## 자동 review finding 수정
 
-자동 review의 P2 열네 건을 반영했다.
+자동 review의 P2 열다섯 건을 반영했다.
 
 - 완료·진행·실패·미관측 모두 실행 ID가 포함된 상세 링크를 제공한다. 선택 ID의 이름·상태·
   관측 기록을 표시하며 완료 예시의 수치를 다른 실행에 재사용하지 않는다. 미확인 ID도 구분한다.
@@ -43,6 +43,8 @@
 - filter 변경의 replaceState 직후에도 모든 목록 navigation 링크를 동기화하여 stale query 초기화를 막는다.
 - 같은 문서 내 목록→상세→뒤로/목록 복귀 시 필터별 scroll 위치와 출발 링크 focus를 복원한다.
   새 화면은 위에서 시작하고 tab-only 이동에는 scroll을 바꾸지 않는다. 저장은 문서 메모리뿐이다.
+- ID 없는 기본 상세 진입은 실제 표시한 resolved run ID로 route identity를 비교한다.
+  첫 tab 선택을 실행 전환으로 오인해 focus를 section에 빼앗지 않으며 명시적 unknown ID는 유지한다.
 - 단계 버튼을 실제로 focus한 뒤 활성화하는 회귀를 추가했다. 단계 이동은 새 heading으로 focus를
   옮긴 뒤 마지막 단계의 기존 다음 버튼을 숨겨 hidden control에 focus가 남지 않게 한다.
 - HTML을 읽을 수 있게 포맷하고 임시 JSDOM 검증으로 desktop/mobile ID별 링크, 상태별 상세,
@@ -54,11 +56,11 @@ JSDOM 검증은 DOM 동작 검사이며 실제 viewport·pixel·layout·browser 
 
 ## 통합 DOM 동선 행렬
 
-다음 push 전에 동선 행렬 70개와 실제 focus 후 활성화 회귀 52개, 부분 실패 계약 회귀 41개를 점검하고,
+다음 push 전에 동선 행렬 70개와 focus 회귀 52개, 부분 실패 계약 회귀 41개, 기본 상세 alias 회귀 84개를 점검하고,
 발견한 결함도 함께 수정했다.
 현재 route의 모바일 메뉴 재선택 닫기, 직접 query의 추가 `?` 보존, 선택 카드의 고정 위험 설정
 문구·개별 run 부분 실패 표시·landmark/focus 수정을 포함해 재검사한 HTML SHA256은
-`03d74eabb941e398eab081d85f3d7b4ba5c8ec85eb3ac15c920a990a8f176502`다.
+`ee24a4a70414ce11fff697e57b8207077db4875bf5ad81a2c472be2eaf7095b8`다.
 
 70/70 통과 범위: desktop/mobile 및 viewport 전환 후 출발 run focus, 목록 scroll/filter/history,
 직접주소·새 문서의 tab/filter 복원, 6개 예시 상태·missing/empty, 단계 입력/요약, 키보드 tab,
@@ -69,7 +71,9 @@ skip link, 같은 menu 재선택, raw/encoded query 보존과 인코딩된 입�
 추가 41/41 통과 범위: 완료→부분 실패→완료 전환, 부분 실패의 각 tab 직접주소/reload/back/forward,
 개별 run의 판단 실패·호출·모의 체결 수, 별도 incomplete 근거/기록, 완료 예시 chart·ID·사건의
 비노출, 부분 실패 CTA와 숨겨진 panel focus 복구, 필터별 목록 복귀 및 비완료·미확인 ID 회귀다.
-기본 DOM 검사도 통과했다. 전체 163개 행렬은 임시 검사 도구로 수행했으며 전체 Node gate와는
+추가 84/84 통과 범위: header·생성 마지막 단계·직접 기본 상세 진입, 빈 ID와 query/reload/history,
+첫 tab click·방향키·Home/End·CTA의 focus 보존, 명시적 unknown ID의 fallback 금지다.
+기본 DOM 검사도 통과했다. 전체 247개 행렬은 임시 검사 도구로 수행했으며 전체 Node gate와는
 별도 검사다. 전체 gate 결과는 해당 PR의 검증 tree를 기준으로 기록한다.
 Scroll/focus는 stub 기반 DOM 검사다. 새 문서 로드에서는 문서 메모리의 scroll/focus 기록이 초기화된다.
 실제 browser pixel/layout/접근성이나 생산 API 통합이 완료됐다는 뜻은 아니다.
@@ -94,12 +98,27 @@ HTML SHA256 `7999b80f7531bbdeffd40c1811145b766efc7dbad074f699309680cfeaee7315`�
 - `.steps[aria-label]`은 Chrome 접근성 트리에서 name이 확인됐지만 screen reader 동작은
   미검증이다. 이를 보편적인 접근성 통과로 해석하지 않는다.
 
-수정 후보는 시안 안내·모바일 branding을 하나의 banner landmark 안에 묶고, 가로 스크롤이
-필요한 tab의 focus outline은 control 안쪽으로 표시한다. **이 후보의 실제 Chrome 재검증은
-아직 대기 중이며 1차 결과를 수정 후 통과로 재사용하지 않는다.**
+이 두 결함은 `d60fc57`에서 시안 안내·모바일 branding을 하나의 banner landmark 안에 묶고,
+가로 스크롤이 필요한 tab의 focus outline을 control 안쪽으로 표시하여 수정했다.
 
 다른 browser/device, screen reader, production API 통합은 실행하지 않았다. 실제 제품에서는
 예시 데이터 대신 격리 fixture API로 검증해야 한다.
+
+### 실제 Windows Chrome 2차 검증 (d60fc57)
+
+대상 commit `d60fc57`, HTML SHA256
+`03d74eabb941e398eab081d85f3d7b4ba5c8ec85eb3ac15c920a990a8f176502`를 사용자 노트북에서 확인했다.
+
+- 기존 matrix 252/252 통과. axe 37상태 violation 0, landmark/outline 결함은 3해상도에서 해소됨
+- console error와 가로 overflow 없음
+- 새 기본 상세 회귀는 18/18 실패로 재현됐다. 직접 `#detail`, header 링크, 생성 마지막 단계 진입
+  × 3해상도에서 첫 tab click/arrow의 URL과 선택 tab은 정상이나 focus가 `#screen-detail`로 이동했다.
+- 즉 기존 matrix 통과가 모든 동선 통과는 아니다. 이 추가 결함도 수정 대상으로 유지했다.
+
+현재 수정 후보는 기본 상세의 실제 표시 ID를 lookup/route identity에 공통 사용하고 빈 ID의
+첫 tab URL도 canonical ID로 기록한다. 독립 DOM alias 84개와 기존 163개가 모두 통과했다.
+**이 최신 후보의 실제 Chrome 재검증은 대기 중이며 d60fc57의 252개 통과를 대신 쓰지 않는다.**
+최종 재검증은 새 기본 상세 18개와 기존 matrix를 모두 포함한다.
 
 ### 최초 클라우드 검증 제한 기록
 
