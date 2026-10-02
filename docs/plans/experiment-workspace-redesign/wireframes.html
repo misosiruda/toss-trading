@@ -321,7 +321,7 @@
         border-radius: 50%;
         background: currentColor;
       }
-      .complete {
+      .completed {
         color: var(--green);
       }
       .skipped {
@@ -997,7 +997,7 @@
             placeholder="실험 이름 또는 ID 검색"
           /><select id="status" aria-label="상태 필터">
             <option value="all">모든 상태</option>
-            <option value="complete">완료</option>
+            <option value="completed">완료</option>
             <option value="running">진행 중</option>
             <option value="failed">실패</option>
             <option value="completed_with_failures">부분 실패</option>
@@ -1216,7 +1216,7 @@
             <div>
               <div class="title-line">
                 <h1 id="run-title">기본 paper replay</h1>
-                <span id="run-state" class="state complete">완료 예시</span>
+                <span id="run-state" class="state completed">완료 예시</span>
               </div>
               <p class="sub" id="run-identity">
                 run-demo-001 · balanced · fixture 판단
@@ -1383,7 +1383,7 @@
             </div>
             <div class="event">
               <span>예시 사건 02</span><span>검증된 판단과 모의 체결 연결</span
-              ><span class="state complete">근거 확인</span>
+              ><span class="state completed">근거 확인</span>
             </div>
           </div>
           <div
@@ -1552,7 +1552,7 @@
         {
           name: "기본 paper replay",
           id: "run-demo-001",
-          state: "complete",
+          state: "completed",
           label: "완료",
           setting: "balanced",
           result: "표본 240 · 모의 체결 18건",
@@ -1683,7 +1683,7 @@
         if (screen === "detail") {
           const run =
             runs.find((r) => r.id === runId) ?? (runId ? null : runs[0]);
-          const complete = run?.state === "complete";
+          const complete = run?.state === "completed";
           if (complete) selectTab(tabId ?? "summary", false, false);
           document.querySelector("#run-title").textContent =
             run?.name ?? "실행을 찾을 수 없음";
@@ -1730,7 +1730,15 @@
           }
         }
         const identity = screen + "/" + (runId ?? "");
-        if (lastRouteIdentity !== identity) window.scrollTo(0, 0);
+        if (lastRouteIdentity !== identity) {
+          const activeScreen = document.querySelector(`#screen-${screen}`);
+          const heading = activeScreen.querySelector("h1");
+          if (!heading.id) heading.id = `screen-${screen}-heading`;
+          activeScreen.setAttribute("tabindex", "-1");
+          activeScreen.setAttribute("aria-labelledby", heading.id);
+          activeScreen.focus({ preventScroll: true });
+          window.scrollTo(0, 0);
+        }
         lastRouteIdentity = identity;
       }
       let step = 1;
