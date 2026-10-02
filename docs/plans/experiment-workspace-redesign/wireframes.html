@@ -1769,7 +1769,7 @@
         lastRouteIdentity = identity;
       }
       let step = 1;
-      function showStep(n) {
+      function showStep(n, moveFocus = false) {
         step = Math.max(1, Math.min(3, n));
         document
           .querySelectorAll("[data-step]")
@@ -1780,6 +1780,11 @@
             el.setAttribute("aria-current", "step");
           else el.removeAttribute("aria-current");
         });
+        if (moveFocus) {
+          const heading = document.querySelector(`[data-step="${step}"] h2`);
+          heading.setAttribute("tabindex", "-1");
+          heading.focus();
+        }
         document.querySelector("#next").hidden = step === 3;
         document.querySelector("#preview-result").hidden = step !== 3;
         document.querySelector("#next").textContent =
@@ -1803,6 +1808,11 @@
         document
           .querySelectorAll(".tabpanel")
           .forEach((el) => (el.hidden = el.id !== `panel-${id}`));
+        if (document.activeElement?.closest(".tabpanel[hidden]")) {
+          document
+            .querySelector(`[data-tab="${id}"]`)
+            .focus({ preventScroll: true });
+        }
         if (persist) {
           const [path, query] = routeParts();
           const runId = path.split("/")[1] ?? runs[0].id;
@@ -1852,13 +1862,13 @@
         .addEventListener("change", updateFilters);
       document
         .querySelector("#next")
-        .addEventListener("click", () => showStep(step + 1));
+        .addEventListener("click", () => showStep(step + 1, true));
       document
         .querySelector("#previous")
         .addEventListener("click", () =>
           step === 1
             ? (location.hash = "list" + filterQuery())
-            : showStep(step - 1),
+            : showStep(step - 1, true),
         );
       document
         .querySelector("#risk")

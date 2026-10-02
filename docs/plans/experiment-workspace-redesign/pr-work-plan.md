@@ -131,7 +131,7 @@ ViewModel guard/unit, legacy route 보존, navigation/필터/back-forward, deskt
 | UX-00 | 문서 작성·정적 검토 완료, browser 검증 대기 | [검증 기록](verification.md) |
 | UX-01 | 미구현 | 목록 activeRun/source 상태 계약 포함 |
 | UX-02a | 구현·병합 | [PR #797](https://github.com/misosiruda/toss-trading/pull/797), main `492afe9`; 전체 4,381 tests 중 4,348 pass/33 skip/0 fail |
-| UX-02b | 준비 | 별도 branch에서 접수/실패 관측과 collision 경계를 구현 |
+| UX-02b | 구현 PR 검토 중 | [PR #798](https://github.com/misosiruda/toss-trading/pull/798); 접수/실패 관측과 collision 경계, 최신 review finding 수정 중 |
 | UX-02c, UX-03~07 | 미구현 | PR별 완료 조건을 통과한 뒤 갱신 |
 
 설계 시안을 구현 완료로, accepted를 실행 완료로, review 대기를 승인으로 표시하지 않는다.
