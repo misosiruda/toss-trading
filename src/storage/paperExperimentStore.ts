@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { parsePaperExperimentInput } from "../replay/paperExperimentInput.js";
+import { PAPER_EXPERIMENT_LIMITS, parsePaperExperimentInput } from "../replay/paperExperimentInput.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { createPaperExperimentArtifactPaths, PAPER_EXPERIMENT_RUN_FILE_NAME } from "./artifactPaths.js";
 import {
@@ -128,10 +128,13 @@ async function createAttempt(options: CreatePaperExperimentAttemptOptions, paren
   let state: PaperExperimentState;
   let paths: ExperimentPaths;
   let input: ReturnType<typeof parsePaperExperimentInput>;
+  let serializedInput: string;
   try {
     const runtimeIdentity = paperExperimentRuntimeIdentitySchema.parse(options.runtimeIdentity);
     const createdAt = instant(options.createdAt);
     input = parsePaperExperimentInput(options.inputJson, { implementationRevision: runtimeIdentity.implementationRevision });
+    serializedInput = `${JSON.stringify(input.normalizedInput)}\n`;
+    requireExperimentStorage(Buffer.byteLength(serializedInput, "utf8") <= PAPER_EXPERIMENT_LIMITS.inputBytes, "INVALID_REQUEST");
     const root = await validateLocation(options);
     const attemptId = options.attemptId ?? `exp-${randomUUID()}`;
     paths = createPaperExperimentArtifactPaths(root, attemptId);
@@ -172,7 +175,7 @@ async function createAttempt(options: CreatePaperExperimentAttemptOptions, paren
   try {
     await assertExperimentPath(paths.attemptDir);
     await mkdir(paths.inputDir);
-    await writeExclusiveExperimentFile(paths.inputPath, `${JSON.stringify(input.normalizedInput)}\n`);
+    await writeExclusiveExperimentFile(paths.inputPath, serializedInput);
     await writeExclusiveExperimentFile(paths.sourcePath, input.normalizedInput.source.snapshots.map((row) => JSON.stringify(row)).join("\n") + "\n");
     await mkdir(paths.replayDir);
     await verifyExperimentInput(paths, state);

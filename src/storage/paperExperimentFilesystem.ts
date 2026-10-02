@@ -47,8 +47,8 @@ export async function assertExperimentPath(path: string, allowMissing = false): 
 
 export function assertExperimentPathSyntax(path: string): void {
   requireExperimentStorage(typeof path === "string" && path.length > 0
-    && !path.includes("\0") && !path.includes("\\")
-    && !path.split("/").includes(".."), "PATH_UNSAFE");
+    && !path.includes("\0") && (sep === "\\" || !path.includes("\\"))
+    && !path.split(/[\\/]/).includes(".."), "PATH_UNSAFE");
 }
 
 export function experimentPathsOverlap(left: string, right: string): boolean {

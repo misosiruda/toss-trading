@@ -474,3 +474,25 @@ test("each required report field is checked before completion, including nested 
   }
   visit(report, []);
 });
+
+test("normalized input expansion is byte-bounded before directory allocation", async (t) => {
+  const { options, temp } = await setup(t);
+  const input = JSON.parse(options.inputJson);
+  input.universe.description = "x";
+  const remaining = 2 * 1024 * 1024 - Buffer.byteLength(JSON.stringify(input), "utf8");
+  input.universe.description += "x".repeat(remaining);
+  const inputJson = JSON.stringify(input);
+  assert.equal(Buffer.byteLength(inputJson, "utf8"), 2 * 1024 * 1024);
+  const before = await bytes(temp);
+  await assert.rejects(createPaperExperimentAttempt({ ...options, inputJson }), assertCode("INVALID_REQUEST"));
+  assert.deepEqual(await bytes(temp), before);
+});
+
+test("backend path syntax accepts native absolute paths and rejects both traversal separators", async (t) => {
+  const { options } = await setup(t);
+  const { assertExperimentPathSyntax } = await import("./paperExperimentFilesystem.js");
+  assert.doesNotThrow(() => assertExperimentPathSyntax(options.rootDir));
+  for (const suffix of ["/../escape", "\\..\\escape", "/..\\escape"]) {
+    assert.throws(() => assertExperimentPathSyntax(`${options.rootDir}${suffix}`), assertCode("PATH_UNSAFE"));
+  }
+});
