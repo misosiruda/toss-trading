@@ -759,3 +759,53 @@ for (const mutation of ["decision-hash", "packet-hash", "risk-packet", "trade-ri
     assert.deepEqual(await bytes(owner.paths.attemptDir), before);
   });
 }
+
+for (const target of ["report-disclaimer", "report-title", "metadata-disclaimer", "progress-disclaimer"] as const) {
+  test(`fixed paper-only safety text ${target} cannot be replaced before sealing`, async (t) => {
+    const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+    await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+    const path = target.startsWith("report") ? paths.historicalReplayReportPath
+      : target.startsWith("metadata") ? paths.historicalReplayRunMetadataPath : paths.historicalReplayProgressPath;
+    await patchJson(path, (record) => { record[target === "report-title" ? "title" : "disclaimer"] = "Altered fixture text"; });
+    const before = await bytes(owner.paths.attemptDir);
+    await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+    assert.deepEqual(await bytes(owner.paths.attemptDir), before);
+  });
+}
+
+test("coherently copied execution model version must match retained input cost policy", async (t) => {
+  const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+  await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+  await patchJson(paths.historicalReplayResearchManifestPath, (manifest) => { manifest.executionModelVersion = "execution_simulator.changed"; });
+  await patchJson(paths.historicalReplayRunMetadataPath, (metadata) => { metadata.researchManifest.executionModelVersion = "execution_simulator.changed"; });
+  await patchJson(paths.historicalReplayReportPath, (report) => { report.reproducibility.executionModelVersion = "execution_simulator.changed"; });
+  await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+});
+
+test("coherently copied trade cost model version must match retained input policy", async (t) => {
+  const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+  await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+  const trade = JSON.parse((await fs.readFile(paths.historicalReplayTradeLogPath, "utf8")).trim());
+  trade.costModelVersion = "paper_cost_model.changed";
+  await fs.writeFile(paths.historicalReplayTradeLogPath, JSON.stringify(trade) + "\n");
+  await patchJson(paths.historicalReplayProgressPath, (progress) => { progress.recentTrades[0].costModelVersion = trade.costModelVersion; });
+  await patchJson(paths.historicalReplayReportPath, (report) => {
+    report.costSummary.costModelVersions = [trade.costModelVersion];
+    report.costSummary.byStrategyBucket[0].costModelVersions = [trade.costModelVersion];
+  });
+  await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+});
+
+test("paper-only invariant flags stay strict at every persisted replay JSON boundary", async (t) => {
+  const { options } = await setup(t); const owner = await createPaperExperimentAttempt(options);
+  await owner.start(EXPERIMENT_TEST_TIME); const paths = await writeExperimentEvidence(owner, { nonempty: true });
+  for (const path of [paths.historicalReplayReportPath, paths.historicalReplayProgressPath,
+    paths.historicalReplayRunMetadataPath, paths.historicalReplayResearchManifestPath]) {
+    const original = await fs.readFile(path, "utf8");
+    await patchJson(path, (value) => { value.mode = "invalid-mode"; });
+    await assert.rejects(owner.complete(EXPERIMENT_TEST_TIME), assertCode("ARTIFACT_INTEGRITY"));
+    await fs.writeFile(path, original);
+  }
+  await owner.complete(EXPERIMENT_TEST_TIME);
+  assert.equal((await inspectPaperExperimentAttempt(options, owner.attemptId)).status, "completed");
+});

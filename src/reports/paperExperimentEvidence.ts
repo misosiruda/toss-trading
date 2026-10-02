@@ -2,7 +2,7 @@ import type { MarketPacket, VirtualDecision, VirtualPortfolio, VirtualRiskDecisi
 import { createMarketPacketHash } from "../market/packetHash.js";
 import { createVirtualDecisionHash } from "../paper/decisionHash.js";
 import type { HistoricalReplayPortfolioTimelineRecord, HistoricalReplayRunMetadata } from "../replay/historicalReplayAuditLog.js";
-import { HISTORICAL_REPLAY_PROGRESS_DEFAULT_LIMITS as progressLimits, toHistoricalReplayPortfolioProgress, type HistoricalReplayProgressSnapshot } from "../replay/historicalReplayProgress.js";
+import { HISTORICAL_REPLAY_PROGRESS_DISCLAIMER, HISTORICAL_REPLAY_PROGRESS_DEFAULT_LIMITS as progressLimits, toHistoricalReplayPortfolioProgress, type HistoricalReplayProgressSnapshot } from "../replay/historicalReplayProgress.js";
 import type { parsePaperExperimentInput } from "../replay/paperExperimentInput.js";
 import type { ReplaySamplingDecisionReason } from "../replay/replaySamplingPolicy.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
@@ -59,6 +59,8 @@ export function verifyPaperExperimentRetainedEvidence(evidence: PaperExperimentR
     equalEvidence(report[key as keyof HistoricalReplayReport], value);
   }
   equalEvidence(metadata.riskPolicySummary, riskEvidence.policySummary);
+  equalEvidence(metadata.disclaimer, HISTORICAL_REPLAY_PROGRESS_DISCLAIMER);
+  equalEvidence(progress.disclaimer, HISTORICAL_REPLAY_PROGRESS_DISCLAIMER);
   const reportRisk = report.riskSummary as HistoricalReplayReport["riskSummary"];
   equalEvidence(reportRisk.rejectCodes, riskEvidence.rejectCodes);
   equalEvidence(reportRisk.policySummary, riskEvidence.policySummary);
@@ -105,6 +107,7 @@ export function verifyPaperExperimentRetainedEvidence(evidence: PaperExperimentR
   }
   const riskById = new Map(risks.map((risk) => [risk.riskDecisionId, risk]));
   for (const trade of trades) {
+    if (trade.costModelVersion !== undefined) equalEvidence(trade.costModelVersion, input.normalizedInput.costModel.modelVersion);
     requireEvidence(packetById.has(trade.packetId));
     const risk = riskById.get(trade.decisionId);
     requireEvidence(risk !== undefined && risk.approved && risk.packetId === trade.packetId && risk.symbol === trade.symbol

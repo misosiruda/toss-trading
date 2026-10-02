@@ -38,6 +38,7 @@ import {
 } from "./historicalReplayBenchmark.js";
 
 const REPLAY_SHARPE_VALIDATION_AUTOCORRELATION_MAX_LAG = 5;
+const HISTORICAL_REPLAY_DEFAULT_TITLE = "Historical Replay Paper Report";
 
 export interface HistoricalReplayReportOptions {
   result: HistoricalReplayResult;
@@ -192,7 +193,7 @@ export function buildHistoricalReplayReport(
   const initialNetWorthKrw = portfolioNetWorth(result.initialPortfolio);
 
   return {
-    title: options.title ?? "Historical Replay Paper Report",
+    title: options.title ?? HISTORICAL_REPLAY_DEFAULT_TITLE,
     mode: "paper_only",
     generatedAt: options.generatedAt.toISOString(),
     simulatedRange: summarizeRange(result),
@@ -260,6 +261,8 @@ export function buildHistoricalReplayRetainedEvidence(
   const portfolioConstruction = buildPortfolioConstructionMetrics(evidence.portfolioTimeline, evidence.allocationPolicy);
   const initialNetWorthKrw = portfolioNetWorth(evidence.initialPortfolio);
   return {
+    title: HISTORICAL_REPLAY_DEFAULT_TITLE,
+    disclaimer: historicalReplayDisclaimer(),
     portfolio: summarizePortfolio(evidence.initialPortfolio, evidence.finalPortfolio),
     portfolioConstruction,
     analytics: buildPaperPortfolioAnalytics({ portfolio: evidence.finalPortfolio, decisions: evidence.decisions, trades: evidence.trades }),

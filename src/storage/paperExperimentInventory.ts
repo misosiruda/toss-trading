@@ -108,6 +108,7 @@ export async function captureExperimentInventory(paths: ExperimentPaths, state: 
   void status; void mode; void runId; void batchId; void createdAt; void universeSnapshotDate;
   equal(reportManifest, expectedReportManifest);
   equal(manifest.costModelHash, createReplayResearchHash(input.normalizedInput.costModel));
+  equal(manifest.executionModelVersion, input.normalizedInput.costModel.executionModelVersion);
   const expectedPath = (key: keyof typeof PAPER_EXPERIMENT_ARTIFACTS) => join(paths.attemptDir, PAPER_EXPERIMENT_ARTIFACTS[key]);
   equal(metadata.logPaths, {
     runMetadataPath: expectedPath("metadata"), packetLogPath: expectedPath("packets"),
