@@ -12,6 +12,52 @@ async function loadDashboardViewModelsModule() {
   return import(`data:text/javascript,${encodeURIComponent(moduleSource)}`);
 }
 
+test("operations overview reads each existing ViewModel once without caching or mutation", async (t) => {
+  const originalDashboardBaseUrl = process.env.DASHBOARD_OPS_API_BASE_URL;
+  process.env.DASHBOARD_OPS_API_BASE_URL = "http://ops.test/";
+  t.after(() => {
+    if (originalDashboardBaseUrl === undefined) {
+      delete process.env.DASHBOARD_OPS_API_BASE_URL;
+    } else {
+      process.env.DASHBOARD_OPS_API_BASE_URL = originalDashboardBaseUrl;
+    }
+  });
+  const endpoints = [
+    "/dashboard/view-model/portfolio-compliance",
+    "/dashboard/view-model/strategy-test-lab",
+    "/dashboard/view-model/risk-gate-trace?limit=8",
+    "/dashboard/view-model/validation-lab"
+  ];
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    requests.push({ url: String(url), init });
+    return new Response(null, { status: 503 });
+  });
+
+  const { readDashboardViewModels, countOnlineViewModels } =
+    await loadDashboardViewModelsModule();
+  const viewModels = await readDashboardViewModels();
+
+  assert.deepEqual(
+    requests.map(({ url }) => url),
+    endpoints.map((endpoint) => `http://ops.test${endpoint}`)
+  );
+  for (const { init } of requests) {
+    assert.equal(init.method ?? "GET", "GET");
+    assert.equal(init.cache, "no-store");
+    assert.equal(init.headers.accept, "application/json");
+    assert.equal(init.body, undefined);
+  }
+  assert.equal(viewModels.apiBaseLabel, "configured operations endpoint");
+  assert.equal(countOnlineViewModels(viewModels), 0);
+  const panelNames = ["portfolio", "strategyLab", "riskGate", "validationLab"];
+  for (const [index, name] of panelNames.entries()) {
+    assert.equal(viewModels[name].status, "offline");
+    assert.equal(viewModels[name].endpoint, endpoints[index]);
+    assert.equal(viewModels[name].data, null);
+  }
+});
+
 test("validation lab fallback fills missing candidate comparison", async () => {
   const { withValidationLabCandidateComparisonFallback } =
     await loadDashboardViewModelsModule();
