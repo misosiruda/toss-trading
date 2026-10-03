@@ -117,7 +117,9 @@ Strategy Lab의 생성 성공은 queued record 접수 사실입니다. 같은 �
 이미 확인한 terminal 상태는 stale RSC나 오래된 queued/running 응답으로 되돌리지 않으며,
 unmount와 관측 범위에서 벗어난 요청은 취소합니다. 결과 비교 영역은 기존 서버 ViewModel snapshot을 유지합니다. 메인 Strategy Lab은 생성 뒤
 중복 `router.refresh` 대신 위의 명시적 progress 조회를 사용해 실패 RSC로 접수 관측이 사라지지 않게 합니다.
-단일 bucket 설정 화면의 기존 생성 후 refresh는 유지합니다.
+단일 bucket 설정 화면도 서버 데이터 조회 없이 고정 설정과 POST 응답을 표시하므로 생성 후 refresh를 생략합니다.
+루트의 static title을 그대로 상속하며, 생성 전후 title과 추가 RSC 요청이 없음을 회귀 검증합니다.
+이 변경은 불필요한 metadata 재해석을 제거하지만 과거 간헐적 empty-title 실패의 내부 원인을 확정한 것은 아닙니다.
 진행률이 `null`이면 `진행률 없음`만 표시하고 숫자나 채움 막대·실행 애니메이션을 만들지 않습니다.
 Lab 표는 전체 문서 폭을 늘리지 않는 이름 있는 내부 스크롤 영역이며 Tab/방향키로 접근합니다.
 

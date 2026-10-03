@@ -92,6 +92,7 @@ export default async function StrategyBucketNewPage({
         <StrategyBucketTestValidationForm
           initialBucket={bucket}
           lockedBucket={true}
+          refreshAfterCreate={false}
         />
 
         <footer className="border-t border-[var(--border)] pt-4 text-xs leading-5 text-[var(--muted)]">

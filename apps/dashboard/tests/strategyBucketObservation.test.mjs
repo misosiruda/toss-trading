@@ -324,7 +324,7 @@ test("an observation callback failure cannot turn an accepted POST back into a c
 });
 
 
-test("main Workspace uses explicit observation without a redundant RSC refresh; isolated form default still refreshes", async () => {
+test("main Workspace uses explicit observation while the reusable Form default remains compatible", async () => {
   const workspace = await workspaceHarness(async () => Response.json(payload()));
   assert.equal(workspace.find((node) => node.props?.onQueuedTests !== undefined).props.refreshAfterCreate, false);
   workspace.unmount();
@@ -369,4 +369,38 @@ test("Lab tables retain bounded scroll regions and intrinsic-width grids can shr
   const form = await readFile(new URL(base + "StrategyBucketTestValidationForm.tsx", import.meta.url), "utf8");
   assert.match(form, /min-w-0 w-full rounded/);
   assert.match(form, /\[overflow-wrap:anywhere\]/);
+});
+
+
+test("every locked bucket route renders its accepted-result form without a redundant server refresh and inherits the root title", async () => {
+  const routeSource = await readFile(new URL("../src/app/dashboard/lab/strategy-tests/buckets/[bucket]/new/page.tsx", import.meta.url), "utf8");
+  const output = ts.transpileModule(routeSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2017, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+  const exports = {}; function Form() {}
+  runInNewContext(output, { exports, Promise, fetch: () => assert.fail("locked bucket page must not require a server data read"),
+    require(name) {
+      if (name === "react/jsx-runtime") return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
+      if (name === "next/link") return { default() {} };
+      if (name === "next/navigation") return { notFound() { throw new Error("not-found"); } };
+      assert.equal(name, "../../../StrategyBucketTestValidationForm"); return { StrategyBucketTestValidationForm: Form };
+    }
+  });
+  function formIn(node) {
+    if (!node || typeof node !== "object") return null;
+    if (node.type === Form) return node;
+    return [node.props?.children].flat(Infinity).map(formIn).find(Boolean) ?? null;
+  }
+  for (const bucket of ["long_term", "swing", "short_term", "intraday", "hedge"]) {
+    const page = await exports.default({ params: Promise.resolve({ bucket }) });
+    const form = formIn(page); assert.ok(form);
+    assert.equal(form.props.initialBucket, bucket); assert.equal(form.props.lockedBucket, true);
+    assert.equal(form.props.refreshAfterCreate, false);
+  }
+  await assert.rejects(exports.default({ params: Promise.resolve({ bucket: "unknown" }) }), /not-found/);
+  assert.equal(exports.metadata, undefined); assert.equal(exports.generateMetadata, undefined);
+  const root = await readFile(new URL("../src/app/layout.tsx", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("layout.tsx", root, ts.ScriptTarget.ES2017, true, ts.ScriptKind.TSX);
+  const metadata = ast.statements.flatMap((statement) => ts.isVariableStatement(statement) ? [...statement.declarationList.declarations] : [])
+    .find((declaration) => declaration.name.getText(ast) === "metadata");
+  const title = metadata.initializer.properties.find((property) => property.name.getText(ast) === "title");
+  assert.equal(title.initializer.text, "Toss Trading Dashboard");
 });

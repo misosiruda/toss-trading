@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import axe from "axe-core";
 import { expectPortfolioHedgeDisplay, expectPortfolioPolicyApi, expectPortfolioTableKeyboardAccess } from "../portfolio-policy/assertions";
 import { missingPolicyWarning } from "../portfolio-policy/scenarios.mjs";
@@ -1034,52 +1034,92 @@ test("renders strategy bucket test lab with queued create boundary", async ({
 
 test("renders bucket-specific strategy test route with locked bucket boundary", async ({
   page,
-}) => {
-  await page.goto("/dashboard/lab/strategy-tests/buckets/hedge/new");
+}, testInfo) => {
+  const route = "/dashboard/lab/strategy-tests/buckets/hedge/new";
+  const rscRequests: string[] = [];
+  const recordRsc = (request: Request) => {
+    if (request.method() === "GET" && new URL(request.url()).pathname === route && request.headers().rsc === "1") {
+      rscRequests.push(request.url());
+    }
+  };
+  await page.goto(route);
+  // Immediate observation, not a wait for metadata to recover after creation.
+  const initialTitle = await page.title();
+  await page.evaluate(() => {
+    const records = [{ title: document.title, at: performance.now() }];
+    const observer = new MutationObserver(() => {
+      if (records.at(-1)?.title !== document.title) records.push({ title: document.title, at: performance.now() });
+    });
+    observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+    (window as typeof window & { __bucketTitleObservation: { records: typeof records; observer: MutationObserver } }).__bucketTitleObservation = { records, observer };
+  });
+  page.on("request", recordRsc);
+  try {
+    expect(initialTitle).toBe("Toss Trading Dashboard");
 
-  await expect(
-    page.getByRole("heading", { name: "Hedge Bucket Test" })
-  ).toBeVisible();
-  await expect(page.getByText("Isolated Strategy Bucket Test")).toBeVisible();
-  await expect(page.getByText("queued record only")).toBeVisible();
-  await expect(page.getByText("not started")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Hedge Test Config" })
-  ).toBeVisible();
-  await expect(page.locator("#test-bucket")).toHaveValue("hedge");
-  await expect(page.locator("#test-bucket")).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Queue enabled bucket matrix" })
-  ).toHaveCount(0);
-  await expect(
-    page.getByLabel("Strategy bucket test request preview")
-  ).toContainText('"bucket": "hedge"');
-  await expect(
-    page.getByLabel("Strategy bucket test request preview")
-  ).toContainText("strategy-test-lab-hedge-seed");
+    await expect(
+      page.getByRole("heading", { name: "Hedge Bucket Test" })
+    ).toBeVisible();
+    await expect(page.getByText("Isolated Strategy Bucket Test")).toBeVisible();
+    await expect(page.getByText("queued record only")).toBeVisible();
+    await expect(page.getByText("not started")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Hedge Test Config" })
+    ).toBeVisible();
+    await expect(page.locator("#test-bucket")).toHaveValue("hedge");
+    await expect(page.locator("#test-bucket")).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Queue enabled bucket matrix" })
+    ).toHaveCount(0);
+    await expect(
+      page.getByLabel("Strategy bucket test request preview")
+    ).toContainText('"bucket": "hedge"');
+    await expect(
+      page.getByLabel("Strategy bucket test request preview")
+    ).toContainText("strategy-test-lab-hedge-seed");
 
-  await activateButton(page, "Validate bucket config");
-  await expect(page.getByText("Strategy validation valid")).toBeVisible();
-  await page.locator("#mutation-token").fill(DASHBOARD_MUTATION_TOKEN);
-  await expect(
-    page.getByText(
-      "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
-    )
-  ).toBeVisible();
-  await activateButton(page, "Queue bucket test record");
-  await expect(page.getByText("Strategy bucket test queued")).toBeVisible();
-  await expect(page.getByText("Bucket").last()).toBeVisible();
-  await expect(page.getByText("hedge").last()).toBeVisible();
-  await expect(page.getByText("replay runner not started")).toBeVisible();
+    await activateButton(page, "Validate bucket config");
+    await expect(page.getByText("Strategy validation valid")).toBeVisible();
+    await page.locator("#mutation-token").fill(DASHBOARD_MUTATION_TOKEN);
+    await expect(
+      page.getByText(
+        "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
+      )
+    ).toBeVisible();
+    await activateButton(page, "Queue bucket test record");
+    await expect(page.getByText("Strategy bucket test queued")).toBeVisible();
+    await expect(page.getByText("Bucket").last()).toBeVisible();
+    await expect(page.getByText("hedge").last()).toBeVisible();
+    await expect(page.getByText("replay runner not started")).toBeVisible();
 
-  await expect(
-    page.getByRole("button", { name: /order|trade|buy|sell/i })
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("link", { name: /order|trade|buy|sell/i })
-  ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /order|trade|buy|sell/i })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /order|trade|buy|sell/i })
+    ).toHaveCount(0);
 
-  await expectNoAxeViolations(page);
+    expect(await page.title()).toBe("Toss Trading Dashboard");
+    await expectNoAxeViolations(page);
+    expect(await page.title()).toBe("Toss Trading Dashboard");
+    expect(rscRequests).toEqual([]);
+    const titles = await page.evaluate(() => (window as typeof window & {
+      __bucketTitleObservation: { records: Array<{ title: string; at: number }> }
+    }).__bucketTitleObservation.records);
+    expect(titles.every((entry) => entry.title === "Toss Trading Dashboard")).toBe(true);
+  } finally {
+    page.off("request", recordRsc);
+    const titles = await page.evaluate(() => {
+      const observation = (window as typeof window & {
+        __bucketTitleObservation: { records: Array<{ title: string; at: number }>; observer: MutationObserver }
+      }).__bucketTitleObservation;
+      observation.observer.disconnect();
+      return { records: observation.records, finalTitle: document.title,
+        headTitles: Array.from(document.head.querySelectorAll("title"), (element) => element.textContent),
+        bodyTitles: Array.from(document.body.querySelectorAll("title"), (element) => element.textContent) };
+    });
+    await testInfo.attach("bucket-create-title-lifecycle", { body: JSON.stringify({ ...titles, rscRequests }, null, 2), contentType: "application/json" });
+  }
 });
 
 test("renders paper policy builder draft validation without live mutation controls", async ({
