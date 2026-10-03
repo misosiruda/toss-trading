@@ -1,11 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  isStrategyBucketTestProgressViewModel,
   type StrategyBucket,
-  type StrategyBucketTestProgressViewModel,
   type StrategyBucketTestSummary
 } from "@/lib/dashboardViewModels";
 
@@ -20,45 +18,36 @@ const BUCKET_LABELS: Record<StrategyBucket, string> = {
 };
 
 export function StrategyBucketTestProgressPanel({
-  initialActiveTests
+  activeTests, onRefreshProgress
 }: {
-  initialActiveTests: StrategyBucketTestSummary[];
+  activeTests: StrategyBucketTestSummary[];
+  onRefreshProgress: () => Promise<void>;
 }) {
-  const [activeTests, setActiveTests] = useState(initialActiveTests);
   const [refreshError, setRefreshError] = useState<string | null>(null);
-  const inFlightRefreshRef = useRef<AbortController | null>(null);
+  const inFlightRefreshRef = useRef(false);
   const refreshRequestIdRef = useRef(0);
   const latestProgressUpdatedAt = readLatestProgressUpdatedAt(activeTests);
-  const activeTestIds = useMemo(
-    () =>
-      activeTests
-        .filter(isActiveStrategyBucketTest)
-        .map((test) => test.testId),
-    [activeTests]
-  );
 
   const refreshProgress = useCallback(async () => {
-    if (activeTestIds.length === 0) {
+    if (activeTests.length === 0) {
       return;
     }
-    if (inFlightRefreshRef.current !== null) {
+    if (inFlightRefreshRef.current) {
       return;
     }
 
-    const controller = new AbortController();
     const requestId = refreshRequestIdRef.current + 1;
     refreshRequestIdRef.current = requestId;
-    inFlightRefreshRef.current = controller;
+    inFlightRefreshRef.current = true;
 
     try {
-      const updates = await fetchProgressUpdates(activeTestIds, controller.signal);
-      if (controller.signal.aborted || refreshRequestIdRef.current !== requestId) {
+      await onRefreshProgress();
+      if (refreshRequestIdRef.current !== requestId) {
         return;
       }
-      setActiveTests((current) => mergeProgressUpdates(current, updates));
       setRefreshError(null);
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (refreshRequestIdRef.current === requestId) {
         setRefreshError(
           error instanceof Error
             ? error.message
@@ -66,14 +55,14 @@ export function StrategyBucketTestProgressPanel({
         );
       }
     } finally {
-      if (inFlightRefreshRef.current === controller) {
-        inFlightRefreshRef.current = null;
+      if (refreshRequestIdRef.current === requestId) {
+        inFlightRefreshRef.current = false;
       }
     }
-  }, [activeTestIds]);
+  }, [activeTests.length, onRefreshProgress]);
 
   useEffect(() => {
-    if (activeTestIds.length === 0) {
+    if (activeTests.length === 0) {
       return;
     }
 
@@ -82,11 +71,11 @@ export function StrategyBucketTestProgressPanel({
     }, POLLING_INTERVAL_MS);
 
     return () => {
-      inFlightRefreshRef.current?.abort();
-      inFlightRefreshRef.current = null;
+      refreshRequestIdRef.current += 1;
+      inFlightRefreshRef.current = false;
       window.clearInterval(interval);
     };
-  }, [activeTestIds.length, refreshProgress]);
+  }, [activeTests.length, refreshProgress]);
 
   return (
     <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
@@ -103,7 +92,7 @@ export function StrategyBucketTestProgressPanel({
           </span>
           <button
             className="rounded-[6px] border border-[var(--border)] px-2 py-1 font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={activeTestIds.length === 0}
+            disabled={activeTests.length === 0}
             onClick={() => void refreshProgress()}
             type="button"
           >
@@ -121,6 +110,7 @@ export function StrategyBucketTestProgressPanel({
         </p>
       )}
 
+      <p className="mt-3 text-xs text-[var(--muted)]">Server active snapshot (up to 20) plus records created and confirmed in this view (up to 20), deduplicated. This is not the full test history.</p>
       <div className="mt-4 overflow-x-auto">
         <table className="min-w-full text-left text-sm">
           <thead className="text-xs uppercase text-[var(--muted)]">
@@ -193,70 +183,6 @@ export function StrategyBucketTestProgressPanel({
   );
 }
 
-async function fetchProgressUpdates(
-  testIds: string[],
-  signal: AbortSignal
-): Promise<StrategyBucketTestProgressViewModel[]> {
-  return Promise.all(
-    testIds.map(async (testId) => {
-      const response = await fetch(
-        `/dashboard/lab/strategy-tests/tests/${encodeURIComponent(
-          testId
-        )}/progress`,
-        {
-          cache: "no-store",
-          headers: {
-            accept: "application/json"
-          },
-          signal
-        }
-      );
-      const payload: unknown = await response.json();
-      if (!response.ok || !isStrategyBucketTestProgressViewModel(payload)) {
-        throw new Error(`progress request for ${testId} returned HTTP ${response.status}`);
-      }
-      return payload;
-    })
-  );
-}
-
-function mergeProgressUpdates(
-  current: StrategyBucketTestSummary[],
-  updates: StrategyBucketTestProgressViewModel[]
-): StrategyBucketTestSummary[] {
-  const byTestId = new Map(
-    updates
-      .filter((update) => update.status === "ok" && update.test !== null)
-      .map((update) => [update.testId, update.test as StrategyBucketTestSummary])
-  );
-
-  let changed = false;
-  const next: StrategyBucketTestSummary[] = [];
-  for (const test of current) {
-    const updated = byTestId.get(test.testId);
-    if (updated === undefined) {
-      next.push(test);
-      continue;
-    }
-    if (!isActiveStrategyBucketTest(updated)) {
-      changed = true;
-      continue;
-    }
-    if (progressUpdateKey(updated) === progressUpdateKey(test)) {
-      next.push(test);
-      continue;
-    }
-    changed = true;
-    next.push(updated);
-  }
-
-  return changed ? next : current;
-}
-
-function isActiveStrategyBucketTest(test: StrategyBucketTestSummary): boolean {
-  return test.status === "queued" || test.status === "running";
-}
-
 function readLatestProgressUpdatedAt(
   tests: StrategyBucketTestSummary[]
 ): string | null {
@@ -267,27 +193,6 @@ function readLatestProgressUpdatedAt(
       .sort()
       .at(-1) ?? null
   );
-}
-
-function progressUpdateKey(test: StrategyBucketTestSummary): string {
-  return [
-    test.status,
-    test.progress.phase,
-    test.progress.progressRatio,
-    test.progress.completedPacketCount,
-    test.progress.totalPacketCount,
-    test.progress.decisionCount,
-    test.progress.riskApprovedCount,
-    test.progress.riskRejectedCount,
-    test.progress.simulatedTradeCount,
-    test.progress.providerFailureCount,
-    test.progress.latestMessage,
-    test.progress.latestAuditEventRef,
-    test.progress.updatedAt,
-    test.heartbeat.status,
-    test.heartbeat.lastSeenAt,
-    test.heartbeat.staleAfterSeconds
-  ].join("|");
 }
 
 function ProgressMeter({ ratio }: { ratio: number | null }) {

@@ -105,6 +105,20 @@ POST /paper/simulations/strategy-bucket-tests
 
 `/dashboard/lab/strategy-tests/tests/{testId}/progress`는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 하는 Next.js read-only route handler입니다. 이 route는 `GET /dashboard/view-model/strategy-test-lab/tests/{testId}/progress`를 server-side로 조회해 queued/running test의 phase, heartbeat, decision/risk/trade count를 polling fallback으로 갱신합니다.
 
+Strategy Lab의 생성 성공은 queued record 접수 사실입니다. 같은 화면은 생성 응답의
+`testId`·`bucket`·`configHash`만 전달받고 기존 read-only progress API에서 실제 summary를
+확인한 뒤 행을 표시합니다. POST 응답으로 진행 상태를 만들거나 runner 시작·완료를 추정하지 않습니다.
+서버 active snapshot 최대 20개와 이 화면에서 최근 생성한 최대 20개 중 확인한 기록을
+중복 없이 합쳐 보여 주므로 전체 test history가 아닙니다. 서버 지표는 `Server active snapshot`으로 표시합니다.
+
+신규 생성 관측은 2초 이내의 1회 조회이며 실패 시 접수 성공을 유지하고 명시적 수동 재조회만 제공합니다.
+기존 5초 progress polling 주기와 일반 조회의 timeout 동작, backend 생성 권한·mutation 검사는 그대로입니다.
+단건·matrix·polling의 같은 ID 요청을 공유하고, ID/bucket/configHash 불일치·잘못된 시간·늦은 응답은 반영하지 않습니다.
+이미 확인한 terminal 상태는 stale RSC나 오래된 queued/running 응답으로 되돌리지 않으며,
+unmount와 관측 범위에서 벗어난 요청은 취소합니다. 결과 비교 영역은 기존 서버 ViewModel snapshot을 유지합니다. 메인 Strategy Lab은 생성 뒤
+중복 `router.refresh` 대신 위의 명시적 progress 조회를 사용해 실패 RSC로 접수 관측이 사라지지 않게 합니다.
+단일 bucket 설정 화면의 기존 생성 후 refresh는 유지합니다.
+
 `/dashboard/lab/policies/simulations/create`는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 하는 Next.js route handler입니다. 이 route는 `x-toss-trading-dashboard-intent: paper-simulation-create`, UI에서 입력한 dashboard mutation token, positive same-origin request metadata, `application/json` content type을 요구한 뒤 `POST /paper/simulations`로 server-side 전달합니다. 현재 backend `PaperSimulationRunConfig`는 `PortfolioPolicy` artifact를 직접 받지 않으므로, Next.js policy builder는 backend validation을 통과한 `policyHash`를 simulation seed에 반영하고 runner policy artifact 적용은 수행하지 않습니다.
 
 `POST /paper/simulations`는 backend guarded paper simulation create endpoint입니다. paper-only config validation, operation header, dashboard guard를 통과한 요청만 replay runner에 전달합니다. live order surface, broker mutation, raw command execution은 수행하지 않습니다.

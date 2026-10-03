@@ -9,6 +9,8 @@ import {
   type StrategyBucket
 } from "@/lib/policyDraft";
 
+import type { QueuedTestIdentity } from "./strategyBucketTestObservation";
+
 const BUCKET_LABELS: Record<StrategyBucket, string> = {
   long_term: "Long-term",
   swing: "Swing",
@@ -131,10 +133,14 @@ type MatrixCreateState =
 
 export function StrategyBucketTestValidationForm({
   initialBucket = "long_term",
-  lockedBucket = false
+  lockedBucket = false,
+  onQueuedTests,
+  refreshAfterCreate = true
 }: {
   initialBucket?: StrategyBucket;
   lockedBucket?: boolean;
+  onQueuedTests?: (tests: QueuedTestIdentity[]) => void;
+  refreshAfterCreate?: boolean;
 }) {
   const router = useRouter();
   const refreshedCreateRequestRef = useRef<string | null>(null);
@@ -276,6 +282,7 @@ export function StrategyBucketTestValidationForm({
     visibleMatrixCreateState.status !== "queued";
 
   useEffect(() => {
+    if (!refreshAfterCreate) return;
     if (visibleCreateState.status === "idle") {
       refreshedCreateRequestRef.current = null;
       return;
@@ -288,9 +295,10 @@ export function StrategyBucketTestValidationForm({
     }
     refreshedCreateRequestRef.current = visibleCreateState.requestJson;
     router.refresh();
-  }, [router, visibleCreateState]);
+  }, [router, visibleCreateState, refreshAfterCreate]);
 
   useEffect(() => {
+    if (!refreshAfterCreate) return;
     if (visibleMatrixCreateState.status === "idle") {
       return;
     }
@@ -304,7 +312,7 @@ export function StrategyBucketTestValidationForm({
     }
     refreshedCreateRequestRef.current = visibleMatrixCreateState.requestJson;
     router.refresh();
-  }, [router, visibleMatrixCreateState]);
+  }, [router, visibleMatrixCreateState, refreshAfterCreate]);
 
   async function validateWithBackend() {
     const currentRequestJson = requestJson;
@@ -407,6 +415,7 @@ export function StrategyBucketTestValidationForm({
             }
           : current
       );
+      onQueuedTests?.([{ testId: payload.testId, bucket: payload.bucket, configHash: payload.configHash }]);
     } catch (error) {
       setCreateState((current) =>
         isPendingCreate(current, currentRequestJson)
@@ -471,6 +480,7 @@ export function StrategyBucketTestValidationForm({
             }
           : current
       );
+      onQueuedTests?.(payload.queuedTests.map(({ testId, bucket, configHash }) => ({ testId, bucket, configHash })));
     } catch (error) {
       setMatrixCreateState((current) =>
         isPendingMatrixCreate(current, currentMatrixRequestJson)

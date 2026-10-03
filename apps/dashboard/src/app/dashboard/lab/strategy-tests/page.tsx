@@ -9,8 +9,7 @@ import {
   type StrategyBucketTestResultSummary,
   type ViewModelResult
 } from "@/lib/dashboardViewModels";
-import { StrategyBucketTestProgressPanel } from "./StrategyBucketTestProgressPanel";
-import { StrategyBucketTestValidationForm } from "./StrategyBucketTestValidationForm";
+import { StrategyBucketTestWorkspace } from "./StrategyBucketTestWorkspace";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -119,7 +118,7 @@ function StrategyLabView({ data }: { data: StrategyBucketTestLabViewModel }) {
           label="Runnable buckets"
           value={`${enabledCount}/${data.supportedBuckets.length}`}
         />
-        <Metric label="Active tests" value={String(data.activeTests.length)} />
+        <Metric label="Server active snapshot" value={String(data.activeTests.length)} />
       </section>
 
       <section>
@@ -134,20 +133,9 @@ function StrategyLabView({ data }: { data: StrategyBucketTestLabViewModel }) {
         </div>
       </section>
 
-      <StrategyBucketTestValidationForm />
-
-      <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <StrategyBucketTestProgressPanel
-          initialActiveTests={data.activeTests}
-          key={data.activeTests
-            .map(
-              (test) =>
-                `${test.testId}:${test.status}:${test.progress.phase}:${test.progress.updatedAt}`
-            )
-            .join("\n")}
-        />
+      <StrategyBucketTestWorkspace initialActiveTests={data.activeTests}>
         <ResultsPanel results={data.recentResults} />
-      </section>
+      </StrategyBucketTestWorkspace>
 
       <ComparisonPanel comparison={data.comparison} labStatus={data.status} />
       <SourceStatusList sourceStatus={data.sourceStatus} />
