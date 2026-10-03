@@ -259,6 +259,8 @@ test("direct query entry normalizes unknown status and preserves unrelated query
 test("keyboard skip, filter, clear, disclosure and child navigation retain exact identity", async ({ page, request }, testInfo) => {
   await setScenario(request, "all-statuses");
   await page.goto("/dashboard");
+  // The load event can precede the streamed dashboard replacing its loading fallback.
+  await expect(page.getByRole("heading", { name: "실험", exact: true })).toBeVisible();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "본문으로 건너뛰기" })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -610,7 +612,7 @@ async function expectIdentity(page: Page) {
   await expect(page).toHaveTitle("Toss Trading Dashboard");
   await expect(page.getByRole("main")).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 1, name: "실험", exact: true })).toBeInViewport();
-  await expect(page.getByRole("link", { name: "기존 실행 설정", exact: true })).toBeInViewport();
+  await expect(page.getByRole("link", { name: "새 실험", exact: true })).toBeInViewport();
   await expect(page.getByText("API가 선택한 batch / 최신 여부 미확인", { exact: true })).toBeInViewport();
   await expect(page.locator("[data-nextjs-dialog-overlay]")).toHaveCount(0);
   await expect(page.getByRole("main")).not.toContainText(/최신 batch|최신 실험|전체 실험 목록|모든 실험/);

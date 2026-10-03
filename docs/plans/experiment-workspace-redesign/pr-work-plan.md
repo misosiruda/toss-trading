@@ -134,9 +134,10 @@ manifest 선택 진단 없는 응답에 최신 label 금지, legacy route 보존
 | 단계 | 상태 | 증거 |
 | --- | --- | --- |
 | UX-00 | 기획·시안 검증 완료; PR 검토 현황 별도 | [검증 기록](verification.md), HTML 79fd5b46; Windows Chrome499/499 및 모바일 기본1.62화면 |
-| UX-01 | 미구현 | 목록 activeRun/source 상태 계약 포함 |
+| UX-01 | 구현·병합 | [PR #801](https://github.com/misosiruda/toss-trading/pull/801), main `8a33ef4`, tree `127b490` (검증 head `8a56807`과 동일); 목록 activeRun/source 분리·기존 경로 보존·mobile focus 회귀 포함. Linux 전체 4,462 tests 중 4,429 pass/33 platform skip/0 fail; 브라우저 174 pass, main smoke 39 pass |
 | UX-02a | 구현·병합 | [PR #797](https://github.com/misosiruda/toss-trading/pull/797), main `492afe9`; 전체 4,381 tests 중 4,348 pass/33 skip/0 fail |
 | UX-02b | 구현·병합 | [PR #798](https://github.com/misosiruda/toss-trading/pull/798), main `9235ab7`; 전체 4,462 tests 중 4,429 pass/33 skip/0 fail |
-| UX-02c, UX-03~07 | 미구현 | PR별 완료 조건을 통과한 뒤 갱신 |
+| UX-03 | 이 PR의 구현 범위 | [구현·검증 경계](ux03-implementation.md); 최종 head 검증 및 자동 review 결과는 PR 기록에서 확인 |
+| UX-02c, UX-04~07 | 미구현 | PR별 완료 조건을 통과한 뒤 갱신 |
 
 설계 시안을 구현 완료로, accepted를 실행 완료로, review 대기를 승인으로 표시하지 않는다.

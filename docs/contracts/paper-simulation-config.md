@@ -13,7 +13,10 @@ UX-02b 접수·실패 관측의 별도 범위는 [관측 계약](paper-simulatio
   서로의 intent를 재사용할 수 없으며 validation은 mutation route 목록에 들어가지 않는다.
 - local API는 기존 policy/bucket validation과 같은 guard다. Next의 create proxy는 기존
   dashboard intent·same-origin·runtime mutation token 검증을 그대로 유지한다.
-  이번 변경에 Next validation proxy는 없으며 후속 UI 연결 시 validation용 intent/guard가 필요하다.
+  UX-03의 `/dashboard/experiments/validate` proxy는 별도 `paper-simulation-validate` dashboard intent,
+  명시적인 동일 Origin, JSON object와 streamed 32,768-byte 제한을 적용한다. 이 읽기 전용 검증은
+  mutation token을 요구·전달하지 않는다. 생성은 기존 guarded create proxy를 유지한다.
+  [UX-03 입력·검증 lifecycle](../plans/experiment-workspace-redesign/ux03-implementation.md)을 참고한다.
 - 검증 200은 `schemaVersion=paper_simulation_validation.v1`, `status=valid`,
   `requestedConfig`, `effectiveConfig`, `notices`를 반환한다. `requestedConfig`는 기존
   schema로 파싱한 알려진 필드이며 원본 JSON 전체가 아니다. 불필요한 broad strict화 없이
