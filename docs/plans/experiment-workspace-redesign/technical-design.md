@@ -39,6 +39,12 @@ UI 연결·heartbeat·scheduler·자동 복구는 구현하지 않았다. 아래
 
 ## 기존 기능 이전표
 
+### UX-01 병합 이후 기준 (`8a33ef4`, PR #801)
+
+실험 목록·navigation·기존 운영 요약 route가 구현됐다. API가 선택한 batch의 출처·판독 상태와
+개별 실행 상태를 분리하며 최신 여부는 계속 미확인이다. 위 시작 시점 관찰과 후속 단계는
+설계 이력이며, UX-01을 미구현으로 해석하지 않는다. UX-03은 이 기준 위에 별도 구현한다.
+
 기존 경로는 migration 동안 직접 열 수 있어야 한다. 새 menu가 예전 page를 감싸는 경우
 heading/landmark를 중복 만들지 않는다. Next route는 3000, legacy는 8787 기본 origin으로 서로 다르다.
 배포 rewrite가 없으므로 `/dashboard/virtual`을 Next 내부 Link로 연결해 404를 만드는 방식은 금지한다.

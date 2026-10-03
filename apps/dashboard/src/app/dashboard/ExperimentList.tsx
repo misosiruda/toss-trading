@@ -206,8 +206,8 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
             <p className={styles.sourceLabel}>API가 선택한 batch / 최신 여부 미확인</p>
           </div>
           <div className={styles.actionGroup}>
-            <Link className={styles.primaryAction} href="/dashboard/lab/policies">기존 실행 설정<Icon name="arrow" /></Link>
-            <p>현재 builder: 고정 balanced 설정 + policy hash seed<br />PortfolioPolicy 실행은 지원하지 않음</p>
+            <Link className={styles.primaryAction} href="/dashboard/experiments/new">새 실험<Icon name="arrow" /></Link>
+            <p>built-in paper replay · fixture 판단<br />PortfolioPolicy 실행은 지원하지 않음</p>
           </div>
         </header>
 
@@ -258,7 +258,7 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
   );
 }
 
-function WorkspaceNavigation() {
+export function WorkspaceNavigation() {
   const mobileMenuRef = useRef<HTMLDetailsElement>(null);
   const mobileSummaryRef = useRef<HTMLElement>(null);
 

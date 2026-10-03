@@ -610,7 +610,7 @@ async function expectIdentity(page: Page) {
   await expect(page).toHaveTitle("Toss Trading Dashboard");
   await expect(page.getByRole("main")).toHaveCount(1);
   await expect(page.getByRole("heading", { level: 1, name: "실험", exact: true })).toBeInViewport();
-  await expect(page.getByRole("link", { name: "기존 실행 설정", exact: true })).toBeInViewport();
+  await expect(page.getByRole("link", { name: "새 실험", exact: true })).toBeInViewport();
   await expect(page.getByText("API가 선택한 batch / 최신 여부 미확인", { exact: true })).toBeInViewport();
   await expect(page.locator("[data-nextjs-dialog-overlay]")).toHaveCount(0);
   await expect(page.getByRole("main")).not.toContainText(/최신 batch|최신 실험|전체 실험 목록|모든 실험/);

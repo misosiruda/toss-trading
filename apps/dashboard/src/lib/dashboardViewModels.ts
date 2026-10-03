@@ -593,6 +593,14 @@ export interface BatchReplayRunArtifacts {
   currentPositionCount: number | null;
 }
 
+export type SimulationObservationView = {
+  status: "available";
+  simulationRunId: string;
+  acceptedAt: string;
+  outcome: "unknown" | "runner_failed";
+  runnerFailure: { observedAt: string; reasonCode: "runner_rejected" } | null;
+} | { status: "missing" | "invalid" | "unavailable" | "unsupported" | "not_requested" };
+
 export interface RunDetailView {
   mode: "paper_only";
   readOnly: true;
@@ -605,6 +613,9 @@ export interface RunDetailView {
   latestArtifactsRunId: string | null;
   warnings: string[];
   status: "ok" | "missing";
+  requestedId: string;
+  endpointStatus: string | null;
+  simulationObservation: SimulationObservationView;
 }
 
 export type ViewModelResult<T> =
@@ -1485,6 +1496,9 @@ function normalizeRunDetailView(
     mode: "paper_only",
     readOnly: true,
     runId: resolvedRunId,
+    requestedId: runId,
+    endpointStatus: readNullableString(value["status"]),
+    simulationObservation: normalizeSimulationObservation(value["simulationObservation"], runId),
     batchId,
     batchStatus,
     sourceRunsPath: readNullableString(value["sourceRunsPath"]),
@@ -1494,6 +1508,23 @@ function normalizeRunDetailView(
     warnings,
     status: run === null ? "missing" : "ok"
   };
+}
+
+function normalizeSimulationObservation(value: unknown, requestedId: string): SimulationObservationView {
+  if (value === undefined) return { status: "unsupported" };
+  if (value === null) return { status: "not_requested" };
+  const invalid = { status: "invalid" as const };
+  if (!isRecord(value) || value["simulationRunId"] !== requestedId) return invalid;
+  if (value["status"] === "missing" || value["status"] === "invalid" || value["status"] === "unavailable") return { status: value["status"] };
+  if (value["status"] !== "available" || value["schemaVersion"] !== "paper_simulation_observation.v1" ||
+      value["batchId"] !== requestedId || !/^paper_sim_\d{17}_[A-Za-z0-9_-]{1,32}(?![\s\S])/.test(requestedId)) return invalid;
+  const acceptedAt = value["acceptedAt"];
+  const validTimestamp = (time: unknown): time is string => typeof time === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(time) && Number.isFinite(Date.parse(time)) && new Date(time).toISOString().slice(0, 19) === time.slice(0, 19);
+  if (!validTimestamp(acceptedAt)) return invalid;
+  const outcome = value["outcome"], failure = value["runnerFailure"];
+  if (outcome === "unknown" && failure === null) return { status: "available", simulationRunId: requestedId, acceptedAt, outcome, runnerFailure: null };
+  if (outcome !== "runner_failed" || !isRecord(failure) || failure["reasonCode"] !== "runner_rejected" || !validTimestamp(failure["observedAt"]) || Date.parse(failure["observedAt"]) < Date.parse(acceptedAt)) return invalid;
+  return { status: "available", simulationRunId: requestedId, acceptedAt, outcome, runnerFailure: { observedAt: failure["observedAt"], reasonCode: "runner_rejected" } };
 }
 
 function findRunDetailTargetRun({
