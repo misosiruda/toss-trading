@@ -140,6 +140,15 @@ npm --prefix apps/dashboard run test:e2e -- --config=playwright.experiment-list.
 test runner의 고정 whitelist 요청에 한정하며 UI에서 호출하지 않습니다. 이 fixture는
 실제 자료·provider·외부 API·broker·credential을 사용하지 않습니다.
 
+비교·데이터 링크는 별도 production 회귀로도 확인합니다. hash와 DOM 가시성 외에 실제
+scroll 위치, viewport 안의 목적지와 keyboard focus를 검사하며 직접 진입·reload도 포함합니다.
+세 viewport(1440/1024/390)의 기존 실제 Operations API fixture를 사용하고 기존 기본 suite를 대체하지 않습니다.
+다른 suite와 서버가 모두 종료된 후 실행합니다. API fetch의 2초 timeout, 테스트 assertion과 기본 worker 설정은 유지합니다.
+
+```powershell
+npm --prefix apps/dashboard run test:e2e:experiment-production
+```
+
 ### Portfolio hedge fixture 회귀 검증
 
 기본 `test:e2e`의 `virtual_e2e` snapshot은 `2026-06-27T00:00:00.000Z`이며 active policy가 없는 상태를 유지합니다.

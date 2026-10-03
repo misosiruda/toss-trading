@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import axe from "axe-core";
 
 // These tests use playwright.config.ts and its existing isolated REAL Operations
@@ -119,7 +119,7 @@ test("experiment navigation retains live existing destinations and anchored repo
         navigationEvents.push({ event: `cycle ${cycle + 1}: ${label} click`, url: page.url(), href: await link.getAttribute("href") });
         await link.click();
         await expect(page).toHaveURL(new RegExp(`/dashboard/validation#${anchor}$`));
-        await expect(page.locator(`#${anchor}`)).toBeVisible();
+        await expectReportDestination(page, anchor, testInfo);
         navigationEvents.push({ event: `cycle ${cycle + 1}: Back from ${label}`, url: page.url() });
         await page.goBack();
         await expect(page).toHaveURL(/\/dashboard$/);
@@ -142,6 +142,50 @@ test("experiment navigation retains live existing destinations and anchored repo
     await testInfo.attach("real-navigation-browser-errors", { body: JSON.stringify(errors), contentType: "application/json" });
   }
 });
+
+test("direct validation report fragments and reload reach the visible focused destination", async ({ page }, testInfo) => {
+  const geometry = [];
+  for (const anchor of ["candidate-comparison", "data-universe-coverage"]) {
+    await page.goto(`/dashboard/validation#${anchor}`);
+    await expectReportDestination(page, anchor, testInfo);
+    await page.reload();
+    await expectReportDestination(page, anchor, testInfo);
+    geometry.push(await page.locator(`#${anchor}`).evaluate((element) => ({
+      id: element.id, top: element.getBoundingClientRect().top, scrollY: window.scrollY,
+      focusedId: document.activeElement?.id, viewportHeight: window.innerHeight
+    })));
+  }
+  await testInfo.attach("direct-reload-fragment-geometry", { body: JSON.stringify(geometry, null, 2), contentType: "application/json" });
+});
+
+async function expectReportDestination(page: Page, anchor: string, testInfo: TestInfo) {
+  const target = page.locator(`#${anchor}`);
+  try {
+    await expect(target).toBeVisible();
+    await expect(target).toBeFocused();
+    await expect(target).toBeInViewport();
+    // Scroll is clamped when the remaining document is shorter than a viewport.
+    // Measuring the destination catches the previous URL-only success at Y=0.
+    await expect.poll(async () => target.evaluate((element) => {
+      const top = element.getBoundingClientRect().top + window.scrollY;
+      const margin = Number.parseFloat(getComputedStyle(element).scrollMarginTop) || 0;
+      const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const expectedY = Math.min(maxY, Math.max(0, top - margin));
+      return Math.abs(window.scrollY - expectedY);
+    })).toBeLessThanOrEqual(3);
+  } finally {
+    const geometry = await page.evaluate((id) => {
+      const element = document.getElementById(id);
+      const rect = element?.getBoundingClientRect();
+      return { href: location.href, readyState: document.readyState, scrollY,
+        viewport: { width: innerWidth, height: innerHeight }, documentHeight: document.documentElement.scrollHeight,
+        activeElement: { tag: document.activeElement?.tagName, id: document.activeElement?.id },
+        target: rect ? { id, top: rect.top, bottom: rect.bottom, height: rect.height,
+          scrollMarginTop: getComputedStyle(element!).scrollMarginTop } : null };
+    }, anchor);
+    await testInfo.attach(`${anchor}-navigation-geometry`, { body: JSON.stringify(geometry, null, 2), contentType: "application/json" });
+  }
+}
 
 async function expectNoOverflow(page: Page) {
   const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
