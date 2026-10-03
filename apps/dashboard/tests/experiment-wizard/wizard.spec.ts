@@ -249,6 +249,29 @@ test("uncertain response blocks click, Enter and reload retry while retaining in
   expect(posts).toBe(1);
 });
 
+test("a corrupt saved draft cannot hide an uncertain admission barrier", async ({ page }) => {
+  await page.goto("/dashboard/experiments/new?step=3");
+  await page.evaluate(() => {
+    sessionStorage.setItem("paper-experiment-admission-v1", "response_unknown");
+    sessionStorage.setItem("paper-experiment-draft-v1", "{broken");
+  });
+  await page.reload();
+  await expect(page.getByRole("status")).toContainText("이전에 보낸 생성 요청");
+  await expect(page.getByRole("button", { name: "paper 실행 시작" })).toBeDisabled();
+  await expect(page.getByLabel("실행 승인 토큰")).toBeDisabled();
+});
+
+test("validation permission and availability errors do not claim a create admission", async ({ page }) => {
+  await fill(page);
+  for (const status of [403, 503]) {
+    await page.route(`**${validatePath}`, route => route.fulfill({ status, json: { error: "unavailable" } }));
+    await page.getByRole("button", { name: "현재 입력 검증" }).click();
+    await expect(page.getByRole("status")).toContainText(status === 403 ? "입력 검증에는 실행 승인 토큰을 사용하지 않습니다" : "입력 검증 서비스를 사용할 수 없습니다");
+    await expect(page.getByRole("button", { name: "paper 실행 시작" })).toBeDisabled();
+    await page.unroute(`**${validatePath}`);
+  }
+});
+
 for (const status of [400, 401, 403, 409, 503]) test(`HTTP ${status} rejection preserves input and requires explicit revalidation`, async ({ page }) => {
   await fill(page); await validated(page);
   await page.route(`**${createPath}`, route => route.fulfill({ status, json: { error: status === 503 ? "paper_simulation_admission_failed" : "rejected" } }));

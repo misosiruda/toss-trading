@@ -38,11 +38,7 @@ export function ExperimentWizard() {
   useEffect(() => {
     alive.current = true;
     try {
-      const saved = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "null");
-      if (saved && typeof saved === "object" && Object.keys(emptySimulationDraft).every(key => typeof saved[key] === "string")) {
-        // Restore raw input only; validation credentials never survive a mount.
-        setDraft(Object.fromEntries(Object.keys(emptySimulationDraft).map(key => [key, saved[key]])) as unknown as SimulationDraft);
-      }
+      // Restore the admission barrier before parsing an independently corruptible draft.
       const admission = sessionStorage.getItem(ADMISSION_KEY);
       if (admission) {
         submitted.current = true;
@@ -50,6 +46,11 @@ export function ExperimentWizard() {
         setAcceptedId(knownId);
         setPhase(knownId ? "accepted" : "unknown");
         setMessage(knownId ? "이 탭의 이전 요청은 접수됐습니다. 같은 ID의 상세를 조회하세요." : "이전에 보낸 생성 요청의 결과는 미확인입니다. 재전송하지 말고 실험 목록에서 저장된 상태를 확인하세요.");
+      }
+      const saved = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "null");
+      if (saved && typeof saved === "object" && Object.keys(emptySimulationDraft).every(key => typeof saved[key] === "string")) {
+        // Restore raw input only; validation credentials never survive a mount.
+        setDraft(Object.fromEntries(Object.keys(emptySimulationDraft).map(key => [key, saved[key]])) as unknown as SimulationDraft);
       }
     } catch { /* Input remains usable when storage is unavailable. Admission fails closed below. */ }
     setReady(true);
@@ -59,6 +60,7 @@ export function ExperimentWizard() {
   useEffect(() => { heading.current?.focus({ preventScroll: false }); }, [step]);
 
   function edit<K extends keyof SimulationDraft>(key: K, value: SimulationDraft[K]) {
+    if (submitted.current) return;
     version.current += 1;
     controller.current?.abort();
     validating.current = false;
@@ -105,7 +107,13 @@ export function ExperimentWizard() {
     event.preventDefault();
     if (!currentReceipt || currentReceipt.version !== version.current || submitted.current || !token.trim() || phase !== "idle") return;
     // Persist only a no-retry barrier, before sending anything. Never persist the token or receipt.
-    try { sessionStorage.setItem(ADMISSION_KEY, "response_unknown"); }
+    try {
+      // Recheck at the click boundary as another mounted view can have submitted since hydration.
+      if (sessionStorage.getItem(ADMISSION_KEY)) {
+        submitted.current = true; setPhase("unknown"); setMessage("이 탭의 이전 생성 요청을 먼저 조회하세요. POST를 재전송하지 않습니다."); return;
+      }
+      sessionStorage.setItem(ADMISSION_KEY, "response_unknown");
+    }
     catch { setMessage("이 탭의 중복 요청 방지 상태를 저장할 수 없어 생성하지 않았습니다."); return; }
     submitted.current = true;
     setPhase("submitting"); setMessage("한 번의 생성 요청을 보냈습니다. 접수 응답을 기다려 주세요.");
@@ -120,7 +128,7 @@ export function ExperimentWizard() {
       if (!alive.current) return;
       if ([400, 401, 403, 409].includes(response.status) || (response.status === 503 && typeof payload === "object" && payload !== null && "error" in payload && payload.error === "paper_simulation_admission_failed")) {
         sessionStorage.removeItem(ADMISSION_KEY); submitted.current = false;
-        setPhase("idle"); setReceipt(null); setMessage(`${errorMessage(response.status)} 입력을 유지했어요. 다시 검증한 뒤 명시적으로 실행하세요.`); return;
+        setPhase("idle"); setReceipt(null); setMessage(`${errorMessage(response.status, true)} 입력을 유지했어요. 다시 검증한 뒤 명시적으로 실행하세요.`); return;
       }
       const id = response.status === 202 ? acceptedSimulationId(payload, currentReceipt.validation) : null;
       if (!id) throw new Error("uncertain");
@@ -188,11 +196,11 @@ export function ExperimentWizard() {
   </div>;
 }
 
-function errorMessage(status: number): string {
+function errorMessage(status: number, creating = false): string {
   if (status === 400) return "입력 조건이 거절됐습니다. 경로·날짜·숫자 범위를 확인하세요.";
-  if (status === 401 || status === 403) return "요청 권한을 확인하세요. 실행 승인 토큰과 동일 출처 요청이 필요합니다.";
+  if (status === 401 || status === 403) return creating ? "요청 권한을 확인하세요. 실행 승인 토큰과 동일 출처 요청이 필요합니다." : "검증 요청의 권한과 동일 출처를 확인하세요. 입력 검증에는 실행 승인 토큰을 사용하지 않습니다.";
   if (status === 409) return "동시 실행 또는 ID 충돌로 접수되지 않았습니다. 저장된 상태를 먼저 확인하세요.";
-  if (status === 503) return "접수를 저장하지 못해 runner를 시작하지 않았습니다.";
+  if (status === 503) return creating ? "접수를 저장하지 못해 runner를 시작하지 않았습니다." : "입력 검증 서비스를 사용할 수 없습니다. 입력을 유지했어요.";
   return `응답을 확인할 수 없습니다 (HTTP ${status}).`;
 }
 
