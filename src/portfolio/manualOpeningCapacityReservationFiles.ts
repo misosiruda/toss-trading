@@ -115,7 +115,7 @@ export class ManualOpeningCapacityReservationFileRepository {
    * This primitive never updates the shared capacity document or grants allocation/execution approval.
    */
   async withAppendSessionFromSources<T>(manual: VerifiedManualAssignmentHistory, snapshots: VerifiedPortfolioSizingSnapshotHistory,
-    operation: (session: ManualCapacityAppendSession) => Promise<T>): Promise<T> {
+    operation: (session: ManualCapacityAppendSession, history: VerifiedManualCapacityReservationHistory) => Promise<T>): Promise<T> {
     if (typeof operation !== "function") throw new Error("manual capacity append session consumer must be a function");
     const verifySources = () => {
       assertDurableManualAssignmentSource(manual, this.baseDir);
@@ -132,6 +132,7 @@ export class ManualOpeningCapacityReservationFileRepository {
         throw new Error("manual capacity append session clock moved backwards");
       }
       let active = true, accepting = true, failed = false, failure: unknown;
+      observations.set(history, { observedAt, sourcePath: this.paths.recordsPath, verifySources });
       let expectedGeneration = history.generationHash, clockFloor = sessionAt;
       const knownIds = new Set(history.origins.map((origin) => origin.record.manualCapacityReservationId));
       let pending: Promise<VerifiedManualCapacityReservationOrigin> | undefined;
@@ -167,14 +168,14 @@ export class ManualOpeningCapacityReservationFileRepository {
       } });
       try {
         verify(snapshots);
-        return await operation(session);
+        return await operation(session, history);
       } finally {
         accepting = false;
         try {
           if (pending) await pending;
           verify(snapshots);
           if (failed) throw failure;
-        } finally { active = false; }
+        } finally { active = false; observations.delete(history); }
       }
     });
   }
