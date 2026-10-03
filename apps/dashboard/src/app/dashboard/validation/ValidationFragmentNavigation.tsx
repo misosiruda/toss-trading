@@ -4,6 +4,15 @@ import { useEffect } from "react";
 
 const REPORT_FRAGMENTS = new Set(["#candidate-comparison", "#data-universe-coverage"]);
 
+function isAtFragmentDestination(target: HTMLElement) {
+  const top = target.getBoundingClientRect().top;
+  const margin = Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+  if (Math.abs(top - margin) <= 3) return true;
+  const scroller = document.scrollingElement;
+  return top >= margin - 3 && scroller !== null &&
+    scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 3;
+}
+
 export function ValidationFragmentNavigation() {
   useEffect(() => {
     let frame: number | null = null;
@@ -25,13 +34,9 @@ export function ValidationFragmentNavigation() {
       )) {
         const target = document.getElementById(hash.slice(1));
         if (!target || (initialFocus && initialFocus !== document.body && initialFocus !== document.documentElement && initialFocus !== target)) return;
-        const top = target.getBoundingClientRect().top + initialY;
-        const margin = Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
-        const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-        const expectedY = Math.min(maxY, Math.max(0, top - margin));
         // Preserve a position the user or browser restored before hydration.
         // A native arrival already at this target may still receive focus.
-        if ((initialX !== 0 || initialY !== 0) && (initialX !== 0 || Math.abs(initialY - expectedY) > 3)) return;
+        if (initialX !== 0 || (initialY !== 0 && !isAtFragmentDestination(target))) return;
       }
 
       // A native link can reach the streamed document before its report target
@@ -42,7 +47,10 @@ export function ValidationFragmentNavigation() {
         if (window.location.pathname !== "/dashboard/validation" || window.location.hash !== hash) return;
         const target = document.getElementById(hash.slice(1));
         if (!target?.isConnected) return;
-        if (window.scrollX !== initialX || window.scrollY !== initialY) return;
+        if (window.scrollX !== initialX) return;
+        // Native fragment scrolling may finish before this frame without moving
+        // DOM focus. Complete that exact arrival, but preserve other movement.
+        if (window.scrollY !== initialY && !isAtFragmentDestination(target)) return;
         if (document.activeElement !== initialFocus && document.activeElement !== target) return;
         target.scrollIntoView({ behavior: "instant", block: "start" });
         target.focus({ preventScroll: true });

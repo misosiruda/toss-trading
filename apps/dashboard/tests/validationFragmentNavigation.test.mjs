@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
-async function harness(hash = "#candidate-comparison", { initialFocus, initialScrollY = 0 } = {}) {
+async function harness(hash = "#candidate-comparison", { initialFocus, initialScrollY = 0, targetTop = 600, innerHeight = 800, documentHeight = 2000 } = {}) {
   const source = await readFile(new URL("../src/app/dashboard/validation/ValidationFragmentNavigation.tsx", import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
   const frames = new Map();
@@ -14,13 +14,13 @@ async function harness(hash = "#candidate-comparison", { initialFocus, initialSc
   let effect;
   const target = {
     isConnected: true,
-    getBoundingClientRect() { return { top: 600 - window.scrollY }; },
+    getBoundingClientRect() { return { top: targetTop - window.scrollY }; },
     scrollIntoView(options) { events.push(["scroll", { ...options }]); },
     focus(options) { events.push(["focus", { ...options }]); }
   };
   const window = {
     location: { pathname: "/dashboard/validation", hash },
-    scrollX: 0, scrollY: initialScrollY, innerHeight: 800,
+    scrollX: 0, scrollY: initialScrollY, innerHeight,
     requestAnimationFrame(callback) { const id = ++nextFrame; frames.set(id, callback); return id; },
     cancelAnimationFrame(id) { frames.delete(id); },
     addEventListener(type, callback) { listeners.set(type, callback); },
@@ -28,7 +28,8 @@ async function harness(hash = "#candidate-comparison", { initialFocus, initialSc
   };
   const exports = {};
   const body = {};
-  const document = { body, documentElement: { scrollHeight: 2000 }, activeElement: initialFocus === "target" ? target : initialFocus ?? body,
+  const document = { body, documentElement: { scrollHeight: documentHeight }, activeElement: initialFocus === "target" ? target : initialFocus ?? body,
+    scrollingElement: { scrollHeight: documentHeight, clientHeight: 800, get scrollTop() { return window.scrollY; } },
     getElementById(id) { events.push(["lookup", id]); return target; } };
   runInNewContext(outputText, {
     exports, window, document, getComputedStyle: () => ({ scrollMarginTop: "24px" }),
@@ -130,6 +131,26 @@ test("native focus arriving at the requested target does not cancel its pending 
   h.document.activeElement = h.target;
   h.listeners.get("focusin")({ target: h.target });
   assert.equal(h.frames.size, 1);
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("native scroll arriving before the frame receives focus instead of leaving BODY active", async () => {
+  const h = await harness();
+  h.window.scrollY = 576;
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("a correctly aligned mobile target does not depend on inflated innerHeight", async () => {
+  const h = await harness(undefined, { initialScrollY: 1776, targetTop: 1800, innerHeight: 1582, documentHeight: 3200 });
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("a bottom-clamped native destination completes focus without requiring impossible top alignment", async () => {
+  const h = await harness(undefined, { targetTop: 1440 });
+  h.window.scrollY = 1200;
   h.flush();
   assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
 });

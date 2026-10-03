@@ -167,18 +167,21 @@ async function expectReportDestination(page: Page, anchor: string, testInfo: Tes
     // Scroll is clamped when the remaining document is shorter than a viewport.
     // Measuring the destination catches the previous URL-only success at Y=0.
     await expect.poll(async () => target.evaluate((element) => {
-      const top = element.getBoundingClientRect().top + window.scrollY;
+      const top = element.getBoundingClientRect().top;
       const margin = Number.parseFloat(getComputedStyle(element).scrollMarginTop) || 0;
-      const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      const expectedY = Math.min(maxY, Math.max(0, top - margin));
-      return Math.abs(window.scrollY - expectedY);
+      const scroller = document.scrollingElement;
+      const remaining = scroller ? scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop : Infinity;
+      return top >= margin - 3 && remaining <= 3 ? 0 : Math.abs(top - margin);
     })).toBeLessThanOrEqual(3);
   } finally {
     const geometry = await page.evaluate((id) => {
       const element = document.getElementById(id);
       const rect = element?.getBoundingClientRect();
       return { href: location.href, readyState: document.readyState, scrollY,
-        viewport: { width: innerWidth, height: innerHeight }, documentHeight: document.documentElement.scrollHeight,
+        viewport: { width: innerWidth, height: innerHeight,
+          visualWidth: visualViewport?.width, visualHeight: visualViewport?.height, visualScale: visualViewport?.scale },
+        scroller: document.scrollingElement ? { height: document.scrollingElement.scrollHeight,
+          clientHeight: document.scrollingElement.clientHeight, scrollTop: document.scrollingElement.scrollTop } : null,
         activeElement: { tag: document.activeElement?.tagName, id: document.activeElement?.id },
         target: rect ? { id, top: rect.top, bottom: rect.bottom, height: rect.height,
           scrollMarginTop: getComputedStyle(element!).scrollMarginTop } : null };
