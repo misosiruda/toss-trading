@@ -1,6 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { portfolioSnapshot } from "../portfolio-policy/scenarios.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const dashboardRoot = resolve(scriptDir, "../..");
@@ -22,24 +23,7 @@ await mkdir(sourceDataDir, { recursive: true });
 await writeFile(
   resolve(dataDir, "virtual-portfolio.json"),
   `${JSON.stringify(
-    {
-      portfolioId: "virtual_e2e",
-      cashKrw: 850_000,
-      positions: [
-        {
-          market: "KR",
-          symbol: "005930",
-          assetType: "STOCK",
-          assetClass: "equity",
-          strategyBucket: "long_term",
-          quantity: 2,
-          averagePriceKrw: 70_000,
-          marketValueKrw: 150_000,
-          updatedAt: "2026-06-27T00:00:00.000Z"
-        }
-      ],
-      updatedAt: "2026-06-27T00:00:00.000Z"
-    },
+    portfolioSnapshot(),
     null,
     2
   )}\n`,

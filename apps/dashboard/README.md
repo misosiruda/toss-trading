@@ -88,3 +88,32 @@ npm --prefix apps/dashboard run test:e2e
 ```
 
 `test:e2e`는 isolated `apps/dashboard/.e2e-data/paper` data dir로 root Local Operations API를 `127.0.0.1:8789`에서 시작하고 Next.js dashboard를 `127.0.0.1:3002`에서 시작합니다. smoke test는 read-only ViewModel contract, live mutation control 미노출, axe-core 접근성 검사를 확인합니다.
+
+### Portfolio hedge fixture 회귀 검증
+
+기본 `test:e2e`의 `virtual_e2e` snapshot은 `2026-06-27T00:00:00.000Z`이며 active policy가 없는 상태를 유지합니다.
+실제 API의 `policyStatus=missing`, `policyEnabled=null`, 관측 `ineffective`와 현재 missing-policy 경고를 검증하고 hedge breach가 없음을 확인합니다.
+
+```powershell
+# 브라우저 없이 실제 local Operations API와 immutable fixture 계약 검증
+npm --prefix apps/dashboard run test:portfolio-fixture
+# 별도 missing/enabled/disabled fixture를 desktop/mobile에서 순차 검증
+npm --prefix apps/dashboard run test:e2e:portfolio-policy
+```
+
+`test:e2e:portfolio-policy`는 root TypeScript build를 한 번 실행한 뒤 fixture API 테스트와 세 scenario를 실행합니다.
+각 scenario는 allowlist로 고정한 `.e2e-data/portfolio-policy/{missing,enabled,disabled}`를 사용하고 테스트 전에만 준비합니다.
+실제 Operations API는 `127.0.0.1:8790`, Next.js는 `127.0.0.1:3003`에서 시작하며 기존 서버를 재사용하지 않습니다.
+한 scenario의 desktop/mobile이 모두 끝나고 서버가 종료된 후 다음 scenario를 시작합니다.
+Next.js `.next`는 공유하므로 기본 E2E, 별도 scenario E2E, 개발 서버와 dashboard build를 같은 worktree에서 동시에 실행하지 않습니다.
+기본 전체 E2E → portfolio scenario E2E → 후속 list/SSR matrix 순서로 반드시 순차 실행합니다.
+전용 Next 서버도 loopback hostname을 명시하고 `DASHBOARD_MUTATION_TOKEN`을 빈값으로 고정합니다.
+
+Enabled/disabled는 production factory로 source policy, immutable dependency, runtime policy, activation을 생성하고 `virtual_e2e`에 결속합니다.
+활성화는 snapshot의 as-of와 정확히 같은 시각이며 API가 각각 `active/true`, `active/false`인지 먼저 검증합니다.
+Enabled는 기존 `ineffective` breach와 danger class를 확인하고, disabled는 breach 부재와 `ineffective` analytics 유지를 확인합니다.
+모든 scenario에서 read-only 경계와 axe 검사를 유지하며 SSR 응답을 `page.route` 등으로 대체하지 않습니다.
+Portfolio의 두 가로 스크롤 표는 이름 있는 region으로 제공하며 Tab으로 진입하고 방향키로 스크롤할 수 있습니다.
+기본 smoke와 세 scenario는 표의 Tab/Shift+Tab 순서, 보이는 focus outline, overflow 시 실제 키보드 스크롤도 검증합니다.
+별도 API 회귀는 유효한 정책의 activation만 as-of보다 1ms 이후인 경우를 생성해 정책이 아직 missing임을 확인합니다.
+기본 전체 E2E와 repository 최종 merge 검증은 이 focused command로 대체하지 않습니다.
