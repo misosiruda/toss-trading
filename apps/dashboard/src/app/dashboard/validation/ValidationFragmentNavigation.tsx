@@ -5,12 +5,14 @@ import { useEffect } from "react";
 const REPORT_FRAGMENTS = new Set(["#candidate-comparison", "#data-universe-coverage"]);
 
 function isAtFragmentDestination(target: HTMLElement) {
-  const top = target.getBoundingClientRect().top;
+  const viewport = window.visualViewport;
+  const top = target.getBoundingClientRect().top - (viewport?.offsetTop ?? 0);
   const margin = Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
   if (Math.abs(top - margin) <= 3) return true;
   const scroller = document.scrollingElement;
   return top >= margin - 3 && scroller !== null &&
-    scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 3;
+    scroller.scrollHeight - (viewport?.height ?? scroller.clientHeight) -
+      (viewport?.pageTop ?? scroller.scrollTop) <= 3;
 }
 
 export function ValidationFragmentNavigation() {

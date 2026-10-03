@@ -167,10 +167,12 @@ async function expectReportDestination(page: Page, anchor: string, testInfo: Tes
     // Scroll is clamped when the remaining document is shorter than a viewport.
     // Measuring the destination catches the previous URL-only success at Y=0.
     await expect.poll(async () => target.evaluate((element) => {
-      const top = element.getBoundingClientRect().top;
+      const viewport = window.visualViewport;
+      const top = element.getBoundingClientRect().top - (viewport?.offsetTop ?? 0);
       const margin = Number.parseFloat(getComputedStyle(element).scrollMarginTop) || 0;
       const scroller = document.scrollingElement;
-      const remaining = scroller ? scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop : Infinity;
+      const remaining = scroller ? scroller.scrollHeight - (viewport?.height ?? scroller.clientHeight) -
+        (viewport?.pageTop ?? scroller.scrollTop) : Infinity;
       return top >= margin - 3 && remaining <= 3 ? 0 : Math.abs(top - margin);
     })).toBeLessThanOrEqual(3);
   } finally {
@@ -179,11 +181,14 @@ async function expectReportDestination(page: Page, anchor: string, testInfo: Tes
       const rect = element?.getBoundingClientRect();
       return { href: location.href, readyState: document.readyState, scrollY,
         viewport: { width: innerWidth, height: innerHeight,
-          visualWidth: visualViewport?.width, visualHeight: visualViewport?.height, visualScale: visualViewport?.scale },
+          visualWidth: visualViewport?.width, visualHeight: visualViewport?.height, visualScale: visualViewport?.scale,
+          visualOffsetTop: visualViewport?.offsetTop, visualOffsetLeft: visualViewport?.offsetLeft,
+          visualPageTop: visualViewport?.pageTop, visualPageLeft: visualViewport?.pageLeft },
         scroller: document.scrollingElement ? { height: document.scrollingElement.scrollHeight,
           clientHeight: document.scrollingElement.clientHeight, scrollTop: document.scrollingElement.scrollTop } : null,
         activeElement: { tag: document.activeElement?.tagName, id: document.activeElement?.id },
-        target: rect ? { id, top: rect.top, bottom: rect.bottom, height: rect.height,
+        target: rect ? { id, top: rect.top, visualTop: rect.top - (visualViewport?.offsetTop ?? 0),
+          bottom: rect.bottom, height: rect.height,
           scrollMarginTop: getComputedStyle(element!).scrollMarginTop } : null };
     }, anchor);
     await testInfo.attach(`${anchor}-navigation-geometry`, { body: JSON.stringify(geometry, null, 2), contentType: "application/json" });

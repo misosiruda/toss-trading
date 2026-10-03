@@ -4,7 +4,8 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 
-async function harness(hash = "#candidate-comparison", { initialFocus, initialScrollY = 0, targetTop = 600, innerHeight = 800, documentHeight = 2000 } = {}) {
+async function harness(hash = "#candidate-comparison", { initialFocus, initialScrollY = 0, targetTop = 600, innerHeight = 800,
+  documentHeight = 2000, clientHeight = 800, visualOffsetTop = 0, visualHeight = clientHeight } = {}) {
   const source = await readFile(new URL("../src/app/dashboard/validation/ValidationFragmentNavigation.tsx", import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
   const frames = new Map();
@@ -21,6 +22,7 @@ async function harness(hash = "#candidate-comparison", { initialFocus, initialSc
   const window = {
     location: { pathname: "/dashboard/validation", hash },
     scrollX: 0, scrollY: initialScrollY, innerHeight,
+    visualViewport: { offsetTop: visualOffsetTop, height: visualHeight, get pageTop() { return window.scrollY + this.offsetTop; } },
     requestAnimationFrame(callback) { const id = ++nextFrame; frames.set(id, callback); return id; },
     cancelAnimationFrame(id) { frames.delete(id); },
     addEventListener(type, callback) { listeners.set(type, callback); },
@@ -29,7 +31,7 @@ async function harness(hash = "#candidate-comparison", { initialFocus, initialSc
   const exports = {};
   const body = {};
   const document = { body, documentElement: { scrollHeight: documentHeight }, activeElement: initialFocus === "target" ? target : initialFocus ?? body,
-    scrollingElement: { scrollHeight: documentHeight, clientHeight: 800, get scrollTop() { return window.scrollY; } },
+    scrollingElement: { scrollHeight: documentHeight, clientHeight, get scrollTop() { return window.scrollY; } },
     getElementById(id) { events.push(["lookup", id]); return target; } };
   runInNewContext(outputText, {
     exports, window, document, getComputedStyle: () => ({ scrollMarginTop: "24px" }),
@@ -153,6 +155,34 @@ test("a bottom-clamped native destination completes focus without requiring impo
   h.window.scrollY = 1200;
   h.flush();
   assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("observed mobile layout top605 minus visual offset581 is a valid arrival before mount", async () => {
+  const h = await harness(undefined, { initialScrollY: 6413, targetTop: 7018, documentHeight: 8531,
+    innerHeight: 1245, clientHeight: 664, visualOffsetTop: 581 });
+  assert.equal(h.frames.size, 1);
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("a visual viewport native arrival before the frame still completes focus", async () => {
+  const h = await harness(undefined, { targetTop: 7018, documentHeight: 8531, innerHeight: 1245, clientHeight: 664 });
+  h.window.scrollY = 6413;
+  h.window.visualViewport.offsetTop = 581;
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("visual viewport bottom clamp and a different restored position remain distinct", async () => {
+  const bottom = await harness(undefined, { initialScrollY: 7286, targetTop: 8100, documentHeight: 8531,
+    innerHeight: 1245, clientHeight: 664, visualOffsetTop: 581 });
+  bottom.flush();
+  assert.deepEqual(bottom.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+  const manual = await harness(undefined, { initialScrollY: 6200, targetTop: 7018, documentHeight: 8531,
+    innerHeight: 1245, clientHeight: 664, visualOffsetTop: 581 });
+  manual.flush();
+  assert.ok(manual.events.every(([kind]) => kind === "lookup"));
+  assert.equal(manual.window.scrollY, 6200);
 });
 
 test("changed focus or scroll before the frame never gets overwritten even without an input event", async () => {
