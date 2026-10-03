@@ -34,3 +34,32 @@ runner 실패·접수 완료로 바꾸지 않는 점은 유지한다. Linux 결�
 
 범위 밖: live/외부 유료 AI/provider credential, 새 runner·정규화·관측 저장 계약,
 PortfolioPolicy 직접 실행, 선택 비용·benchmark·universe 확장, 취소·재개·자동 retry와 상세 전면 개편.
+
+## 늦은 접수 응답과 최신 사용자 이동
+
+생성 POST를 기다리다가 사용자가 목록으로 이동했지만 목록 Flight가 아직 commit되지 않으면
+Wizard의 mount 상태만으로 최신 이동 의도를 판단할 수 없다. 이때 늦게 도착한 유효한 202의
+자동 상세 `router.push`가 더 최근의 목록 이동을 덮는 경합을 결정적으로 재현했다.
+
+별도 navigation intent 세대를 생성 시작 시 기록한다. 같은 탭의 다른 목적지 링크 또는
+Wizard 경로를 벗어나는 popstate가 발생하면 세대를 증가시키고, 202 처리 마지막에 세대가
+같을 때만 자동 상세 이동한다. 정확한 접수 ID·재전송 방지 표식 저장과 token 제거는 유지한다.
+링크 click에서 POST를 abort하거나 alive를 미리 해제하지 않는다. 본문 hash, 내부 단계,
+modifier click, 새 browsing context 대상과 download는 이탈 의도로 처리하지 않는다.
+
+회귀는 실제 synthetic API/runner의 valid 202와 목록 Flight의 전달 순서를 제어한다.
+목록 링크와 Back 두 경로에서 Wizard가 아직 표시되는 동안 응답을 처리하고, 정확한 ID가
+저장됐음을 먼저 확인한 뒤 목록 Flight를 해제한다. 정상 목록 전환 후 Back/reload 또는
+Forward 복귀에서 같은 ID·빈 token·비활성 생성 버튼·POST 1회를 확인한다. 내부 단계 Back,
+본문 skip-link와 실제 Ctrl-click 새 탭은 정상 자동 상세 이동을 과도하게 막지 않는지 확인한다.
+
+보류된 목록 Flight 중 기존 input DOM 값이 즉시 비워져야 한다는 초기 진단 assertion은
+최종 회귀 계약에 포함하지 않는다. React transition이 이전 commit의 disabled DOM을 유지한
+상태에서도 exact ID의 동기 저장은 먼저 관측될 수 있다. ID 저장과 Wizard 표시를 통해
+늦은 응답이 unmount 이전에 처리됐음을 입증하고, 응답 해제·정상 전환·복귀 후 token 제거와
+중복 POST 차단을 검증하는 것이 사용자에게 관측 가능한 계약이다. 이 조정은 생성/ID/token
+assertion을 없애거나 timeout·worker·retry 조건을 완화한 것이 아니다.
+
+이 수정은 기존 1024px production의 간헐적인 최초 상세 이동 또는 Back/reload 후 상세
+재진입 정체와 별도다. 해당 정체는 실제 5초 URL 미반영으로 관측됐고 원인은 아직 확정되지
+않았다. 추가 제한 추적의 성공을 해결 증거로 사용하지 않으며, 그 문제의 merge hold는 유지한다.

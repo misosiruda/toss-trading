@@ -41,6 +41,84 @@ async function files(directory: string): Promise<Record<string, string>> {
   return result;
 }
 
+test("late accepted create preserves a newer pending list navigation and its exact ID", async ({ page }) => {
+  let releaseCreate!: () => void, releaseList!: () => void, listStarted!: () => void;
+  let acceptedReady!: (value: { status: number; id: string }) => void;
+  const createGate = new Promise<void>(resolve => { releaseCreate = resolve; });
+  const listGate = new Promise<void>(resolve => { releaseList = resolve; });
+  const listPending = new Promise<void>(resolve => { listStarted = resolve; });
+  const acceptedResponse = new Promise<{ status: number; id: string }>(resolve => { acceptedReady = resolve; });
+  let posts = 0;
+  page.on("request", request => { if (request.method() === "POST" && request.url().endsWith(createPath)) posts += 1; });
+  // Hold prefetches too, so a cached list cannot commit before the create response.
+  await page.route("**/dashboard?**", async route => {
+    const request = route.request();
+    if (new URL(request.url()).pathname !== "/dashboard" || request.headers().rsc !== "1") return route.continue();
+    if (!request.headers()["next-router-prefetch"]) listStarted();
+    await listGate;
+    await route.continue();
+  });
+  await page.route(`**${createPath}`, async route => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    acceptedReady({ status: response.status(), id: payload.simulationRunId });
+    await createGate;
+    await route.fulfill({ response });
+  });
+  try {
+    await fill(page, "navigation-intent");
+    await validated(page);
+    await page.getByLabel("실행 승인 토큰").fill(token);
+    await page.getByRole("button", { name: "paper 실행 시작" }).click();
+    const accepted = await acceptedResponse;
+    expect(accepted.status).toBe(202);
+    await page.getByRole("link", { name: "← 실험 목록", exact: true }).click();
+    await listPending;
+    await expect(page.getByRole("heading", { name: "새 실험", exact: true })).toBeVisible();
+    releaseCreate();
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem("paper-experiment-admission-v1"))).toBe(accepted.id);
+    releaseList();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole("heading", { name: "실험", exact: true })).toBeVisible();
+    expect(posts).toBe(1);
+    await page.goBack();
+    for (const reload of [false, true]) {
+      if (reload) await page.reload();
+      await expect(page.getByRole("link", { name: "같은 ID 상태 조회" })).toHaveAttribute("href", `/dashboard/lab/runs/${accepted.id}`);
+      await expect(page.getByRole("button", { name: "paper 실행 시작" })).toBeDisabled();
+      await expect(page.getByLabel("실행 승인 토큰")).toHaveValue("");
+      expect(posts).toBe(1);
+    }
+  } finally { releaseCreate(); releaseList(); }
+});
+
+test("a same-page skip link does not suppress an accepted create navigation", async ({ page }) => {
+  let release!: () => void, acceptedReady!: (id: string) => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const acceptedResponse = new Promise<string>(resolve => { acceptedReady = resolve; });
+  let posts = 0;
+  await page.route(`**${createPath}`, async route => {
+    posts += 1;
+    const response = await route.fetch();
+    expect(response.status()).toBe(202);
+    acceptedReady((await response.json()).simulationRunId);
+    await gate;
+    await route.fulfill({ response });
+  });
+  try {
+    await fill(page, "skip-link-intent"); await validated(page);
+    await page.getByLabel("실행 승인 토큰").fill(token);
+    await page.getByRole("button", { name: "paper 실행 시작" }).click();
+    const id = await acceptedResponse;
+    const skipLink = page.getByRole("link", { name: "본문으로 건너뛰기" });
+    await skipLink.focus(); await skipLink.press("Enter");
+    await expect(page).toHaveURL(/#experiments-main$/);
+    release();
+    await expect(page).toHaveURL(new RegExp(`/dashboard/lab/runs/${id}$`));
+    expect(posts).toBe(1);
+  } finally { release(); }
+});
+
 test("SSR observation fixtures keep accepted, runner failure, child results and unreadable wrappers distinct", async ({ page }) => {
   for (const [scenario, heading] of [
     ["accepted", "접수 관측 · 이후 실행 상태 미확인"], ["failed", "Runner 실패 관측"],

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { acceptedSimulationId, emptySimulationDraft, readValidation, typedCandidate, type SimulationDraft, type SimulationValidation } from "@/lib/simulationCandidate";
 import { WorkspaceNavigation } from "../../ExperimentList";
 import shell from "../../ExperimentList.module.css";
@@ -29,6 +29,7 @@ export function ExperimentWizard() {
   const validating = useRef(false);
   const submitted = useRef(false);
   const alive = useRef(false);
+  const navigationIntent = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const candidate = typedCandidate(draft);
@@ -58,6 +59,26 @@ export function ExperimentWizard() {
   }, []);
 
   useEffect(() => { heading.current?.focus({ preventScroll: false }); }, [step]);
+
+  useEffect(() => {
+    const { origin, pathname } = window.location;
+    const onPopState = () => {
+      if (window.location.origin !== origin || window.location.pathname !== pathname) navigationIntent.current += 1;
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  function rememberNavigation(event: MouseEvent<HTMLDivElement>) {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download") || (anchor.target && anchor.target.toLowerCase() !== "_self")) return;
+    const destination = new URL(anchor.href);
+    const current = new URL(window.location.href);
+    if (!["http:", "https:"].includes(destination.protocol)) return;
+    if (destination.origin === current.origin && destination.pathname === current.pathname && destination.search === current.search) return;
+    navigationIntent.current += 1;
+  }
 
   function edit<K extends keyof SimulationDraft>(key: K, value: SimulationDraft[K]) {
     if (submitted.current) return;
@@ -116,6 +137,7 @@ export function ExperimentWizard() {
     }
     catch { setMessage("이 탭의 중복 요청 방지 상태를 저장할 수 없어 생성하지 않았습니다."); return; }
     submitted.current = true;
+    const requestNavigationIntent = navigationIntent.current;
     setPhase("submitting"); setMessage("한 번의 생성 요청을 보냈습니다. 접수 응답을 기다려 주세요.");
     const abort = new AbortController(); controller.current = abort;
     const timeout = setTimeout(() => abort.abort(), 20_000);
@@ -136,7 +158,8 @@ export function ExperimentWizard() {
       try { sessionStorage.setItem(ADMISSION_KEY, id); } catch { /* The earlier no-retry barrier remains; the known ID stays available in this view. */ }
       // Keep a no-retry barrier and the exact accepted ID on Back/reload, without the token.
       setMessage("접수됐습니다. 완료 여부는 같은 ID의 상세에서 조회합니다.");
-      router.push(`/dashboard/lab/runs/${encodeURIComponent(id)}`);
+      // A newer user navigation wins even while its destination is still loading.
+      if (navigationIntent.current === requestNavigationIntent) router.push(`/dashboard/lab/runs/${encodeURIComponent(id)}`);
     } catch {
       if (alive.current) { setPhase("unknown"); setToken(""); setMessage("생성 응답이 불확실합니다. 실행 실패로 단정하거나 POST를 재전송하지 않습니다. ID를 받지 못했으므로 추측하지 않고 실험 목록에서 저장된 상태만 확인하세요."); }
     } finally { clearTimeout(timeout); }
@@ -145,7 +168,7 @@ export function ExperimentWizard() {
   const input = (key: keyof SimulationDraft, label: string, type = "text", hint?: string) => <label className={styles.field}>{label}<input type={type} value={draft[key]} onChange={e => edit(key, e.target.value)} disabled={!ready || locked} autoComplete="off" aria-describedby={hint ? `hint-${key}` : undefined} />{hint && <small id={`hint-${key}`}>{hint}</small>}</label>;
   const select = <K extends keyof SimulationDraft>(key: K, label: string, options: Array<[SimulationDraft[K], string]>) => <label className={styles.field}>{label}<select value={draft[key]} onChange={e => edit(key, e.target.value as SimulationDraft[K])} disabled={!ready || locked}>{options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>;
 
-  return <div className={shell.workspace}>
+  return <div className={shell.workspace} onClickCapture={rememberNavigation}>
     <a className={shell.skipLink} href="#experiments-main">본문으로 건너뛰기</a><WorkspaceNavigation />
     <main className={`${shell.main} ${styles.wizard}`} id="experiments-main" tabIndex={-1}>
       <Link href="/dashboard">← 실험 목록</Link><h1>새 실험</h1><p className={styles.muted}>Historical paper replay · 실제 주문 없음</p>
