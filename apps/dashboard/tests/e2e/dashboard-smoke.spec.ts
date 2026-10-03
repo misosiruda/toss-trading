@@ -961,11 +961,8 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expect(activeTestRow).toContainText("Long-term");
   await expect(activeTestRow).toContainText("queued");
   await expect(page.getByText("polling fallback")).toBeVisible();
-  await expect(
-    activeTestRow.getByRole("progressbar", {
-      name: "Bucket test progress ratio"
-    })
-  ).toBeVisible();
+  const progressDisplay = activeTestRow.getByLabel("Bucket test progress ratio", { exact: true });
+  await expect(progressDisplay).toBeVisible();
   const progressUrl = `/dashboard/lab/strategy-tests/tests/${encodeURIComponent(
     createdTestId
   )}/progress`;
@@ -1004,6 +1001,18 @@ test("renders strategy bucket test lab with queued create boundary", async ({
       status: "fresh"
     }
   });
+
+  if (progressPayload.test.progress.progressRatio === null) {
+    await expect(progressDisplay).toHaveAttribute("role", "group");
+    await expect(progressDisplay).toHaveText("진행률 없음");
+    await expect(activeTestRow.getByRole("progressbar")).toHaveCount(0);
+    await expect(progressDisplay.locator("[style]")).toHaveCount(0);
+  } else {
+    await expect(progressDisplay).toHaveAttribute("role", "progressbar");
+    await expect(progressDisplay).toHaveAttribute("aria-valuenow",
+      String(Math.max(0, Math.min(100, Math.round(progressPayload.test.progress.progressRatio * 100)))));
+  }
+  await expectStrategyLabContainedTables(page);
 
   await page.locator("#start-at").fill("2024/02/31");
   await activateButton(page, "Validate bucket config");
@@ -1427,4 +1436,26 @@ async function expectNoAxeViolations(page: Page) {
   });
 
   expect(accessibility.violations).toEqual([]);
+}
+
+async function expectStrategyLabContainedTables(page: Page) {
+  const geometry = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+  expect(geometry.width).toBeLessThanOrEqual((page.viewportSize()?.width ?? geometry.width) + 1);
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1);
+  await page.getByRole("button", { name: "Refresh progress", exact: true }).focus();
+  for (const name of ["Bucket test progress table scroll area", "Bucket result matrix table scroll area", "Bucket baseline comparison table scroll area"]) {
+    const area = page.getByRole("region", { name, exact: true });
+    await page.keyboard.press("Tab");
+    await expect(area).toBeFocused();
+    await expect(area).toHaveCSS("outline-style", "solid");
+    await expect(area).toHaveCSS("outline-width", "2px");
+    const overflow = await area.evaluate((element) => element.scrollWidth > element.clientWidth);
+    if ((page.viewportSize()?.width ?? 0) < 500) expect(overflow).toBe(true);
+    if (overflow) {
+      await page.keyboard.press("ArrowRight");
+      await expect.poll(() => area.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    }
+  }
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.getByRole("region", { name: "Bucket result matrix table scroll area", exact: true })).toBeFocused();
 }

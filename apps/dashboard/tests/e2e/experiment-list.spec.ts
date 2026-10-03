@@ -109,10 +109,14 @@ test("experiment navigation retains live existing destinations and anchored repo
     await page.goto("/dashboard");
     await expect(page.getByRole("link", { name: "기존 실행 설정", exact: true })).toHaveAttribute("href", "/dashboard/lab/policies");
     await expect(page.getByText(/PortfolioPolicy 실행은 지원하지 않음/)).toBeVisible();
+    if (isMobile) await recordMobileMenuContrast(page, testInfo, "closed");
 
     for (let cycle = 0; cycle < 3; cycle++) {
       for (const [label, anchor] of [["비교", "candidate-comparison"], ["데이터", "data-universe-coverage"]] as const) {
-        if (isMobile) await openMobileMenu(page);
+        if (isMobile) {
+          await openMobileMenu(page);
+          if (cycle === 0 && label === "비교") await recordMobileMenuContrast(page, testInfo, "open");
+        }
         const navigation = page.getByRole("navigation", { name: isMobile ? "모바일 주 메뉴" : "주 메뉴", exact: true });
         const link = navigation.getByRole("link", { name: new RegExp(`^${label}`) });
         await expect(link).toHaveAttribute("href", `/dashboard/validation#${anchor}`);
@@ -131,6 +135,7 @@ test("experiment navigation retains live existing destinations and anchored repo
       if (isMobile) await openMobileMenu(page);
       const settings = page.locator("summary:visible").filter({ hasText: "설정·운영" });
       if (!(await settings.evaluate((element) => (element.parentElement as HTMLDetailsElement).open))) await settings.click();
+      if (isMobile && cycle === 0) await recordMobileMenuContrast(page, testInfo, "settings-expanded");
       const link = page.getByRole("link", { name: "기존 운영 요약", exact: true }).filter({ visible: true });
       await expect(link).toHaveAttribute("href", "/dashboard/operations");
       const [documentRequest] = await Promise.all([
@@ -214,4 +219,39 @@ async function expectNoOverflow(page: Page) {
 async function openMobileMenu(page: Page) {
   const summary = page.locator("summary").filter({ hasText: /^메뉴$/ });
   if (!(await summary.evaluate((element) => (element.parentElement as HTMLDetailsElement).open))) await summary.click();
+}
+
+async function recordMobileMenuContrast(page: Page, testInfo: TestInfo, state: string) {
+  const evidence = await page.evaluate(() => {
+    const scope = document.querySelector("aside")?.parentElement;
+    if (!scope) return { error: "workspace missing" };
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+    const rows = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      const text = node.textContent?.trim();
+      const element = node.parentElement;
+      if (!text || !element) continue;
+      const range = document.createRange(); range.selectNodeContents(node);
+      const rect = range.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      const style = getComputedStyle(element);
+      const backgrounds = [];
+      for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
+        const css = getComputedStyle(ancestor);
+        backgrounds.push({ element: ancestor.tagName, color: css.backgroundColor, image: css.backgroundImage,
+          opacity: css.opacity, filter: css.filter, mixBlendMode: css.mixBlendMode });
+      }
+      const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+      const insideViewport = x >= 0 && x < document.documentElement.clientWidth && y >= 0 && y < window.innerHeight;
+      const hit = insideViewport ? document.elementFromPoint(x, y) : null;
+      rows.push({ text, element: element.tagName, foreground: style.color, fontSize: style.fontSize, fontWeight: style.fontWeight,
+        backgrounds, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, insideViewport,
+        centerOccluded: hit !== null && !element.contains(hit) && !hit.contains(element) });
+    }
+    return { url: location.href, viewport: { width: document.documentElement.clientWidth, height: window.innerHeight,
+      visualWidth: window.visualViewport?.width, visualHeight: window.visualViewport?.height }, rows };
+  });
+  await testInfo.attach(`mobile-menu-${state}-computed-colors`, { body: JSON.stringify(evidence, null, 2), contentType: "application/json" });
+  await testInfo.attach(`mobile-menu-${state}-pixels`, { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 }

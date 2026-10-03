@@ -118,6 +118,8 @@ Strategy Lab의 생성 성공은 queued record 접수 사실입니다. 같은 �
 unmount와 관측 범위에서 벗어난 요청은 취소합니다. 결과 비교 영역은 기존 서버 ViewModel snapshot을 유지합니다. 메인 Strategy Lab은 생성 뒤
 중복 `router.refresh` 대신 위의 명시적 progress 조회를 사용해 실패 RSC로 접수 관측이 사라지지 않게 합니다.
 단일 bucket 설정 화면의 기존 생성 후 refresh는 유지합니다.
+진행률이 `null`이면 `진행률 없음`만 표시하고 숫자나 채움 막대·실행 애니메이션을 만들지 않습니다.
+Lab 표는 전체 문서 폭을 늘리지 않는 이름 있는 내부 스크롤 영역이며 Tab/방향키로 접근합니다.
 
 `/dashboard/lab/policies/simulations/create`는 browser가 Local Operations API를 직접 cross-origin 호출하지 않도록 하는 Next.js route handler입니다. 이 route는 `x-toss-trading-dashboard-intent: paper-simulation-create`, UI에서 입력한 dashboard mutation token, positive same-origin request metadata, `application/json` content type을 요구한 뒤 `POST /paper/simulations`로 server-side 전달합니다. 현재 backend `PaperSimulationRunConfig`는 `PortfolioPolicy` artifact를 직접 받지 않으므로, Next.js policy builder는 backend validation을 통과한 `policyHash`를 simulation seed에 반영하고 runner policy artifact 적용은 수행하지 않습니다.
 

@@ -78,7 +78,7 @@ export function StrategyBucketTestProgressPanel({
   }, [activeTests.length, refreshProgress]);
 
   return (
-    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+    <section className="min-w-0 max-w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <SectionHeader eyebrow="active progress" title="Bucket Test Progress" />
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -111,8 +111,9 @@ export function StrategyBucketTestProgressPanel({
       )}
 
       <p className="mt-3 text-xs text-[var(--muted)]">Server active snapshot (up to 20) plus records created and confirmed in this view (up to 20), deduplicated. This is not the full test history.</p>
-      <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+      <div role="region" aria-label="Bucket test progress table scroll area" tabIndex={0}
+        className="mt-4 min-w-0 max-w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
+        <table className="w-full min-w-[44rem] text-left text-sm">
           <thead className="text-xs uppercase text-[var(--muted)]">
             <tr>
               <th className="py-2 pr-3 font-medium">Test</th>
@@ -154,9 +155,9 @@ export function StrategyBucketTestProgressPanel({
                     </div>
                   </td>
                   <td className="min-w-[10rem] py-2 pr-3">
-                    <div className="font-mono text-xs">
+                    {test.progress.progressRatio !== null ? <div className="font-mono text-xs">
                       {formatNullableRatio(test.progress.progressRatio)}
-                    </div>
+                    </div> : null}
                     <ProgressMeter ratio={test.progress.progressRatio} />
                     <div className="mt-1 font-mono text-xs text-[var(--muted)]">
                       {test.progress.updatedAt}
@@ -196,21 +197,22 @@ function readLatestProgressUpdatedAt(
 }
 
 function ProgressMeter({ ratio }: { ratio: number | null }) {
-  const percentage =
-    ratio === null ? null : Math.max(0, Math.min(100, Math.round(ratio * 100)));
+  if (ratio === null) {
+    return <div role="group" aria-label="Bucket test progress ratio" className="font-mono text-xs text-[var(--muted)]">
+      진행률 없음
+    </div>;
+  }
+  const percentage = Math.max(0, Math.min(100, Math.round(ratio * 100)));
   return (
     <div
       aria-label="Bucket test progress ratio"
       aria-valuemax={100}
       aria-valuemin={0}
-      aria-valuenow={percentage ?? undefined}
+      aria-valuenow={percentage}
       className="mt-2 h-2 w-full overflow-hidden rounded-[4px] bg-[var(--border)]"
       role="progressbar"
     >
-      <div
-        className="h-full bg-[var(--accent)]"
-        style={{ width: `${percentage ?? 35}%`, opacity: percentage === null ? 0.45 : 1 }}
-      />
+      <div className="h-full bg-[var(--accent)]" style={{ width: `${percentage}%` }} />
     </div>
   );
 }

@@ -334,3 +334,39 @@ test("main Workspace uses explicit observation without a redundant RSC refresh; 
   assert.equal(form.find((node) => node.type?.name === "CreateResultPanel").props.state.status, "queued");
   assert.equal(form.refreshes, 0); form.unmount();
 });
+
+
+test("unknown progress is explicit text without a filled or indeterminate bar; numeric progress remains measured", async () => {
+  const h = await componentHarness("StrategyBucketTestProgressPanel.tsx", "StrategyBucketTestProgressPanel", {}, {
+    activeTests: [summary()], onRefreshProgress: async () => {}
+  }, { window: { setInterval() { return 1; }, clearInterval() {} } });
+  const meter = h.find((node) => node.type?.name === "ProgressMeter").type;
+  const unknown = meter({ ratio: null });
+  assert.equal(unknown.props.role, "group"); assert.equal(unknown.props.children, "진행률 없음");
+  assert.equal(unknown.props["aria-valuenow"], undefined); assert.equal(unknown.props.style, undefined);
+  for (const [ratio, percentage] of [[0, 0], [0.35, 35], [1, 100]]) {
+    const result = meter({ ratio }); assert.equal(result.props.role, "progressbar");
+    assert.equal(result.props["aria-valuenow"], percentage);
+    assert.equal(result.props.children.props.style.width, `${percentage}%`);
+  }
+  const area = h.find((node) => node.props?.["aria-label"] === "Bucket test progress table scroll area");
+  assert.equal(area.props.role, "region"); assert.equal(area.props.tabIndex, 0);
+  assert.match(area.props.className, /overflow-x-auto/); assert.match(area.props.className, /focus-visible:outline-2/);
+  h.unmount();
+});
+
+test("Lab tables retain bounded scroll regions and intrinsic-width grids can shrink without clipping content", async () => {
+  const base = "../src/app/dashboard/lab/strategy-tests/";
+  const page = await readFile(new URL(base + "page.tsx", import.meta.url), "utf8");
+  for (const label of ["Bucket result matrix table scroll area", "Bucket baseline comparison table scroll area"]) {
+    assert.ok(page.includes(`role="region" aria-label="${label}" tabIndex={0}`));
+  }
+  for (const file of ["StrategyBucketTestWorkspace.tsx", "StrategyBucketTestValidationForm.tsx"]) {
+    const code = await readFile(new URL(base + file, import.meta.url), "utf8");
+    assert.match(code, /minmax\(0,0\.95fr\)_minmax\(0,1\.05fr\)/);
+    assert.doesNotMatch(code, /overflow-x-hidden/);
+  }
+  const form = await readFile(new URL(base + "StrategyBucketTestValidationForm.tsx", import.meta.url), "utf8");
+  assert.match(form, /min-w-0 w-full rounded/);
+  assert.match(form, /\[overflow-wrap:anywhere\]/);
+});

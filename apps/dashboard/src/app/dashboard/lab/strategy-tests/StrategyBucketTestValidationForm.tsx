@@ -498,7 +498,7 @@ export function StrategyBucketTestValidationForm({
   }
 
   return (
-    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+    <section className="min-w-0 max-w-full [overflow-wrap:anywhere] rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <div className="flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="font-mono text-xs text-[var(--muted)]">
@@ -513,13 +513,13 @@ export function StrategyBucketTestValidationForm({
         <StatusBadge tone="blocked" value="runner disabled" />
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="grid gap-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="grid gap-2 text-sm font-medium" htmlFor="test-bucket">
+      <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div className="grid min-w-0 grid-cols-1 gap-4">
+          <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-3">
+            <label className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium" htmlFor="test-bucket">
               Bucket
               <select
-                className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
+                className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
                 disabled={lockedBucket}
                 id="test-bucket"
                 onChange={(event) =>
@@ -535,12 +535,12 @@ export function StrategyBucketTestValidationForm({
               </select>
             </label>
             <label
-              className="grid gap-2 text-sm font-medium"
+              className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium"
               htmlFor="validation-split-role"
             >
               Split role
               <select
-                className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
+                className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
                 id="validation-split-role"
                 onChange={(event) =>
                   setValidationSplitRole(
@@ -554,10 +554,10 @@ export function StrategyBucketTestValidationForm({
                 <option value="test">Test</option>
               </select>
             </label>
-            <label className="grid gap-2 text-sm font-medium" htmlFor="test-market">
+            <label className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium" htmlFor="test-market">
               Market
               <select
-                className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
+                className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
                 id="test-market"
                 onChange={(event) =>
                   setMarket(event.target.value as UniverseMarket)
@@ -572,32 +572,32 @@ export function StrategyBucketTestValidationForm({
           </div>
 
           <label
-            className="grid gap-2 text-sm font-medium"
+            className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium"
             htmlFor="source-data-dir"
           >
             Source data directory
             <input
-              className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
+              className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
               id="source-data-dir"
               onChange={(event) => setSourceDataDir(event.target.value)}
               value={sourceDataDir}
             />
           </label>
 
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="grid gap-2 text-sm font-medium" htmlFor="start-at">
+          <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-3">
+            <label className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium" htmlFor="start-at">
               Start
               <input
-                className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
+                className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
                 id="start-at"
                 onChange={(event) => setStartAt(event.target.value)}
                 value={startAt}
               />
             </label>
-            <label className="grid gap-2 text-sm font-medium" htmlFor="end-at">
+            <label className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium" htmlFor="end-at">
               End
               <input
-                className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
+                className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
                 id="end-at"
                 onChange={(event) => setEndAt(event.target.value)}
                 value={endAt}
@@ -613,14 +613,14 @@ export function StrategyBucketTestValidationForm({
             />
           </div>
 
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-3">
             <label
-              className="grid gap-2 text-sm font-medium"
+              className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium"
               htmlFor="decision-frequency"
             >
               Frequency
               <select
-                className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
+                className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
                 id="decision-frequency"
                 onChange={(event) =>
                   setDecisionFrequency(event.target.value as DecisionFrequency)
@@ -652,14 +652,14 @@ export function StrategyBucketTestValidationForm({
             />
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
             <label
-              className="grid gap-2 text-sm font-medium"
+              className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium"
               htmlFor="decision-provider"
             >
               Decision provider
               <select
-                className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
+                className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2"
                 id="decision-provider"
                 onChange={(event) => {
                   const nextProvider = event.target
@@ -686,13 +686,13 @@ export function StrategyBucketTestValidationForm({
           </div>
 
           <label
-            className="grid gap-2 text-sm font-medium"
+            className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium"
             htmlFor="mutation-token"
           >
             Mutation token
             <input
               autoComplete="off"
-              className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
+              className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
               id="mutation-token"
               onChange={(event) => setMutationToken(event.target.value)}
               type="password"
@@ -778,7 +778,7 @@ export function StrategyBucketTestValidationForm({
           )}
         </div>
 
-        <aside className="rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3">
+        <aside className="min-w-0 max-w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel-muted)] p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="font-mono text-xs text-[var(--muted)]">
@@ -790,7 +790,7 @@ export function StrategyBucketTestValidationForm({
           </div>
           <pre
             aria-label="Strategy bucket test request preview"
-            className="mt-3 max-h-[520px] overflow-auto whitespace-pre-wrap break-words rounded-[6px] bg-[var(--panel)] p-3 font-mono text-xs leading-5 text-[var(--muted)]"
+            className="mt-3 max-h-[520px] max-w-full overflow-auto whitespace-pre-wrap break-words rounded-[6px] bg-[var(--panel)] p-3 font-mono text-xs leading-5 text-[var(--muted)]"
             tabIndex={0}
           >
             {JSON.stringify(requestPreview, null, 2)}
@@ -1067,10 +1067,10 @@ function NumberField({
   value: number;
 }) {
   return (
-    <label className="grid gap-2 text-sm font-medium" htmlFor={id}>
+    <label className="grid min-w-0 grid-cols-1 gap-2 text-sm font-medium" htmlFor={id}>
       {label}
       <input
-        className="rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
+        className="min-w-0 w-full rounded-[6px] border border-[var(--border)] bg-[var(--panel-muted)] px-3 py-2 font-mono text-xs"
         id={id}
         max={max}
         min={min}

@@ -84,7 +84,7 @@ export function StrategyBucketTestWorkspace({ initialActiveTests, children }: {
         for (const identity of failedIdentities) void reader.current?.observe(identity, true).catch(() => {});
       }}>Retry created record observation</button>
     </div> : null}
-    <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+    <section className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
       <StrategyBucketTestProgressPanel activeTests={activeTests} onRefreshProgress={refreshProgress} />
       {children}
     </section>
