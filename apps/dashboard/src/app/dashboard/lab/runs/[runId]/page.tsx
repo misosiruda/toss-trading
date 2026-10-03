@@ -377,7 +377,7 @@ function BoundaryCard({
 function SectionHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
     <div>
-      <p className="font-mono text-xs text-[var(--muted)]">{eyebrow}</p>
+      <p className="font-mono text-xs text-[var(--muted)] [overflow-wrap:anywhere]">{eyebrow}</p>
       <h2 className="mt-1 text-base font-semibold">{title}</h2>
     </div>
   );
