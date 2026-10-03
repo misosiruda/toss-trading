@@ -1,0 +1,2917 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>toss-trading 실험 워크스페이스 시안</title>
+    <style>
+      :root {
+        --bg: #f7f8fa;
+        --surface: #fff;
+        --text: #191f28;
+        --muted: #4e5968;
+        --line: #e5e8eb;
+        --blue: #1765d1;
+        --soft: #edf4ff;
+        --green: #087f5b;
+        --amber: #936400;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        color: var(--text);
+        background: var(--bg);
+        font:
+          15px/1.6 Arial,
+          "Noto Sans CJK KR",
+          sans-serif;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      button,
+      a,
+      input,
+      select {
+        outline-offset: 4px;
+      }
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 3px solid #005fcc;
+      }
+      button {
+        cursor: pointer;
+      }
+      .skip {
+        position: fixed;
+        top: -60px;
+        background: white;
+        padding: 12px;
+        z-index: 10;
+      }
+      .skip:focus {
+        top: 0;
+      }
+      .demo {
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 24px;
+        background: #eaf0f7;
+        color: #39485d;
+        font-size: 12px;
+      }
+      .demo nav {
+        display: flex;
+        gap: 18px;
+      }
+      .demo a {
+        font-weight: 700;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .sidebar {
+        position: fixed;
+        top: 40px;
+        bottom: 0;
+        width: 208px;
+        background: white;
+        border-right: 1px solid var(--line);
+        padding: 26px 16px;
+        display: flex;
+        flex-direction: column;
+      }
+      .brand {
+        font-size: 20px;
+        font-weight: 750;
+        letter-spacing: -0.5px;
+        margin: 0 12px 32px;
+      }
+      .brand i {
+        display: inline-block;
+        width: 12px;
+        height: 22px;
+        vertical-align: -4px;
+        background: #3182f6;
+        border-radius: 3px;
+        margin-right: 10px;
+      }
+      .nav-list {
+        display: grid;
+        gap: 8px;
+      }
+      .nav-item {
+        padding: 12px 16px;
+        color: var(--muted);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-weight: 600;
+      }
+      .nav-item.selected {
+        background: var(--soft);
+        color: var(--blue);
+      }
+      .nav-icon {
+        width: 18px;
+        font-size: 20px;
+        line-height: 1;
+      }
+      .nav-footer {
+        margin-top: auto;
+      }
+      .paper {
+        margin: 12px 16px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .mobile-brand {
+        display: none;
+      }
+      .mobile-menu {
+        position: relative;
+      }
+      .mobile-menu summary {
+        cursor: pointer;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        color: var(--blue);
+      }
+      .mobile-menu nav {
+        position: absolute;
+        right: 0;
+        top: 48px;
+        z-index: 4;
+        min-width: 180px;
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: 0 8px 24px #191f2814;
+        padding: 8px;
+      }
+      .mobile-menu a {
+        display: block;
+        padding: 10px 16px;
+        min-height: 44px;
+      }
+      .menu-guide {
+        background: white;
+        padding: 24px;
+        margin-top: 24px;
+      }
+      .menu-guide li {
+        padding: 12px 0;
+      }
+      .observed-detail {
+        background: white;
+        padding: 24px;
+        margin-top: 28px;
+        border-left: 3px solid var(--blue);
+      }
+      .observed-detail h2 {
+        margin-bottom: 12px;
+      }
+      .observed-detail .meta {
+        margin-top: 16px;
+      }
+      main {
+        margin-left: 208px;
+        padding: 40px;
+        max-width: 1568px;
+        min-height: calc(100vh - 40px);
+      }
+      .screen[hidden] {
+        display: none;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font-size: 32px;
+        line-height: 1.35;
+        letter-spacing: -1px;
+      }
+      h2 {
+        font-size: 20px;
+        letter-spacing: -0.4px;
+      }
+      h3 {
+        font-size: 16px;
+      }
+      .page-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+        margin-bottom: 32px;
+      }
+      .sub {
+        margin-top: 8px;
+        color: var(--muted);
+      }
+      .primary,
+      .secondary {
+        min-height: 44px;
+        border-radius: 8px;
+        padding: 10px 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .primary {
+        background: var(--blue);
+        color: white;
+        border: 1px solid var(--blue);
+      }
+      .secondary {
+        background: white;
+        border: 1px solid #c8ced8;
+        color: #354459;
+      }
+      .filter-bar {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .filter-bar input,
+      .filter-bar select,
+      input,
+      select {
+        min-height: 46px;
+        border: 1px solid #c8ced8;
+        background: white;
+        border-radius: 7px;
+        padding: 10px 14px;
+        color: var(--text);
+        width: 100%;
+        min-width: 0;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .list-count {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 16px 0;
+      }
+      .table {
+        background: white;
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 14px;
+      }
+      .table th {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--line);
+      }
+      .table td {
+        padding: 22px 20px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: middle;
+      }
+      .table td:first-child {
+        width: 27%;
+      }
+      .table td a {
+        font-size: 16px;
+        font-weight: 650;
+        display: block;
+      }
+      .meta {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+      .state {
+        display: inline-flex;
+        gap: 7px;
+        align-items: center;
+        white-space: nowrap;
+      }
+      .state:before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .completed {
+        color: var(--green);
+      }
+      .skipped {
+        color: var(--muted);
+      }
+      .running {
+        color: var(--blue);
+      }
+      .failed {
+        color: #c92a2a;
+      }
+      .completed_with_failures,
+      .unknown {
+        color: var(--amber);
+      }
+      .footnote {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 16px;
+      }
+      .notice {
+        padding: 16px 18px;
+        background: #fff8e6;
+        color: #74551a;
+        border-left: 3px solid #deb648;
+        font-size: 13px;
+        margin-top: 24px;
+      }
+      .back {
+        display: inline-block;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 20px;
+      }
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin: 20px 0 32px;
+      }
+      .step {
+        border-bottom: 2px solid var(--line);
+        padding: 0 0 16px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .step.active {
+        border-color: var(--blue);
+        color: var(--blue);
+      }
+      .number {
+        display: inline-grid;
+        place-items: center;
+        background: #e7ebf1;
+        color: #455367;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        margin-right: 9px;
+        font-size: 13px;
+      }
+      .active .number {
+        background: var(--blue);
+        color: white;
+      }
+      .form-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+        gap: 36px;
+        background: white;
+        padding: 28px 28px 32px;
+      }
+      .form-body h2 {
+        margin-bottom: 24px;
+      }
+      .field {
+        margin: 0 0 22px;
+      }
+      .field > label,
+      .field > span:first-child {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .help {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .form-layout.review-step {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .review-overview {
+        margin-top: 16px;
+      }
+      .review-overview > div {
+        grid-template-columns: minmax(0, 88px) minmax(0, 1fr);
+        gap: 12px;
+        padding: 9px 0;
+        margin: 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .review-overview dd {
+        min-width: 0;
+      }
+      .review-warnings {
+        margin: 16px 0;
+        padding-left: 18px;
+        color: #74551a;
+        font-size: 12px;
+      }
+      .review-warnings li {
+        margin: 6px 0;
+      }
+      .review-disclosure > .validation-section {
+        margin-top: 0;
+        border-top: 0;
+        padding: 12px;
+      }
+      .validation-section {
+        margin-top: 28px;
+        padding-top: 24px;
+        border-top: 1px solid var(--line);
+        min-width: 0;
+      }
+      .config-comparison {
+        margin-top: 16px;
+        font-size: 13px;
+      }
+      .config-comparison .config-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1.3fr);
+        gap: 10px;
+        border-bottom: 1px solid var(--line);
+        padding: 10px 0;
+        margin: 0;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .config-comparison dt,
+      .config-comparison dd {
+        min-width: 0;
+      }
+      .config-label {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 3px;
+      }
+      @media (max-width: 767px) {
+        .config-comparison .config-row {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 6px;
+        }
+        .config-comparison dt {
+          font-weight: 600;
+          color: var(--text);
+        }
+      }
+      .validation-details {
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        min-width: 0;
+      }
+      .validation-details > summary {
+        cursor: pointer;
+        min-height: 44px;
+        padding: 12px;
+        overflow-wrap: anywhere;
+      }
+      .validation-details > summary:focus-visible {
+        outline: 3px solid #005fcc;
+        outline-offset: -4px;
+      }
+      .validation-json {
+        margin: 0;
+        padding: 12px;
+        background: #f7f8fa;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font: 12px/1.65 monospace;
+        min-width: 0;
+      }
+      .validation-notices {
+        padding-left: 20px;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .validation-notices li {
+        margin: 10px 0;
+      }
+      .summary {
+        border-left: 1px solid var(--line);
+        padding-left: 32px;
+      }
+      .summary h2 {
+        margin-bottom: 22px;
+      }
+      dl {
+        margin: 0;
+      }
+      dl div {
+        display: grid;
+        grid-template-columns: 1fr 1.45fr;
+        gap: 12px;
+        margin: 12px 0;
+        font-size: 14px;
+      }
+      dt {
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+      }
+      .summary hr {
+        border: 0;
+        border-top: 1px solid var(--line);
+        margin: 28px 0;
+      }
+      .summary .notice {
+        margin-top: 28px;
+      }
+      .actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border-top: 1px solid var(--line);
+        background: white;
+        padding: 20px 28px;
+      }
+      .actions .right {
+        display: flex;
+        gap: 12px;
+      }
+      .choice {
+        border: 1px solid #c8ced8;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 12px;
+        display: block;
+      }
+      .choice.chosen {
+        border-color: #3182f6;
+        background: var(--soft);
+      }
+      .choice strong {
+        display: block;
+        font-weight: 600;
+      }
+      .choice small {
+        display: block;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .disabled-choice {
+        background: #f7f8fa;
+      }
+      .checklist {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .checklist li {
+        padding: 14px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .check {
+        color: var(--green);
+        font-weight: 700;
+        margin-right: 8px;
+      }
+      .detail-head .page-head {
+        align-items: flex-start;
+        margin-bottom: 12px;
+      }
+      .title-line {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .title-line h1 {
+        font-size: 28px;
+      }
+      .tabs {
+        display: flex;
+        gap: 32px;
+        border-bottom: 1px solid var(--line);
+        margin: 30px 0 0;
+        background: white;
+        padding: 0 12px;
+        overflow-x: auto;
+      }
+      .tabs button {
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        padding: 15px 8px;
+        white-space: nowrap;
+        color: var(--muted);
+      }
+      .tabs button:focus-visible {
+        /* Keep the full focus indicator inside the horizontally scrolling strip. */
+        outline-offset: -4px;
+      }
+      .tabs button.active {
+        color: var(--blue);
+        border-bottom-color: var(--blue);
+        font-weight: 600;
+      }
+      .detail-body {
+        background: white;
+        padding: 26px;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 24px;
+      }
+      .metric {
+        padding: 0 24px;
+        border-right: 1px solid var(--line);
+      }
+      .metric:first-child {
+        padding-left: 0;
+      }
+      .metric:last-child {
+        border: 0;
+      }
+      .metric span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .metric strong {
+        display: block;
+        font-size: 27px;
+        line-height: 1.5;
+        font-weight: 600;
+      }
+      .chart-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 26px 0 16px;
+        gap: 16px;
+      }
+      .chart-head small {
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--muted);
+        margin-left: 12px;
+      }
+      .legend {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .chart {
+        width: 100%;
+        height: 205px;
+        display: block;
+      }
+      .drawdown {
+        height: 85px;
+        margin-top: 12px;
+      }
+      .axis-labels {
+        display: flex;
+        justify-content: space-between;
+        padding: 0 5%;
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .rule {
+        border: 0;
+        border-top: 1px solid var(--line);
+        margin: 24px 0;
+      }
+      .event-list {
+        margin-top: 16px;
+      }
+      .event {
+        display: grid;
+        grid-template-columns: 120px 1fr 130px;
+        gap: 20px;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+      }
+      .event .secondary {
+        font-size: 12px;
+        min-height: 38px;
+        padding: 6px 12px;
+      }
+      .info-line {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 12px;
+      }
+      .tabpanel[hidden],
+      .form-step[hidden] {
+        display: none;
+      }
+      .mobile-run {
+        display: none;
+      }
+      .example-tag {
+        font-size: 11px;
+        color: #58657a;
+        border: 1px solid #c8ced8;
+        border-radius: 4px;
+        padding: 2px 5px;
+        margin-left: 8px;
+        white-space: nowrap;
+      }
+      .small-heading {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 12px;
+      }
+      .result-note {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 20px;
+      }
+      .list-empty {
+        padding: 40px;
+        background: white;
+        text-align: center;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (max-width: 1100px) {
+        main {
+          padding: 28px 24px;
+        }
+        .table th,
+        .table td {
+          padding-left: 12px;
+          padding-right: 12px;
+        }
+        .table .duration {
+          display: none;
+        }
+        .form-layout {
+          gap: 24px;
+          padding: 24px;
+        }
+        .summary {
+          padding-left: 24px;
+        }
+        .chart-head small {
+          display: block;
+          margin-left: 0;
+        }
+        .title-line {
+          display: block;
+        }
+        .title-line .state {
+          margin-top: 10px;
+        }
+        .metric {
+          padding: 0 14px;
+        }
+        .metric strong {
+          font-size: 23px;
+        }
+      }
+      @media (max-width: 767px) {
+        .demo {
+          height: auto;
+          min-height: 46px;
+          padding: 8px 16px;
+          display: block;
+          font-size: 11px;
+        }
+        .demo nav {
+          margin-top: 4px;
+          gap: 18px;
+        }
+        .sidebar {
+          display: none;
+        }
+        .mobile-brand {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 14px 20px;
+          border-bottom: 1px solid var(--line);
+          background: white;
+        }
+        .mobile-brand strong {
+          font-size: 17px;
+        }
+        .mobile-brand span {
+          font-size: 11px;
+          color: var(--muted);
+        }
+        main {
+          margin-left: 0;
+          padding: 24px 20px;
+          min-height: 0;
+        }
+        .page-head {
+          margin-bottom: 24px;
+          gap: 12px;
+          align-items: flex-start;
+        }
+        h1 {
+          font-size: 27px;
+        }
+        .sub {
+          font-size: 13px;
+          margin-top: 6px;
+        }
+        .primary,
+        .secondary {
+          padding: 9px 13px;
+          font-size: 13px;
+          min-height: 44px;
+        }
+        .filter-bar {
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+        .filter-bar input {
+          grid-column: 1/-1;
+        }
+        .filter-bar select {
+          font-size: 13px;
+        }
+        .table {
+          display: none;
+        }
+        .mobile-run {
+          display: block;
+          background: white;
+          padding: 18px 16px;
+          border-bottom: 1px solid var(--line);
+        }
+        .mobile-run .top {
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          font-size: 13px;
+        }
+        .mobile-run strong {
+          font-size: 15px;
+        }
+        .mobile-run .meta {
+          font-size: 12px;
+        }
+        .mobile-run .result {
+          font-size: 13px;
+          margin-top: 12px;
+          color: #354459;
+        }
+        .footnote {
+          font-size: 11px;
+        }
+        .notice {
+          padding: 13px 14px;
+          margin-top: 18px;
+        }
+        .back {
+          margin-bottom: 14px;
+        }
+        .steps {
+          gap: 9px;
+          margin: 24px 0;
+        }
+        .step {
+          font-size: 11px;
+          line-height: 1.5;
+          padding-bottom: 12px;
+        }
+        .number {
+          display: grid;
+          margin: 0 0 8px;
+          width: 26px;
+          height: 26px;
+        }
+        .form-layout {
+          display: block;
+          padding: 20px 16px;
+          margin: 0 -4px;
+        }
+        .form-body h2,
+        .summary h2 {
+          font-size: 18px;
+        }
+        .summary {
+          padding: 20px 0 0;
+          border-left: 0;
+          border-top: 1px solid var(--line);
+          margin-top: 20px;
+        }
+        .summary .notice {
+          margin-top: 20px;
+        }
+        .summary hr {
+          margin: 18px 0;
+        }
+        .pair {
+          gap: 12px;
+        }
+        .pair input {
+          font-size: 13px;
+          padding: 10px 9px;
+        }
+        .field {
+          margin-bottom: 18px;
+        }
+        .actions {
+          padding: 16px 12px;
+          margin: 0 -4px;
+          gap: 8px;
+        }
+        .actions .right {
+          gap: 8px;
+        }
+        .actions button,
+        .actions a {
+          font-size: 12px;
+        }
+        .title-line h1 {
+          font-size: 24px;
+        }
+        .detail-head .page-head {
+          display: block;
+        }
+        .detail-head .head-actions {
+          margin-top: 16px;
+        }
+        .tabs {
+          gap: 15px;
+          margin-top: 24px;
+          padding: 0;
+        }
+        .tabs button {
+          font-size: 13px;
+          padding: 14px 4px;
+        }
+        .detail-body {
+          padding: 20px 16px;
+          margin: 0 -4px;
+        }
+        .metrics {
+          grid-template-columns: 1fr 1fr;
+          row-gap: 20px;
+        }
+        .metric {
+          padding: 0 10px;
+        }
+        .metric:first-child,
+        .metric:nth-child(3) {
+          padding-left: 0;
+        }
+        .metric:nth-child(2) {
+          border: 0;
+        }
+        .metric span {
+          font-size: 11px;
+        }
+        .metric strong {
+          font-size: 23px;
+        }
+        .chart-head {
+          display: block;
+        }
+        .chart-head h2 {
+          font-size: 17px;
+        }
+        .legend {
+          margin-top: 6px;
+          font-size: 11px;
+        }
+        .chart {
+          height: 165px;
+        }
+        .drawdown {
+          height: 66px;
+        }
+        .axis-labels {
+          font-size: 10px;
+          padding: 0;
+        }
+        .event {
+          grid-template-columns: 1fr auto;
+          gap: 8px;
+        }
+        .event > span:first-child {
+          grid-column: 1/-1;
+          font-size: 11px;
+          color: var(--muted);
+        }
+        .event .secondary {
+          font-size: 11px;
+        }
+        .result-note {
+          font-size: 12px;
+        }
+        dl div {
+          font-size: 13px;
+        }
+        body {
+          overflow-wrap: anywhere;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#content">본문으로</a>
+    <header aria-label="시안 안내와 모바일 탐색">
+      <div class="demo">
+        <span
+          >레이아웃 시안 · 모든 데이터는 합성 예시이며 실행 API와 연결되지
+          않습니다</span
+        >
+        <nav aria-label="시안 화면">
+          <a href="#list">목록</a><a href="#new">새 실험</a
+          ><a href="#detail">실행 상세</a>
+        </nav>
+      </div>
+      <div class="mobile-brand">
+        <div>
+          <strong>toss-trading</strong><br /><span
+            >paper-only · 실제 주문 없음</span
+          >
+        </div>
+        <details class="mobile-menu">
+          <summary>메뉴</summary>
+          <nav aria-label="모바일 주메뉴">
+            <a href="#list">실험</a><a href="#policies">전략·정책</a
+            ><a href="#compare">비교</a><a href="#data">데이터</a
+            ><a href="#settings">설정</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+    <aside class="sidebar" aria-label="설계된 메뉴 구성">
+      <div class="brand"><i aria-hidden="true"></i>toss-trading</div>
+      <div class="nav-list">
+        <a class="nav-item selected" href="#list"
+          ><span class="nav-icon" aria-hidden="true">◇</span>실험</a
+        ><a class="nav-item" href="#policies"
+          ><span class="nav-icon" aria-hidden="true">▤</span>전략·정책</a
+        ><a class="nav-item" href="#compare"
+          ><span class="nav-icon" aria-hidden="true">▥</span>비교</a
+        ><a class="nav-item" href="#data"
+          ><span class="nav-icon" aria-hidden="true">▱</span>데이터</a
+        >
+      </div>
+      <div class="nav-footer">
+        <a class="nav-item" href="#settings"
+          ><span class="nav-icon" aria-hidden="true">⚙</span>설정</a
+        >
+        <div class="paper">paper-only · 실제 주문 없음</div>
+      </div>
+    </aside>
+    <main id="content" tabindex="-1">
+      <section id="screen-list" class="screen">
+        <header class="page-head">
+          <div>
+            <h1>실험</h1>
+            <p class="sub">실행 조건부터 결과의 근거까지, 한곳에서</p>
+          </div>
+          <a class="primary" href="#new">＋ 새 실험</a>
+        </header>
+        <div class="filter-bar">
+          <input
+            id="search"
+            aria-label="예시 실험 검색"
+            placeholder="실험 이름 또는 ID 검색"
+          /><select id="status" aria-label="상태 필터">
+            <option value="all">모든 상태</option>
+            <option value="completed">완료</option>
+            <option value="running">진행 중</option>
+            <option value="failed">실패</option>
+            <option value="completed_with_failures">부분 실패</option>
+            <option value="skipped">건너뜀</option>
+            <option value="unknown">확인 필요</option></select
+          ><select aria-label="시안 데이터 범위" disabled>
+            <option>합성 예시 데이터</option>
+          </select>
+        </div>
+        <p class="list-count" id="list-count">불러온 예시 4개</p>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>실험</th>
+              <th>실행 상태</th>
+              <th>실제 적용 설정</th>
+              <th>자료·기간</th>
+              <th class="duration">마지막 관측</th>
+              <th>결과·진행</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="mobile-runs"></div>
+        <div id="empty" class="list-empty" hidden>
+          조건에 맞는 예시가 없습니다
+        </div>
+        <p class="footnote">
+          목록의 상태와 수치는 화면 구성용 예시입니다. 실제 제품에서는 저장된
+          artifact의 상태만 표시합니다
+        </p>
+        <div class="notice">
+          정책 저장과 bucket 테스트 대기 등록은 ‘전략·정책’에서 관리합니다. 대기
+          등록은 runner 실행과 구분됩니다
+        </div>
+      </section>
+      <section id="screen-new" class="screen" hidden>
+        <a class="back" href="#list">← 실험 목록</a>
+        <header>
+          <h1>새 실험</h1>
+          <p class="sub">실제로 적용되는 조건을 확인하고 시작하세요</p>
+        </header>
+        <div class="steps" aria-label="설정 단계">
+          <div class="step active" data-step-label="1">
+            <span class="number">1</span>전략·범위
+          </div>
+          <div class="step" data-step-label="2">
+            <span class="number">2</span>데이터·실행 조건
+          </div>
+          <div class="step" data-step-label="3">
+            <span class="number">3</span>검증·확인
+          </div>
+        </div>
+        <div class="form-layout">
+          <div class="form-body">
+            <div class="form-step" data-step="1">
+              <h2>어떤 조건으로 실행할까요?</h2>
+              <div class="choice chosen">
+                <strong>기본 paper replay</strong
+                ><small>기존 historical runner · 선택한 위험 설정 적용</small>
+              </div>
+              <div class="choice disabled-choice">
+                <strong>저장된 포트폴리오 정책</strong
+                ><small
+                  >정책 artifact 실행 적용은 아직 연결되지 않았습니다</small
+                >
+              </div>
+              <div class="field">
+                <label for="run-type">실행 유형 초안</label>
+                <select id="run-type">
+                  <option value="single_replay">
+                    단일 replay (single_replay)
+                  </option>
+                  <option value="batch_replay">
+                    여러 replay (batch_replay)
+                  </option>
+                </select>
+                <p class="help">
+                  요청 유형만 편집합니다. 실제 적용 횟수는 서버 검증 전
+                  미확인입니다
+                </p>
+              </div>
+              <div class="field">
+                <label for="risk">위험 설정</label
+                ><select id="risk">
+                  <option>balanced</option>
+                  <option>conservative</option>
+                  <option>aggressive_paper</option>
+                </select>
+                <p class="help">
+                  포트폴리오 정책 버전과 구분되는 기본 위험 설정입니다
+                </p>
+              </div>
+              <div class="field">
+                <span>판단 provider</span>
+                <div class="choice">
+                  <strong>fixture 판단</strong
+                  ><small
+                    >fixture 선택을 보여주는 시안이며 provider를 호출하지
+                    않습니다</small
+                  >
+                </div>
+              </div>
+            </div>
+            <div class="form-step" data-step="2" hidden>
+              <h2>데이터·실행 조건</h2>
+              <div class="field">
+                <label for="source">데이터 경로</label
+                ><input id="source" value="data/design-example" readonly />
+                <p class="help">
+                  시안용 경로 · 실제 가용성을 검증한 경로가 아닙니다
+                </p>
+              </div>
+              <div class="pair">
+                <div class="field">
+                  <label for="from">시작일</label
+                  ><input id="from" type="date" value="2024-01-01" />
+                </div>
+                <div class="field">
+                  <label for="to">종료일</label
+                  ><input id="to" type="date" value="2024-01-31" />
+                </div>
+              </div>
+              <p class="help" style="margin: -8px 0 22px">
+                날짜 기준 Asia/Seoul (UTC+09:00)
+              </p>
+              <div class="pair">
+                <div class="field">
+                  <label for="capital">가상 자금 (KRW)</label
+                  ><input id="capital" value="10,000,000" />
+                </div>
+                <div class="field">
+                  <label for="count">실행 횟수</label
+                  ><input id="count" value="1" type="number" min="1" max="20" />
+                </div>
+              </div>
+              <div class="field">
+                <label for="sampling">판단 빈도</label
+                ><select id="sampling">
+                  <option>주 1회</option>
+                  <option>일 1회</option>
+                </select>
+              </div>
+              <div class="notice">
+                추가 고정 초안 조건(stepSeconds·호출
+                한도·exit·비용·benchmark·종목군)은 최종 확인에서 모두 펼쳐볼 수
+                있습니다. 서버 검증이나 실행을 요청하지 않습니다
+              </div>
+            </div>
+            <div class="form-step" data-step="3" hidden>
+              <h2>실행 전 확인</h2>
+              <p class="help">
+                paper-only · 실제 주문 없음 · ‘결과 시안 보기’는 실행 버튼이
+                아닙니다
+              </p>
+              <section aria-labelledby="draft-heading">
+                <h3 id="draft-heading" style="margin-top: 16px">
+                  현재 입력 초안
+                </h3>
+                <p class="help" id="draft-status">초기 입력 · 미검증</p>
+                <p class="help" id="draft-effective-status">
+                  검증 미연결 · 실효값/자료 종류/가용성 미조회
+                </p>
+                <dl id="draft-overview" class="review-overview"></dl>
+                <ul class="review-warnings">
+                  <li>
+                    숫자는 편집 중 요청값입니다. 서버 검증·실행은 연결되지
+                    않았습니다
+                  </li>
+                  <li id="normalization-warning"></li>
+                  <li>
+                    고정 응답의 preset·시장 필터는 미적용입니다. 전체 notices는
+                    별도 예시에서 확인하세요
+                  </li>
+                </ul>
+                <details id="draft-all-conditions" class="validation-details">
+                  <summary>현재 요청 전체 29조건 · 실효값 미조회</summary>
+                  <dl id="draft-comparison" class="config-comparison"></dl>
+                </details>
+              </section>
+              <details
+                id="fixed-response-details"
+                class="validation-details review-disclosure"
+              >
+                <summary>별도 고정 서버 응답 예시 · 현재 입력과 무관</summary>
+                <section
+                  class="validation-section"
+                  aria-labelledby="fixed-validation-heading"
+                >
+                  <h3 id="fixed-validation-heading">
+                    별도 고정 입력의 서버 응답 예시
+                  </h3>
+                  <p class="sub">
+                    현재 양식과 무관한 고정 합성 입력입니다. 위 입력을 바꿔도 이
+                    예시는 바뀌지 않습니다
+                  </p>
+                  <div class="notice">
+                    문서 작성 시 validatePaperSimulationCandidate(고정 config,
+                    env={})를 실행해 얻은 원문입니다. browser는 저장된 예시만
+                    표시하며 validator·source 조회·runner를 호출하지 않습니다.
+                    예시의 valid는 현재 초안이나 데이터 가용성을 검증한 결과가
+                    아닙니다
+                  </div>
+                  <p class="help" id="fixed-response-status"></p>
+                  <ul
+                    class="validation-notices"
+                    id="fixed-normalization-differences"
+                  ></ul>
+
+                  <details id="fixed-all-conditions" class="validation-details">
+                    <summary>고정 requested → effective 전체 29조건</summary>
+                    <dl id="fixed-comparison" class="config-comparison"></dl>
+                  </details>
+                  <h3 style="margin-top: 20px">이 고정 응답의 notices</h3>
+                  <ul
+                    class="validation-notices"
+                    id="fixed-validation-notices"
+                  ></ul>
+                </section>
+              </details>
+              <details
+                id="raw-inspection-details"
+                class="validation-details review-disclosure"
+              >
+                <summary>검사용 원문 JSON · 생성 근거</summary>
+                <section
+                  class="validation-section"
+                  aria-labelledby="raw-inspection-heading"
+                >
+                  <h3 id="raw-inspection-heading">검사용 전체 자료</h3>
+                  <p class="help">
+                    현재 raw 초안과 별도 고정 응답을 각각 펼쳐 확인할 수
+                    있습니다
+                  </p>
+                  <details class="validation-details">
+                    <summary>
+                      현재 전체 raw 요청 초안 · effective 미조회
+                    </summary>
+                    <pre id="draft-config" class="validation-json"></pre>
+                  </details>
+                  <details class="validation-details">
+                    <summary>별도 고정 requestedConfig 전체</summary>
+                    <pre
+                      id="fixed-requested-config"
+                      class="validation-json"
+                    ></pre>
+                  </details>
+                  <details class="validation-details">
+                    <summary>
+                      별도 고정 effectiveConfig 전체 ·
+                      constraints/riskPolicy/allocationPolicy 포함
+                    </summary>
+                    <pre
+                      id="fixed-effective-config"
+                      class="validation-json"
+                    ></pre>
+                  </details>
+                  <details class="validation-details">
+                    <summary>
+                      별도 고정 서버 응답 원문 · 모든 안전 상태 포함
+                    </summary>
+                    <pre
+                      id="fixed-validation-response"
+                      class="validation-json"
+                    ></pre>
+                  </details>
+                  <details class="validation-details">
+                    <summary>고정 응답 생성 근거</summary>
+                    <pre
+                      id="fixed-validation-provenance"
+                      class="validation-json"
+                    ></pre>
+                  </details>
+                </section>
+              </details>
+            </div>
+          </div>
+          <aside class="summary" aria-label="입력 요약">
+            <h2>입력 요약</h2>
+            <dl>
+              <div>
+                <dt>실행 경로</dt>
+                <dd>기본 paper replay</dd>
+              </div>
+              <div>
+                <dt>위험 설정</dt>
+                <dd id="summary-risk">balanced</dd>
+              </div>
+              <div>
+                <dt>요청 유형</dt>
+                <dd id="summary-run-type">single_replay</dd>
+              </div>
+              <div>
+                <dt>요청 횟수 (미검증)</dt>
+                <dd id="summary-count">1회</dd>
+              </div>
+              <div>
+                <dt>판단 빈도</dt>
+                <dd id="summary-sampling">주 1회</dd>
+              </div>
+              <div>
+                <dt>판단 provider</dt>
+                <dd>fixture 판단</dd>
+              </div>
+              <div>
+                <dt>source 자료 종류</dt>
+                <dd>미조회 (시안 데이터는 합성)</dd>
+              </div>
+              <div>
+                <dt>기간</dt>
+                <dd id="summary-dates">2024.01.01–2024.01.31</dd>
+              </div>
+              <div>
+                <dt>가상 자금</dt>
+                <dd id="summary-capital">10,000,000 KRW</dd>
+              </div>
+            </dl>
+            <hr />
+            <h3>실행 후 확인할 내용</h3>
+            <p class="info-line">
+              진행과 결과 요약<br />판단·Risk·모의 체결 근거<br />입력과 자료
+              출처 기록
+            </p>
+            <div class="notice">
+              ‘접수됨’은 완료를 뜻하지 않습니다. 같은 실행 ID로 기록을
+              확인합니다
+            </div>
+          </aside>
+        </div>
+        <footer class="actions">
+          <button class="secondary" id="previous" type="button">이전</button>
+          <div class="right">
+            <button class="primary" id="next" type="button">
+              데이터·조건으로 →</button
+            ><a class="primary" id="preview-result" href="#detail" hidden
+              >결과 시안 보기 →</a
+            >
+          </div>
+        </footer>
+      </section>
+      <section id="screen-detail" class="screen" hidden>
+        <div class="detail-head">
+          <a class="back" href="#list">← 실험 목록</a>
+          <div class="page-head">
+            <div>
+              <div class="title-line">
+                <h1 id="run-title">기본 paper replay</h1>
+                <span id="run-state" class="state completed">완료 예시</span>
+              </div>
+              <p class="sub" id="run-identity">
+                run-demo-001 · balanced · fixture 판단
+              </p>
+              <p class="info-line" id="run-observed-at">
+                2024.01.01–01.31 · 합성 예시 · 마지막 관측 10.02 13:40 UTC
+              </p>
+            </div>
+            <div class="head-actions">
+              <a class="secondary" href="#new">조건 설정 시안</a>
+            </div>
+          </div>
+        </div>
+        <section
+          id="observed-detail"
+          class="observed-detail"
+          aria-label="선택 실행의 관측 기록"
+          hidden
+        ></section>
+        <div class="tabs" role="tablist" aria-label="실행 상세">
+          <button
+            type="button"
+            role="tab"
+            id="tab-summary"
+            aria-controls="panel-summary"
+            aria-selected="true"
+            class="active"
+            data-tab="summary"
+          >
+            요약</button
+          ><button
+            type="button"
+            role="tab"
+            id="tab-replay"
+            aria-controls="panel-replay"
+            aria-selected="false"
+            tabindex="-1"
+            data-tab="replay"
+          >
+            리플레이</button
+          ><button
+            type="button"
+            role="tab"
+            id="tab-evidence"
+            aria-controls="panel-evidence"
+            aria-selected="false"
+            tabindex="-1"
+            data-tab="evidence"
+          >
+            판단 근거</button
+          ><button
+            type="button"
+            role="tab"
+            id="tab-record"
+            aria-controls="panel-record"
+            aria-selected="false"
+            tabindex="-1"
+            data-tab="record"
+          >
+            기록
+          </button>
+        </div>
+        <div class="detail-body">
+          <div
+            class="tabpanel"
+            role="tabpanel"
+            id="panel-summary"
+            aria-labelledby="tab-summary"
+          >
+            <div data-run-content="completed">
+              <div class="metrics">
+                <div class="metric">
+                  <span>관측 표본</span
+                  ><strong>240<span class="example-tag">예시</span></strong>
+                </div>
+                <div class="metric">
+                  <span>모의 체결</span><strong>18건</strong>
+                </div>
+                <div class="metric">
+                  <span>Risk 차단</span><strong>3건</strong>
+                </div>
+                <div class="metric">
+                  <span>자료 범위</span><strong>합성 예시</strong>
+                </div>
+              </div>
+              <div class="chart-head">
+                <h2>자산 변화<small>가상 자금 지수 · 시작 100</small></h2>
+                <span class="legend">━ 실험 예시 &nbsp; ┄ 기준선 예시</span>
+              </div>
+              <svg
+                class="chart"
+                viewBox="0 0 1000 220"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label="설계 예시 자산 지수가 100에서 102로 변화하는 선형 차트. 실제 결과가 아닙니다"
+              >
+                <defs>
+                  <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+                    <stop stop-color="#dceaff" />
+                    <stop offset="1" stop-color="#fff" />
+                  </linearGradient>
+                </defs>
+                <g stroke="#e5e8eb">
+                  <path
+                    d="M0 20H1000M0 75H1000M0 130H1000M0 185H1000M0 20V185M250 20V185M500 20V185M750 20V185M1000 20V185"
+                  />
+                </g>
+                <path
+                  d="M0 130L90 120L180 143L280 111L390 102L500 122L600 95L700 79L800 100L900 84L1000 67V185H0Z"
+                  fill="url(#area)"
+                />
+                <path
+                  d="M0 130L90 120L180 143L280 111L390 102L500 122L600 95L700 79L800 100L900 84L1000 67"
+                  stroke="#3182f6"
+                  stroke-width="2.5"
+                  fill="none"
+                />
+                <path
+                  d="M0 130L250 137L500 127L750 126L1000 120"
+                  stroke="#72839c"
+                  stroke-dasharray="6 6"
+                  stroke-width="1.5"
+                  fill="none"
+                />
+              </svg>
+              <div class="axis-labels">
+                <span>01.01</span><span>01.08</span><span>01.15</span
+                ><span>01.22</span><span>01.31</span>
+              </div>
+              <h3 style="margin-top: 20px">
+                낙폭
+                <span class="muted" style="font-size: 12px; font-weight: 400"
+                  >예시 · 0%–2%</span
+                >
+              </h3>
+              <svg
+                class="chart drawdown"
+                viewBox="0 0 1000 100"
+                preserveAspectRatio="none"
+                role="img"
+                aria-label="설계 예시 낙폭 차트. 같은 기간의 최대 2% 범위"
+              >
+                <path d="M0 5H1000M0 45H1000M0 85H1000" stroke="#e5e8eb" />
+                <path
+                  d="M0 5L90 5L180 55L250 5L320 12L400 5L500 48L600 5L700 5L800 40L900 20L1000 5Z"
+                  fill="#dceaff"
+                  stroke="#9ec6ff"
+                />
+              </svg>
+              <p class="result-note">
+                합성 데이터로 구성한 시안입니다. 비용 조건과 투자 성과를
+                증명하지 않습니다
+              </p>
+              <hr class="rule" />
+              <div class="chart-head">
+                <h2>최근 판단과 제약</h2>
+                <button class="secondary" type="button" id="show-evidence">
+                  판단 근거 보기 →
+                </button>
+              </div>
+              <div class="event">
+                <span>예시 사건 01</span
+                ><span>위험 한도 초과로 모의 체결 차단</span
+                ><span class="state unknown">Risk 차단</span>
+              </div>
+              <div class="event">
+                <span>예시 사건 02</span
+                ><span>검증된 판단과 모의 체결 연결</span
+                ><span class="state completed">근거 확인</span>
+              </div>
+            </div>
+            <div data-run-content="completed_with_failures" hidden>
+              <h2>부분 실패 결과 요약</h2>
+              <p class="sub">
+                <span class="partial-run-id"></span> · 합성 설계 예시
+              </p>
+              <div class="notice">
+                불완전한 판단 결과 · 실행은 종료됐지만 판단 provider 실패가 있어
+                결과 해석에 한계가 있습니다. 이 실행의 summary와 report가 있는
+                상태를 보여주는 예시입니다
+              </div>
+              <div class="metrics">
+                <div class="metric">
+                  <span>판단 provider 호출</span
+                  ><strong id="partial-call-count"></strong>
+                </div>
+                <div class="metric">
+                  <span>판단 실패</span
+                  ><strong id="partial-failure-count"></strong>
+                </div>
+                <div class="metric">
+                  <span>모의 체결</span
+                  ><strong id="partial-trade-count"></strong>
+                </div>
+                <div class="metric">
+                  <span>자료 범위</span><strong>합성 예시</strong>
+                </div>
+              </div>
+              <p class="result-note">
+                위 건수는 이 실행만의 합성 summary 값입니다. 자산·낙폭 시계열은
+                이 예시에 넣지 않았으며, 다른 실행의 차트나 0으로 대체하지
+                않습니다
+              </p>
+              <button
+                class="secondary"
+                type="button"
+                id="show-partial-evidence"
+              >
+                판단 실패 근거 보기 →
+              </button>
+            </div>
+          </div>
+          <div
+            class="tabpanel"
+            role="tabpanel"
+            id="panel-replay"
+            aria-labelledby="tab-replay"
+            hidden
+          >
+            <h2>시점별 리플레이</h2>
+            <p class="sub">
+              시계열과 사건 참조가 연결되면 차트와 선택 시점 상세를 나란히
+              배치합니다
+            </p>
+            <div class="notice">
+              실제 시계열 API가 아직 연결되지 않은 설계 예시입니다. 실행 가능한
+              재생 버튼을 노출하지 않습니다
+            </div>
+          </div>
+          <div
+            class="tabpanel"
+            role="tabpanel"
+            id="panel-evidence"
+            aria-labelledby="tab-evidence"
+            hidden
+          >
+            <div data-run-content="completed">
+              <h2>판단 근거</h2>
+              <p class="sub">예시 사건 01 · 위험 한도 초과</p>
+              <div class="event">
+                <span>1. 후보</span><span>합성 후보 입력</span
+                ><span class="muted">예시</span>
+              </div>
+              <div class="event">
+                <span>2. 판단 provider</span><span>fixture 판단 결과</span
+                ><span class="muted">AI 호출 없음</span>
+              </div>
+              <div class="event">
+                <span>3. Risk</span><span>설정된 위험 한도 초과로 차단</span
+                ><span class="state unknown">차단</span>
+              </div>
+              <div class="event">
+                <span>4. 모의 체결</span><span>차단되어 생성되지 않음</span
+                ><span class="muted">없음</span>
+              </div>
+              <p class="result-note">
+                AI 설명과 deterministic 검증을 구별하고 같은 사건의 참조로만
+                연결합니다
+              </p>
+            </div>
+            <div data-run-content="completed_with_failures" hidden>
+              <h2>부분 실패 판단 근거</h2>
+              <p class="sub">
+                <span class="partial-run-id"></span> · 합성 설계 예시
+              </p>
+              <div class="notice">
+                근거 일부 미연결 · summary의 판단 실패 관측만 보여줍니다
+              </div>
+              <dl>
+                <div>
+                  <dt>관측 필드</dt>
+                  <dd>summary.aiDecisionFailureCount</dd>
+                </div>
+                <div>
+                  <dt>마지막 실패 요약</dt>
+                  <dd id="partial-failure-reason"></dd>
+                </div>
+                <div>
+                  <dt>판단 provider</dt>
+                  <dd>fixture 판단 · 외부 AI 호출 없음</dd>
+                </div>
+              </dl>
+              <p class="result-note">
+                이 예시에는 원본 audit 사건·Risk·모의 체결의 연결 참조가
+                없습니다. 다른 실행의 사건을 가져오거나 같은 판단으로 추정해
+                연결하지 않습니다
+              </p>
+            </div>
+          </div>
+          <div
+            class="tabpanel"
+            role="tabpanel"
+            id="panel-record"
+            aria-labelledby="tab-record"
+            hidden
+          >
+            <div data-run-content="completed">
+              <h2>실행 기록</h2>
+              <dl>
+                <div>
+                  <dt>ID</dt>
+                  <dd>run-demo-001 (예시)</dd>
+                </div>
+                <div>
+                  <dt>요청 설정</dt>
+                  <dd>balanced · fixture 판단</dd>
+                </div>
+                <div>
+                  <dt>원본 자료</dt>
+                  <dd>합성 설계 예시</dd>
+                </div>
+                <div>
+                  <dt>실제 backend</dt>
+                  <dd>연결되지 않음</dd>
+                </div>
+              </dl>
+              <div class="notice">
+                실제 제품에서는 입력·코드 버전·자료 출처·산출물·audit를
+                보여줍니다. 이 문서는 artifact를 생성하지 않습니다
+              </div>
+            </div>
+            <div data-run-content="completed_with_failures" hidden>
+              <h2>부분 실패 실행 기록</h2>
+              <p class="sub">기록 연결 일부 미구현 · 합성 설계 예시</p>
+              <dl>
+                <div>
+                  <dt>ID</dt>
+                  <dd class="partial-run-id"></dd>
+                </div>
+                <div>
+                  <dt>실행 상태</dt>
+                  <dd>completed_with_failures</dd>
+                </div>
+                <div>
+                  <dt>요청 설정</dt>
+                  <dd>balanced · fixture 판단</dd>
+                </div>
+                <div>
+                  <dt>summary</dt>
+                  <dd>이 실행의 요약 있음 (합성 예시)</dd>
+                </div>
+                <div>
+                  <dt>report</dt>
+                  <dd>이 실행의 report 있음 (합성 예시)</dd>
+                </div>
+                <div>
+                  <dt>원본 자료</dt>
+                  <dd>합성 설계 예시</dd>
+                </div>
+                <div>
+                  <dt>실제 backend</dt>
+                  <dd>연결되지 않음</dd>
+                </div>
+              </dl>
+              <div class="notice">
+                부분 실패도 summary와 report를 보존하는 계약을 나타냅니다. 이
+                시안은 실제 파일을 생성하거나 조회하지 않으며 원본 artifact
+                링크는 연결되지 않았습니다
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="screen-policies" class="screen" hidden>
+        <a class="back" href="#list">← 실험 목록</a>
+        <h1>전략·정책</h1>
+        <p class="sub">메뉴 구성 안내 · 세부 화면은 후속 구현 범위입니다</p>
+        <div class="menu-guide">
+          <h2>이 메뉴에서 찾을 내용</h2>
+          <ul>
+            <li>정책 초안 편집·검증·저장</li>
+            <li>bucket 준비 상태와 테스트 대기 등록</li>
+            <li>포트폴리오 준수와 배분</li>
+          </ul>
+          <p class="footnote">
+            이 시안에서는 구성만 확인합니다. 실제 기능 접근 경로와 호환 계획은
+            기술 설계의 이전표에 정리했습니다
+          </p>
+          <a class="secondary" href="technical-design.md#기존-기능-이전표"
+            >기존 기능 이전표</a
+          >
+        </div>
+      </section>
+      <section id="screen-compare" class="screen" hidden>
+        <a class="back" href="#list">← 실험 목록</a>
+        <h1>비교</h1>
+        <p class="sub">메뉴 구성 안내 · 세부 화면은 후속 구현 범위입니다</p>
+        <div class="menu-guide">
+          <h2>이 메뉴에서 찾을 내용</h2>
+          <ul>
+            <li>기준 실행과 후보의 조건 차이</li>
+            <li>비교 가능성·미확인 입력 표시</li>
+            <li>기존 validation 결과와 matrix 접근</li>
+          </ul>
+          <p class="footnote">
+            이 시안에서는 구성만 확인합니다. 실제 기능 접근 경로와 호환 계획은
+            기술 설계의 이전표에 정리했습니다
+          </p>
+          <a class="secondary" href="technical-design.md#기존-기능-이전표"
+            >기존 기능 이전표</a
+          >
+        </div>
+      </section>
+      <section id="screen-data" class="screen" hidden>
+        <a class="back" href="#list">← 실험 목록</a>
+        <h1>데이터</h1>
+        <p class="sub">메뉴 구성 안내 · 세부 화면은 후속 구현 범위입니다</p>
+        <div class="menu-guide">
+          <h2>이 메뉴에서 찾을 내용</h2>
+          <ul>
+            <li>자료 출처·기간·coverage·가용성</li>
+            <li>검증 분할과 데이터 경고</li>
+            <li>기존 market packet·source health 접근</li>
+          </ul>
+          <p class="footnote">
+            이 시안에서는 구성만 확인합니다. 실제 기능 접근 경로와 호환 계획은
+            기술 설계의 이전표에 정리했습니다
+          </p>
+          <a class="secondary" href="technical-design.md#기존-기능-이전표"
+            >기존 기능 이전표</a
+          >
+        </div>
+      </section>
+      <section id="screen-settings" class="screen" hidden>
+        <a class="back" href="#list">← 실험 목록</a>
+        <h1>설정</h1>
+        <p class="sub">메뉴 구성 안내 · 세부 화면은 후속 구현 범위입니다</p>
+        <div class="menu-guide">
+          <h2>이 메뉴에서 찾을 내용</h2>
+          <ul>
+            <li>provider·연결 진단과 live 비활성 상태</li>
+            <li>전체 운영 audit와 Risk 조회</li>
+            <li>기존 운영 요약과 UI catalog 접근</li>
+          </ul>
+          <p class="footnote">
+            이 시안에서는 구성만 확인합니다. 실제 기능 접근 경로와 호환 계획은
+            기술 설계의 이전표에 정리했습니다
+          </p>
+          <a class="secondary" href="technical-design.md#기존-기능-이전표"
+            >기존 기능 이전표</a
+          >
+        </div>
+      </section>
+    </main>
+    <script type="application/json" id="validation-response-example">
+      {
+        "schemaVersion": "paper_simulation_validation.v1",
+        "mode": "paper_only",
+        "status": "valid",
+        "readOnly": true,
+        "storageMutationEnabled": false,
+        "liveTradingEnabled": false,
+        "orderPlacementEnabled": false,
+        "replayRunnerStarted": false,
+        "dataAvailabilityChecked": false,
+        "sourceDataKind": "unknown",
+        "requestedConfig": {
+          "mode": "paper_only",
+          "runType": "single_replay",
+          "runCount": 3,
+          "sourceDataDir": "data/validation-contract-example",
+          "universe": {
+            "preset": "fixed-synthetic-example-metadata",
+            "market": "mixed_global"
+          },
+          "window": {
+            "mode": "fixed_range",
+            "seed": "design-validation-example-v1",
+            "startAt": "2024-02-01",
+            "endAt": "2024-02-29",
+            "windowMonths": 1
+          },
+          "samplingPolicy": {
+            "decisionFrequency": "once_per_day",
+            "stepSeconds": 86400,
+            "maxDecisionCalls": 40,
+            "maxCodexCallsPerRun": 31
+          },
+          "capital": {
+            "initialCashKrw": 20000000
+          },
+          "decisionProvider": {
+            "mode": "dry_run_fixture",
+            "modelId": "example-unused-model",
+            "outputSchema": "schemas/virtual-decision.schema.json"
+          },
+          "riskProfile": "conservative",
+          "paperExitPolicy": "take_profit_stop_loss",
+          "costModel": "standard",
+          "benchmarkPolicy": "cash_equal_weight_initial_hold"
+        },
+        "effectiveConfig": {
+          "mode": "paper_only",
+          "runType": "single_replay",
+          "runCount": 1,
+          "sourceDataDir": "data/validation-contract-example",
+          "universe": {
+            "selection": "source_snapshots",
+            "presetApplied": false,
+            "marketFilterApplied": false,
+            "allocationMode": "split_target_kr_us"
+          },
+          "window": {
+            "mode": "fixed_range",
+            "seed": "design-validation-example-v1",
+            "rangeStartAt": "2024-01-31T15:00:00.000Z",
+            "rangeEndAt": "2024-02-29T14:59:59.999Z",
+            "windowMonths": null,
+            "fixedWindow": {
+              "seed": "design-validation-example-v1",
+              "rangeStart": "2024-01-31T15:00:00.000Z",
+              "rangeEnd": "2024-02-29T14:59:59.999Z",
+              "windowMonths": 1,
+              "timezoneOffsetMinutes": 540,
+              "candidateCount": 1,
+              "selectedCandidateIndex": 0,
+              "selectedMonth": "2024-02",
+              "localStartDate": "2024-02-01",
+              "localEndDate": "2024-02-29",
+              "startAt": "2024-01-31T15:00:00.000Z",
+              "endAt": "2024-02-29T14:59:59.999Z"
+            },
+            "timezoneOffsetMinutes": 540
+          },
+          "samplingPolicy": {
+            "decisionFrequency": "once_per_day",
+            "stepSeconds": 86400,
+            "maxDecisionCalls": 40,
+            "maxCodexCallsPerRun": 0
+          },
+          "capital": {
+            "initialCashKrw": 20000000
+          },
+          "decisionProvider": {
+            "mode": "dry_run_fixture",
+            "modelId": null,
+            "outputSchema": null
+          },
+          "riskProfile": "conservative",
+          "constraints": {
+            "maxNewPositions": 3,
+            "maxBudgetPerSymbolKrw": 2000000,
+            "allowedActions": ["VIRTUAL_BUY", "VIRTUAL_SELL", "VIRTUAL_HOLD"]
+          },
+          "riskPolicy": {
+            "maxBudgetPerDecisionKrw": 2000000,
+            "maxSymbolExposureKrw": 4000000,
+            "targetExposureRatio": 0.35,
+            "maxPositionWeightRatio": 0.35,
+            "minCashReserveRatio": 0.1,
+            "minCashReserveKrw": 0
+          },
+          "allocationPolicy": {
+            "policyName": "conservative_allocation",
+            "targetExposureRatio": 0.35,
+            "minCashReserveRatio": 0.1,
+            "maxBudgetPerDecisionRatio": 0.1,
+            "maxSymbolExposureRatio": 0.2,
+            "marketTargetExposureRatios": {
+              "KR": 0.175,
+              "US": 0.175
+            }
+          },
+          "paperExitPolicy": {
+            "takeProfitMode": "full_exit",
+            "takeProfitRatio": 0.15,
+            "stopLossRatio": 0.08
+          },
+          "costModel": {
+            "modelVersion": "paper_cost_model.v5",
+            "executionModelVersion": "execution_simulator.v4",
+            "fillModel": "simple_fill_ratio_with_participation_cap",
+            "feeModel": "fixed_bps",
+            "taxModel": "sell_tax_bps",
+            "slippageModel": "linear_bps",
+            "spreadModel": "not_modeled",
+            "marketImpactModel": "not_modeled",
+            "volatilityAdjustmentModel": "not_modeled",
+            "liquidityModel": "conservative_when_available",
+            "executionPolicy": {
+              "fillPriceRule": "current_candidate_last_price",
+              "slippageBps": 0,
+              "feeBps": 0,
+              "taxBps": 0,
+              "halfSpreadBps": 0,
+              "fillRatio": 1,
+              "allowFractionalShares": true,
+              "maxVolumeParticipationRate": 0.1,
+              "minLiquidityFillRatio": 0.1,
+              "rejectStaleLiquidity": true,
+              "marketImpactBpsPerParticipationRate": 0
+            },
+            "costComponents": {
+              "fee": "fee_bps",
+              "tax": "sell_tax_bps",
+              "slippage": "slippage_bps",
+              "spread": "not_modeled",
+              "marketImpact": "not_modeled",
+              "volatilityAdjustment": "not_modeled"
+            },
+            "assumptions": [
+              "paper-only execution simulator",
+              "no live broker order",
+              "spread is an explicit zero placeholder",
+              "volatility-adjusted slippage is an explicit not-modeled placeholder",
+              "market impact is an explicit zero placeholder",
+              "volume participation cap applies only when candidate volume is available",
+              "missing volume preserves legacy fill behavior and is reported as not_modeled"
+            ]
+          },
+          "benchmarkPolicy": {
+            "mode": "fixed_report_benchmarks",
+            "names": [
+              "cashOnly",
+              "equalWeightBuyAndHold",
+              "initialPortfolioBuyAndHold"
+            ],
+            "equalWeightAvailability": "requires_priced_replay_packet"
+          },
+          "portfolioPolicyApplied": false,
+          "tickDelayMs": 0
+        },
+        "notices": [
+          {
+            "field": "universe.preset",
+            "code": "preset_not_applied",
+            "message": "The preset is retained request metadata; source snapshots determine the available symbols, without preset filtering."
+          },
+          {
+            "field": "universe.market",
+            "code": "allocation_only",
+            "message": "Market changes allocation targets only: mixed_global splits KR/US targets; kr and us retain risk-profile defaults. No market symbol filter is applied."
+          },
+          {
+            "field": "costModel",
+            "code": "workflow_execution_defaults",
+            "message": "standard means the existing workflow execution defaults shown in effectiveConfig.costModel, not a separate commission/slippage preset."
+          },
+          {
+            "field": "benchmarkPolicy",
+            "code": "fixed_report_benchmarks",
+            "message": "Reports compute cash, equal-weight and initial-portfolio benchmarks; equal-weight can be unavailable without a priced replay packet."
+          },
+          {
+            "field": "decisionProvider",
+            "code": "fixture_provider",
+            "message": "Fixture decisions use no external model, output schema file or Codex calls. Source data kind is not inferred from this provider."
+          },
+          {
+            "field": "runCount",
+            "code": "single_run_count",
+            "message": "single_replay always executes one replay."
+          },
+          {
+            "field": "window.windowMonths",
+            "code": "fixed_range_metadata_only",
+            "message": "Fixed dates determine the replay interval; windowMonths is retained only in fixed-window metadata."
+          }
+        ]
+      }
+    </script>
+    <script type="application/json" id="validation-response-provenance">
+      {
+        "description": "현재 입력과 무관한 고정 합성 요청의 pure validator 응답",
+        "generator": "validatePaperSimulationCandidate",
+        "module": "dist/api/paperSimulationConfig.js",
+        "source": "src/api/paperSimulationConfig.ts",
+        "sourceCommit": "06c862b0d84a4c50c0fca69ed8a26daf7deea897",
+        "sourceSha256": "12aaf681879f24e042717b572c39544e4786e67995eb44694ebe6195cd2c8075",
+        "executedModuleSha256": "f19ab577f1b2cfce080b68dc78c25866c8fe21a90074b5bf578b45d8d95f061e",
+        "responseFile": "validation-response.example.json",
+        "responseFileSha256": "096accd82104372e21739c66a9f670a3ad9f05fe4bda2590805a6ff80c4d71a6",
+        "env": {},
+        "sourceDataRead": false,
+        "runnerStarted": false,
+        "networkRequest": false
+      }
+    </script>
+    <script>
+      const runs = [
+        {
+          name: "기본 paper replay",
+          id: "run-demo-001",
+          state: "completed",
+          label: "완료",
+          setting: "balanced",
+          result: "표본 240 · 모의 체결 18건",
+          observed: "13:40 UTC",
+        },
+        {
+          name: "진행 상태 예시",
+          id: "run-demo-002",
+          state: "running",
+          label: "진행 중",
+          setting: "conservative",
+          result: "리플레이 진행 · 12 / 30 시점",
+          observed: "13:42 UTC",
+        },
+        {
+          name: "현재 조회를 확인할 수 없는 실행",
+          id: "run-demo-003",
+          state: "unknown",
+          label: "확인 필요",
+          setting: "balanced",
+          result: "기존 실행 · 마지막 관측 이후 상태 미확인",
+          observed: "13:38 UTC",
+        },
+        {
+          name: "리플레이 처리 오류 예시",
+          id: "run-demo-004",
+          state: "failed",
+          label: "실패",
+          setting: "balanced",
+          result: "저장된 리플레이 처리 오류",
+          observed: "13:32 UTC",
+        },
+        {
+          name: "판단 일부가 실패한 실행",
+          id: "run-demo-005",
+          state: "completed_with_failures",
+          label: "부분 실패",
+          setting: "balanced",
+          result: "판단 호출 3 · 판단 실패 1 · 모의 체결 0건",
+          summary: {
+            decisionProviderCallCount: 3,
+            aiDecisionFailureCount: 1,
+            tradeCount: 0,
+            lastAiDecisionFailureSummary:
+              "fixture provider 응답 실패 (합성 예시)",
+          },
+          observed: "13:30 UTC",
+        },
+        {
+          name: "자료 부족으로 건너뛴 실행",
+          id: "run-demo-006",
+          state: "skipped",
+          label: "건너뜀",
+          setting: "balanced",
+          result: "저장된 사유 · 필요한 자료 부족",
+          observed: "13:28 UTC",
+        },
+      ];
+      function filterQuery() {
+        const query = new URLSearchParams();
+        const q = document.querySelector("#search").value;
+        const status = document.querySelector("#status").value;
+        if (q) query.set("q", q);
+        if (status !== "all") query.set("status", status);
+        return query.toString() ? "?" + query.toString() : "";
+      }
+      function renderList() {
+        const q = document.querySelector("#search").value.toLowerCase(),
+          s = document.querySelector("#status").value;
+        const shown = runs.filter(
+          (r) =>
+            (s === "all" || r.state === s) &&
+            (r.name + " " + r.id).toLowerCase().includes(q),
+        );
+        document.querySelector("#list-count").textContent =
+          `불러온 예시 ${runs.length}개 중 ${shown.length}개 표시`;
+        document.querySelector("#rows").innerHTML = shown
+          .map(
+            (r) =>
+              `<tr><td><a href="#detail/${r.id}${filterQuery()}">${r.name}</a><span class="meta">${r.id} · 설계 예시</span></td><td><span class="state ${r.state}">${r.label}</span></td><td>${r.setting}<span class="meta">fixture 판단</span></td><td>합성 예시<span class="meta">2024.01.01–01.31</span></td><td class="duration">${r.observed}</td><td>${r.result}</td></tr>`,
+          )
+          .join("");
+        document.querySelector("#mobile-runs").innerHTML = shown
+          .map(
+            (r) =>
+              `<article class="mobile-run"><div class="top"><a href="#detail/${r.id}${filterQuery()}"><strong>${r.name}</strong></a><span class="state ${r.state}">${r.label}</span></div><span class="meta">${r.setting} · 합성 예시 · 2024.01.01–01.31</span><div class="result">${r.result}</div><span class="meta">마지막 관측 ${r.observed} · ${r.id}</span></article>`,
+          )
+          .join("");
+        document.querySelector("#empty").hidden = shown.length !== 0;
+      }
+      let lastRouteIdentity = "";
+      let currentListKey = "#list";
+      const listPositions = new Map();
+      if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+      function rememberListPosition(originHref) {
+        if (document.querySelector("#screen-list").hidden) return;
+        const previous = listPositions.get(currentListKey);
+        listPositions.set(currentListKey, {
+          y: window.scrollY,
+          originHref:
+            originHref === undefined ? previous?.originHref : originHref,
+        });
+      }
+      function routeParts() {
+        const hash = location.hash.slice(1);
+        const separator = hash.indexOf("?");
+        return separator < 0
+          ? [hash, ""]
+          : [hash.slice(0, separator), hash.slice(separator + 1)];
+      }
+      function showScreen() {
+        const [path, query] = routeParts();
+        const [route, runId, tabId] = path.split("/");
+        const resolvedRunId = runId || runs[0].id;
+        const params = new URLSearchParams(query);
+        if (route === "list" || query) {
+          document.querySelector("#search").value = params.get("q") ?? "";
+          const status = params.get("status") ?? "all";
+          document.querySelector("#status").value = [
+            ...document.querySelector("#status").options,
+          ].some((o) => o.value === status)
+            ? status
+            : "all";
+          renderList();
+          currentListKey = "#list" + filterQuery();
+        }
+        syncListLinks();
+        const screen = [
+          "list",
+          "new",
+          "detail",
+          "policies",
+          "compare",
+          "data",
+          "settings",
+        ].includes(route)
+          ? route
+          : "list";
+        document
+          .querySelectorAll(".screen")
+          .forEach((el) => (el.hidden = el.id !== `screen-${screen}`));
+        document
+          .querySelectorAll(".nav-item")
+          .forEach((el) =>
+            el.classList.toggle(
+              "selected",
+              el.getAttribute("href")?.split("?")[0] ===
+                "#" +
+                  (screen === "new" || screen === "detail" ? "list" : screen),
+            ),
+          );
+        document.querySelector(".mobile-menu").open = false;
+        if (screen === "detail") {
+          const run = runs.find((r) => r.id === resolvedRunId) ?? null;
+          const hasResults =
+            run?.state === "completed" ||
+            run?.state === "completed_with_failures";
+          document.querySelectorAll("[data-run-content]").forEach((panel) => {
+            panel.hidden = panel.dataset.runContent !== run?.state;
+          });
+          if (run?.state === "completed_with_failures") {
+            document.querySelectorAll(".partial-run-id").forEach((element) => {
+              element.textContent = run.id;
+            });
+            document.querySelector("#partial-call-count").textContent =
+              run.summary.decisionProviderCallCount + "건";
+            document.querySelector("#partial-failure-count").textContent =
+              run.summary.aiDecisionFailureCount + "건";
+            document.querySelector("#partial-trade-count").textContent =
+              run.summary.tradeCount + "건";
+            document.querySelector("#partial-failure-reason").textContent =
+              run.summary.lastAiDecisionFailureSummary;
+          }
+          if (hasResults) selectTab(tabId ?? "summary", false, false);
+          document.querySelector("#run-title").textContent =
+            run?.name ?? "실행을 찾을 수 없음";
+          document.querySelector("#run-state").textContent = run
+            ? run.label + " 예시"
+            : "자료 없음";
+          document.querySelector("#run-state").className =
+            "state " + (run?.state ?? "unknown");
+          document.querySelector("#run-identity").textContent = run
+            ? run.id + " · " + run.setting + " · fixture 판단"
+            : (runId ?? "ID 없음");
+          document.querySelector("#run-observed-at").textContent = run
+            ? "2024.01.01–01.31 · 합성 예시 · 마지막 관측 10.02 " + run.observed
+            : "해당 ID의 예시 자료가 없습니다";
+          document.querySelector(".tabs").hidden = !hasResults;
+          document.querySelector(".detail-body").hidden = !hasResults;
+          const observed = document.querySelector("#observed-detail");
+          observed.hidden = hasResults;
+          if (!hasResults) {
+            observed.replaceChildren();
+            const heading = document.createElement("h2");
+            heading.textContent =
+              run?.state === "running"
+                ? "관측된 진행"
+                : run?.state === "failed"
+                  ? "저장된 실패"
+                  : run?.state === "skipped"
+                    ? "건너뛴 실행"
+                    : run
+                      ? "실행 조회 미확인"
+                      : "자료 없음";
+            const detail = document.createElement("p");
+            detail.textContent =
+              run?.result ?? "목록으로 돌아가 실행 ID를 확인하세요";
+            const note = document.createElement("p");
+            note.className = "meta";
+            note.textContent =
+              run?.state === "unknown"
+                ? "마지막 관측 이후 상태는 알 수 없습니다. 누락을 성공이나 실패로 바꾸지 않습니다."
+                : "이 기록은 합성 설계 예시입니다. 실제 실행 API와 연결되지 않습니다.";
+            observed.append(heading, detail, note);
+          }
+        }
+        const identity =
+          screen + "/" + (screen === "detail" ? resolvedRunId : (runId ?? ""));
+        if (lastRouteIdentity !== identity) {
+          const activeScreen = document.querySelector(`#screen-${screen}`);
+          const heading = activeScreen.querySelector("h1");
+          if (!heading.id) heading.id = `screen-${screen}-heading`;
+          activeScreen.setAttribute("tabindex", "-1");
+          activeScreen.setAttribute("aria-labelledby", heading.id);
+          const saved =
+            screen === "list" ? listPositions.get(currentListKey) : null;
+          const listRoot = window.matchMedia?.("(max-width: 767px)").matches
+            ? document.querySelector("#mobile-runs")
+            : document.querySelector("#rows");
+          const origin = saved?.originHref
+            ? [...listRoot.querySelectorAll("a")].find(
+                (link) => link.getAttribute("href") === saved.originHref,
+              )
+            : null;
+          (origin ?? activeScreen).focus({ preventScroll: true });
+          window.scrollTo(0, saved?.y ?? 0);
+        }
+        lastRouteIdentity = identity;
+      }
+      let step = 1;
+      function showStep(n, moveFocus = false) {
+        step = Math.max(1, Math.min(3, n));
+        document
+          .querySelectorAll("[data-step]")
+          .forEach((el) => (el.hidden = Number(el.dataset.step) !== step));
+        document.querySelectorAll("[data-step-label]").forEach((el) => {
+          el.classList.toggle("active", Number(el.dataset.stepLabel) === step);
+          if (Number(el.dataset.stepLabel) === step)
+            el.setAttribute("aria-current", "step");
+          else el.removeAttribute("aria-current");
+        });
+        if (moveFocus) {
+          const heading = document.querySelector(`[data-step="${step}"] h2`);
+          heading.setAttribute("tabindex", "-1");
+          heading.focus();
+        }
+        document.querySelector("#screen-new .summary").hidden = step === 3;
+        document
+          .querySelector("#screen-new .form-layout")
+          .classList.toggle("review-step", step === 3);
+        document.querySelector("#next").hidden = step === 3;
+        document.querySelector("#preview-result").hidden = step !== 3;
+        document.querySelector("#next").textContent =
+          step === 1 ? "데이터·조건으로 →" : "검증·확인으로 →";
+        document.querySelector("#previous").textContent =
+          step === 1 ? "목록으로" : "이전";
+      }
+      function selectTab(requestedId, focus = false, persist = true) {
+        const id = ["summary", "replay", "evidence", "record"].includes(
+          requestedId,
+        )
+          ? requestedId
+          : "summary";
+        document.querySelectorAll("[data-tab]").forEach((el) => {
+          const active = el.dataset.tab === id;
+          el.classList.toggle("active", active);
+          el.setAttribute("aria-selected", String(active));
+          el.tabIndex = active ? 0 : -1;
+          if (active && focus) el.focus();
+        });
+        document
+          .querySelectorAll(".tabpanel")
+          .forEach((el) => (el.hidden = el.id !== `panel-${id}`));
+        if (document.activeElement?.closest(".tabpanel[hidden]")) {
+          document
+            .querySelector(`[data-tab="${id}"]`)
+            .focus({ preventScroll: true });
+        }
+        if (persist) {
+          const [path, query] = routeParts();
+          const runId = path.split("/")[1] || runs[0].id;
+          const nextHash =
+            "#detail/" + runId + "/" + id + (query ? "?" + query : "");
+          if (location.hash !== nextHash) location.hash = nextHash;
+        }
+      }
+      function syncListLinks() {
+        const listHref = "#list" + filterQuery();
+        document
+          .querySelectorAll('a[href^="#list"]')
+          .forEach((link) => link.setAttribute("href", listHref));
+      }
+      function updateFilters() {
+        history.replaceState(null, "", "#list" + filterQuery());
+        renderList();
+        currentListKey = "#list" + filterQuery();
+        syncListLinks();
+      }
+      document.addEventListener("click", (event) => {
+        const link =
+          event.target instanceof Element
+            ? event.target.closest('a[href^="#"]')
+            : null;
+        const href = link?.getAttribute("href");
+        if (href && !href.startsWith("#list") && href !== "#content") {
+          rememberListPosition(href.startsWith("#detail/") ? href : null);
+        }
+      });
+      document.querySelectorAll(".mobile-menu a").forEach((link) => {
+        link.addEventListener("click", () => {
+          document.querySelector(".mobile-menu").open = false;
+          document
+            .querySelector(".mobile-menu summary")
+            .focus({ preventScroll: true });
+        });
+      });
+      addEventListener("scroll", () => rememberListPosition(), {
+        passive: true,
+      });
+      document
+        .querySelector("#search")
+        .addEventListener("input", updateFilters);
+      document
+        .querySelector("#status")
+        .addEventListener("change", updateFilters);
+      document
+        .querySelector("#next")
+        .addEventListener("click", () => showStep(step + 1, true));
+      document
+        .querySelector("#previous")
+        .addEventListener("click", () =>
+          step === 1
+            ? (location.hash = "list" + filterQuery())
+            : showStep(step - 1, true),
+        );
+      document
+        .querySelector("#risk")
+        .addEventListener(
+          "change",
+          (e) =>
+            (document.querySelector("#summary-risk").textContent =
+              e.target.value),
+        );
+      document
+        .querySelectorAll("[data-tab]")
+        .forEach((el) =>
+          el.addEventListener("click", () => selectTab(el.dataset.tab)),
+        );
+      document.querySelector(".tabs").addEventListener("keydown", (e) => {
+        const tabs = [...document.querySelectorAll("[data-tab]")];
+        const i = tabs.indexOf(document.activeElement);
+        if (i < 0) return;
+        const next =
+          e.key === "ArrowRight"
+            ? (i + 1) % tabs.length
+            : e.key === "ArrowLeft"
+              ? (i + tabs.length - 1) % tabs.length
+              : e.key === "Home"
+                ? 0
+                : e.key === "End"
+                  ? tabs.length - 1
+                  : null;
+        if (next !== null) {
+          e.preventDefault();
+          selectTab(tabs[next].dataset.tab, true);
+        }
+      });
+      document
+        .querySelectorAll("#show-evidence, #show-partial-evidence")
+        .forEach((button) => {
+          button.addEventListener("click", () => selectTab("evidence", true));
+        });
+      for (const id of ["from", "to", "capital", "count", "sampling"]) {
+        document.querySelector("#" + id).addEventListener("input", () => {
+          document.querySelector("#summary-dates").textContent =
+            document.querySelector("#from").value.replaceAll("-", ".") +
+            "–" +
+            document.querySelector("#to").value.replaceAll("-", ".");
+          document.querySelector("#summary-capital").textContent =
+            document.querySelector("#capital").value + " KRW";
+          document.querySelector("#summary-count").textContent =
+            document.querySelector("#count").value + "회";
+          document.querySelector("#summary-sampling").textContent =
+            document.querySelector("#sampling").value;
+        });
+      }
+      const comparisonFields = [
+        ["mode", "실행 경계", "mode", "mode"],
+        ["runType", "실행 유형", "runType", "runType"],
+        ["runCount", "실행 횟수", "runCount", "runCount"],
+        ["sourceDataDir", "자료 경로", "sourceDataDir", "sourceDataDir"],
+        [
+          "universe.preset",
+          "종목군 preset",
+          "universe.preset",
+          "universe.presetApplied",
+        ],
+        [
+          "universe.market",
+          "시장 metadata",
+          "universe.market",
+          "universe.allocationMode",
+        ],
+        ["window.mode", "기간 방식", "window.mode", "window.mode"],
+        ["window.seed", "기간 seed", "window.seed", "window.seed"],
+        [
+          "window.startAt",
+          "기간 시작",
+          "window.startAt",
+          "window.rangeStartAt",
+        ],
+        ["window.endAt", "기간 종료", "window.endAt", "window.rangeEndAt"],
+        [
+          "window.windowMonths",
+          "기간 개월 metadata",
+          "window.windowMonths",
+          "window.windowMonths",
+        ],
+        [
+          "timezoneOffsetMinutes",
+          "시간대 offset (분)",
+          null,
+          "window.timezoneOffsetMinutes",
+        ],
+        [
+          "samplingPolicy.decisionFrequency",
+          "판단 빈도",
+          "samplingPolicy.decisionFrequency",
+          "samplingPolicy.decisionFrequency",
+        ],
+        [
+          "samplingPolicy.stepSeconds",
+          "시점 간격 (초)",
+          "samplingPolicy.stepSeconds",
+          "samplingPolicy.stepSeconds",
+        ],
+        [
+          "samplingPolicy.maxDecisionCalls",
+          "판단 호출 한도",
+          "samplingPolicy.maxDecisionCalls",
+          "samplingPolicy.maxDecisionCalls",
+        ],
+        [
+          "samplingPolicy.maxCodexCallsPerRun",
+          "Codex 호출 한도",
+          "samplingPolicy.maxCodexCallsPerRun",
+          "samplingPolicy.maxCodexCallsPerRun",
+        ],
+        [
+          "capital.initialCashKrw",
+          "가상 자금 (KRW)",
+          "capital.initialCashKrw",
+          "capital.initialCashKrw",
+        ],
+        [
+          "decisionProvider.mode",
+          "판단 provider",
+          "decisionProvider.mode",
+          "decisionProvider.mode",
+        ],
+        [
+          "decisionProvider.modelId",
+          "model ID",
+          "decisionProvider.modelId",
+          "decisionProvider.modelId",
+        ],
+        [
+          "decisionProvider.outputSchema",
+          "출력 schema",
+          "decisionProvider.outputSchema",
+          "decisionProvider.outputSchema",
+        ],
+        ["riskProfile", "위험 설정", "riskProfile", "riskProfile"],
+        ["riskDetails", "위험·제약·배분 수치", null, null],
+        ["paperExitPolicy", "exit 조건", "paperExitPolicy", "paperExitPolicy"],
+        ["costModel", "비용 조건", "costModel", null],
+        ["benchmarkPolicy", "benchmark", "benchmarkPolicy", "benchmarkPolicy"],
+        ["tickDelayMs", "tick 지연 (ms)", null, "tickDelayMs"],
+        ["sourceDataKind", "자료 종류", null, null],
+        ["dataAvailabilityChecked", "자료 가용성 확인", null, null],
+        [
+          "portfolioPolicyApplied",
+          "저장 정책 적용",
+          null,
+          "portfolioPolicyApplied",
+        ],
+      ];
+      function configValue(config, path) {
+        return path
+          ? path.split(".").reduce((value, key) => value?.[key], config)
+          : undefined;
+      }
+      function displayConfigValue(value) {
+        if (value === undefined) return "서버 산출 · 요청 필드 아님";
+        if (value === null) return "null (원문 값)";
+        return typeof value === "object"
+          ? JSON.stringify(value)
+          : String(value);
+      }
+      function renderConfigComparison(selector, requested, response) {
+        const rows = comparisonFields.map(
+          ([key, label, requestPath, effectivePath]) => {
+            const row = document.createElement("div");
+            row.className = "config-row";
+            row.dataset.field = key;
+            const title = document.createElement("dt");
+            title.textContent = label + " · " + key;
+            const requestCell = document.createElement("dd");
+            const effectiveCell = document.createElement("dd");
+            const requestedLabel = document.createElement("span");
+            requestedLabel.className = "config-label";
+            requestedLabel.textContent = response
+              ? "고정 요청"
+              : "현재 요청 초안";
+            const effectiveLabel = document.createElement("span");
+            effectiveLabel.className = "config-label";
+            effectiveLabel.textContent = response
+              ? "고정 응답의 실효값"
+              : "실효값";
+            const requestValue = document.createElement("span");
+            requestValue.className = "config-request-value";
+            requestValue.textContent = displayConfigValue(
+              configValue(requested, requestPath),
+            );
+            const effectiveValue = document.createElement("span");
+            effectiveValue.className = "config-effective-value";
+            let value = "검증 미연결 · 미조회";
+            if (response) {
+              const effective = response.effectiveConfig;
+              value = displayConfigValue(configValue(effective, effectivePath));
+              if (key === "universe.preset")
+                value =
+                  "presetApplied=" +
+                  effective.universe.presetApplied +
+                  " · selection=" +
+                  effective.universe.selection;
+              if (key === "universe.market")
+                value =
+                  "marketFilterApplied=" +
+                  effective.universe.marketFilterApplied +
+                  " · allocationMode=" +
+                  effective.universe.allocationMode;
+              if (key === "window.windowMonths" && effective.window.fixedWindow)
+                value +=
+                  " · fixedWindow metadata=" +
+                  effective.window.fixedWindow.windowMonths;
+              if (key === "riskDetails")
+                value =
+                  "constraints · riskPolicy · allocationPolicy: 아래 고정 실효값 전체에서 확인";
+              if (key === "costModel")
+                value =
+                  effective.costModel.modelVersion +
+                  " · execution=" +
+                  effective.costModel.executionModelVersion +
+                  " · feeBps=" +
+                  effective.costModel.executionPolicy.feeBps +
+                  " · taxBps=" +
+                  effective.costModel.executionPolicy.taxBps +
+                  " · slippageBps=" +
+                  effective.costModel.executionPolicy.slippageBps +
+                  " (전체 조건은 아래 원문)";
+              if (key === "sourceDataKind" || key === "dataAvailabilityChecked")
+                value = displayConfigValue(response[key]);
+            }
+            effectiveValue.textContent = value;
+            requestCell.append(requestedLabel, requestValue);
+            effectiveCell.append(effectiveLabel, effectiveValue);
+            row.append(title, requestCell, effectiveCell);
+            return row;
+          },
+        );
+        document.querySelector(selector).replaceChildren(...rows);
+      }
+      // Display raw form values only. Validation and effective normalization remain server-owned.
+      function renderDraftConfig(changed = false) {
+        const value = (id) => document.querySelector("#" + id).value;
+        const draft = {
+          mode: "paper_only",
+          runType: value("run-type"),
+          runCount: value("count"),
+          sourceDataDir: value("source"),
+          universe: { preset: "design-draft-metadata", market: "mixed_global" },
+          window: {
+            mode: "fixed_range",
+            seed: "design-draft-v1",
+            startAt: value("from"),
+            endAt: value("to"),
+            windowMonths: "1",
+          },
+          samplingPolicy: {
+            decisionFrequency:
+              { "주 1회": "once_per_week", "일 1회": "once_per_day" }[
+                value("sampling")
+              ] ?? value("sampling"),
+            stepSeconds: "86400",
+            maxDecisionCalls: "100",
+            maxCodexCallsPerRun: "31",
+          },
+          capital: { initialCashKrw: value("capital") },
+          decisionProvider: {
+            mode: "dry_run_fixture",
+            modelId: "draft-unused-model",
+            outputSchema: "schemas/virtual-decision.schema.json",
+          },
+          riskProfile: value("risk"),
+          paperExitPolicy: "none",
+          costModel: "standard",
+          benchmarkPolicy: "cash_equal_weight_initial_hold",
+        };
+        document.querySelector("#draft-config").textContent = JSON.stringify(
+          {
+            inputRepresentation: "raw form strings; not a validated API config",
+            requestedDraft: draft,
+            effectiveConfig: null,
+            effectiveStatus: "검증 미연결 · 미조회",
+            notices: null,
+            sourceDataKind: null,
+            dataAvailability: "미검증",
+          },
+          null,
+          2,
+        );
+        const overview = [
+          ["실행", draft.runType + " · 요청 " + draft.runCount + "회"],
+          ["기간", draft.window.startAt + "–" + draft.window.endAt],
+          ["자료", draft.sourceDataDir],
+          [
+            "판단",
+            draft.decisionProvider.mode +
+              " · " +
+              value("sampling") +
+              " · step " +
+              draft.samplingPolicy.stepSeconds +
+              "초",
+          ],
+          [
+            "호출 한도",
+            "판단 " +
+              draft.samplingPolicy.maxDecisionCalls +
+              " · Codex " +
+              draft.samplingPolicy.maxCodexCallsPerRun,
+          ],
+          [
+            "자금·위험",
+            draft.capital.initialCashKrw + " KRW · " + draft.riskProfile,
+          ],
+          ["exit·비용", draft.paperExitPolicy + " · " + draft.costModel],
+          ["benchmark", draft.benchmarkPolicy],
+        ].map(([label, text]) => {
+          const row = document.createElement("div");
+          const title = document.createElement("dt");
+          const description = document.createElement("dd");
+          title.textContent = label;
+          description.textContent = text;
+          row.append(title, description);
+          return row;
+        });
+        document.querySelector("#draft-overview").replaceChildren(...overview);
+        renderConfigComparison("#draft-comparison", draft, null);
+        document.querySelector("#summary-run-type").textContent = draft.runType;
+        if (changed)
+          document.querySelector("#draft-status").textContent =
+            "입력 변경됨 · 미검증";
+      }
+      const fixedValidationResponse = JSON.parse(
+        document.querySelector("#validation-response-example").textContent,
+      );
+      const fixedValidationProvenance = JSON.parse(
+        document.querySelector("#validation-response-provenance").textContent,
+      );
+      for (const [id, data] of [
+        ["fixed-requested-config", fixedValidationResponse.requestedConfig],
+        ["fixed-effective-config", fixedValidationResponse.effectiveConfig],
+        ["fixed-validation-response", fixedValidationResponse],
+        ["fixed-validation-provenance", fixedValidationProvenance],
+      ])
+        document.querySelector("#" + id).textContent = JSON.stringify(
+          data,
+          null,
+          2,
+        );
+      document.querySelector("#fixed-response-status").textContent =
+        "이 고정 예시에만 해당: status=" +
+        fixedValidationResponse.status +
+        " · sourceDataKind=" +
+        fixedValidationResponse.sourceDataKind +
+        " · dataAvailabilityChecked=" +
+        fixedValidationResponse.dataAvailabilityChecked +
+        " · replayRunnerStarted=" +
+        fixedValidationResponse.replayRunnerStarted;
+      renderConfigComparison(
+        "#fixed-comparison",
+        fixedValidationResponse.requestedConfig,
+        fixedValidationResponse,
+      );
+      const requestedExample = fixedValidationResponse.requestedConfig;
+      const effectiveExample = fixedValidationResponse.effectiveConfig;
+      document.querySelector("#normalization-warning").textContent =
+        "고정 예시의 정규화: runCount " +
+        requestedExample.runCount +
+        "→" +
+        effectiveExample.runCount +
+        ", fixture Codex 한도 " +
+        requestedExample.samplingPolicy.maxCodexCallsPerRun +
+        "→" +
+        effectiveExample.samplingPolicy.maxCodexCallsPerRun +
+        ". 현재 초안의 검증 결과는 아닙니다";
+      for (const text of [
+        "runType=" +
+          requestedExample.runType +
+          " · runCount: " +
+          requestedExample.runCount +
+          " → " +
+          effectiveExample.runCount,
+        "fixture maxCodexCallsPerRun: " +
+          requestedExample.samplingPolicy.maxCodexCallsPerRun +
+          " → " +
+          effectiveExample.samplingPolicy.maxCodexCallsPerRun,
+        "고정 예시 source: " +
+          requestedExample.sourceDataDir +
+          " · riskProfile=" +
+          requestedExample.riskProfile,
+      ]) {
+        const item = document.createElement("li");
+        item.textContent = text;
+        document.querySelector("#fixed-normalization-differences").append(item);
+      }
+      for (const notice of fixedValidationResponse.notices) {
+        const item = document.createElement("li");
+        item.textContent =
+          notice.field + " · " + notice.code + ": " + notice.message;
+        document.querySelector("#fixed-validation-notices").append(item);
+      }
+      for (const id of [
+        "run-type",
+        "risk",
+        "source",
+        "from",
+        "to",
+        "capital",
+        "count",
+        "sampling",
+      ]) {
+        document
+          .querySelector("#" + id)
+          .addEventListener("input", () => renderDraftConfig(true));
+        document
+          .querySelector("#" + id)
+          .addEventListener("change", () => renderDraftConfig(true));
+      }
+      renderDraftConfig();
+      document.querySelector(".skip").addEventListener("click", (event) => {
+        event.preventDefault();
+        const main = document.querySelector("#content");
+        main.focus();
+        main.scrollIntoView?.({ block: "start" });
+      });
+      addEventListener("hashchange", showScreen);
+      renderList();
+      showScreen();
+      showStep(1);
+    </script>
+  </body>
+</html>
