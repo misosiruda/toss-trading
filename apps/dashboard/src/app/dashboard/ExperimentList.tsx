@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type {
   ExperimentListPageData,
   ExperimentListRow,
@@ -66,8 +66,20 @@ function normalizedQuery(value: string | null): string {
   return (value ?? "").trim().slice(0, 200);
 }
 
+function filterKey(query: string, status: StatusFilter): string {
+  return JSON.stringify([query, status]);
+}
+
+function readBrowserFilters() {
+  const url = new URL(window.location.href);
+  const query = normalizedQuery(url.searchParams.get("q"));
+  const status = normalizeStatus(url.searchParams.get("status"));
+  return { query, status, key: filterKey(query, status) };
+}
+
 function writeFilters(query: string, status: StatusFilter, replace = false) {
   const url = new URL(window.location.href);
+  if (url.pathname !== "/dashboard") return;
   const cleanQuery = normalizedQuery(query);
   url.searchParams.delete("q");
   url.searchParams.delete("status");
@@ -86,6 +98,9 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
   const status = normalizeStatus(searchParams.get("status"));
   const inputRef = useRef<HTMLInputElement>(null);
   const selectRef = useRef<HTMLSelectElement>(null);
+  const synchronizedFilters = useRef(filterKey(query, status));
+  const draftUrlKey = useRef<string | null>(null);
+  const [filtersReady, setFiltersReady] = useState(false);
   const source = pageData.experimentList;
   const data = source.status === "ok" ? source.data : null;
   const rows = data?.rows.filter((row) => {
@@ -94,24 +109,90 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
   }) ?? [];
 
   useEffect(() => {
-    // Update uncontrolled fields on browser Back/Forward without remounting or moving focus.
-    if (inputRef.current) inputRef.current.value = query;
-    if (selectRef.current) selectRef.current.value = status;
-    writeFilters(query, status, true);
+    // A deferred render effect must never write its captured URL over a newer
+    // selection or browser Back/Forward entry. Read the browser at execution.
+    if (window.location.pathname !== "/dashboard") return;
+    const current = readBrowserFilters();
+    const staleDraft = draftUrlKey.current !== null && draftUrlKey.current !== current.key;
+    if (synchronizedFilters.current !== current.key || staleDraft) {
+      // A draft typed after this history entry became current belongs to this
+      // entry, even if its synchronization effect has not run yet.
+      if (draftUrlKey.current !== current.key) {
+        if (inputRef.current && inputRef.current.value !== current.query) inputRef.current.value = current.query;
+        draftUrlKey.current = null;
+      }
+      if (selectRef.current && selectRef.current.value !== current.status) selectRef.current.value = current.status;
+      synchronizedFilters.current = current.key;
+    }
+    writeFilters(current.query, current.status, true);
+    // SSR controls must remain disabled until their handlers and initial URL
+    // synchronization are committed, so early native input cannot be lost.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFiltersReady(true);
   }, [query, status, searchParams]);
+
+  useEffect(() => {
+    function restoreNativeHistory(event: PopStateEvent) {
+      if (event.state !== null || window.location.pathname !== "/dashboard") return;
+      // Native fragment entries have null history state. Their traversal can
+      // change filters without changing the hash, which Next's popstate handler
+      // ignores. Its public History API integration restores useSearchParams
+      // from this exact URL while retaining the loaded snapshot and entry.
+      window.history.replaceState(null, "", window.location.href);
+    }
+    function restoreFragmentFocus() {
+      if (window.location.pathname !== "/dashboard") return;
+      const hash = window.location.hash;
+      if (hash === "#experiment-source-summary" || hash === "#experiment-query") {
+        document.getElementById(hash.slice(1))?.focus({ preventScroll: false });
+      }
+    }
+    window.addEventListener("popstate", restoreNativeHistory);
+    window.addEventListener("hashchange", restoreFragmentFocus);
+    return () => {
+      window.removeEventListener("popstate", restoreNativeHistory);
+      window.removeEventListener("hashchange", restoreFragmentFocus);
+    };
+  }, []);
+
+  function commitFilters(nextQuery: string, nextStatus: StatusFilter) {
+    if (window.location.pathname !== "/dashboard") return false;
+    const cleanQuery = normalizedQuery(nextQuery);
+    if (inputRef.current && inputRef.current.value !== cleanQuery) inputRef.current.value = cleanQuery;
+    if (selectRef.current && selectRef.current.value !== nextStatus) selectRef.current.value = nextStatus;
+    // Commit local intent synchronously so a later effect cannot erase a draft
+    // typed after this event but before React processes the URL update.
+    synchronizedFilters.current = filterKey(cleanQuery, nextStatus);
+    draftUrlKey.current = null;
+    writeFilters(cleanQuery, nextStatus);
+    return true;
+  }
+
+  function currentInputQuery(current: ReturnType<typeof readBrowserFilters>): string {
+    const staleDraft = draftUrlKey.current !== null && draftUrlKey.current !== current.key;
+    const pendingHistory = synchronizedFilters.current !== current.key;
+    if (staleDraft || (pendingHistory && draftUrlKey.current !== current.key)) return current.query;
+    return inputRef.current?.value ?? current.query;
+  }
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const nextQuery = normalizedQuery(inputRef.current?.value ?? "");
-    if (inputRef.current) inputRef.current.value = nextQuery;
-    writeFilters(nextQuery, normalizeStatus(selectRef.current?.value ?? null));
+    const current = readBrowserFilters();
+    // Enter submits the query, not an unseen stale select from an older entry.
+    const nextStatus = synchronizedFilters.current === current.key
+      ? normalizeStatus(selectRef.current?.value ?? current.status)
+      : current.status;
+    commitFilters(currentInputQuery(current), nextStatus);
+  }
+
+  function applyStatusFilter(nextStatus: StatusFilter) {
+    const current = readBrowserFilters();
+    // A status choice must not also restore a stale query after Back/Forward.
+    commitFilters(currentInputQuery(current), nextStatus);
   }
 
   function clearFilters() {
-    if (inputRef.current) inputRef.current.value = "";
-    if (selectRef.current) selectRef.current.value = "all";
-    writeFilters("", "all");
-    inputRef.current?.focus({ preventScroll: true });
+    if (commitFilters("", "all")) inputRef.current?.focus({ preventScroll: true });
   }
 
   return (
@@ -134,25 +215,26 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
           <section className={styles.sourceNotice} aria-label="조회 상태">
             <strong>{source.status === "offline" ? "API에 연결할 수 없어요" : "API 응답을 확인할 수 없어요"}</strong>
             <p>{source.status === "offline" ? "조회가 오프라인 상태예요. 저장된 실험 유무와 개수는 확인되지 않았어요." : "응답이 실험 목록 계약과 맞지 않아 표시하지 않았어요. 저장된 실험 유무와 개수는 확인되지 않았어요."}</p>
+            <ObservationTimes fetchedAt={pageData.fetchedAt} batchUpdatedAt={null} />
           </section>
         )}
 
         <section className={styles.listSection} aria-label="실험 목록" data-testid="experiment-list">
-          <form className={styles.filters} onSubmit={applyFilters} role="search" aria-label="불러온 실험 필터">
+          <form className={styles.filters} onSubmit={applyFilters} role="search" aria-label="불러온 실험 필터" aria-busy={!filtersReady}>
             <div className={styles.searchGroup}>
               <label className={styles.srOnly} htmlFor="experiment-query">실험 ID 검색</label>
               <Icon name="search" />
-              <input ref={inputRef} id="experiment-query" name="q" type="search" placeholder="실험 ID로 검색" defaultValue={query} maxLength={200} autoComplete="off" aria-describedby="filter-scope" />
+              <input disabled={!filtersReady} ref={inputRef} id="experiment-query" name="q" type="search" onInput={() => { if (window.location.pathname === "/dashboard") draftUrlKey.current = readBrowserFilters().key; }} placeholder="실험 ID로 검색" defaultValue={query} maxLength={200} autoComplete="off" aria-describedby="filter-scope" />
             </div>
             <label className={styles.srOnly} htmlFor="experiment-status">실험 상태</label>
-            <select ref={selectRef} id="experiment-status" name="status" defaultValue={status} onChange={(event) => writeFilters(inputRef.current?.value ?? "", normalizeStatus(event.currentTarget.value))}>
+            <select disabled={!filtersReady} ref={selectRef} id="experiment-status" name="status" defaultValue={status} onChange={(event) => applyStatusFilter(normalizeStatus(event.currentTarget.value))}>
               {STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
-            <button className={styles.searchButton} type="submit">검색</button>
-            <button className={styles.clearButton} type="button" onClick={clearFilters}>초기화</button>
+            <button disabled={!filtersReady} className={styles.searchButton} type="submit">검색</button>
+            <button disabled={!filtersReady} className={styles.clearButton} type="button" onClick={clearFilters}>초기화</button>
           </form>
           <div className={styles.listMeta}>
-            <p aria-live="polite" aria-atomic="true">{data ? <>표시 <strong>{rows.length}</strong>개 <span>/ 불러온 child {data.rows.length}개</span></> : "실험 개수 미확인"}</p>
+            <p aria-live="polite" aria-atomic="true">{data ? <>표시 <strong>{rows.length}</strong>개 <span>/ 불러온 개별 실행 {data.rows.length}개</span></> : "실험 개수 미확인"}</p>
             <p id="filter-scope">검색과 상태 필터는 불러온 행에만 적용돼요</p>
           </div>
 
@@ -160,8 +242,8 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
             <div className={styles.emptyState}>
               <Icon name="experiment" />
               <h2>{!data ? "실험 목록을 불러오지 못했어요" : query || status !== "all" ? "조건에 맞는 실험이 없어요" : "표시할 실험 기록이 없어요"}</h2>
-              <p>{!data ? "위 조회 상태를 확인해 주세요. API 연결 후 페이지를 다시 열어 조회할 수 있어요." : query || status !== "all" ? "검색어와 상태를 바꾸거나 필터를 초기화해 주세요." : "이 API 응답에서 표시 가능한 child 실행을 찾지 못했어요. 전체 기록이 없다는 뜻은 아니에요."}</p>
-              {data && (query || status !== "all") ? <button className={styles.secondaryAction} onClick={clearFilters}>필터 초기화</button> : null}
+              <p>{!data ? "위 조회 상태를 확인해 주세요. API 연결 후 페이지를 다시 열어 조회할 수 있어요." : query || status !== "all" ? "검색어와 상태를 바꾸거나 필터를 초기화해 주세요." : "이 API 응답에서 표시 가능한 개별 실행을 찾지 못했어요. 전체 기록이 없다는 뜻은 아니에요."}</p>
+              {data && (query || status !== "all") ? <button disabled={!filtersReady} className={styles.secondaryAction} onClick={clearFilters}>필터 초기화</button> : null}
             </div>
           )}
           <div className={styles.tableFooter}>
@@ -169,6 +251,7 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
             <span>자동 갱신 없음 · 페이지를 다시 열어 재조회</span>
           </div>
         </section>
+        {data ? <SourceDetails data={data} /> : null}
         <footer className={styles.pageFooter}>paper-only · 실거래 주문과 연결되지 않아요</footer>
       </main>
     </div>
@@ -216,8 +299,8 @@ function PrimaryLinks() {
   return <>
     <Link className={`${styles.navLink} ${styles.navCurrent}`} href="/dashboard" aria-current="page"><Icon name="experiment" /><span>실험</span></Link>
     <Link className={styles.navLink} href="/dashboard/lab/policies"><Icon name="policy" /><span>전략·정책</span></Link>
-    <Link className={styles.navLink} href="/dashboard/validation#candidate-comparison"><Icon name="compare" /><span>비교<small>현재 검증 보고서</small></span></Link>
-    <Link className={styles.navLink} href="/dashboard/validation#data-universe-coverage"><Icon name="data" /><span>데이터<small>현재 검증 보고서</small></span></Link>
+    <a className={styles.navLink} href="/dashboard/validation#candidate-comparison"><Icon name="compare" /><span>비교<small>현재 검증 보고서</small></span></a>
+    <a className={styles.navLink} href="/dashboard/validation#data-universe-coverage"><Icon name="data" /><span>데이터<small>현재 검증 보고서</small></span></a>
   </>;
 }
 
@@ -249,35 +332,54 @@ function SourceSummary({ data, fetchedAt }: { data: ExperimentListView; fetchedA
   if (notes.length === 0 && data.warnings.length > 0) notes.push("일부 기록의 연결 또는 메타데이터를 확인해야 해요");
 
   return <section className={styles.sourceSummary} aria-label="실험 데이터 출처">
-    <div className={styles.batchLine}><span>선택 batch</span><strong>{data.batchId ?? "미확인"}</strong></div>
-    <p className={styles.batchMetadata}>저장된 batch 설정 · 위험 프로필 {data.riskProfile ?? "미확인"} · 판단 제공자 {data.decisionProviderMode ?? "미확인"}</p>
+    <ObservationTimes fetchedAt={fetchedAt} batchUpdatedAt={data.batchUpdatedAt} showDetailsLink />
     {notes.length ? <p className={styles.compactWarning}><strong>기록 확인</strong><span>{notes.join(" · ")}</span></p> : null}
     <div className={styles.sourceCounts}>
-      <p>원본 저장 행 <strong>전체 {data.totalCount}개</strong> · 이번 응답 {data.count}개 (요청 한도 100)</p>
-      <p>표시 가능한 child <strong>terminal {data.projectedTerminalCount}개</strong> · 진행 중 {data.projectedActiveCount}개</p>
+      <p data-testid="source-raw-counts">원본 응답 {data.count}개 / <strong>전체 {data.totalCount}개</strong></p>
+      <p data-testid="source-projected-counts"><strong>저장 결과 {data.projectedTerminalCount}개</strong> · 진행 중 {data.projectedActiveCount}개</p>
     </div>
-    <p className={styles.snapshotNotice}>진행 중은 저장된 상태예요. 현재 실행 여부를 실시간 확인한 값은 아니에요.</p>
-    <details className={styles.diagnostics}>
-      <summary>조회 정보와 기록 상태</summary>
+    <p className={styles.snapshotNotice}>진행 중은 저장 상태이며, 현재 실행 여부는 미확인</p>
+  </section>;
+}
+
+function ObservationTimes({ fetchedAt, batchUpdatedAt, showDetailsLink = false }: { fetchedAt: string; batchUpdatedAt: string | null; showDetailsLink?: boolean }) {
+  return <div className={styles.observationTimes} role="group" aria-label="조회와 저장 갱신 시각">
+    <p data-testid="source-fetched-at"><span>조회 시각 (UTC)</span><time dateTime={fetchedAt}>{timestamp(fetchedAt)}</time></p>
+    <p data-testid="source-updated-at"><span>저장 갱신 (UTC)</span>{batchUpdatedAt ? <time dateTime={batchUpdatedAt}>{timestamp(batchUpdatedAt)}</time> : <span>미확인</span>}</p>
+    {showDetailsLink ? <a className={styles.sourceJump} href="#experiment-source-summary" onClick={(event) => focusFragment(event, "experiment-source-summary")}>조회 정보<Icon name="arrow" /></a> : null}
+  </div>;
+}
+
+function SourceDetails({ data }: { data: ExperimentListView }) {
+  return <details className={styles.diagnostics} aria-label="실험 조회 상세" data-testid="experiment-source-details">
+      <summary id="experiment-source-summary">조회 정보와 기록 상태</summary>
       <div className={styles.diagnosticBody}>
+        <div className={styles.batchLine}><span>선택 batch</span><strong>{data.batchId ?? "미확인"}</strong></div>
+        <p className={styles.batchMetadata}>저장된 batch 설정 · 위험 프로필 {data.riskProfile ?? "미확인"} · 판단 제공자 {data.decisionProviderMode ?? "미확인"}</p>
         <dl>
+          <Diagnostic label="원본 저장 행" value={`응답 ${data.count}개 / 전체 ${data.totalCount}개 · 요청 한도 100`} />
+          <Diagnostic label="표시 가능한 개별 실행" value={`저장 결과 ${data.projectedTerminalCount}개 · 진행 중 ${data.projectedActiveCount}개`} />
           <Diagnostic label="API 소스 상태" value={`${data.endpointStatus} · ${SOURCE_LABELS[data.endpointStatus]}`} />
           <Diagnostic label="선택 batch 상태" value={data.batchStatus ?? "미확인"} />
           <Diagnostic label="집계 파일 읽기" value={data.aggregateStatus ?? "미확인"} />
           <Diagnostic label="진행 기록 읽기" value={data.activeRunProgressStatus ?? "미확인"} />
-          <Diagnostic label="저장된 batch 갱신 시각 (UTC)" value={timestamp(data.batchUpdatedAt)} />
           <Diagnostic label="batch 요청 실행 수" value={number(data.requestedRunCount)} />
           <Diagnostic label="manifest 집계" value={`완료 ${number(data.manifestCounts.completed)} · 실패 ${number(data.manifestCounts.failed)} · 건너뜀 ${number(data.manifestCounts.skipped)}`} />
           <Diagnostic label="원본 저장 상태 집계" value={Object.entries(STATUS_LABELS).filter(([key]) => key !== "running").map(([key, label]) => `${label} ${number(data.statusCounts[key as keyof typeof data.statusCounts] ?? null)}`).join(" · ")} />
           <Diagnostic label="알 수 없는 원본 상태 수" value={number(data.unknownStatusCount)} />
           <Diagnostic label="JSONL 손상 줄" value={number(data.corruptLineCount)} />
-          <Diagnostic label="조회 시각 (UTC)" value={timestamp(fetchedAt)} />
         </dl>
         {data.warnings.length ? <ul>{data.warnings.map((warning) => <li key={warning.code}>{WARNING_LABELS[warning.code]} · {warning.count}건</li>)}</ul> : null}
-        <p>원본 행 수, manifest 집계, 표시 child 수는 서로 다른 기준이에요. 종료 기록이 있으면 같은 child의 진행 기록보다 우선해요.</p>
+        <p>원본 행 수, manifest 집계, 표시 개별 실행 수는 서로 다른 기준이에요. 종료 기록이 있으면 같은 개별 실행의 진행 기록보다 우선해요.</p>
+        <a className={styles.sourceReturn} href="#experiment-query" onClick={(event) => focusFragment(event, "experiment-query")}>목록 필터로 돌아가기</a>
       </div>
-    </details>
-  </section>;
+    </details>;
+}
+
+function focusFragment(event: MouseEvent<HTMLAnchorElement>, targetId: "experiment-source-summary" | "experiment-query") {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  // Keep native fragment navigation/history, but move keyboard focus explicitly.
+  document.getElementById(targetId)?.focus({ preventScroll: true });
 }
 
 function Diagnostic({ label, value }: { label: string; value: ReactNode }) {
@@ -286,14 +388,14 @@ function Diagnostic({ label, value }: { label: string; value: ReactNode }) {
 
 function ExperimentTable({ rows }: { rows: ExperimentListRow[] }) {
   return <table className={styles.table} role="table">
-    <caption className={styles.srOnly}>불러온 child 실행 목록. 각 실험 ID에서 실행 상세로 이동할 수 있어요.</caption>
+    <caption className={styles.srOnly}>불러온 개별 실행 목록. 각 실험 ID에서 실행 상세로 이동할 수 있어요.</caption>
     <thead role="rowgroup"><tr role="row">
       <th scope="col">실험 ID</th><th scope="col">상태</th><th scope="col">기록된 데이터 기간 (UTC)</th><th scope="col">시작·종료 (UTC)</th><th scope="col">결과 기록</th>
     </tr></thead>
     <tbody role="rowgroup">{rows.map((row) => <tr key={row.runId} role="row" data-testid="experiment-row">
       <td className={styles.identityCell} role="cell">
         <Link className={styles.runLink} href={row.detailHref} prefetch={false}>{row.runId}<Icon name="arrow" /></Link>
-        <span className={styles.provenance}>{row.provenance === "unbound_stored" ? "저장 행 · batch 연결 미확인" : `child 실행${row.runIndex === null ? "" : ` · index ${row.runIndex}`}`}</span>
+        <span className={styles.provenance}>{row.provenance === "unbound_stored" ? "저장 행 · batch 연결 미확인" : `개별 실행${row.runIndex === null ? "" : ` · index ${row.runIndex}`}`}</span>
       </td>
       <td className={styles.statusCell} role="cell"><span className={`${styles.status} ${styles[`status_${row.status}`]}`}><span aria-hidden="true" />{STATUS_LABELS[row.status]}</span></td>
       <td className={styles.windowCell} role="cell"><span className={styles.mobileLabel}>{row.provenance === "unbound_stored" ? "batch 연결 미확인 · " : ""}데이터 기간 (UTC) </span>{row.windowStartAt && row.windowEndAt ? <><span>{dateOnly(row.windowStartAt)}</span><span className={styles.windowEnd}>~ {dateOnly(row.windowEndAt)}</span></> : <span className={styles.unknown}>미확인</span>}</td>

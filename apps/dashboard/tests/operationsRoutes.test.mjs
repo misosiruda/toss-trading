@@ -157,7 +157,7 @@ test("mobile navigation closes on same-page links and restores focus on Escape",
     } },
     require(specifier) {
       if (specifier === "react/jsx-runtime") return { jsx, jsxs: jsx };
-      if (specifier === "react") return { useEffect() {}, useRef: () => refs.shift() ?? { current: null } };
+      if (specifier === "react") return { useEffect() {}, useState: (initial) => [initial, () => {}], useRef: (initial) => refs.shift() ?? { current: initial } };
       if (specifier === "next/navigation") return { useSearchParams: () => new URLSearchParams() };
       if (specifier === "next/link") return { default: () => {} };
       assert.equal(specifier, "./ExperimentList.module.css");
@@ -249,6 +249,8 @@ test("workspace normal text meets AA contrast on its actual default, hover, and 
     check(selector, foreground(selector), [background(selector)]);
   }
   check("diagnostic disclosure", foreground(".diagnostics summary"), [canvas]);
+  check("visible observation clocks", foreground(".observationTimes"), [canvas, background(".sourceNotice")]);
+  check("batch identity in diagnostics", foreground(".batchLine strong"), [background(".diagnosticBody")]);
   for (const selector of [".diagnosticBody", ".diagnosticBody dt", ".diagnosticBody dd"]) {
     check(selector, foreground(selector), [background(".diagnosticBody")]);
   }
@@ -268,6 +270,8 @@ test("workspace normal text meets AA contrast on its actual default, hover, and 
   check("empty state title", foreground(".emptyState h2"), [white]);
   check("empty state text", foreground(".emptyState p"), [white]);
   check("secondary action", foreground(".secondaryAction"), [background(".secondaryAction")]);
+  check("source jump", foreground(".sourceJump"), [canvas, background(".sourceJump:hover")]);
+  check("source return", foreground(".sourceReturn"), [background(".sourceReturn"), background(".sourceReturn:hover")]);
   check("table footer", foreground(".tableFooter"), [white, canvas]);
 
   for (const { label, color, surface } of checks) {
@@ -275,4 +279,307 @@ test("workspace normal text meets AA contrast on its actual default, hover, and 
     const ratio = (values[1] + 0.05) / (values[0] + 0.05);
     assert.ok(ratio >= 4.5, `${label}: ${color} on ${surface} is ${ratio.toFixed(3)}:1; expected at least 4.5:1`);
   }
+});
+
+test("a deferred initial effect cannot overwrite a newer filter URL or selection", async () => {
+  const harness = await experimentFilterHarness();
+  harness.select.value = "running";
+  harness.statusControl.props.onChange({ currentTarget: harness.select });
+  assert.equal(harness.location.search, "?status=running");
+  harness.effects[0]();
+  assert.equal(harness.location.search, "?status=running");
+  assert.equal(harness.select.value, "running");
+});
+
+test("an initial unchanged-URL effect preserves an unsubmitted search draft and early native selection", async () => {
+  const harness = await experimentFilterHarness();
+  harness.input.value = "new unsubmitted draft";
+  harness.select.value = "failed";
+  harness.effects[0]();
+  assert.equal(harness.location.search, "");
+  assert.equal(harness.input.value, "new unsubmitted draft");
+  assert.equal(harness.select.value, "failed");
+});
+
+test("deferred effects follow the latest Back/Forward URL and stop writing after route departure", async () => {
+  const harness = await experimentFilterHarness("?q=first&status=completed");
+  harness.navigate("/dashboard?q=second&status=failed");
+  harness.effects[0]();
+  assert.equal(harness.location.search, "?q=second&status=failed");
+  assert.equal(harness.input.value, "second");
+  assert.equal(harness.select.value, "failed");
+  harness.navigate("/dashboard?q=first&status=completed");
+  harness.effects[0]();
+  assert.equal(harness.input.value, "first");
+  assert.equal(harness.select.value, "completed");
+  harness.navigate("/dashboard/validation#candidate-comparison");
+  harness.effects[0]();
+  assert.equal(harness.location.pathname + harness.location.search + harness.location.hash, "/dashboard/validation#candidate-comparison");
+});
+
+async function experimentFilterHarness(search = "", pageData = null) {
+  const source = await readFile(new URL("../src/app/dashboard/ExperimentList.tsx", import.meta.url), "utf8");
+  const { outputText } = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
+  });
+  const input = { value: new URLSearchParams(search).get("q") ?? "", focus(options) { assert.equal(options.preventScroll, true); focusEvents.push("experiment-query"); } };
+  const select = { value: new URLSearchParams(search).get("status") ?? "all" };
+  const refs = [{ current: input }, { current: select }];
+  const effects = [];
+  const readiness = [];
+  const focusEvents = [];
+  const focusOptions = [];
+  const historyWrites = [];
+  const listeners = new Map();
+  const jsx = (type, props) => ({ type, props });
+  const window = { location: new URL(`http://localhost:3000/dashboard${search}`), addEventListener: (type, callback) => listeners.set(type, callback), removeEventListener: (type) => listeners.delete(type) };
+  const navigate = (destination) => { window.location = new URL(destination, window.location); };
+  window.history = Object.fromEntries(["pushState", "replaceState"].map((method) => [method, (state, _unused, destination) => {
+    historyWrites.push({ method, state, destination });
+    navigate(destination);
+  }]));
+  const exports = {};
+  runInNewContext(outputText, {
+    exports, window, URL, URLSearchParams,
+    document: { getElementById: (id) => ({ focus(options) { focusOptions.push(options); focusEvents.push(id); } }) },
+    require(specifier) {
+      if (specifier === "react/jsx-runtime") return { jsx, jsxs: jsx };
+      if (specifier === "react") return { useEffect: (effect) => effects.push(effect), useState: (initial) => [initial, (ready) => readiness.push(ready)], useRef: (initial) => refs.shift() ?? { current: initial } };
+      if (specifier === "next/navigation") return { useSearchParams: () => new URLSearchParams(search) };
+      if (specifier === "next/link") return { default: () => {} };
+      assert.equal(specifier, "./ExperimentList.module.css");
+      return { default: {} };
+    }
+  });
+  const tree = exports.ExperimentList({ pageData: pageData ?? { experimentList: { status: "offline", data: null } } });
+  function find(node, type) {
+    if (!node || typeof node !== "object") return null;
+    if (node.type === type || node.type?.name === type) return node;
+    return [node.props?.children].flat().map((child) => find(child, type)).find(Boolean) ?? null;
+  }
+  return { input, select, effects, readiness, focusEvents, focusOptions, historyWrites, listeners, tree, findWithin: find, find: (type) => find(tree, type), statusControl: find(tree, "select"), navigate, get location() { return window.location; } };
+}
+
+
+test("server filter controls stay disabled until URL normalization is committed", async () => {
+  const harness = await experimentFilterHarness("?q=%20ready%20&status=unexpected");
+  const form = harness.find("form");
+  const controls = form.props.children.flat().filter((child) => child?.type === "button" || child?.type === "select");
+  controls.push(harness.find("input"));
+  assert.equal(controls.length, 4);
+  assert.ok(controls.every((control) => control.props.disabled === true));
+  assert.equal(form.props["aria-busy"], true);
+  assert.deepEqual(harness.readiness, []);
+  harness.effects[0]();
+  assert.equal(harness.location.search, "?q=ready");
+  assert.deepEqual(harness.readiness, [true]);
+});
+
+test("observation clocks are outside the collapsed diagnostics and report fragments use native anchors", async () => {
+  const pageData = {
+    fetchedAt: "2026-10-02T22:00:00Z",
+    experimentList: { status: "ok", data: {
+      rows: [], warnings: [], endpointStatus: "ok", batchId: "stored-batch",
+      batchUpdatedAt: "2026-10-01T12:30:00Z", count: 2, totalCount: 5,
+      projectedTerminalCount: 2, projectedActiveCount: 0,
+      excludedRowCount: 0, corruptLineCount: 0, aggregateStatus: "ok", activeRunProgressStatus: "missing"
+    } }
+  };
+  const harness = await experimentFilterHarness("", pageData);
+  const source = harness.find("SourceSummary");
+  const summary = source.type(source.props);
+  const clocks = summary.props.children.find((child) => child?.type?.name === "ObservationTimes");
+  assert.equal(clocks.props.fetchedAt, pageData.fetchedAt);
+  assert.equal(clocks.props.batchUpdatedAt, pageData.experimentList.data.batchUpdatedAt);
+  assert.ok(summary.props.children.every((child) => child?.type !== "details"));
+  const mainChildren = harness.find("main").props.children;
+  const listIndex = mainChildren.findIndex((child) => child?.props?.["data-testid"] === "experiment-list");
+  const detailIndex = mainChildren.findIndex((child) => child?.type?.name === "SourceDetails");
+  assert.ok(detailIndex > listIndex, "expanded diagnostics cannot push the first experiment row down");
+  const uiSource = await readFile(new URL("../src/app/dashboard/ExperimentList.tsx", import.meta.url), "utf8");
+  assert.deepEqual([...uiSource.matchAll(/<a[^>]+href="(\/dashboard\/validation#[^"]+)"/g)].map((match) => match[1]), [
+    "/dashboard/validation#candidate-comparison", "/dashboard/validation#data-universe-coverage"
+  ]);
+});
+
+
+test("source jump and return preserve native history and explicitly restore fragment focus", async () => {
+  const pageData = { fetchedAt: "2026-10-02T22:00:00Z", experimentList: { status: "ok", data: {
+    rows: [], warnings: [], endpointStatus: "ok", batchId: "stored-batch", batchStatus: "completed",
+    batchUpdatedAt: "2026-10-01T12:30:00Z", count: 0, totalCount: 0, requestedRunCount: 0,
+    projectedTerminalCount: 0, projectedActiveCount: 0, excludedRowCount: 0, corruptLineCount: 0,
+    aggregateStatus: "ok", activeRunProgressStatus: "missing", statusCounts: {}, unknownStatusCount: 0,
+    manifestCounts: { completed: 0, failed: 0, skipped: 0 }, riskProfile: null, decisionProviderMode: null
+  } } };
+  const harness = await experimentFilterHarness("?q=kept&status=failed", pageData);
+  const source = harness.find("SourceSummary");
+  const sourceTree = source.type(source.props);
+  const clocks = harness.findWithin(sourceTree, "ObservationTimes");
+  const jump = harness.findWithin(clocks.type(clocks.props), "a");
+  assert.equal(jump.props.href, "#experiment-source-summary");
+  jump.props.onClick({ button: 0 });
+  assert.equal(harness.focusEvents.at(-1), "experiment-source-summary");
+  assert.equal(harness.location.search, "?q=kept&status=failed", "focus handler does not replace native URL behavior");
+  const sourceDetails = harness.find("SourceDetails");
+  const details = sourceDetails.type(sourceDetails.props);
+  assert.equal(harness.findWithin(details, "summary").props.id, "experiment-source-summary");
+  const returnLink = harness.findWithin(details, "a");
+  assert.equal(returnLink.props.href, "#experiment-query");
+  assert.equal(harness.find("input").props.id, "experiment-query");
+  returnLink.props.onClick({ button: 0 });
+  assert.equal(harness.focusEvents.at(-1), "experiment-query");
+  const focusCount = harness.focusEvents.length;
+  jump.props.onClick({ button: 0, ctrlKey: true });
+  assert.equal(harness.focusEvents.length, focusCount, "modified native navigation does not steal focus");
+
+  const cleanup = harness.effects[1]();
+  harness.navigate("/dashboard?q=kept&status=failed#experiment-source-summary");
+  harness.listeners.get("hashchange")();
+  assert.equal(harness.focusEvents.at(-1), "experiment-source-summary");
+  assert.equal(harness.focusOptions.at(-1).preventScroll, false, "restored summary focus must be visible");
+  harness.navigate("/dashboard?q=kept&status=failed#experiment-query");
+  harness.listeners.get("hashchange")();
+  assert.equal(harness.focusEvents.at(-1), "experiment-query");
+  assert.equal(harness.focusOptions.at(-1).preventScroll, false, "restored input focus must be visible");
+  assert.equal(harness.location.search, "?q=kept&status=failed");
+  cleanup();
+  assert.equal(harness.listeners.has("hashchange"), false);
+  assert.equal(harness.listeners.has("popstate"), false);
+});
+
+test("null-state fragment traversal restores the exact URL through the public history integration", async () => {
+  const harness = await experimentFilterHarness("?q=kept&status=failed");
+  const cleanup = harness.effects[1]();
+  harness.navigate("/dashboard?q=kept&status=completed#experiment-query");
+  const currentUrl = harness.location.href;
+  harness.listeners.get("popstate")({ state: null });
+  assert.deepEqual(harness.historyWrites, [{ method: "replaceState", state: null, destination: currentUrl }]);
+  assert.equal(harness.location.href, currentUrl, "no new entry, query rewrite, or lost fragment");
+  assert.deepEqual(harness.focusEvents, [], "same-hash traversal does not steal focus");
+  harness.listeners.get("popstate")({ state: { existingRouterState: true } });
+  assert.equal(harness.historyWrites.length, 1, "non-null entries remain owned by the router");
+  harness.navigate("/dashboard/validation#candidate-comparison");
+  harness.listeners.get("popstate")({ state: null });
+  assert.equal(harness.historyWrites.length, 1, "departed routes cannot be rewritten");
+  cleanup();
+  assert.equal(harness.listeners.size, 0);
+});
+
+
+test("typing after local select, submit, or clear survives their deferred effects", async () => {
+  const harness = await experimentFilterHarness();
+  harness.effects[0]();
+  const draft = (value) => { harness.input.value = value; harness.find("input").props.onInput(); };
+  harness.select.value = "running";
+  harness.statusControl.props.onChange({ currentTarget: harness.select });
+  draft("after selection");
+  harness.effects[0]();
+  assert.equal(harness.input.value, "after selection");
+  assert.equal(harness.location.search, "?status=running");
+  harness.find("form").props.onSubmit({ preventDefault() {} });
+  draft("after submission");
+  harness.effects[0]();
+  assert.equal(harness.input.value, "after submission");
+  assert.equal(harness.location.search, "?q=after+selection&status=running");
+  const clear = harness.find("form").props.children.find((child) => child?.type === "button" && child.props.type === "button");
+  clear.props.onClick();
+  draft("after clearing");
+  harness.effects[0]();
+  assert.equal(harness.input.value, "after clearing");
+  assert.equal(harness.location.search, "");
+});
+
+test("a draft belongs only to the Back/Forward URL where it was typed while select still synchronizes", async () => {
+  const harness = await experimentFilterHarness("?q=entry-a&status=completed");
+  harness.effects[0]();
+  harness.navigate("/dashboard?q=entry-b&status=failed");
+  harness.input.value = "new draft for entry b";
+  harness.find("input").props.onInput();
+  harness.effects[0]();
+  assert.equal(harness.input.value, "new draft for entry b");
+  assert.equal(harness.select.value, "failed");
+  assert.equal(harness.location.search, "?q=entry-b&status=failed");
+  harness.navigate("/dashboard?q=entry-c&status=skipped");
+  harness.effects[0]();
+  assert.equal(harness.input.value, "entry-c", "entry B's draft must not leak into entry C");
+  assert.equal(harness.select.value, "skipped");
+});
+
+test("same-value commits preserve input selection and stale handlers cannot write another page", async () => {
+  const harness = await experimentFilterHarness("?q=kept&status=failed");
+  harness.effects[0]();
+  let inputValue = harness.input.value;
+  let inputWrites = 0;
+  Object.defineProperty(harness.input, "value", { get: () => inputValue, set(value) { inputWrites += 1; inputValue = value; } });
+  harness.find("form").props.onSubmit({ preventDefault() {} });
+  harness.navigate("/dashboard?q=kept&status=running");
+  harness.effects[0]();
+  assert.equal(inputWrites, 0, "same-value DOM assignments could move the caret");
+  assert.equal(harness.select.value, "running");
+  harness.navigate("/dashboard/validation#candidate-comparison");
+  const before = harness.location.href;
+  harness.statusControl.props.onChange({ currentTarget: { value: "completed" } });
+  harness.find("form").props.onSubmit({ preventDefault() {} });
+  const clear = harness.find("form").props.children.find((child) => child?.type === "button" && child.props.type === "button");
+  clear.props.onClick();
+  harness.effects[0]();
+  assert.equal(harness.location.href, before);
+  assert.equal(inputWrites, 0);
+  assert.equal(harness.input.value, "kept");
+  assert.equal(harness.select.value, "running");
+  assert.deepEqual(harness.focusEvents, []);
+});
+
+
+test("rapid history changes discard a middle-entry draft even when returning to the last synchronized URL", async () => {
+  for (const destination of ["entry-a", "entry-c"]) {
+    const harness = await experimentFilterHarness("?q=entry-a&status=completed");
+    harness.effects[0]();
+    harness.navigate("/dashboard?q=entry-b&status=failed");
+    harness.input.value = "draft belonging only to entry b";
+    harness.find("input").props.onInput();
+    // No effect observes entry B before another history navigation occurs.
+    harness.navigate(`/dashboard?q=${destination}&status=completed`);
+    harness.effects[0]();
+    assert.equal(harness.input.value, destination);
+    assert.equal(harness.select.value, "completed");
+    assert.equal(harness.location.search, `?q=${destination}&status=completed`);
+  }
+});
+
+
+test("submit and status changes resolve untouched companion fields from pending browser history", async () => {
+  for (const action of ["submit", "status"]) {
+    for (const dirty of [false, true]) {
+      const harness = await experimentFilterHarness("?q=entry-a&status=completed");
+      harness.effects[0]();
+      harness.navigate("/dashboard?q=entry-b&status=failed");
+      if (dirty) {
+        harness.input.value = "fresh-b-draft";
+        harness.find("input").props.onInput();
+      }
+      // The entry B effect has not synchronized either DOM field yet.
+      if (action === "submit") harness.find("form").props.onSubmit({ preventDefault() {} });
+      else harness.statusControl.props.onChange({ currentTarget: { value: "skipped" } });
+      const expectedQuery = dirty ? "fresh-b-draft" : "entry-b";
+      const expectedStatus = action === "submit" ? "failed" : "skipped";
+      assert.equal(harness.location.search, `?q=${expectedQuery}&status=${expectedStatus}`);
+      assert.equal(harness.input.value, expectedQuery);
+      assert.equal(harness.select.value, expectedStatus);
+      harness.effects[0]();
+      assert.equal(harness.location.search, `?q=${expectedQuery}&status=${expectedStatus}`);
+    }
+  }
+});
+
+test("an event after rapid A to B draft to A navigation never commits B's abandoned draft", async () => {
+  const harness = await experimentFilterHarness("?q=entry-a&status=completed");
+  harness.effects[0]();
+  harness.navigate("/dashboard?q=entry-b&status=failed");
+  harness.input.value = "abandoned-b-draft";
+  harness.find("input").props.onInput();
+  harness.navigate("/dashboard?q=entry-a&status=completed");
+  harness.find("form").props.onSubmit({ preventDefault() {} });
+  assert.equal(harness.location.search, "?q=entry-a&status=completed");
+  assert.equal(harness.input.value, "entry-a");
 });

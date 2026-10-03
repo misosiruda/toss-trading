@@ -89,6 +89,11 @@ for (const scenario of scenarios) {
     await expect(page.getByRole("button", { name: /order|trade|buy|sell/i })).toHaveCount(0);
     await expect(page.getByRole("link", { name: /order|trade|buy|sell/i })).toHaveCount(0);
     await expect(page.getByLabel("실험 ID 검색", { exact: true })).toBeInViewport();
+    await expectObservationTimes(page, scenario);
+    if (scenario.name === "running-corrupt" || scenario.name === "degraded") {
+      const warning = scenario.name === "running-corrupt" ? /JSONL 2줄 손상/ : /JSONL 1줄 손상/;
+      await expect(page.getByLabel("실험 데이터 출처").getByText(warning)).toBeVisible();
+    }
     await captureViewport(page, testInfo, "first-viewport");
 
     if (scenario.unavailable) {
@@ -99,17 +104,19 @@ for (const scenario of scenarios) {
       await expect(page.getByText("표시 0개", { exact: true })).toHaveCount(0);
     } else {
       const source = page.getByLabel("실험 데이터 출처");
-      await expect(source).toContainText(`원본 저장 행 전체 ${scenario.raw}개`);
-      await expect(source.getByText("진행 중은 저장된 상태예요. 현재 실행 여부를 실시간 확인한 값은 아니에요.", { exact: true })).toBeVisible();
-      await expect(source).toContainText(`terminal ${scenario.terminal}개 · 진행 중 ${scenario.active}개`);
-      await expect(page.getByTestId("experiment-list")).toContainText(`표시 ${scenario.rows}개 / 불러온 child ${scenario.rows}개`);
+      await expect(source.getByTestId("source-raw-counts")).toHaveText(`원본 응답 ${scenario.name === "bounded-window" ? 100 : scenario.raw}개 / 전체 ${scenario.raw}개`);
+      await expect(source.getByText("진행 중은 저장 상태이며, 현재 실행 여부는 미확인", { exact: true })).toBeVisible();
+      await expect(source.getByTestId("source-projected-counts")).toHaveText(`저장 결과 ${scenario.terminal}개 · 진행 중 ${scenario.active}개`);
+      await expect(page.getByTestId("experiment-list")).toContainText(`표시 ${scenario.rows}개 / 불러온 개별 실행 ${scenario.rows}개`);
       if (scenario.rows === 0) {
         await expect(page.getByRole("heading", { name: "표시할 실험 기록이 없어요" })).toBeVisible();
         await expect(page.getByText(/전체 기록이 없다는 뜻은 아니에요/)).toBeVisible();
       }
-      await page.locator("summary").filter({ hasText: "조회 정보와 기록 상태" }).click();
-      await expect(source.getByText(scenario.sourceState!, { exact: true })).toBeVisible();
-      for (const warning of scenario.warnings ?? []) await expect(source).toContainText(warning);
+      const details = page.getByTestId("experiment-source-details");
+      await expect(details).not.toHaveAttribute("open", "");
+      await details.locator("summary").click();
+      await expect(details.getByText(scenario.sourceState!, { exact: true })).toBeVisible();
+      for (const warning of scenario.warnings ?? []) await expect(details).toContainText(warning);
       await assertScenarioDetails(page, scenario.name);
     }
     await expectNoOverflow(page);
@@ -133,6 +140,8 @@ test("status and ID filters stay within loaded rows with reload, Back/Forward, c
   for (const [value, id, label] of cases) {
     await status.selectOption(value);
     await expect(page).toHaveURL(new RegExp(`status=${value}$`));
+    await expect(status).toHaveValue(value);
+    await expect(search).toHaveValue("");
     await expect(page.getByTestId("experiment-row")).toHaveCount(1);
     await expect(row(page, id).getByRole("cell").nth(1)).toHaveText(label);
   }
@@ -160,7 +169,7 @@ test("status and ID filters stay within loaded rows with reload, Back/Forward, c
   await page.getByRole("button", { name: "검색", exact: true }).click();
   await expect(page.getByRole("heading", { name: "조건에 맞는 실험이 없어요" })).toBeVisible();
   await expect(page.getByLabel("실험 데이터 출처")).toContainText("전체 4개");
-  await expect(page.getByTestId("experiment-list")).toContainText("표시 0개 / 불러온 child 5개");
+  await expect(page.getByTestId("experiment-list")).toContainText("표시 0개 / 불러온 개별 실행 5개");
   await expectAccessible(page, testInfo, "empty-filter");
   await page.getByRole("button", { name: "필터 초기화", exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
@@ -171,12 +180,71 @@ test("status and ID filters stay within loaded rows with reload, Back/Forward, c
   expect(await fixtureRequests(request)).toEqual([LIST_PATH, LIST_PATH]);
 });
 
+test("first filter intent survives fresh load and reload without losing subsequent query or history", async ({ page, request }, testInfo) => {
+  await setScenario(request, "all-statuses");
+  const status = page.getByLabel("실험 상태", { exact: true });
+  const search = page.getByLabel("실험 ID 검색", { exact: true });
+  const snapshots: Array<Awaited<ReturnType<typeof filterSnapshot>>> = [];
+  let action = "before navigation";
+  try {
+    for (const entry of ["fresh load", "reload"] as const) {
+      action = `${entry}: initial running selection`;
+      if (entry === "fresh load") await page.goto("/dashboard");
+      else await page.reload();
+      // Intentionally act immediately after goto(load), as in the observed
+      // b4005fc failure. Do not add sleep, networkidle or a hydration probe.
+      // If controls are unavailable until ready, selectOption waits for enabled.
+      await status.selectOption("running");
+      snapshots.push(await filterSnapshot(page, action));
+      await expectFilterState(page, "", "running", ["fixture_running"]);
+
+      action = `${entry}: query followed immediately by a different status`;
+      await search.fill("fixture_running");
+      await search.press("Enter");
+      await status.selectOption("completed");
+      snapshots.push(await filterSnapshot(page, action));
+      await expectFilterState(page, "fixture_running", "completed", []);
+      await expect(page.getByRole("heading", { name: "조건에 맞는 실험이 없어요" })).toBeVisible();
+
+      action = `${entry}: Back restores query and running`;
+      await page.goBack();
+      await expectFilterState(page, "fixture_running", "running", ["fixture_running"]);
+      action = `${entry}: Forward restores query and completed`;
+      await page.goForward();
+      await expectFilterState(page, "fixture_running", "completed", []);
+
+      action = `${entry}: clear followed immediately by failed selection`;
+      await page.getByRole("button", { name: "초기화", exact: true }).click();
+      await status.selectOption("failed");
+      snapshots.push(await filterSnapshot(page, action));
+      await expectFilterState(page, "", "failed", ["fixture_failed"]);
+      await page.getByRole("button", { name: "초기화", exact: true }).click();
+      await expectFilterState(page, "", "all", ["fixture_running", "fixture_completed", "fixture_completed_with_failures", "fixture_failed", "fixture_skipped"]);
+      await expect(search).toBeFocused();
+    }
+    expect(await fixtureRequests(request), "only document load/reload may refetch the source").toEqual([LIST_PATH, LIST_PATH]);
+  } finally {
+    snapshots.push(await filterSnapshot(page, `${action}: final observed state`));
+    await testInfo.attach("filter-intent-url-control-row-history", { body: JSON.stringify(snapshots, null, 2), contentType: "application/json" });
+  }
+});
+
 test("direct query entry normalizes unknown status and preserves unrelated query and history", async ({ page, request }) => {
   await setScenario(request, "all-statuses");
   await page.goto("/dashboard?q=fixture_failed&status=future_status&keep=visible");
   await expect(page.getByLabel("실험 상태", { exact: true })).toHaveValue("all");
   await expect(row(page, "fixture_failed")).toBeVisible();
   await expect(page).toHaveURL(/\/dashboard\?keep=visible&q=fixture_failed$/);
+  // Exercise the initial normalized entry before reload can seed router state.
+  await page.getByRole("button", { name: "초기화", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\?keep=visible$/);
+  await expect(page.getByTestId("experiment-row")).toHaveCount(5);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/dashboard\?keep=visible&q=fixture_failed$/);
+  await expect(page.getByLabel("실험 ID 검색", { exact: true })).toHaveValue("fixture_failed");
+  await expect(page.getByLabel("실험 상태", { exact: true })).toHaveValue("all");
+  await expect(page.getByTestId("experiment-row")).toHaveCount(1);
+  await expect(row(page, "fixture_failed")).toBeVisible();
   await page.reload();
   await expect(page.getByLabel("실험 ID 검색", { exact: true })).toHaveValue("fixture_failed");
   await page.getByRole("button", { name: "초기화", exact: true }).click();
@@ -230,9 +298,13 @@ test("responsive menus expose existing routes through pointer or touch and keybo
     await menu.tap();
     const mobileNav = page.getByRole("navigation", { name: "모바일 주 메뉴", exact: true });
     await expect(mobileNav).toBeVisible();
-    await mobileNav.getByRole("link", { name: "실험", exact: true }).tap();
-    await expect(mobileNav).toBeHidden();
-    await expect(page.getByRole("main")).toBeFocused();
+    for (let cycle = 0; cycle < 3; cycle++) {
+      if (cycle > 0) await menu.tap();
+      await mobileNav.getByRole("link", { name: "실험", exact: true }).tap();
+      await expect(mobileNav).toBeHidden();
+      await expect(page).toHaveURL(/\/dashboard$/);
+      await expect(page.getByRole("main")).toBeFocused();
+    }
     await menu.tap();
     await mobileNav.getByRole("link", { name: "전략·정책", exact: true }).focus();
     await page.keyboard.press("Escape");
@@ -303,7 +375,7 @@ test("duplicate-terminal-detail keeps the last eligible terminal summary from li
   await expect(row(page, id).getByRole("cell").nth(1)).toHaveText("완료");
   await expect(row(page, id)).toContainText("거래 2");
   await expect(page.getByLabel("실험 데이터 출처")).toContainText("전체 2개");
-  await expect(page.getByLabel("실험 데이터 출처")).toContainText("terminal 1개");
+  await expect(page.getByTestId("source-projected-counts")).toHaveText("저장 결과 1개 · 진행 중 0개");
   await expect(page.getByLabel("실험 데이터 출처")).toContainText("표시 제외 1행");
   await captureViewport(page, testInfo, "first-viewport");
   await row(page, id).getByRole("link").click();
@@ -321,6 +393,87 @@ test("duplicate-terminal-detail keeps the last eligible terminal summary from li
   await expect(row(page, id).getByRole("cell").nth(1)).toHaveText("완료");
   await expect(row(page, id)).toContainText("거래 2");
   await expectAccessible(page, testInfo, "duplicate-child-return");
+});
+
+test("100-row source jump and filter return preserve query, focus, and native hash history", async ({ page, request, isMobile }, testInfo) => {
+  await setScenario(request, "bounded-window");
+  await page.goto("/dashboard");
+  const search = page.getByLabel("실험 ID 검색", { exact: true });
+  const status = page.getByLabel("실험 상태", { exact: true });
+  await status.selectOption("completed");
+  await search.fill("fixture_window_");
+  await search.press("Enter");
+  await expect(page.getByTestId("experiment-row")).toHaveCount(100);
+  await expect(search).toHaveValue("fixture_window_");
+  await expect(status).toHaveValue("completed");
+
+  const details = page.getByTestId("experiment-source-details");
+  const summary = details.locator("summary");
+  const jump = page.getByRole("link", { name: "조회 정보", exact: true });
+  const returnLink = details.getByRole("link", { name: "목록 필터로 돌아가기", exact: true });
+  await expect(jump).toHaveAttribute("href", "#experiment-source-summary");
+  await expect(jump).toBeInViewport();
+  await expect(details).not.toHaveAttribute("open", "");
+  const before = await sourceJumpGeometry(page);
+  expect(before.summaryTop).toBeGreaterThanOrEqual(before.lastRowBottom);
+
+  if (isMobile) await jump.tap();
+  else { await jump.focus(); await page.keyboard.press("Enter"); }
+  await expectSourceFragment(page, "#experiment-source-summary");
+  await expect(summary).toBeFocused();
+  await expect(summary).toBeInViewport();
+  await expect(details).not.toHaveAttribute("open", "");
+  await page.keyboard.press("Enter");
+  await expect(details).toHaveAttribute("open", "");
+  await expect(returnLink).toHaveAttribute("href", "#experiment-query");
+  const expanded = await sourceJumpGeometry(page);
+  // Expansion is below the rows and must not shift their document position.
+  expect(Math.abs(expanded.firstRowTop - before.firstRowTop)).toBeLessThanOrEqual(1);
+  await captureViewport(page, testInfo, "bounded-source-summary");
+
+  if (isMobile) await returnLink.tap();
+  else { await returnLink.focus(); await page.keyboard.press("Enter"); }
+  await expectSourceFragment(page, "#experiment-query");
+  await expect(search).toBeFocused();
+  await expect(search).toBeInViewport();
+  await page.goBack();
+  await expectSourceFragment(page, "#experiment-source-summary");
+  await expect(summary).toBeFocused();
+  await expect(summary).toBeInViewport();
+  await expect(details).toHaveAttribute("open", "");
+  await page.goForward();
+  await expectSourceFragment(page, "#experiment-query");
+  await expect(search).toBeFocused();
+  await expect(search).toBeInViewport();
+  await expect(search).toHaveValue("fixture_window_");
+  await expect(status).toHaveValue("completed");
+  await expect(page.getByTestId("experiment-row")).toHaveCount(100);
+  // The completed fragment entry was created by a native anchor. Back from a
+  // later filter keeps the same hash, so hashchange alone cannot restore it.
+  await status.selectOption("failed");
+  await expect(status).toHaveValue("failed");
+  await expect(page).toHaveURL((url) => url.hash === "#experiment-query" && url.searchParams.get("status") === "failed");
+  await expect(page.getByTestId("experiment-row")).toHaveCount(0);
+  for (let cycle = 0; cycle < 2; cycle++) {
+    await page.goBack();
+    await expectSourceFragment(page, "#experiment-query");
+    await expect(search).toHaveValue("fixture_window_");
+    await expect(status).toHaveValue("completed");
+    await expect(page.getByTestId("experiment-row")).toHaveCount(100);
+    await page.goForward();
+    await expect(page).toHaveURL((url) => url.hash === "#experiment-query" && url.searchParams.get("status") === "failed");
+    await expect(search).toHaveValue("fixture_window_");
+    await expect(status).toHaveValue("failed");
+    await expect(page.getByTestId("experiment-row")).toHaveCount(0);
+  }
+  await page.goBack();
+  await expectSourceFragment(page, "#experiment-query");
+  await expect(status).toHaveValue("completed");
+  await expect(page.getByTestId("experiment-row")).toHaveCount(100);
+  expect(await fixtureRequests(request), "same-document hash navigation must not refetch").toEqual([LIST_PATH]);
+  await captureViewport(page, testInfo, "bounded-filter-return");
+  await testInfo.attach("bounded-source-positions", { body: JSON.stringify({ before, expanded, returned: await sourceJumpGeometry(page) }, null, 2), contentType: "application/json" });
+  await expectAccessible(page, testInfo, "bounded-source-access");
 });
 
 test("fixture control is runner-only, whitelisted, no-store, and exposes no mutation route", async ({ request }) => {
@@ -376,12 +529,12 @@ async function assertScenarioDetails(page: Page, scenario: string) {
     const id = "batch_smoke_2025_run_000000_2025-02";
     await expect(row(page, id).getByRole("link")).toHaveAttribute("href", `/dashboard/lab/runs/${id}`);
     await expect(row(page, id)).toContainText("저장 행 · batch 연결 미확인");
-    await expect(page.getByLabel("실험 데이터 출처").getByText("선택 batch", { exact: true }).locator("..").locator("strong")).toHaveText("미확인");
+    await expect(page.getByTestId("experiment-source-details").getByText("선택 batch", { exact: true }).locator("..").locator("strong")).toHaveText("미확인");
     await expect(page.getByRole("main")).not.toContainText("batch smoke/2025");
     await expect(page.locator('a[href*="batch%20smoke"]')).toHaveCount(0);
   }
   if (scenario === "partial-manifest-metadata") {
-    const source = page.getByLabel("실험 데이터 출처");
+    const source = page.getByTestId("experiment-source-details");
     await expect(row(page, "fixture_completed").getByRole("link")).toHaveAttribute("href", "/dashboard/lab/runs/fixture_completed");
     await expect(source.getByText("batch 요청 실행 수", { exact: true }).locator("..").locator("dd")).toHaveText("미확인");
     await expect(source.getByText("manifest 집계", { exact: true }).locator("..").locator("dd")).toHaveText("완료 미확인 · 실패 0 · 건너뜀 0");
@@ -393,8 +546,9 @@ async function assertScenarioDetails(page: Page, scenario: string) {
     await expect(row(page, "fixture_zero")).toContainText("판단 실패 0");
   }
   if (scenario === "bounded-window") {
-    await expect(page.getByLabel("실험 데이터 출처")).toContainText("전체 150개 · 이번 응답 100개 (요청 한도 100)");
-    await expect(page.getByLabel("실험 데이터 출처")).toContainText("완료 150");
+    await expect(page.getByTestId("source-raw-counts")).toHaveText("원본 응답 100개 / 전체 150개");
+    await expect(page.getByTestId("experiment-source-details")).toContainText("응답 100개 / 전체 150개 · 요청 한도 100");
+    await expect(page.getByTestId("experiment-source-details")).toContainText("완료 150");
     await expect(page.getByRole("link", { name: "fixture_window_049", exact: true })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "fixture_window_050", exact: true })).toHaveAttribute("href", "/dashboard/lab/runs/fixture_window_050");
     await expect(page.getByRole("link", { name: "fixture_window_149", exact: true })).toHaveAttribute("href", "/dashboard/lab/runs/fixture_window_149");
@@ -403,6 +557,41 @@ async function assertScenarioDetails(page: Page, scenario: string) {
 
 function row(page: Page, runId: string) {
   return page.getByTestId("experiment-row").filter({ has: page.getByRole("link", { name: runId, exact: true }) });
+}
+
+async function expectFilterState(page: Page, query: string, status: string, ids: string[]) {
+  await expect(page).toHaveURL((url) => url.pathname === "/dashboard" && url.hash === "" &&
+    (url.searchParams.get("q") ?? "") === query && (url.searchParams.get("status") ?? "all") === status);
+  await expect(page.getByLabel("실험 ID 검색", { exact: true })).toHaveValue(query);
+  await expect(page.getByLabel("실험 상태", { exact: true })).toHaveValue(status);
+  await expect(page.getByTestId("experiment-row")).toHaveCount(ids.length);
+  await expect(page.getByTestId("experiment-row").getByRole("link")).toHaveText(ids);
+}
+
+async function filterSnapshot(page: Page, action: string) {
+  return page.evaluate((action) => ({
+    action, observedAt: new Date().toISOString(), url: window.location.href,
+    query: document.querySelector<HTMLInputElement>("#experiment-query")?.value ?? null,
+    status: document.querySelector<HTMLSelectElement>("#experiment-status")?.value ?? null,
+    historyLength: window.history.length,
+    rows: Array.from(document.querySelectorAll('[data-testid="experiment-row"]')).map((row) => row.textContent),
+  }), action);
+}
+
+async function expectSourceFragment(page: Page, hash: string) {
+  await expect(page).toHaveURL((url) => url.pathname === "/dashboard" && url.hash === hash &&
+    url.searchParams.get("q") === "fixture_window_" && url.searchParams.get("status") === "completed");
+}
+
+async function sourceJumpGeometry(page: Page) {
+  return page.evaluate(() => {
+    const rows = document.querySelectorAll('[data-testid="experiment-row"]');
+    const first = rows[0].getBoundingClientRect();
+    const last = rows[rows.length - 1].getBoundingClientRect();
+    const summary = document.querySelector("#experiment-source-summary")!.getBoundingClientRect();
+    return { firstRowTop: first.top + scrollY, lastRowBottom: last.bottom + scrollY,
+      summaryTop: summary.top + scrollY, documentHeight: document.documentElement.scrollHeight, scrollY };
+  });
 }
 
 async function setScenario(request: APIRequestContext, scenario: string) {
@@ -427,6 +616,28 @@ async function expectIdentity(page: Page) {
   await expect(page.getByRole("main")).not.toContainText(/최신 batch|최신 실험|전체 실험 목록|모든 실험/);
 }
 
+async function expectObservationTimes(page: Page, scenario: ScenarioExpectation) {
+  const fetched = page.getByTestId("source-fetched-at");
+  const updated = page.getByTestId("source-updated-at");
+  await expect(fetched).toBeVisible();
+  await expect(fetched).toContainText("조회 시각 (UTC)");
+  await expect(updated).toBeVisible();
+  await expect(updated).toContainText("저장 갱신 (UTC)");
+  const fetchedAt = await fetched.locator("time").getAttribute("datetime");
+  expect(Number.isFinite(Date.parse(fetchedAt ?? ""))).toBe(true);
+  if (scenario.unavailable || scenario.name === "missing" || scenario.name === "no-manifest") {
+    await expect(updated).toContainText("미확인");
+    await expect(updated.locator("time")).toHaveCount(0);
+  } else {
+    await expect(updated.locator("time")).toHaveAttribute("datetime", "2026-06-27T00:05:00.000Z");
+    expect(fetchedAt, "fetch time must not be copied from the stored batch time").not.toBe("2026-06-27T00:05:00.000Z");
+  }
+  if (scenario.name === "valid-terminal" || scenario.name === "all-statuses") {
+    await expect(fetched).toBeInViewport();
+    await expect(updated).toBeInViewport();
+  }
+}
+
 async function expectNoOverflow(page: Page) {
   const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }));
   expect(dimensions.scroll, "document must not scroll horizontally").toBeLessThanOrEqual(dimensions.width + 1);
@@ -435,7 +646,24 @@ async function expectNoOverflow(page: Page) {
 async function captureViewport(page: Page, testInfo: TestInfo, label: string) {
   await expectNoOverflow(page);
   await testInfo.attach(label, { body: await page.screenshot({ fullPage: false }), contentType: "image/png" });
-  const geometry = await page.evaluate(() => ({ viewport: { width: innerWidth, height: innerHeight }, documentHeight: document.documentElement.scrollHeight, scrollX, scrollY }));
+  const geometry = await page.evaluate(() => {
+    const bounds = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const { top, bottom, left, right, width, height } = element.getBoundingClientRect();
+      return { top, bottom, left, right, width, height };
+    };
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      documentHeight: document.documentElement.scrollHeight, scrollX, scrollY,
+      layout: {
+        main: bounds("main"), header: bounds("main > header"),
+        source: bounds('[aria-label="실험 데이터 출처"]'),
+        filters: bounds('[aria-label="불러온 실험 필터"]'),
+        firstRow: bounds('[data-testid="experiment-row"]'),
+      },
+    };
+  });
   expect(geometry.scrollX).toBe(0);
   if (label === "first-viewport") expect(geometry.scrollY).toBe(0);
   await testInfo.attach(`${label}-geometry`, { body: JSON.stringify(geometry, null, 2), contentType: "application/json" });
