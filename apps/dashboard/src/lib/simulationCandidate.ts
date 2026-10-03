@@ -80,6 +80,7 @@ export function equalJson(left: unknown, right: unknown): boolean {
 const finite = (value: unknown) => typeof value === "number" && Number.isFinite(value);
 const date = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value));
 const numericFields = (value: unknown, keys: string[]) => isObject(value) && keys.every(key => finite(value[key]));
+const stringFields = (value: unknown, keys: string[]) => isObject(value) && keys.every(key => typeof value[key] === "string");
 
 export function readValidation(value: unknown, candidate: SimulationCandidate): SimulationValidation | null {
   if (!isObject(value) || value.schemaVersion !== "paper_simulation_validation.v1" || value.status !== "valid" ||
@@ -92,7 +93,9 @@ export function readValidation(value: unknown, candidate: SimulationCandidate): 
   const { universe: u, window: w, samplingPolicy: s, capital: c, decisionProvider: p, benchmarkPolicy: b } = e;
   if (!isObject(u) || u.selection !== "source_snapshots" || u.presetApplied !== false || u.marketFilterApplied !== false || typeof u.allocationMode !== "string" ||
       !isObject(w) || w.mode !== candidate.window.mode || w.seed !== candidate.window.seed || !date(w.rangeStartAt) || !date(w.rangeEndAt) || !finite(w.timezoneOffsetMinutes) ||
-      !(w.windowMonths === null || finite(w.windowMonths)) || !(w.fixedWindow === null || isObject(w.fixedWindow)) ||
+      (w.mode === "random_month" ? !finite(w.windowMonths) || w.fixedWindow !== null : w.windowMonths !== null ||
+        !stringFields(w.fixedWindow, ["seed", "rangeStart", "rangeEnd", "selectedMonth", "localStartDate", "localEndDate", "startAt", "endAt"]) ||
+        !numericFields(w.fixedWindow, ["windowMonths", "timezoneOffsetMinutes", "candidateCount", "selectedCandidateIndex"])) ||
       !isObject(s) || s.decisionFrequency !== candidate.samplingPolicy.decisionFrequency || !finite(s.stepSeconds) || !finite(s.maxDecisionCalls) || s.maxCodexCallsPerRun !== 0 ||
       !isObject(c) || !finite(c.initialCashKrw) || !isObject(p) || p.mode !== "dry_run_fixture" || p.modelId !== null || p.outputSchema !== null ||
       !isObject(b) || b.mode !== "fixed_report_benchmarks" || !Array.isArray(b.names) || !b.names.every(n => typeof n === "string") || typeof b.equalWeightAvailability !== "string") return null;
@@ -101,8 +104,17 @@ export function readValidation(value: unknown, candidate: SimulationCandidate): 
   if (!numericFields(constraints, ["maxNewPositions", "maxBudgetPerSymbolKrw"]) || !Array.isArray(constraints.allowedActions) || !constraints.allowedActions.every(action => typeof action === "string") ||
       !numericFields(e.riskPolicy, ["maxBudgetPerDecisionKrw", "maxSymbolExposureKrw", "targetExposureRatio", "maxPositionWeightRatio", "minCashReserveRatio", "minCashReserveKrw"]) ||
       typeof allocation.policyName !== "string" || !numericFields(allocation, ["targetExposureRatio", "minCashReserveRatio", "maxBudgetPerDecisionRatio", "maxSymbolExposureRatio"]) ||
-      typeof cost.modelVersion !== "string" || typeof cost.executionModelVersion !== "string" ||
-      !numericFields(cost.executionPolicy, ["slippageBps", "feeBps", "taxBps", "halfSpreadBps", "fillRatio", "maxVolumeParticipationRate", "minLiquidityFillRatio", "marketImpactBpsPerParticipationRate"])) return null;
+      !stringFields(cost, ["modelVersion", "executionModelVersion", "fillModel", "feeModel", "taxModel", "slippageModel", "spreadModel", "marketImpactModel", "volatilityAdjustmentModel", "liquidityModel"]) ||
+      !stringFields(cost.costComponents, ["fee", "tax", "slippage", "spread", "marketImpact", "volatilityAdjustment"]) ||
+      !Array.isArray(cost.assumptions) || !cost.assumptions.every(item => typeof item === "string") ||
+      !numericFields(cost.executionPolicy, ["slippageBps", "feeBps", "taxBps", "halfSpreadBps", "fillRatio", "maxVolumeParticipationRate", "minLiquidityFillRatio", "marketImpactBpsPerParticipationRate"]) ||
+      !isObject(cost.executionPolicy) || typeof cost.executionPolicy.fillPriceRule !== "string" ||
+      typeof cost.executionPolicy.allowFractionalShares !== "boolean" || typeof cost.executionPolicy.rejectStaleLiquidity !== "boolean") return null;
+  if (candidate.universe.market === "mixed_global" && !numericFields(allocation.marketTargetExposureRatios, ["KR", "US"])) return null;
+  if (candidate.riskProfile === "aggressive_paper" && !numericFields(allocation, ["deploymentRampDays", "maxInitialDeploymentRatio", "maxDailyGrossBuyRatio", "maxInitialOpenPositions", "maxNewPositionsPerDay", "maxConcurrentPositions", "positionSlotRampDays"])) return null;
+  if (candidate.paperExitPolicy === "none" ? e.paperExitPolicy !== null :
+      !stringFields(e.paperExitPolicy, ["takeProfitMode"]) || !numericFields(e.paperExitPolicy,
+        candidate.paperExitPolicy === "take_profit_stop_loss" ? ["takeProfitRatio", "stopLossRatio"] : ["rebalanceMaxPositionWeightRatio"])) return null;
   if (!Array.isArray(value.notices) || !value.notices.every(n => isObject(n) && [n.field, n.code, n.message].every(v => typeof v === "string"))) return null;
   return value as unknown as SimulationValidation;
 }

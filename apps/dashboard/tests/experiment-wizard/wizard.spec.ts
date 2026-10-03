@@ -7,7 +7,7 @@ const validatePath = "/dashboard/experiments/validate";
 const createPath = "/dashboard/lab/policies/simulations/create";
 const token = "playwright-dashboard-mutation-token";
 async function fixture() { return JSON.parse(await readFile(process.env.EXPERIMENT_WIZARD_FIXTURE_FILE ?? ".e2e-data/experiment-wizard/fixture.json", "utf8")); }
-async function fill(page: Page) {
+async function fill(page: Page, seed = "ux03-browser") {
   await page.goto("/dashboard/experiments/new");
   await page.getByLabel("초기 모의 자본 (KRW)").fill("500000");
   await page.getByLabel("요청 실행 횟수").fill("3");
@@ -15,7 +15,7 @@ async function fill(page: Page) {
   await page.getByLabel("Source 자료 경로").fill((await fixture()).sourceDataDir);
   await page.getByLabel("시작 날짜").fill("2026-01-01");
   await page.getByLabel("종료 날짜").fill("2026-01-02");
-  await page.getByLabel("추출 seed").fill("ux03-browser");
+  await page.getByLabel("추출 seed").fill(seed);
   await page.getByRole("button", { name: "다음", exact: true }).click();
 }
 async function validated(page: Page) {
@@ -57,7 +57,7 @@ test("current validation is side-effect free; exactly one create runs the real f
   page.on("pageerror", error => errors.push(error.message));
   const requests: string[] = [];
   page.on("request", request => { if (request.method() === "POST") requests.push(new URL(request.url()).pathname); });
-  await fill(page);
+  await fill(page, "longseed".repeat(4));
   const before = await files((await fixture()).output);
   const validationResponse = page.waitForResponse(r => r.url().endsWith(validatePath));
   await validated(page);
@@ -109,6 +109,7 @@ test("current validation is side-effect free; exactly one create runs the real f
   await page.getByRole("link", { name: "같은 ID 새로 조회 (GET)" }).click();
   await expect(page.getByRole("heading", { name: detail.selectedRun.runId, exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "접수 관측 · 이후 실행 상태 미확인" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: info.outputPath("same-id-detail.png"), fullPage: true });
   expect(errors).toEqual([]);
   const stored = await page.evaluate(() => ({ url: location.href, local: JSON.stringify(localStorage), session: JSON.stringify(sessionStorage) }));
@@ -259,6 +260,31 @@ test("a corrupt saved draft cannot hide an uncertain admission barrier", async (
   await expect(page.getByRole("status")).toContainText("이전에 보낸 생성 요청");
   await expect(page.getByRole("button", { name: "paper 실행 시작" })).toBeDisabled();
   await expect(page.getByLabel("실행 승인 토큰")).toBeDisabled();
+});
+
+test("incomplete execution conditions cannot authorize a create and can be revalidated", async ({ page }) => {
+  await fill(page);
+  let creates = 0;
+  page.on("request", request => { if (request.method() === "POST" && request.url().endsWith(createPath)) creates++; });
+  for (const field of ["allowFractionalShares", "rejectStaleLiquidity"]) {
+    for (const missing of [true, false]) {
+      await page.route(`**${validatePath}`, async route => {
+        const response = await route.fetch();
+        const json = await response.json();
+        if (missing) delete json.effectiveConfig.costModel.executionPolicy[field];
+        else json.effectiveConfig.costModel.executionPolicy[field] = "true";
+        await route.fulfill({ response, json });
+      });
+      await page.getByRole("button", { name: "현재 입력 검증" }).click();
+      await expect(page.getByRole("status")).toContainText("검증 응답이 현재 입력 계약과 맞지 않습니다");
+      await page.getByLabel("실행 승인 토큰").fill(token);
+      await expect(page.getByRole("button", { name: "paper 실행 시작" })).toBeDisabled();
+      expect(creates).toBe(0);
+      await page.unroute(`**${validatePath}`);
+    }
+  }
+  await validated(page);
+  await expect(page.getByRole("button", { name: "paper 실행 시작" })).toBeEnabled();
 });
 
 test("validation permission and availability errors do not claim a create admission", async ({ page }) => {

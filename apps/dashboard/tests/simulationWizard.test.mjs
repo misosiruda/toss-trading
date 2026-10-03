@@ -28,18 +28,51 @@ test("raw numeric edits stay invalid; typed request contains only supported fixt
 test("validation and acceptance require exact current request, complete envelope and consistent exact ID", async () => {
   const { emptySimulationDraft, typedCandidate, readValidation, acceptedSimulationId } = await load("lib/simulationCandidate.ts");
   const candidate = clone(typedCandidate({ ...emptySimulationDraft, sourceDataDir: "data/synthetic", startAt: "2026-01-01", endAt: "2026-01-02", seed: "test", initialCashKrw: "500000" }));
-  const response = { schemaVersion: "paper_simulation_validation.v1", mode: "paper_only", status: "valid", readOnly: true, storageMutationEnabled: false, liveTradingEnabled: false, orderPlacementEnabled: false, replayRunnerStarted: false, dataAvailabilityChecked: false, sourceDataKind: "unknown", requestedConfig: candidate,
-    effectiveConfig: { ...candidate, universe: { selection: "source_snapshots", presetApplied: false, marketFilterApplied: false, allocationMode: "split_target_kr_us" }, window: { mode: "fixed_range", seed: "test", rangeStartAt: "2025-12-31T15:00:00.000Z", rangeEndAt: "2026-01-02T14:59:59.999Z", windowMonths: null, fixedWindow: {}, timezoneOffsetMinutes: 540 }, decisionProvider: { mode: "dry_run_fixture", modelId: null, outputSchema: null }, constraints: {}, riskPolicy: {}, allocationPolicy: {}, paperExitPolicy: null, costModel: {}, benchmarkPolicy: { mode: "fixed_report_benchmarks", names: ["cashOnly"], equalWeightAvailability: "requires_priced_replay_packet" }, portfolioPolicyApplied: false, tickDelayMs: 0 }, notices: [] };
-  Object.assign(response.effectiveConfig, {
-    constraints: { maxNewPositions: 3, maxBudgetPerSymbolKrw: 50000, allowedActions: ["VIRTUAL_HOLD"] },
-    riskPolicy: { maxBudgetPerDecisionKrw: 50000, maxSymbolExposureKrw: 100000, targetExposureRatio: 0.35, maxPositionWeightRatio: 0.35, minCashReserveRatio: 0.1, minCashReserveKrw: 0 },
-    allocationPolicy: { policyName: "conservative_allocation", targetExposureRatio: 0.35, minCashReserveRatio: 0.1, maxBudgetPerDecisionRatio: 0.1, maxSymbolExposureRatio: 0.2 },
-    costModel: { modelVersion: "paper_cost_model.v5", executionModelVersion: "execution_simulator.v4", executionPolicy: { slippageBps: 0, feeBps: 0, taxBps: 0, halfSpreadBps: 0, fillRatio: 1, maxVolumeParticipationRate: 0.1, minLiquidityFillRatio: 0.1, marketImpactBpsPerParticipationRate: 0 } }
-  });
+  const response = JSON.parse(await readFile(new URL("../../../docs/plans/experiment-workspace-redesign/validation-response.example.json", import.meta.url), "utf8"));
+  response.requestedConfig = candidate;
+  response.effectiveConfig.sourceDataDir = candidate.sourceDataDir;
+  response.effectiveConfig.window.seed = candidate.window.seed;
+  response.effectiveConfig.paperExitPolicy = null;
+  response.notices = [];
   assert.ok(readValidation(response, candidate));
   for (const mutation of [v => v.requestedConfig.capital.initialCashKrw++, v => v.sourceDataKind = "synthetic", v => v.replayRunnerStarted = true, v => delete v.effectiveConfig.window, v => v.effectiveConfig.samplingPolicy.maxCodexCallsPerRun = 1, v => v.notices = [{}], v => v.effectiveConfig.costModel = {}]) {
     const bad = clone(response); mutation(bad); assert.equal(readValidation(bad, candidate), null);
   }
+  // Every required field in the actual effective contract must survive transport.
+  const requiredLeaves = (value, prefix = []) => Object.entries(value).flatMap(([key, child]) =>
+    child && typeof child === "object" && !Array.isArray(child) ? requiredLeaves(child, [...prefix, key]) : [[...prefix, key]]);
+  for (const path of requiredLeaves(response.effectiveConfig)) {
+    for (const replacement of [undefined, { invalid: true }]) {
+      const bad = clone(response);
+      const parent = path.slice(0, -1).reduce((node, key) => node[key], bad.effectiveConfig);
+      if (replacement === undefined) delete parent[path.at(-1)]; else parent[path.at(-1)] = replacement;
+      assert.equal(readValidation(bad, candidate), null, `reject incomplete/type-invalid ${path.join(".")}`);
+    }
+  }
+  for (const [selection, policy] of [["take_profit_stop_loss", { takeProfitMode: "full_exit", takeProfitRatio: 0.15, stopLossRatio: 0.08 }], ["rebalance_threshold", { takeProfitMode: "full_exit", rebalanceMaxPositionWeightRatio: 0.4 }]]) {
+    const variant = clone(response);
+    variant.requestedConfig.paperExitPolicy = selection;
+    variant.effectiveConfig.paperExitPolicy = policy;
+    assert.ok(readValidation(variant, variant.requestedConfig));
+    for (const key of Object.keys(policy)) {
+      const bad = clone(variant); delete bad.effectiveConfig.paperExitPolicy[key];
+      assert.equal(readValidation(bad, bad.requestedConfig), null);
+    }
+  }
+  const aggressive = clone(response);
+  aggressive.requestedConfig.riskProfile = aggressive.effectiveConfig.riskProfile = "aggressive_paper";
+  const rampKeys = ["deploymentRampDays", "maxInitialDeploymentRatio", "maxDailyGrossBuyRatio", "maxInitialOpenPositions", "maxNewPositionsPerDay", "maxConcurrentPositions", "positionSlotRampDays"];
+  for (const key of rampKeys) aggressive.effectiveConfig.allocationPolicy[key] = 1;
+  assert.ok(readValidation(aggressive, aggressive.requestedConfig));
+  for (const key of rampKeys) {
+    const bad = clone(aggressive); delete bad.effectiveConfig.allocationPolicy[key];
+    assert.equal(readValidation(bad, bad.requestedConfig), null);
+  }
+  const random = clone(response);
+  random.requestedConfig.window.mode = random.effectiveConfig.window.mode = "random_month";
+  random.effectiveConfig.window.fixedWindow = null;
+  random.effectiveConfig.window.windowMonths = 1;
+  assert.ok(readValidation(random, random.requestedConfig));
   const id = "paper_sim_20261003000000000_test";
   const accepted = { mode: "paper_only", mutation: "paper_simulation_create", status: "accepted", simulationRunId: id, batchId: id, readOnlyLiveTrading: true, dataAvailabilityChecked: false, requestedConfig: candidate, effectiveConfig: response.effectiveConfig, notices: [] };
   assert.equal(acceptedSimulationId(accepted, response), id);
