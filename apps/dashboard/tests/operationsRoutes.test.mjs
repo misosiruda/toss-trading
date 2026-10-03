@@ -193,6 +193,17 @@ test("mobile navigation closes on same-page links and restores focus on Escape",
   assert.equal(mainFocusCount, 1, "other-page navigation owns its next focus destination");
 });
 
+test("the retained operations destination uses a native document link after report history", async () => {
+  const h = await experimentFilterHarness();
+  const navigation = h.find("WorkspaceNavigation").type();
+  const operations = h.findWithin(navigation, "OperationsLinks");
+  const links = operations.type().props.children.find((child) => child?.type === "div").props.children;
+  const overview = links.find((link) => link.props.href === "/dashboard/operations");
+  assert.equal(overview.type, "a");
+  assert.equal(overview.props.children, "기존 운영 요약");
+  assert.equal(overview.props.onClick, undefined, "browser owns the document navigation");
+});
+
 test("workspace normal text meets AA contrast on its actual default, hover, and selected surfaces", async () => {
   const css = await readFile(
     new URL("../src/app/dashboard/ExperimentList.module.css", import.meta.url),

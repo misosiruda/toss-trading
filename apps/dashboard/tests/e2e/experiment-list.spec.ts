@@ -127,13 +127,24 @@ test("experiment navigation retains live existing destinations and anchored repo
       }
     }
 
-    if (isMobile) await openMobileMenu(page);
-    await page.locator("summary:visible").filter({ hasText: "설정·운영" }).click();
-    await page.getByRole("link", { name: "기존 운영 요약", exact: true }).filter({ visible: true }).click();
-    await expect(page).toHaveURL(/\/dashboard\/operations$/);
-    await expect(page.getByRole("heading", { name: "Paper-only Dashboard", exact: true })).toBeVisible();
-    await page.goBack();
-    await expect(page.getByRole("heading", { name: "실험", exact: true })).toBeVisible();
+    for (let cycle = 0; cycle < 3; cycle++) {
+      if (isMobile) await openMobileMenu(page);
+      const settings = page.locator("summary:visible").filter({ hasText: "설정·운영" });
+      if (!(await settings.evaluate((element) => (element.parentElement as HTMLDetailsElement).open))) await settings.click();
+      const link = page.getByRole("link", { name: "기존 운영 요약", exact: true }).filter({ visible: true });
+      await expect(link).toHaveAttribute("href", "/dashboard/operations");
+      const [documentRequest] = await Promise.all([
+        page.waitForRequest((request) => request.isNavigationRequest() && new URL(request.url()).pathname === "/dashboard/operations"),
+        link.click()
+      ]);
+      navigationEvents.push({ event: `operations document request ${cycle + 1}`, url: documentRequest.url() });
+      await expect(page).toHaveURL(/\/dashboard\/operations$/);
+      await expect(page.getByRole("heading", { name: "Paper-only Dashboard", exact: true })).toBeVisible();
+      expect((await documentRequest.response())?.status()).toBe(200);
+      await page.goBack();
+      await expect(page).toHaveURL(/\/dashboard$/);
+      await expect(page.getByRole("heading", { name: "실험", exact: true })).toBeVisible();
+    }
     await expectNoOverflow(page);
     expect(errors).toEqual([]);
   } finally {
