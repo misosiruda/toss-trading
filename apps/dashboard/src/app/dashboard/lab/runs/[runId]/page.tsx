@@ -147,11 +147,11 @@ function RunSummary({ run }: { run: BatchReplayRunSummary }) {
   return (
     <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="font-mono text-xs text-[var(--muted)]">
+        <div className="min-w-0">
+          <p className="font-mono text-xs text-[var(--muted)] [overflow-wrap:anywhere]">
             batch {run.batchId ?? "missing"}
           </p>
-          <h2 className="mt-1 break-words text-base font-semibold">{run.runId}</h2>
+          <h2 className="mt-1 text-base font-semibold [overflow-wrap:anywhere]">{run.runId}</h2>
         </div>
         <Badge tone={statusTone(run.status)} value={run.status} />
       </div>
@@ -318,7 +318,7 @@ function SourcePanel({ data }: { data: RunDetailView }) {
   return (
     <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <SectionHeader eyebrow="source" title="Read-only Source Boundary" />
-      <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+      <dl className="mt-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
         <KeyValue label="Batch status" value={data.batchStatus ?? "missing"} />
         <KeyValue label="Batch id" value={data.batchId ?? "missing"} />
         <KeyValue
@@ -413,9 +413,9 @@ function ArtifactStatus({
 
 function KeyValue({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs font-medium uppercase text-[var(--muted)]">{label}</dt>
-      <dd className="mt-1 break-words font-mono text-xs">{value}</dd>
+      <dd className="mt-1 font-mono text-xs [overflow-wrap:anywhere]">{value}</dd>
     </div>
   );
 }

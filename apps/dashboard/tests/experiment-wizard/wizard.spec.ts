@@ -7,6 +7,13 @@ const validatePath = "/dashboard/experiments/validate";
 const createPath = "/dashboard/lab/policies/simulations/create";
 const token = "playwright-dashboard-mutation-token";
 async function fixture() { return JSON.parse(await readFile(process.env.EXPERIMENT_WIZARD_FIXTURE_FILE ?? ".e2e-data/experiment-wizard/fixture.json", "utf8")); }
+async function expectNoHorizontalOverflow(page: Page) {
+  const layout = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth, innerWidth }));
+  // Mobile innerWidth can itself expand to fit overflow, so it is not the bound.
+  expect(layout.clientWidth).toBe(page.viewportSize()!.width);
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+  return layout;
+}
 async function fill(page: Page, seed = "ux03-browser") {
   await page.goto("/dashboard/experiments/new");
   await page.getByLabel("초기 모의 자본 (KRW)").fill("500000");
@@ -48,7 +55,7 @@ test("SSR observation fixtures keep accepted, runner failure, child results and 
       await expect(childPanel.getByText(scenario === "partial" ? "completed_with_failures" : "completed", { exact: true })).toBeVisible();
     }
     if (scenario === "invalidwrapper") await expect(page.getByRole("region", { name: "Simulation 접수 관측" })).toHaveCount(0);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expectNoHorizontalOverflow(page);
   }
 });
 
@@ -71,7 +78,7 @@ test("current validation is side-effect free; exactly one create runs the real f
   await page.getByLabel("실행 승인 토큰").fill(token);
   await page.screenshot({ path: info.outputPath("confirmation.png"), fullPage: true });
   const layout = await page.evaluate(() => ({ height: document.documentElement.scrollHeight, viewport: innerHeight, width: document.documentElement.scrollWidth, viewportWidth: innerWidth }));
-  expect(layout.width).toBeLessThanOrEqual(layout.viewportWidth);
+  await expectNoHorizontalOverflow(page);
   if (layout.viewportWidth === 390) expect(layout.height / layout.viewport).toBeLessThanOrEqual(3);
   await info.attach("confirmation-size", { body: JSON.stringify(layout), contentType: "application/json" });
   await page.addScriptTag({ content: axe.source });
@@ -109,7 +116,8 @@ test("current validation is side-effect free; exactly one create runs the real f
   await page.getByRole("link", { name: "같은 ID 새로 조회 (GET)" }).click();
   await expect(page.getByRole("heading", { name: detail.selectedRun.runId, exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "접수 관측 · 이후 실행 상태 미확인" })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const detailLayout = await expectNoHorizontalOverflow(page);
+  await info.attach("detail-size", { body: JSON.stringify({ ...detailLayout, configuredWidth: page.viewportSize()!.width }), contentType: "application/json" });
   await page.screenshot({ path: info.outputPath("same-id-detail.png"), fullPage: true });
   expect(errors).toEqual([]);
   const stored = await page.evaluate(() => ({ url: location.href, local: JSON.stringify(localStorage), session: JSON.stringify(sessionStorage) }));
@@ -125,7 +133,7 @@ test("all stages support keyboard, menu, pointer focus, visible labels and no ov
     await expect(page.getByRole("heading", { name: `${step}. ${["전략·범위", "데이터·실행 조건", "검증·확인"][step - 1]}`, exact: true })).toBeFocused();
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.tagName)).toMatch(/SELECT|INPUT|BUTTON/);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expectNoHorizontalOverflow(page);
     await page.addScriptTag({ content: axe.source });
     expect((await page.evaluate(async () => (window as unknown as { axe: typeof axe }).axe.run())).violations).toEqual([]);
     await page.screenshot({ path: info.outputPath(`stage-${step}.png`), fullPage: true });

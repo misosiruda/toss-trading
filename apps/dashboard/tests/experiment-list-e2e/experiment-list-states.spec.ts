@@ -259,6 +259,8 @@ test("direct query entry normalizes unknown status and preserves unrelated query
 test("keyboard skip, filter, clear, disclosure and child navigation retain exact identity", async ({ page, request }, testInfo) => {
   await setScenario(request, "all-statuses");
   await page.goto("/dashboard");
+  // The load event can precede the streamed dashboard replacing its loading fallback.
+  await expect(page.getByRole("heading", { name: "실험", exact: true })).toBeVisible();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "본문으로 건너뛰기" })).toBeFocused();
   await page.keyboard.press("Enter");
