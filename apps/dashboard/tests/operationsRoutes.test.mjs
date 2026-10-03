@@ -130,7 +130,7 @@ test("the experiment workspace has one main, one heading, a skip link and all re
   assert.doesNotMatch(source, /localStorage|setInterval|router\.refresh|fetch\(/);
 });
 
-test("mobile navigation closes on same-page links and restores focus on Escape", async () => {
+test("mobile navigation closes on focus exit and links while preserving internal focus and Escape", async () => {
   const source = await readFile(
     new URL("../src/app/dashboard/ExperimentList.tsx", import.meta.url),
     "utf8"
@@ -166,7 +166,8 @@ test("mobile navigation closes on same-page links and restores focus on Escape",
   });
   const workspace = exports.ExperimentList({ pageData: { experimentList: { status: "offline", data: null } } });
   const navigationComponent = workspace.props.children.find((child) => child.type?.name === "WorkspaceNavigation");
-  const details = { open: true };
+  const insideTarget = {};
+  const details = { open: true, contains: (target) => target === insideTarget };
   refs.push({ current: details }, { current: { focus(options) { assert.equal(options.preventScroll, true); summaryFocusCount += 1; } } });
   const navigation = navigationComponent.type();
   const mobileMenu = navigation.props.children.find((child) => child.type === "details");
@@ -191,6 +192,19 @@ test("mobile navigation closes on same-page links and restores focus on Escape",
   mobileNav.props.onClick({ ...click, target: new HTMLAnchorElement("http://localhost:3000/dashboard/operations") });
   assert.equal(details.open, false, "other destinations also close the menu");
   assert.equal(mainFocusCount, 1, "other-page navigation owns its next focus destination");
+
+  details.open = true;
+  mobileMenu.props.onBlur({ currentTarget: details, relatedTarget: insideTarget });
+  assert.equal(details.open, true, "focus within the menu must not collapse it");
+  mobileMenu.props.onBlur({ currentTarget: details, relatedTarget: {} });
+  assert.equal(details.open, false, "forward or reverse Tab outside the overlay must expose its destination");
+  details.open = true;
+  mobileMenu.props.onBlur({ currentTarget: details, relatedTarget: null });
+  assert.equal(details.open, false, "leaving the document also dismisses the overlay");
+  mobileMenu.props.onBlur({ currentTarget: details, relatedTarget: {} });
+  assert.equal(details.open, false, "an already closed menu stays closed");
+  assert.equal(mainFocusCount, 1, "focus exit never redirects focus to the main container");
+  assert.equal(summaryFocusCount, 1, "only Escape explicitly restores the trigger focus");
 });
 
 test("the retained operations destination uses a native document link after report history", async () => {

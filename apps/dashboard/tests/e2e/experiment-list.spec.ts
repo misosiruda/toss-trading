@@ -150,6 +150,7 @@ test("experiment navigation retains live existing destinations and anchored repo
       await expect(page).toHaveURL(/\/dashboard$/);
       await expect(page.getByRole("heading", { name: "실험", exact: true })).toBeVisible();
     }
+    if (isMobile) await expectMobileMenuFocusExit(page, testInfo);
     await expectNoOverflow(page);
     expect(errors).toEqual([]);
   } finally {
@@ -254,4 +255,50 @@ async function recordMobileMenuContrast(page: Page, testInfo: TestInfo, state: s
   });
   await testInfo.attach(`mobile-menu-${state}-computed-colors`, { body: JSON.stringify(evidence, null, 2), contentType: "application/json" });
   await testInfo.attach(`mobile-menu-${state}-pixels`, { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
+}
+
+async function expectMobileMenuFocusExit(page: Page, testInfo: TestInfo) {
+  const trigger = page.locator("summary").filter({ hasText: /^메뉴$/ });
+  const menu = page.getByRole("navigation", { name: "모바일 주 메뉴", exact: true });
+  const cta = page.getByRole("link", { name: "기존 실행 설정", exact: true });
+  for (const expanded of [false, true]) {
+    await openMobileMenu(page);
+    const settings = menu.locator("summary").filter({ hasText: "설정·운영" });
+    if ((await settings.evaluate((element) => (element.parentElement as HTMLDetailsElement).open)) !== expanded) await settings.click();
+    const lastItem = expanded ? menu.getByRole("link", { name: "컴포넌트", exact: true }) : settings;
+    await lastItem.focus();
+    await expect(menu).toBeVisible();
+    await page.keyboard.press("Tab");
+    await expect(cta).toBeFocused();
+    await expect(menu).toBeHidden();
+    await expect(cta).toHaveCSS("outline-style", "solid");
+    await expect(cta).toHaveCSS("outline-width", "3px");
+    const evidence = await cta.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const points = [[rect.left + rect.width / 2, rect.top + rect.height / 2],
+        [rect.left + 4, rect.top + 4], [rect.right - 4, rect.top + 4],
+        [rect.left + 4, rect.bottom - 4], [rect.right - 4, rect.bottom - 4]];
+      return { focused: document.activeElement === element, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        hitTests: points.map(([x, y]) => { const hit = document.elementFromPoint(x, y); return { x, y, target: hit?.tagName,
+          unobscured: hit !== null && (hit === element || element.contains(hit)) }; }) };
+    });
+    await testInfo.attach(`mobile-menu-focus-exit-${expanded ? "expanded" : "collapsed"}`, {
+      body: JSON.stringify(evidence, null, 2), contentType: "application/json"
+    });
+    expect(evidence.focused).toBe(true);
+    expect(evidence.hitTests.every((point) => point.unobscured)).toBe(true);
+    await testInfo.attach(`mobile-menu-focus-exit-${expanded ? "expanded" : "collapsed"}-pixels`, {
+      body: await page.screenshot({ fullPage: false }), contentType: "image/png"
+    });
+    await page.keyboard.press("Shift+Tab");
+    await expect(trigger).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(menu).toBeVisible();
+    await settings.focus();
+    await expect(menu).toBeVisible();
+    if (expanded) await settings.click();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+  }
 }

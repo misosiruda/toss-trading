@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type {
   ExperimentListPageData,
   ExperimentListRow,
@@ -270,6 +270,13 @@ function WorkspaceNavigation() {
     mobileSummaryRef.current?.focus({ preventScroll: true });
   }
 
+  function closeMenuOnFocusLeave(event: FocusEvent<HTMLDetailsElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      // Preserve the browser's next focus target instead of covering it with this overlay.
+      event.currentTarget.open = false;
+    }
+  }
+
   function closeMenuOnNavigation(event: MouseEvent<HTMLElement>) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
@@ -286,7 +293,7 @@ function WorkspaceNavigation() {
     <aside className={styles.sidebar}>
       <div className={styles.brand}>toss-trading<span>paper-only</span></div>
       <nav className={styles.desktopNavigation} aria-label="주 메뉴"><PrimaryLinks /></nav>
-      <details ref={mobileMenuRef} className={styles.mobileNavigation} onKeyDown={closeMenuOnEscape}>
+      <details ref={mobileMenuRef} className={styles.mobileNavigation} onKeyDown={closeMenuOnEscape} onBlur={closeMenuOnFocusLeave}>
         <summary ref={mobileSummaryRef}><Icon name="menu" /><span>메뉴</span></summary>
         <nav aria-label="모바일 주 메뉴" onClick={closeMenuOnNavigation}><PrimaryLinks /><OperationsLinks /></nav>
       </details>

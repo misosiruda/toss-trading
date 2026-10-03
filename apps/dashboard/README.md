@@ -30,6 +30,8 @@ paper-only 운영 화면을 제공하는 Next.js App Router 대시보드입니�
 연결됩니다. 이는 새 cross-run 비교 도구나 데이터 수집 기능을 의미하지 않습니다.
 설정·운영 메뉴에서 기존 운영 요약, portfolio, strategy bucket 테스트, Risk Gate, audit,
 live readiness, component catalog에 접근할 수 있습니다. 기존 deep link와 legacy 화면은 유지합니다.
+모바일 메뉴 내부의 focus 이동은 유지하고, Tab 등으로 메뉴 밖에 나가면 overlay를 닫아
+다음 focus 대상을 가리지 않습니다. Escape는 메뉴 버튼으로 focus를 돌려줍니다.
 
 목록은 `GET /batch/replay/runs?limit=100`을 server-side로 한 번 읽습니다. 응답은 전체 실험
 색인이 아니라 **API가 선택한 batch / 최신 여부 미확인** 자료입니다. Backend가 읽지 못한
