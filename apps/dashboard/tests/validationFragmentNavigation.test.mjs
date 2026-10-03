@@ -1,0 +1,196 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { test } from "node:test";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
+
+async function harness(hash = "#candidate-comparison", { initialFocus, initialScrollY = 0, targetTop = 600, innerHeight = 800,
+  documentHeight = 2000, clientHeight = 800, visualOffsetTop = 0, visualHeight = clientHeight } = {}) {
+  const source = await readFile(new URL("../src/app/dashboard/validation/ValidationFragmentNavigation.tsx", import.meta.url), "utf8");
+  const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } });
+  const frames = new Map();
+  const listeners = new Map();
+  const events = [];
+  let nextFrame = 0;
+  let effect;
+  const target = {
+    isConnected: true,
+    getBoundingClientRect() { return { top: targetTop - window.scrollY }; },
+    scrollIntoView(options) { events.push(["scroll", { ...options }]); },
+    focus(options) { events.push(["focus", { ...options }]); }
+  };
+  const window = {
+    location: { pathname: "/dashboard/validation", hash },
+    scrollX: 0, scrollY: initialScrollY, innerHeight,
+    visualViewport: { offsetTop: visualOffsetTop, height: visualHeight, get pageTop() { return window.scrollY + this.offsetTop; } },
+    requestAnimationFrame(callback) { const id = ++nextFrame; frames.set(id, callback); return id; },
+    cancelAnimationFrame(id) { frames.delete(id); },
+    addEventListener(type, callback) { listeners.set(type, callback); },
+    removeEventListener(type) { listeners.delete(type); }
+  };
+  const exports = {};
+  const body = {};
+  const document = { body, documentElement: { scrollHeight: documentHeight }, activeElement: initialFocus === "target" ? target : initialFocus ?? body,
+    scrollingElement: { scrollHeight: documentHeight, clientHeight, get scrollTop() { return window.scrollY; } },
+    getElementById(id) { events.push(["lookup", id]); return target; } };
+  runInNewContext(outputText, {
+    exports, window, document, getComputedStyle: () => ({ scrollMarginTop: "24px" }),
+    require(name) { assert.equal(name, "react"); return { useEffect(callback) { effect = callback; } }; }
+  });
+  assert.equal(exports.ValidationFragmentNavigation(), null);
+  const cleanup = effect();
+  function flush() { const pending = [...frames.values()]; frames.clear(); pending.forEach((callback) => callback()); }
+  return { window, document, target, frames, listeners, events, flush, cleanup };
+}
+
+for (const anchor of ["candidate-comparison", "data-universe-coverage"]) {
+  test(`direct and reload mount restores ${anchor} after layout without changing history`, async () => {
+    const h = await harness(`#${anchor}`);
+    assert.deepEqual(h.events, []);
+    assert.equal(h.frames.size, 1);
+    h.flush();
+    assert.deepEqual(h.events, [["lookup", anchor], ["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+    assert.equal(h.window.location.hash, `#${anchor}`);
+    assert.equal(h.frames.size, 0);
+  });
+}
+
+test("a newer fragment cancels the old frame and restores only the current target", async () => {
+  const h = await harness();
+  h.window.location.hash = "#data-universe-coverage";
+  h.listeners.get("hashchange")();
+  assert.equal(h.frames.size, 1);
+  h.flush();
+  assert.equal(h.events[0][1], "data-universe-coverage");
+  assert.equal(h.events.length, 3);
+});
+
+test("unknown fragments, missing targets and route departure do not steal focus", async () => {
+  for (const hash of ["", "#unrelated", "#%3Cscript%3E"]) {
+    const h = await harness(hash);
+    h.flush();
+    assert.deepEqual(h.events, []);
+  }
+  const missing = await harness();
+  missing.document.getElementById = () => null;
+  missing.flush();
+  assert.deepEqual(missing.events, []);
+  const detached = await harness();
+  detached.target.isConnected = false;
+  detached.flush();
+  assert.deepEqual(detached.events, [["lookup", "candidate-comparison"]]);
+  const departed = await harness();
+  departed.window.location.pathname = "/dashboard";
+  departed.flush();
+  departed.listeners.get("hashchange")();
+  assert.deepEqual(departed.events, []);
+  assert.equal(departed.frames.size, 0);
+});
+
+test("unmount and a changed hash cancel pending focus work", async () => {
+  const h = await harness();
+  h.cleanup();
+  h.flush();
+  assert.equal(h.listeners.size, 0);
+  assert.deepEqual(h.events, []);
+  const changed = await harness();
+  changed.window.location.hash = "#unrelated";
+  changed.flush();
+  assert.deepEqual(changed.events, []);
+});
+
+for (const event of ["pointerdown", "keydown", "wheel", "touchstart", "focusin"]) {
+  test(`new ${event} intent cancels a pending report jump`, async () => {
+    const h = await harness();
+    h.document.activeElement = { id: "user-selected-table" };
+    h.listeners.get(event)({ target: h.document.activeElement });
+    h.flush();
+    assert.equal(h.frames.size, 0);
+    assert.ok(h.events.every(([kind]) => kind === "lookup"));
+    assert.equal(h.document.activeElement.id, "user-selected-table");
+  });
+}
+
+test("late hydration preserves existing focus or a different restored scroll position", async () => {
+  const focused = await harness(undefined, { initialFocus: { id: "user-selected-link" } });
+  focused.flush();
+  assert.ok(focused.events.every(([kind]) => kind === "lookup"));
+  assert.equal(focused.frames.size, 0);
+  const scrolled = await harness(undefined, { initialScrollY: 200 });
+  scrolled.flush();
+  assert.ok(scrolled.events.every(([kind]) => kind === "lookup"));
+  assert.equal(scrolled.window.scrollY, 200);
+  const arrived = await harness(undefined, { initialScrollY: 576, initialFocus: "target" });
+  arrived.flush();
+  assert.deepEqual(arrived.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+  const focusedBeforeScroll = await harness(undefined, { initialFocus: "target" });
+  focusedBeforeScroll.flush();
+  assert.deepEqual(focusedBeforeScroll.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("native focus arriving at the requested target does not cancel its pending scroll", async () => {
+  const h = await harness();
+  h.document.activeElement = h.target;
+  h.listeners.get("focusin")({ target: h.target });
+  assert.equal(h.frames.size, 1);
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("native scroll arriving before the frame receives focus instead of leaving BODY active", async () => {
+  const h = await harness();
+  h.window.scrollY = 576;
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("a correctly aligned mobile target does not depend on inflated innerHeight", async () => {
+  const h = await harness(undefined, { initialScrollY: 1776, targetTop: 1800, innerHeight: 1582, documentHeight: 3200 });
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("a bottom-clamped native destination completes focus without requiring impossible top alignment", async () => {
+  const h = await harness(undefined, { targetTop: 1440 });
+  h.window.scrollY = 1200;
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("observed mobile layout top605 minus visual offset581 is a valid arrival before mount", async () => {
+  const h = await harness(undefined, { initialScrollY: 6413, targetTop: 7018, documentHeight: 8531,
+    innerHeight: 1245, clientHeight: 664, visualOffsetTop: 581 });
+  assert.equal(h.frames.size, 1);
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("a visual viewport native arrival before the frame still completes focus", async () => {
+  const h = await harness(undefined, { targetTop: 7018, documentHeight: 8531, innerHeight: 1245, clientHeight: 664 });
+  h.window.scrollY = 6413;
+  h.window.visualViewport.offsetTop = 581;
+  h.flush();
+  assert.deepEqual(h.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+});
+
+test("visual viewport bottom clamp and a different restored position remain distinct", async () => {
+  const bottom = await harness(undefined, { initialScrollY: 7286, targetTop: 8100, documentHeight: 8531,
+    innerHeight: 1245, clientHeight: 664, visualOffsetTop: 581 });
+  bottom.flush();
+  assert.deepEqual(bottom.events.slice(-2), [["scroll", { behavior: "instant", block: "start" }], ["focus", { preventScroll: true }]]);
+  const manual = await harness(undefined, { initialScrollY: 6200, targetTop: 7018, documentHeight: 8531,
+    innerHeight: 1245, clientHeight: 664, visualOffsetTop: 581 });
+  manual.flush();
+  assert.ok(manual.events.every(([kind]) => kind === "lookup"));
+  assert.equal(manual.window.scrollY, 6200);
+});
+
+test("changed focus or scroll before the frame never gets overwritten even without an input event", async () => {
+  for (const change of ["focus", "scrollX", "scrollY"]) {
+    const h = await harness();
+    if (change === "focus") h.document.activeElement = { id: "new-focus" };
+    else h.window[change] = 100;
+    h.flush();
+    assert.ok(h.events.every(([kind]) => kind === "lookup"));
+  }
+});

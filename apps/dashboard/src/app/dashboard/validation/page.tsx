@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { readValidationLabPageData } from "@/lib/dashboardViewModels";
 import { ValidationLabPanel } from "../ValidationLabPanel";
+import { ValidationFragmentNavigation } from "./ValidationFragmentNavigation";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -68,6 +69,7 @@ export default async function ValidationLabPage() {
           result={pageData.validationLab}
           variant="detail"
         />
+        <ValidationFragmentNavigation />
 
         <footer className="border-t border-[var(--border)] pt-4 text-xs leading-5 text-[var(--muted)]">
           <span className="font-mono">{pageData.apiBaseLabel}</span>
