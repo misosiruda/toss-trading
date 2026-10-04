@@ -18,6 +18,8 @@ window의 고정 enum·시각·timezone, capital/clock/sampling/constraints의 �
 
 projection 문자열은 최대 128자, enum collection은 최대 16개로 제한한다. 초과 field는 invalid/unavailable이며 큰 배열이나 자유 문자열을 그대로 전달하지 않는다.
 
+raw 문자열 길이와 배열 길이는 Zod safeParse 전에 제한한다. 날짜 6필드는 reader 전용 엄격한 ISO timestamp 문법과 calendar 범위를 먼저 검사한다. Date.parse가 허용하는 자유 문자열·괄호 설명·경로는 unavailable/invalid로 거절하고 과거 정본처럼 정규화하지 않는다. nullable range의 저장 null만 그대로 허용한다.
+
 원래 requestedConfig/effectiveConfig/notices와 runtime Git revision/dependency lock hash/Node version은 historical API 실행에 저장되지 않았으므로 `not_persisted`다. 다른 CLI paper-experiment 증거 계열의 runtime/input 정보를 가져와 보충하지 않는다. comparison/clone은 계속 unavailable이다. future create 정본 저장과 clone 단위 선택은 이 범위 밖이며 사용자 결정 전 구현하지 않는다.
 
 ## 검증

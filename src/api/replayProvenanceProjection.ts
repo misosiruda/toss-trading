@@ -38,6 +38,15 @@ add("configuration.paperExitPolicy",configuration.shape.paperExitPolicy.unwrap()
 const hashes = ["configHash","dataSnapshotHash","universeHash","coverageHash","promptHash","schemaHash","riskPolicyHash","costModelHash"] as const;
 const structuralFields = ["requestedConfig","effectiveConfig","notices","runtime.gitRevision","runtime.dependencyLockHash","runtime.nodeVersion"];
 const redactedFields = ["batch.seed","child.runSeed","window.seed","configuration.strategyPreset","configuration.packetIdPrefix"];
+const timestampFields = new Set(["window.startAt","window.endAt","window.rangeStart","window.rangeEnd","configuration.clock.startAt","configuration.clock.endAt"]);
+export function isStoredProvenanceTimestamp(value: unknown): value is string {
+  if(typeof value!=="string" || value.length>40) return false;
+  const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if(!match) return false;
+  const year=Number(match[1]),month=Number(match[2]),day=Number(match[3]);
+  const calendar=new Date(0);calendar.setUTCFullYear(year,month,0);
+  return month>=1 && month<=12 && day>=1 && day<=calendar.getUTCDate() && Number(match[4])<=23 && Number(match[5])<=59 && Number(match[6])<=59 && Number(match[7]??0)<=23 && Number(match[8]??0)<=59 && Number.isFinite(Date.parse(value));
+}
 
 export function emptyReplayProvenance(runId: string | null, status: ReplayProvenance["status"], reason: ProvenanceReason): ReplayProvenance {
   const fields: Record<string, ProvenanceField> = {};
@@ -57,6 +66,10 @@ function field(raw:unknown,path:string,schema:ZodType,source:ProvenanceSource): 
   const observed=readPath(raw,path);
   // Check raw presence before schemas with defaults. Never synthesize defaults.
   if(!observed.present) return absent("not_present");
+  // Bound raw input before Zod allocates member errors or parses permissive
+  // Date.parse strings. Preserve stored text; never normalize a rejected date.
+  if((typeof observed.value==="string" && observed.value.length>128) || (Array.isArray(observed.value) && observed.value.length>16)) return absent("invalid");
+  if(timestampFields.has(path) && observed.value!==null && !isStoredProvenanceTimestamp(observed.value)) return absent("invalid");
   const parsed=schema.safeParse(observed.value);
   if(!parsed.success) return absent("invalid");
   const value=parsed.data;

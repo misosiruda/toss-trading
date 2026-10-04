@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createLocalOperationsServer } from "./localOperationsServer.js";
+import {historicalReplayRunConfigurationSchema} from '../replay/historicalReplayAuditLog.js';
+import {isStoredProvenanceTimestamp} from './replayProvenanceProjection.js';
 import { readReplayProvenance, readReplayProvenanceRequest, REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_LIMITS } from "./replayProvenanceReader.js";
 import { BATCH_REPLAY_MANIFEST_FILE_NAME as manifestName, BATCH_REPLAY_RUNS_FILE_NAME as runsName, HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME as metadataName, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME as researchName } from "../storage/artifactPaths.js";
 const hash=`sha256:${"1".repeat(64)}`;
@@ -51,6 +53,22 @@ test("partial invalid fields do not become defaults or erase independent valid f
 });
 test("projected enum collections remain bounded rather than forwarding arbitrary repeated input",async()=>{
   const f=await fixture();await writeFile(f.paths.metadata,JSON.stringify({...f.metadata,configuration:{constraints:{allowedActions:Array.from({length:17},()=>"VIRTUAL_BUY")}}}));const result=await readReplayProvenance(f.storage,"child");assert.deepEqual(result.fields["configuration.constraints.allowedActions"],{status:"unavailable",reason:"invalid",value:null});
+});
+test('raw collection limit rejects before Zod parses any array member',async t=>{
+  const f=await fixture();let parses=0;t.mock.method(historicalReplayRunConfigurationSchema.shape.constraints.shape.allowedActions,'safeParse',()=>{parses++;throw Error('must reject raw oversized input first');});
+  await writeFile(f.paths.metadata,JSON.stringify({...f.metadata,configuration:{constraints:{allowedActions:Array.from({length:17},()=>0)}}}));const result=await readReplayProvenance(f.storage,'child');assert.equal(parses,0);assert.equal(result.fields['configuration.constraints.allowedActions']?.status,'unavailable');
+});
+test('reader timestamp grammar rejects Date.parse free text and calendar overflow without normalization',()=>{
+  for(const value of ['2026-01-01 (/home/synthetic_private/token.txt)','2026-01-01T00:00:00Z (SYNTHETIC_SECRET)','2026-02-31T00:00:00Z','2026-01-01','2026-01-01T24:00:00Z','2026-01-01T00:00:60Z'])assert.equal(isStoredProvenanceTimestamp(value),false);
+  for(const value of ['2026-01-01T00:00:00.000Z','2024-02-29T00:00:00+09:00'])assert.equal(isStoredProvenanceTimestamp(value),true);
+});
+test('all six projected dates reject private free text in actual HTTP responses',async t=>{
+  const f=await fixture(),server=createLocalOperationsServer({storageBaseDir:f.storage});await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve())));
+  const endpoint=`http://127.0.0.1:${(server.address() as AddressInfo).port}${REPLAY_PROVENANCE_ROUTE}?runId=child`;
+  for(const path of ['window.startAt','window.endAt','window.rangeStart','window.rangeEnd','configuration.clock.startAt','configuration.clock.endAt']){
+    const raw=JSON.parse(JSON.stringify(f.metadata)) as Record<string,unknown>;const parts=path.split('.');let parent=raw;for(const part of parts.slice(0,-1))parent=parent[part] as Record<string,unknown>;parent[parts.at(-1)!]='2026-01-01 (/home/synthetic_private/token.txt)';
+    await writeFile(f.paths.metadata,JSON.stringify(raw));const response=await fetch(endpoint);assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');const body=await response.text();assert.doesNotMatch(body,/synthetic_private|token\.txt/);const result=JSON.parse(body) as {fields:Record<string,unknown>};assert.deepEqual(result.fields[path],{status:'unavailable',reason:'invalid',value:null});
+  }
 });
 test("malformed metadata is per-field unavailable and does not disclose parser body",async()=>{
   const f=await fixture();await writeFile(f.paths.metadata,"{synthetic_secret_invalid");const result=await readReplayProvenance(f.storage,"child");assert.equal(result.fields["configuration.initialCashKrw"]?.status,"unavailable");assert.equal(result.fields["research.configHash"]?.value,hash);assert.doesNotMatch(JSON.stringify(result),/synthetic_secret_invalid/);
