@@ -24,7 +24,7 @@ test("actual synthetic writer completed skipped index is partial, but whole-row 
   assert.equal(providers,0);await writeFile(result.runsPath,lines[0]+"\n");assert.equal((await readReplayProvenance(storage,JSON.parse(lines[0]!).runId)).status,"invalid");
 });
 test("every row identity and terminal contract is validated before requested-ID filtering",async()=>{
-  const changes:Record<string,unknown>[]=[{}, {runId:"other"}, {mode:"live"}, {batchId:"wrong"}, {runId:"../bad"}, {runId:42}, {runIndex:-1}, {runIndex:1.5}, {runIndex:2}, {runSeed:null}, {storageBaseDir:null}, {status:"running"}, {startedAt:"garbage"}, {completedAt:null}, {skippedAt:"2026-01-01T00:00:01.000Z"}];
+  const changes:Record<string,unknown>[]=[{}, {runId:"other"}, {mode:"live"}, {batchId:"wrong"}, {runId:"../bad"}, {runId:42}, {runIndex:-1}, {runIndex:1.5}, {runIndex:2}, {runSeed:null}, {storageBaseDir:null}, {status:"running"}, {status:["completed"],completedAt:null}, {status:42}, {startedAt:"garbage"}, {completedAt:null}, {skippedAt:"2026-01-01T00:00:01.000Z"}];
   for(let i=0;i<changes.length;i++) {
     const f=await fixture();f.batch.runCount=2;f.batch.completedCount=2;await f.save();
     const other=i<2?changes[i]:{...f.run,runId:"other",runIndex:1,...changes[i]};

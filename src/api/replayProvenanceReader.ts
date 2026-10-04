@@ -51,7 +51,7 @@ function validateIdentity(raw:Record<string,unknown>,batch:Record<string,unknown
   if(!storedChildId(raw.runId) || !count(raw.runIndex) || raw.runIndex>=Number(batch.runCount) ||
     !producerText(raw.runSeed) || !boundedText(raw.storageBaseDir) || !isStoredProvenanceTimestamp(raw.startedAt)) throw new ReadFailure("invalid");
   if(terminal && (raw.mode!=="paper_only" || raw.batchId!==batch.batchId ||
-    !["completed","completed_with_failures","skipped","failed"].includes(String(raw.status)))) throw new ReadFailure("invalid");
+    typeof raw.status!=="string" || !["completed","completed_with_failures","skipped","failed"].includes(raw.status))) throw new ReadFailure("invalid");
   if(!terminal && ((raw.mode!==undefined && raw.mode!=="paper_only") || (raw.batchId!==undefined && raw.batchId!==batch.batchId))) throw new ReadFailure("invalid");
   if(terminal) for(const [key,expected] of [["completedAt",raw.status==="completed" || raw.status==="completed_with_failures"],["skippedAt",raw.status==="skipped"],["failedAt",raw.status==="failed"]] as const) {
     if(expected ? !isStoredProvenanceTimestamp(raw[key]) : raw[key]!==null) throw new ReadFailure("invalid");
@@ -60,7 +60,7 @@ function validateIdentity(raw:Record<string,unknown>,batch:Record<string,unknown
 function validateManifest(batch:Record<string,unknown>) {
   if(batch.mode!=="paper_only" || !producerText(batch.batchId) ||
     !producerText(batch.seed) || !isStoredProvenanceTimestamp(batch.startedAt) || !isStoredProvenanceTimestamp(batch.updatedAt) ||
-    !["running","completed","completed_with_failures"].includes(String(batch.status)) ||
+    typeof batch.status!=="string" || !["running","completed","completed_with_failures"].includes(batch.status) ||
     !count(batch.runCount) || batch.runCount===0 ||
     !count(batch.completedCount) || !count(batch.skippedCount) || !count(batch.failedCount) ||
     Number(batch.completedCount)+Number(batch.skippedCount)+Number(batch.failedCount)>batch.runCount ||
