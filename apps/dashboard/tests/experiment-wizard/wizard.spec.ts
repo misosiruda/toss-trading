@@ -162,9 +162,15 @@ test("current validation is side-effect free; exactly one create runs the real f
   await page.addScriptTag({ content: axe.source });
   const a11y = await page.evaluate(async () => (window as unknown as { axe: typeof axe }).axe.run());
   expect(a11y.violations).toEqual([]);
-  const acceptedResponse = page.waitForResponse(r => r.url().endsWith(createPath));
+  type Accepted = {status:string;simulationRunId:string;batchId:string;requestedConfig:unknown;effectiveConfig:unknown};
+  let acceptedReady!: (payload: Accepted) => void;
+  const acceptedResponse = new Promise<Accepted>(resolve => { acceptedReady = resolve; });
+  await page.route(`**${createPath}`, async route => {
+    const response = await route.fetch(); expect(response.status()).toBe(202);
+    acceptedReady(await response.json()); await route.fulfill({ response });
+  });
   await page.getByRole("button", { name: "paper 실행 시작", exact: true }).dblclick();
-  const accepted = await (await acceptedResponse).json();
+  const accepted = await acceptedResponse;
   expect(accepted.status).toBe("accepted");
   expect(accepted.requestedConfig).toEqual(validation.requestedConfig);
   expect(accepted.effectiveConfig).toEqual(validation.effectiveConfig);
