@@ -36,3 +36,17 @@ pending 상태의 popstate는 현재 history 목적지를 `location.replace`로 
 초기 native 경합 계측은 pending navigation 뒤 이전 document를 Runtime.evaluate하여 멈췄다. storage setItem의 exact ID 이벤트를 이동 전에 받는 계측과 HTTP Document gate, 실제 브라우저 pointer/history 입력으로 교체했다. 이전 실패 기록을 보존하고 이 harness 실패를 원래 정체나 제품 원인으로 해석하지 않는다. 기존 intent 회귀도 native 이동으로 사라지는 document 대신 동일 ID 저장 이벤트를 관측한다. 기존 정상 생성 회귀의 실제202 body는 빠른 새 document commit 전에 route.fetch에서 보존하여 requested/effective·manifest·runner·sameID/POST1 assertion을 유지했다.
 
 이 성공은 원래 App Router 간헐 정체 원인 규명이 아니다. 새 설계의 production 회귀 증거이며 exact 최종 head의 Linux 전체 gate와 독립 리뷰는 별도다. 원격 PR802와 merge hold는 유지한다.
+
+## 수동 조회와 복귀 범위 보완
+
+위 18개는 최초 후보의 역사적 결과다. 첫 RSC 테스트는 synthetic fetch를 abort한 뒤 202를 release하므로 native 진입 동안 응답을 보류한 증거는 아니었다. 최초 실제 BFCache는 이미 accepted 상태의 빈 token/receipt 복귀를 확인했으며 값이 채워진 credential/receipt의 폐기를 독립적으로 확인한 것은 아니었다.
+
+수동 same-ID anchor는 자동 location.assign과 달리 pending flag를 설정하지 않았다. 최초 후보5511의 production build에서 Back/reload 뒤 수동 exact-ID Document GET을 HTTP gate로 보류하고 새 목록을 클릭했을 때, 목록 URL 뒤에도 기존 상세 navigation이 남아 원래 5초 URL assertion이 완료되지 않는 경계를 재현했다. 원래 PR802 간헐 정체의 원인이나 늦은202 경합으로 해석하지 않는다. capture에서 eligible exact accepted-ID native anchor에도 pending flag를 설정하도록 수정했다. 새 탭·수정키·다운로드와 원래 fragment 정책은 보존한다.
+
+추가 회귀는 수동 anchor를 실제 keyboard Enter로 활성화하고 Document gate의 started=true/released=false/closed=false/finished=false를 확인한 뒤 실제 pointer 또는 browser history 입력으로 새 목록·Back·step을 선택한다. 이전 gate를 release하고 closed 또는 finished 이후 최신 URL과 POST1·저장 ID 잠금이 유지되는지 대조한다. 수정 후보에서 1440/1024/390px 세 조건 모두 통과했다.
+
+새 RSC 회귀는 synthetic RSC-header fetch의 응답 gate를 202 이전에 보류하고 release하지 않은 채 exact-ID Document GET과 실제 상세 표시를 완료한다. document 요청 시 held1/released=false를 기록한다. 실제 App Router prefetch의 전체 내부 동작을 재현했다고 주장하지 않으며 native navigation이 이전 fetch를 취소할 수 있는 사실은 requestfailed 이벤트로 별도 기록한다. 최초 abort-후-release 테스트와 구분한다.
+
+추가 실제 BFCache 회귀는 검증 receipt와 synthetic token이 채워져 create button이 enabled인 사전조건에서 native document로 목록에 나갔다가 Back한다. 세 viewport 모두 pageshow.persisted=true, 빈 token을 관측하고 token만 다시 입력해도 create button이 disabled여서 기존 receipt도 폐기됐음을 확인했다. 생성 POST0·validation POST1이다. synthetic persisted pageshow 회귀는 별도 테스트이며 실제 BFCache 증거로 합산하지 않는다. 기존 accepted-ID/POST1 BFCache 계약도 유지한다.
+
+보완 native suite는 36/36, 기존 wizard66/66, unit112/112, production build·lint·type 통과다. worker1/retry0/test30초/expect5초를 유지한다. 새 테스트의 잘못된 버튼·조회 link 이름과 accepted ID 관측 이전에 만든 RSC URL assertion은 harness 오류였으며 실패 로그를 보존했다. 최종 source의 Linux 전체 gate와 독립 검토는 별도 확인 대상이다. 이전5511의 Linux4429pass/0fail/33Windows skip은 새 후보의 full gate로 재표기하지 않는다.

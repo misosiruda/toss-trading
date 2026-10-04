@@ -94,6 +94,53 @@ for (const navigation of ['list', 'back']) test(`pending native detail GET yield
     expect(posts).toBe(1);
   } finally { releaseAccepted();if(id)await control('release');await info.attach('native-race', { body: JSON.stringify({ navigation, id, observedId, posts, released, latest: page.url(),gate:id?await control('state'):null }), contentType: 'application/json' }); }
 });
+for(const navigation of ['list','back','step']) test(`manual same-ID pending document yields to newer ${navigation}`,async({page,request},info)=>{
+  let posts=0,id='';const generation=info.project.name+'-manual-'+navigation;
+  page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith(createPath))posts++;});
+  const control=async(op:string)=>{const response=await request.get('http://127.0.0.1:3004/__native_gate?'+new URLSearchParams({generation,id,op}),{headers:{'x-native-test-runner':'native-document-fixture-v1'}});expect(response.status()).toBe(200);return response.json();};
+  await prepare(page,'native-manual-'+navigation);await page.getByRole('button',{name:'paper \uC2E4\uD589 \uC2DC\uC791'}).click();
+  await expect(page.getByRole('heading',{name:'Run Detail',exact:true})).toBeVisible();id=new URL(page.url()).pathname.split('/').at(-1)!;
+  await page.goBack({waitUntil:'commit'});await restored(page,id);await page.reload();await restored(page,id);
+  const session=await page.context().newCDPSession(page);const history=await session.send('Page.getNavigationHistory');const previous=history.entries[history.currentIndex-1];expect(previous.url).toMatch(/step=2$/);
+  const target=navigation==='step'?page.getByRole('button',{name:'\uC774\uC804',exact:true}):page.getByRole('link',{name:'\u2190 \uC2E4\uD5D8 \uBAA9\uB85D',exact:true});
+  await target.scrollIntoViewIfNeeded();const box=await target.boundingBox();expect(box).not.toBeNull();
+  await page.getByRole('link',{name:'\uAC19\uC740 ID \uC0C1\uD0DC \uC870\uD68C'}).evaluate(anchor=>(anchor as HTMLElement).focus({preventScroll:true}));
+  await control('arm');
+  try {
+    await session.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});await session.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+    await expect.poll(async()=>(await control('state')).started).toBe(true);expect(await control('state')).toMatchObject({released:false,closed:false,finished:false});
+    if(navigation==='back')await session.send('Page.navigateToHistoryEntry',{entryId:previous.id});
+    else {const x=box!.x+box!.width/2,y=box!.y+box!.height/2;await session.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});await session.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});}
+    const latest=navigation==='list'?/\/dashboard$/:/step=2$/;await expect(page).toHaveURL(latest);
+    await control('release');await expect.poll(async()=>{const state=await control('state');return state.closed||state.finished;}).toBe(true);
+    await expect(page).toHaveURL(latest);if(navigation!=='list'){await page.getByRole('button',{name:'\uB2E4\uC74C',exact:true}).click();await restored(page,id);}expect(posts).toBe(1);
+  } finally {await control('release');await info.attach('manual-native-race',{body:JSON.stringify({id,navigation,posts,url:page.url(),gate:await control('state')}),contentType:'application/json'});}
+});
+test('native document completes while old synthetic RSC response remains held',async({page},info)=>{
+  let posts=0,id='',held=0,released=false;const events:string[]=[];let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith(createPath))posts++;if(r.isNavigationRequest()&&r.url().includes('/dashboard/lab/runs/'))events.push('document:'+held+':'+released);});
+  page.on('requestfailed',r=>{if(r.headers().rsc==='1')events.push('rsc-requestfailed');});
+  await page.route('**/dashboard/lab/runs/**',async route=>{if(route.request().headers().rsc==='1'){held++;events.push('rsc-held');await gate;await route.abort().catch(()=>{});}else await route.continue();});
+  await page.route(`**${createPath}`,async route=>{const response=await route.fetch();expect(response.status()).toBe(202);id=(await response.json()).simulationRunId;await page.evaluate(id=>{void fetch('/dashboard/lab/runs/'+id+'?_rsc=synthetic-held-proof',{headers:{RSC:'1'}}).catch(()=>{});},id);await expect.poll(()=>held).toBe(1);await route.fulfill({response});});
+  try {
+    await prepare(page,'native-held-rsc');const accepted=page.waitForResponse(r=>r.url().endsWith(createPath));await page.getByRole('button',{name:'paper \uC2E4\uD589 \uC2DC\uC791'}).click();expect((await accepted).status()).toBe(202);
+    await expect(page).toHaveURL(new RegExp('/dashboard/lab/runs/'+id+'$'));await expect(page.getByRole('heading',{name:'Run Detail',exact:true})).toBeVisible();
+    expect(events).toContain('document:1:false');expect(released).toBe(false);expect(held).toBe(1);expect(posts).toBe(1);
+  } finally {released=true;release();await info.attach('held-rsc-native',{body:JSON.stringify({id,posts,held,events,released}),contentType:'application/json'});}
+});
+for(const restoration of ['actual-bfcache','synthetic-pageshow'])test(`filled validation receipt and token clear on ${restoration}`,async({page},info)=>{
+  let posts=0,validations=0;page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith(createPath))posts++;if(r.method()==='POST'&&r.url().endsWith('/experiments/validate'))validations++;});
+  await page.addInitScript(()=>window.addEventListener('pageshow',event=>{const events=JSON.parse(sessionStorage.getItem('synthetic-filled-pageshow')??'[]');events.push({persisted:event.persisted,path:location.pathname});sessionStorage.setItem('synthetic-filled-pageshow',JSON.stringify(events));}));
+  await prepare(page,'native-filled-'+restoration);const token=page.getByLabel('\uC2E4\uD589 \uC2B9\uC778 \uD1A0\uD070'),create=page.getByRole('button',{name:'paper \uC2E4\uD589 \uC2DC\uC791'});
+  await expect(create).toBeEnabled();await expect(token).not.toHaveValue('');
+  if(restoration==='actual-bfcache'){await page.goto('/dashboard');await page.goBack({waitUntil:'commit'});}else await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+  await expect(token).toHaveValue('');await expect(create).toBeDisabled();
+  // Re-entering only a token proves the old receipt itself was invalidated.
+  await token.fill('synthetic-new-token');await expect(create).toBeDisabled();await expect(page.getByRole('button',{name:'\uD604\uC7AC \uC785\uB825 \uAC80\uC99D'})).toBeEnabled();
+  const events=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('synthetic-filled-pageshow')??'[]'));
+  if(restoration==='actual-bfcache')expect(events.some((e:{persisted:boolean;path:string})=>e.persisted&&e.path==='/dashboard/experiments/new')).toBe(true);
+  expect(posts).toBe(0);expect(validations).toBe(1);await info.attach('filled-restoration',{body:JSON.stringify({restoration,posts,validations,events}),contentType:'application/json'});
+});
 test('accepted ID storage failure stays accepted and pageshow retains the in-memory ID', async ({ page }) => {
   let posts = 0; let detailDocuments = 0;
   page.on('request', r => { if (r.method() === 'POST' && r.url().endsWith(createPath)) posts++; if (r.isNavigationRequest() && new URL(r.url()).pathname.startsWith('/dashboard/lab/runs/')) detailDocuments++; });

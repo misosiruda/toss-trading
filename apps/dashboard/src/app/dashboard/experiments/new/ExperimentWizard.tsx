@@ -91,10 +91,16 @@ export function ExperimentWizard() {
     if (!["http:", "https:"].includes(destination.protocol)) return;
     if (destination.origin === current.origin && destination.pathname === current.pathname && destination.search === current.search) return;
     navigationIntent.current += 1;
+    const acceptedDetail = knownAcceptedId.current !== null && destination.origin === current.origin &&
+      destination.pathname === `/dashboard/lab/runs/${encodeURIComponent(knownAcceptedId.current)}` && !destination.search && !destination.hash;
     if (nativeDetailPending.current) {
-      event.preventDefault(); event.stopPropagation(); nativeDetailPending.current = false;
+      event.preventDefault(); event.stopPropagation(); nativeDetailPending.current = acceptedDetail;
       window.stop(); window.location.assign(destination.href);
+      return;
     }
+    // The explicit same-ID native anchor uses the same cancellation guard as
+    // automatic accepted navigation, including after Back/reload restoration.
+    if (acceptedDetail) nativeDetailPending.current = true;
   }
 
   function edit<K extends keyof SimulationDraft>(key: K, value: SimulationDraft[K]) {
