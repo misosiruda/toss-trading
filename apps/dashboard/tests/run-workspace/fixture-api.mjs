@@ -32,7 +32,10 @@ const server=createServer((request,response)=>{
   const id=url.searchParams.get('runId')??'fixture_completed';
   if(id==='fixture_offline')return send(response,503,{error:'fixture_offline'});
   const data=payload(id);
-  if((id.startsWith('fixture_transition_')&&requests.filter(r=>r.id===id).length>1)||(id.startsWith('fixture_race_')&&requests.filter(r=>r.id===id).length>2)){data.batchStatus='completed';data.activeRun=null;data.runs=[run(id,'completed')];data.selectedRun=data.runs[0];data.status='ok';data.latestRunArtifacts.runStatus='completed';}
+  // Advance only on run-state reads. Independent provenance GETs must not
+  // consume a simulated runner lifecycle transition.
+  const stateReads=requests.filter(r=>r.id===id&&r.path==='/batch/replay/runs').length;
+  if((id.startsWith('fixture_transition_')&&stateReads>1)||(id.startsWith('fixture_race_')&&stateReads>2)){data.batchStatus='completed';data.activeRun=null;data.runs=[run(id,'completed')];data.selectedRun=data.runs[0];data.status='ok';data.latestRunArtifacts.runStatus='completed';}
   send(response,200,data);
 });
 server.listen(port,host,()=>process.stdout.write(`${marker} http://${host}:${port}\n`));

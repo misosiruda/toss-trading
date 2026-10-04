@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import type {ReactNode} from 'react';
 import type { RunWorkspacePageData } from "@/lib/runEvidenceReader";
 import { RunEvidenceWorkspace } from "./RunEvidenceWorkspace";
 import { createRunRefresh, isRunSnapshot, readRunWorkspaceTab, runWorkspaceState, type RunRefreshState } from "@/lib/runWorkspace";
@@ -11,7 +12,7 @@ import { ArtifactStatusGrid, EvidencePanel, ProgressPanel, RunSummary, Simulatio
 import shell from "../../../ExperimentList.module.css";
 import styles from "./RunWorkspace.module.css";
 
-export function RunWorkspace({ requestedId, initial }: { requestedId: string; initial: RunWorkspacePageData }) {
+export function RunWorkspace({ requestedId, initial, provenance }: { requestedId: string; initial: RunWorkspacePageData; provenance?:ReactNode }) {
   const query = useSearchParams();
   const tab = readRunWorkspaceTab(query.get("tab"));
   const [snapshot, setSnapshot] = useState<RunWorkspacePageData>(initial);
@@ -112,6 +113,7 @@ export function RunWorkspace({ requestedId, initial }: { requestedId: string; in
         </>}
       </> : <section className={styles.record}><h2>Run artifact unavailable</h2><p>요청 ID에 해당하는 child 실행 기록은 미관측입니다. 조회 부재를 실패나 성공으로 해석하지 않습니다.</p></section>)}
       {tab === "record" && data?.run === null && <SourcePanel data={data} />}
+      {provenance}
       {tab === "record" && <section className={styles.record} aria-label="전체 운영 기록">
         <h2>전체 운영 기록</h2><p>전체 storage 자료이며 선택한 실행에 한정된 근거가 아닙니다.</p>
         <Link href="/dashboard/risk-gate">전체 운영 기록 · Risk</Link><Link href="/dashboard/audit">전체 운영 기록 · Audit</Link>
