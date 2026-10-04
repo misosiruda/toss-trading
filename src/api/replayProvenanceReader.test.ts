@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, writeFile, readFile, stat, link, symlink, readdir } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
+import { mkdtemp, mkdir, writeFile, readFile, stat, link, symlink, readdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createLocalOperationsServer } from "./localOperationsServer.js";
 import {historicalReplayRunConfigurationSchema} from '../replay/historicalReplayAuditLog.js';
 import {isStoredProvenanceTimestamp} from './replayProvenanceProjection.js';
-import { readReplayProvenance, readReplayProvenanceRequest, REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_LIMITS } from "./replayProvenanceReader.js";
+import { readReplayProvenance, readReplayProvenanceRequest, provenanceReadBudgetMs, REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_LIMITS } from "./replayProvenanceReader.js";
 import { BATCH_REPLAY_MANIFEST_FILE_NAME as manifestName, BATCH_REPLAY_RUNS_FILE_NAME as runsName, HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME as metadataName, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME as researchName } from "../storage/artifactPaths.js";
 const hash=`sha256:${"1".repeat(64)}`;
 async function fixture(parent=tmpdir()) {
@@ -28,6 +29,12 @@ test("contained project-relative CLI run paths preserve identity and reject trav
   assert.doesNotMatch(JSON.stringify(result),/storageBaseDir|provenance-fixture-/);
   for(const path of [relative(process.cwd(),f.storage),"../outside","data/nonexistent/runs/child"]){f.run.storageBaseDir=path;await f.save();assert.equal((await readReplayProvenance(f.storage,"child")).status,"blocked");}
   f.run.storageBaseDir=relative(process.cwd(),f.childDir);f.metadata.identity.runId="other";await f.save();assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
+});
+test("missing established batch indexes cannot prove uniqueness, while explicit empty active indexes remain valid",async()=>{
+  const f=await fixture();await unlink(f.paths.runs);assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
+  await f.save();const other=join(f.root,"batch-replay","other_batch");await mkdir(other);await writeFile(join(other,manifestName),JSON.stringify({...f.batch,batchId:"other_batch"}));
+  for(const id of ["child","absent"]){const result=await readReplayProvenance(f.storage,id);assert.equal(result.status,"invalid");assert.doesNotMatch(JSON.stringify(result),/other_batch|provenance-fixture-/);}
+  await writeFile(join(other,runsName),"");Object.assign(f.batch,{status:"running",activeRun:f.run});await f.save();await writeFile(f.paths.runs,"");assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
 });
 test("stored scalar/hash observations remain partial, absent defaults are not fabricated and free text stays redacted",async()=>{
   const f=await fixture(),result=await readReplayProvenance(f.storage,"child");
@@ -116,7 +123,19 @@ test("directory-entry, individual index bytes and cumulative byte budgets fail c
   const empty=await fixture();await Promise.all(Array.from({length:REPLAY_PROVENANCE_LIMITS.entries},(_,i)=>mkdir(join(empty.root,"batch-replay",`empty_${i}`))));assert.equal((await readReplayProvenance(empty.storage,"child")).status,"limit");
 });
 test("deadline check stops further observation rather than extending the timeout",async t=>{
-  const f=await fixture();let elapsed=0;t.mock.method(Date,"now",()=>{elapsed+=1_001;return elapsed;});assert.equal((await readReplayProvenance(f.storage,"child")).status,"limit");
+  const f=await fixture();let elapsed=0;t.mock.method(performance,"now",()=>{elapsed+=1_001;return elapsed;});assert.equal((await readReplayProvenance(f.storage,"child")).status,"limit");
+});
+test("exact monotonic deadline returns only limit with serialization reserve",async t=>{
+  const f=await fixture();let now=0;let calls=0;
+  t.mock.method(performance,"now",()=>{calls++;return calls===1?0:(now=1_500);});
+  const result=await readReplayProvenance(f.storage,"child");
+  assert.equal(result.status,"limit");assert.equal(now,REPLAY_PROVENANCE_LIMITS.deadlineMs);
+  assert.equal(REPLAY_PROVENANCE_LIMITS.transportMs-now,REPLAY_PROVENANCE_LIMITS.responseReserveMs);
+  assert.ok(Object.values(result.fields).every(field=>field.status==="unavailable"));
+});
+test("caller remaining budget can shorten but never extend reads",async()=>{
+  for(const [header,expected] of [[undefined,1500],["2000",1500],["1800",1300],["500",0],["0",0],["2001",1500],["-1",1500],["1.5",1500],["0999",1500],[["1800"],1500]] as const)assert.equal(provenanceReadBudgetMs(header),expected);
+  const f=await fixture();assert.equal((await readReplayProvenanceRequest(new URL("http://localhost/batch/replay/runs/provenance?runId=child"),f.storage,"0")).payload.status,"limit");
 });
 test("unsafe identity, invalid UTF8 and untrusted error strings never escape field contract",async()=>{
   const f=await fixture();await writeFile(f.paths.metadata,Buffer.from([0xff]));let result=await readReplayProvenance(f.storage,"child");assert.equal(result.fields["configuration.initialCashKrw"]?.status,"unavailable");
@@ -127,4 +146,5 @@ test("HTTP route is GET-only, no-store, rejects missing ID and never invokes run
   const base=`http://127.0.0.1:${(server.address() as AddressInfo).port}${REPLAY_PROVENANCE_ROUTE}`;
   for(const method of ["HEAD","POST","PUT","DELETE"]) {const response=await fetch(base+"?runId=child",{method});assert.equal(response.status,405);assert.equal(response.headers.get("cache-control"),"no-store");}
   assert.equal((await fetch(base)).status,400);const response=await fetch(base+"?runId=child");assert.equal(response.status,200);assert.equal(response.headers.get("cache-control"),"no-store");assert.equal((await response.json() as {status:string}).status,"partial");assert.equal(runs,0);
+  const exhausted=await fetch(base+"?runId=child",{headers:{"x-provenance-budget-ms":"0"}});assert.equal(exhausted.status,200);assert.equal((await exhausted.json() as {status:string}).status,"limit");assert.equal(runs,0);
 });

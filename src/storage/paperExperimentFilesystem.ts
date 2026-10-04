@@ -30,12 +30,14 @@ export function hasFsCode(error: unknown, code: string): boolean {
 }
 
 /** Reject aliases instead of silently resolving them. No hostile-writer/OS sandbox claim. */
-export async function assertExperimentPath(path: string, allowMissing = false): Promise<void> {
+export async function assertExperimentPath(path: string, allowMissing = false, checkpoint: () => void = () => {}): Promise<void> {
   let current = parse(resolve(path)).root;
   for (const part of resolve(path).slice(current.length).split(sep).filter(Boolean)) {
     current = join(current, part);
     try {
+      checkpoint();
       const info = await lstat(current);
+      checkpoint();
       requireExperimentStorage(!info.isSymbolicLink(), "PATH_UNSAFE");
       if (current !== resolve(path)) requireExperimentStorage(info.isDirectory(), "PATH_UNSAFE");
     } catch (error) {
@@ -81,15 +83,21 @@ export async function assertEmptyExperimentDirectory(path: string): Promise<void
 }
 
 export async function readExperimentFile(
-  path: string, maxBytes: number, integrityCode: "INPUT_INTEGRITY" | "STATE_INVALID" | "ARTIFACT_INTEGRITY" = "ARTIFACT_INTEGRITY"
+  path: string, maxBytes: number, integrityCode: "INPUT_INTEGRITY" | "STATE_INVALID" | "ARTIFACT_INTEGRITY" = "ARTIFACT_INTEGRITY",
+  checkpoint: () => void = () => {}
 ): Promise<string> {
-  await assertExperimentPath(path);
+  checkpoint();
+  await assertExperimentPath(path, false, checkpoint);
+  checkpoint();
   const before = await lstat(path);
+  checkpoint();
   requireExperimentStorage(before.isFile() && before.nlink === 1, "PATH_UNSAFE");
   requireExperimentStorage(before.size <= maxBytes, integrityCode);
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
+    checkpoint();
     const opened = await handle.stat();
+    checkpoint();
     requireExperimentStorage(opened.isFile() && opened.nlink === 1 && opened.dev === before.dev
       && opened.ino === before.ino, "PATH_UNSAFE");
     requireExperimentStorage(opened.size <= maxBytes, integrityCode);
@@ -97,16 +105,21 @@ export async function readExperimentFile(
     const buffer = Buffer.alloc(maxBytes + 1);
     let used = 0;
     while (used < buffer.length) {
+      checkpoint();
       const { bytesRead } = await handle.read(buffer, used, buffer.length - used, null);
+      checkpoint();
       if (bytesRead === 0) break;
       used += bytesRead;
     }
     requireExperimentStorage(used <= maxBytes, integrityCode);
     const after = await handle.stat();
+    checkpoint();
     requireExperimentStorage(after.size === used && after.mtimeMs === opened.mtimeMs, integrityCode);
-    try {
-      return new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, used));
-    } catch { throw new PaperExperimentStorageError(integrityCode); }
+    let text: string;
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, used)); }
+    catch { throw new PaperExperimentStorageError(integrityCode); }
+    checkpoint();
+    return text;
   } finally {
     await handle.close();
   }
