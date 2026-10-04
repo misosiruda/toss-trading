@@ -316,6 +316,9 @@ function OperationsLinks() {
   return <details className={styles.operationsMenu}>
     <summary><Icon name="settings" /><span>설정·운영</span></summary>
     <div className={styles.operationsLinks}>
+      <a href="/dashboard/strategy">전략·정책 모아보기</a>
+      <a href="/dashboard/data">데이터 모아보기</a>
+      <a href="/dashboard/settings">설정·운영 모아보기</a>
       {/* Keep this compatibility destination a document navigation after report/Back traversal. */}
       <a href="/dashboard/operations">기존 운영 요약</a>
       <Link href="/dashboard/portfolio">포트폴리오</Link>
