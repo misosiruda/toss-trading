@@ -1,3 +1,4 @@
+import { SAFE_CHILD_LOOKUP_PATTERN } from '@/lib/childLookupId';
 import Link from 'next/link';
 import {readRunProvenance,type ProvenanceObservation} from '@/lib/runProvenance';
 import {ProvenancePanel} from '../../ProvenancePanel';
@@ -32,8 +33,8 @@ export default async function ComparisonPage({searchParams}:{searchParams:Promis
     <main id="experiments-main" tabIndex={-1} className={`${shell.main} ${styles.main}`}>
       <header className={styles.header}><div><h1>실행 비교</h1><p>두 실행의 저장 관측을 확인해요. 지표의 동등성은 확인되지 않았어요.</p></div><Link className={styles.link} href="/dashboard">실험 목록</Link></header>
       <form action="/dashboard/experiments/compare" method="get" className={styles.selection} aria-label="비교 실행 선택">
-        <label>기준 실행 ID<input name="baseline" defaultValue={selection.baseline} required maxLength={256} pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,255}" autoComplete="off" spellCheck={false} /></label>
-        <label>후보 실행 ID<input name="candidate" defaultValue={selection.candidate} required maxLength={256} pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,255}" autoComplete="off" spellCheck={false} /></label>
+        <label>기준 실행 ID<input name="baseline" defaultValue={selection.baseline} required maxLength={256} pattern={SAFE_CHILD_LOOKUP_PATTERN} autoComplete="off" spellCheck={false} /></label>
+        <label>후보 실행 ID<input name="candidate" defaultValue={selection.candidate} required maxLength={256} pattern={SAFE_CHILD_LOOKUP_PATTERN} autoComplete="off" spellCheck={false} /></label>
         <button type="submit">두 실행 조회</button>
       </form>
       {selection.status !== 'valid' && <p role={selection.status === 'invalid' ? 'alert' : undefined} className={styles.selectionNotice}>{selection.reason}</p>}

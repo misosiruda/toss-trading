@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';import{test}from'node:test';import{readFile}from'node:fs/promises';import{stripTypeScriptTypes}from'node:module';
 const vm='data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(await readFile(new URL('../src/lib/dashboardViewModels.ts',import.meta.url),'utf8')));
-const source=(await readFile(new URL('../src/lib/runProvenance.ts',import.meta.url),'utf8')).replace("'./dashboardViewModels'",JSON.stringify(vm));
-const{projectRunProvenance,readRunProvenance,strictTimestamp,PROVENANCE_TRANSPORT_TIMEOUT_MS}=await import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(source)));
+const childLookupUrl='data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(await readFile(new URL('../src/lib/childLookupId.ts',import.meta.url),'utf8')));
+const source=(await readFile(new URL('../src/lib/runProvenance.ts',import.meta.url),'utf8')).replace("'./dashboardViewModels'",JSON.stringify(vm)).replace("'./childLookupId'",JSON.stringify(childLookupUrl));
+const{projectRunProvenance,readRunProvenance,validProvenanceId,strictTimestamp,PROVENANCE_TRANSPORT_TIMEOUT_MS}=await import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(source)));
 const at='2026-10-04T01:00:00.000Z',recorded=value=>({status:'recorded',source:'run_metadata',verification:'stored_observation',value}),absent=reason=>({status:'unavailable',reason,value:null});
 const fixture=()=>({mode:'paper_only',readOnly:true,contractVersion:'replay_provenance_read.v1',requestedRunId:'child',status:'partial',comparability:'unavailable',clone:'unavailable',fields:{'configuration.initialCashKrw':recorded(0),'configuration.executionPolicy.allowFractionalShares':recorded(false),'window.startAt':recorded('2026-01-01T00:00:00.000Z'),'research.configHash':{...recorded('sha256:'+'1'.repeat(64)),source:'research_manifest'},'batch.seed':absent('redacted_text'),'requestedConfig':absent('not_persisted'),'runtime.nodeVersion':absent('not_persisted')}});
+test('canonical leading-hyphen writer children retain exact UI identity and HTTP encoding',async t=>{
+  let requested='';t.mock.method(globalThis,'fetch',async url=>{requested=String(url);const id=new URL(requested).searchParams.get('runId');return new Response(JSON.stringify({...fixture(),requestedRunId:id}),{status:200});});
+  for(const id of ['-synthetic_run_000000_2026-01','--_run_000001_202601','-_run_999999_2026-12','-a_b-_run_1000000_2026-01']){assert.equal(validProvenanceId(id),true);const result=await readRunProvenance(id);assert.equal(result.status,'partial');assert.equal(result.requestedId,id);assert.equal(new URL(requested).searchParams.get('runId'),id);}
+});
+test('safe lookup namespace remains bounded and rejects path or terminal controls',()=>{
+  for(const id of ['-','--','-synthetic','-_run_1_2026-00','a'.repeat(256)])assert.equal(validProvenanceId(id),true,id);
+  for(const id of ['', '.', '..', '_child','../child','a/child','a%2Fchild','a?child','a#child','a'.repeat(257)])assert.equal(validProvenanceId(id),false,id);
+  for(const character of [0,9,10,13,32,92,0x2028,0xD55C])for(const id of ['child','-synthetic_run_000000_2026-01'])assert.equal(validProvenanceId(id+String.fromCharCode(character)),false);
+});
 const project=raw=>projectRunProvenance(raw,'child',at);
 test('preset and packet-prefix observations preserve redacted versus absent without revealing text',()=>{
   for(const key of ['configuration.strategyPreset','configuration.packetIdPrefix']){

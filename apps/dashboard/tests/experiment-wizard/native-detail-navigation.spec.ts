@@ -146,7 +146,12 @@ test('native document completes while old synthetic RSC response remains held',a
   let posts=0,id='',held=0,released=false;const events:string[]=[];let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
   page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith(createPath))posts++;if(r.isNavigationRequest()&&r.url().includes('/dashboard/lab/runs/'))events.push('document:'+held+':'+released);});
   page.on('requestfailed',r=>{if(r.headers().rsc==='1')events.push('rsc-requestfailed');});
-  await page.route('**/dashboard/lab/runs/**',async route=>{if(route.request().headers().rsc==='1'){held++;events.push('rsc-held');await gate;await route.abort().catch(()=>{});}else await route.continue();});
+  await page.route('**/dashboard/lab/runs/**',async route=>{
+    const request=route.request(),url=new URL(request.url());
+    const synthetic=request.headers().rsc==='1'&&url.pathname==='/dashboard/lab/runs/'+id&&url.searchParams.get('_rsc')==='synthetic-held-proof';
+    if(synthetic){held++;events.push('rsc-held');await gate;await route.abort().catch(()=>{});}
+    else{if(request.headers().rsc==='1')events.push('ordinary-prefetch:'+url.pathname+url.search);await route.continue();}
+  });
   await page.route(`**${createPath}`,async route=>{const response=await route.fetch();expect(response.status()).toBe(202);id=(await response.json()).simulationRunId;await page.evaluate(id=>{void fetch('/dashboard/lab/runs/'+id+'?_rsc=synthetic-held-proof',{headers:{RSC:'1'}}).catch(()=>{});},id);await expect.poll(()=>held).toBe(1);await route.fulfill({response});});
   try {
     await prepare(page,'native-held-rsc');const accepted=page.waitForResponse(r=>r.url().endsWith(createPath));await page.getByRole('button',{name:'paper \uC2E4\uD589 \uC2DC\uC791'}).click();expect((await accepted).status()).toBe(202);

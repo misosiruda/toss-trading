@@ -8,6 +8,19 @@ const evidenceUrl='data:text/javascript,'+encodeURIComponent(stripTypeScriptType
 const {buildRunEvidence,evidenceReference,evidenceReferences,readEvidenceSelection,isRunEvidence}=await import(evidenceUrl);
 const make=(scenario='normal')=>buildRunEvidence(evidenceArtifacts('child',scenario),'child');
 const row=(view,kind)=>view.buckets.find(b=>b.kind===kind).rows[0];
+
+test('syntax-corrupt omitted targets preserve unavailable while known references stay linked',()=>{
+  for(const truncated of [false,true]){
+    const raw=evidenceArtifacts('child');
+    raw.riskDecisionsStatus='degraded';raw.riskDecisionCorruptLineCount=1;
+    raw.trades[0].decisionId='syntax_corrupt_risk';
+    if(truncated)raw.totalRiskDecisionCount=120;
+    const view=buildRunEvidence(raw,'child');
+    assert.equal(evidenceReferences(view,row(view,'trade'))[1].state,'unavailable');
+    assert.equal(evidenceReference(view,'risk','risk_1').state,'linked');
+    assert.equal(evidenceReference(view,'packet','packet_1').state,'linked');
+  }
+});
 test('an invalid same-child record cannot erase a duplicate identity',()=>{const raw=evidenceArtifacts('child');raw.trades.push({...raw.trades[0],quantity:-1});raw.tradeCount=2;raw.totalTradeCount=2;const view=buildRunEvidence(raw,'child');assert.equal(view.buckets[3].invalid,1);assert.equal(view.buckets[3].duplicates,1);assert.equal(evidenceReference(view,'trade','trade_1').state,'ambiguous');assert.equal(isRunEvidence(view,'child'),true);});
 test('exact child projection retains explicit packet and trade-to-Risk references',()=>{const view=make();assert.equal(view.source,'bound');assert.equal(isRunEvidence(view,'child'),true);assert.equal(evidenceReference(view,'packet','packet_1').state,'linked');assert.deepEqual(evidenceReferences(view,row(view,'trade')).map(r=>[r.kind,r.id,r.state]),[['packet','packet_1','linked'],['risk','risk_1','linked']]);assert.equal(row(view,'decision').at,null);});
 test('different child and blocked artifacts cannot supply selectable records',()=>{for(const scenario of ['mismatch','blocked']){const view=make(scenario);assert.equal(view.source,scenario==='mismatch'?'mismatch':'blocked');assert.equal(view.buckets.flatMap(b=>b.rows).length,0);assert.equal(evidenceReference(view,'packet','packet_1').state,'unavailable');}});

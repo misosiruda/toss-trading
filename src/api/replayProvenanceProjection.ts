@@ -19,8 +19,9 @@ export interface ReplayProvenance {
 }
 export const provenanceRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+// 조회 문법은 저장 record를 승인하지 않습니다. producer의 월/인덱스 형식은 여기서 해석하지 않습니다.
 export const validProvenanceId = (value: unknown): value is string =>
-  typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(value);
+  typeof value === "string" && /^[A-Za-z0-9-][A-Za-z0-9_.-]{0,255}(?![\s\S])/.test(value);
 const absent = (reason: ProvenanceReason): ProvenanceField => ({ status: "unavailable", reason, value: null });
 const descriptors: Array<{ path: string; schema: ZodType }> = [];
 function add(prefix: string, shapes: Record<string, ZodType>, keys: string[]) {
