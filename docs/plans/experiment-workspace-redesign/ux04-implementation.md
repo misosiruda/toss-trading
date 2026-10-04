@@ -75,6 +75,10 @@ browser: production desktop1440/1024/mobile390, summary↔record URL·Back·relo
 최종 후보는 diff/check:review 및 환경이 지원하는 check:merge와 dashboard lint/unit/type/build를
 실행하고 이전 head 증거와 합산하지 않는다. 초기 Ready 자동 review는 한 번만 수행한다.
 
+## 같은 run의 실패한 server replacement
+
+summary/record 이동으로 새 initial이 offline 또는 invalid가 되어도 같은 요청 run ID의 마지막 정상 snapshot은 유지한다. 새 실패 상태와 최근 서버 관측 시각은 현재 snapshot에서 표시하고, 보존한 자료의 GET 관측 시각은 이전 정상 snapshot의 시각으로 유지한다. 요청 run ID가 바뀌면 이전 자료를 초기화한다. replacement는 이전 GET lifecycle을 dispose하여 늦은 성공/실패가 새 관측을 덮지 못하게 한다. 합성 production 회귀는 offline/invalid에서 자료·선택 탭·keyboard focus·시각 보존, 보류된 이전 GET 폐기와 자동 조회 중단, 다른 run의 실패/정상 이동 시 identity 분리를 검증한다.
+
 ## 독립 리뷰 회귀 보완
 
 - Tab-only URL 이동은 링크 DOM을 유지한다. run ID만 workspace identity로 사용하고 새 fetchedAt의 관측 상태·polling lifecycle을 갱신한다. 키보드 Enter 및 Back/Forward의 포커스를 검사한다.

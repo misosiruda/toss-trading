@@ -1,6 +1,47 @@
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 const root='/dashboard/lab/runs/';
+
+for(const failure of ['offline','invalid'])test('failed same-run tab replacement preserves last good and isolates different run: '+failure,async({page,request},info)=>{
+  await page.clock.install();
+  const id='fixture_running_replacement_'+failure+'_'+info.project.name,base=root+id;
+  const control=async(status:string)=>{const response=await request.get('http://127.0.0.1:8793/__replacement?id='+encodeURIComponent(id)+'&status='+status,{headers:{'x-ux04-test-runner':'ux04-fixture-v1'}});expect(response.status()).toBe(200);};
+  await page.goto(base);await expect(page.getByText('선택 child: running',{exact:false})).toBeVisible();
+  const successTime=await page.getByText('GET 관측 시각:',{exact:false}).textContent();
+  let release!:()=>void,ready!:()=>void,handled!:()=>void;
+  const gate=new Promise<void>(r=>release=r),entered=new Promise<void>(r=>ready=r),finished=new Promise<void>(r=>handled=r);
+  const reads:string[]=[];page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.url());});
+  await page.route('**/snapshot',async route=>{
+    const response=await route.fetch(),value=await response.json();ready();await gate;
+    try{await route.fulfill({response,json:value});}catch(error){if(route.request().failure()?.errorText!=='net::ERR_ABORTED')throw error;}finally{handled();}
+  });
+  try{
+    await page.getByRole('button',{name:'같은 ID 새로 조회 (GET)'}).click();await entered;
+    await control(failure);
+    const record=page.locator('a[href="'+base+'?tab=record"]');await record.focus();await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(base+'?tab=record');
+    await expect(page.getByText('조회: '+failure,{exact:false})).toBeVisible();
+    await expect(page.getByRole('status')).toContainText('마지막 정상 조회 자료');
+    await expect(page.getByText('선택 child: running',{exact:false})).toBeVisible();
+    await expect(page.getByRole('heading',{name:'선택 실행 기록',exact:true})).toBeVisible();
+    await expect(page.getByText('GET 관측 시각:',{exact:false})).toHaveText(successTime!);
+    const observation=await page.getByText('최근 서버 관측 시각:',{exact:false}).textContent();
+    expect(observation!.split(': ').slice(1).join(': ')).not.toBe(successTime!.split(': ').slice(1).join(': '));
+    release();await finished;await page.evaluate(()=>new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r()))));
+    await expect(page.getByText('조회: '+failure,{exact:false})).toBeVisible();
+    await expect(page.getByText('최근 서버 관측 시각:',{exact:false})).toHaveText(observation!);
+    await expect(record).toHaveAttribute('aria-current','page');await expect(record).toBeFocused();
+    await page.clock.fastForward(20_001);expect(reads).toHaveLength(1);
+    await page.goto(root+'fixture_offline?tab=record');
+    await expect(page.getByText('조회: offline',{exact:false})).toBeVisible();
+    await expect(page.getByText('선택 child: running',{exact:false})).toHaveCount(0);
+    await expect(page.getByRole('heading',{name:'선택 실행 기록',exact:true})).toHaveCount(0);
+    await expect(page.getByRole('status')).not.toContainText('마지막 정상 조회 자료');
+    await page.goto(root+'fixture_completed?tab=record');
+    await expect(page.getByText('선택 child: completed',{exact:false})).toBeVisible();
+    await expect(page.getByRole('status')).toHaveCount(0);
+  }finally{release();await control('ok');}
+});
 test.afterEach(async({request})=>{
   const response=await request.get('http://127.0.0.1:8793/__requests',{headers:{'x-ux04-test-runner':'ux04-fixture-v1'}});
   expect(response.status()).toBe(200);

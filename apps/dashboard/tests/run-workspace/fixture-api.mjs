@@ -3,6 +3,7 @@
 import { createServer } from 'node:http';
 const host='127.0.0.1', port=8793, marker='ux04-fixture-v1';
 const requests=[];
+const replacementFailures=new Map();
 const start='2026-10-04T00:00:00.000Z', end='2026-10-04T00:01:00.000Z';
 function run(runId,status,batchId='fixture_batch') {
   return {mode:'paper_only',runId,batchId,status,runIndex:0,startedAt:start,completedAt:status.startsWith('completed')?end:null,failedAt:status==='failed'?end:null,skippedAt:status==='skipped'?end:null,
@@ -23,6 +24,12 @@ function send(response,status,data) {response.writeHead(status,{'content-type':'
 const server=createServer((request,response)=>{
   const url=new URL(request.url,`http://${host}:${port}`);
   if(request.method==='GET'&&url.pathname==='/health')return send(response,200,{fixture:marker});
+  if(url.pathname==='/__replacement'){
+    const id=url.searchParams.get('id'),status=url.searchParams.get('status');
+    if(request.method!=='GET'||request.headers['x-ux04-test-runner']!==marker||request.headers.origin||request.headers['sec-fetch-mode']||
+      !id?.startsWith('fixture_running_replacement_')||!['ok','offline','invalid'].includes(status))return send(response,403,{error:'test_runner_required'});
+    replacementFailures.set(id,status);return send(response,200,{id,status});
+  }
   if(url.pathname==='/__requests') {
     if(request.method!=='GET'||request.headers['x-ux04-test-runner']!==marker||request.headers.origin||request.headers['sec-fetch-mode'])return send(response,403,{error:'test_runner_required'});
     return send(response,200,{requests});
@@ -30,8 +37,10 @@ const server=createServer((request,response)=>{
   requests.push({method:request.method,path:url.pathname,id:url.searchParams.get('runId')});
   if(request.method!=='GET'||url.pathname!=='/batch/replay/runs')return send(response,404,{error:'fixture_read_only'});
   const id=url.searchParams.get('runId')??'fixture_completed';
+  if(replacementFailures.get(id)==='offline')return send(response,503,{error:'synthetic_replacement_offline'});
   if(id==='fixture_offline')return send(response,503,{error:'fixture_offline'});
   const data=payload(id);
+  if(replacementFailures.get(id)==='invalid')data.mode='invalid';
   if((id.startsWith('fixture_transition_')&&requests.filter(r=>r.id===id).length>1)||(id.startsWith('fixture_race_')&&requests.filter(r=>r.id===id).length>2)){data.batchStatus='completed';data.activeRun=null;data.runs=[run(id,'completed')];data.selectedRun=data.runs[0];data.status='ok';data.latestRunArtifacts.runStatus='completed';}
   send(response,200,data);
 });
