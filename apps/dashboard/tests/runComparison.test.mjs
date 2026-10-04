@@ -10,6 +10,14 @@ source=source.replace("'./dashboardViewModels'",JSON.stringify(vmUrl)).replace("
 const {readComparisonSelection,projectComparisonObservation,readComparisonObservation,readComparisonPage}=await import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(source)));
 const at='2026-10-04T01:00:00.000Z';
 const project=(value)=>projectComparisonObservation(value,'child',at);
+test('strict offset dates normalize to UTC without accepting invalid calendars or free text',()=>{
+  for(const [input,output] of [['2026-06-11T09:00:00+09:00','2026-06-11T00:00:00.000Z'],['2026-01-01T00:00:00-05:00','2026-01-01T05:00:00.000Z'],['2024-02-29T23:59:59.123+00:00','2024-02-29T23:59:59.123Z']]){
+    const raw=evidencePayload('child');raw.runs[0].startedAt=input;raw.selectedRun.startedAt=input;assert.equal(project(raw).startedAt,output);
+  }
+  for(const input of ['2026-02-29T00:00:00+09:00','2026-02-31T00:00:00-05:00','2026-01-01T24:00:00Z','2026-01-01T00:00:00+24:00','2026-01-01T00:00:00+09:60','2026-01-01 (/private/token)','2026-01-01T00:00:00Z (private)']){
+    const raw=evidencePayload('child');raw.runs[0].startedAt=input;raw.selectedRun.startedAt=input;assert.equal(project(raw).startedAt,null);
+  }
+});
 
 test('selection requires two different exact IDs and rejects duplicate parameters',()=>{
   assert.equal(readComparisonSelection({}).status,'empty');

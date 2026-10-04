@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, mkdir, writeFile, readFile, stat, link, symlink, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createLocalOperationsServer } from "./localOperationsServer.js";
 import {historicalReplayRunConfigurationSchema} from '../replay/historicalReplayAuditLog.js';
@@ -10,8 +10,8 @@ import {isStoredProvenanceTimestamp} from './replayProvenanceProjection.js';
 import { readReplayProvenance, readReplayProvenanceRequest, REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_LIMITS } from "./replayProvenanceReader.js";
 import { BATCH_REPLAY_MANIFEST_FILE_NAME as manifestName, BATCH_REPLAY_RUNS_FILE_NAME as runsName, HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME as metadataName, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME as researchName } from "../storage/artifactPaths.js";
 const hash=`sha256:${"1".repeat(64)}`;
-async function fixture() {
-  const root=await mkdtemp(join(tmpdir(),"provenance-fixture-")),storage=join(root,"paper"),batchDir=join(root,"batch-replay","fixture_batch"),childDir=join(batchDir,"runs","child");
+async function fixture(parent=tmpdir()) {
+  const root=await mkdtemp(join(parent,"provenance-fixture-")),storage=join(root,"paper"),batchDir=join(root,"batch-replay","fixture_batch"),childDir=join(batchDir,"runs","child");
   await mkdir(storage);await mkdir(childDir,{recursive:true});
   const batch={mode:"paper_only",batchId:"fixture_batch",status:"completed",seed:"synthetic_private_seed",activeRun:null};
   const run={mode:"paper_only",batchId:"fixture_batch",runId:"child",runIndex:0,status:"completed",storageBaseDir:childDir,runSeed:"synthetic_private_seed:0"};
@@ -21,6 +21,14 @@ async function fixture() {
   const save=async()=>{await Promise.all([writeFile(paths.manifest,JSON.stringify(batch)),writeFile(paths.runs,JSON.stringify(run)+"\n"),writeFile(paths.metadata,JSON.stringify(metadata)),writeFile(paths.research,JSON.stringify(research))]);};
   await save();return {root,storage,batchDir,childDir,batch,run,metadata,research,paths,save};
 }
+test("contained project-relative CLI run paths preserve identity and reject traversal or another batch",async()=>{
+  const parent=join(process.cwd(),"data");await mkdir(parent,{recursive:true});
+  const f=await fixture(parent);f.run.storageBaseDir=relative(process.cwd(),f.childDir);await f.save();
+  const result=await readReplayProvenance(f.storage,"child");assert.equal(result.status,"partial");assert.equal(result.fields["configuration.initialCashKrw"]?.value,0);
+  assert.doesNotMatch(JSON.stringify(result),/storageBaseDir|provenance-fixture-/);
+  for(const path of [relative(process.cwd(),f.storage),"../outside","data/nonexistent/runs/child"]){f.run.storageBaseDir=path;await f.save();assert.equal((await readReplayProvenance(f.storage,"child")).status,"blocked");}
+  f.run.storageBaseDir=relative(process.cwd(),f.childDir);f.metadata.identity.runId="other";await f.save();assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
+});
 test("stored scalar/hash observations remain partial, absent defaults are not fabricated and free text stays redacted",async()=>{
   const f=await fixture(),result=await readReplayProvenance(f.storage,"child");
   assert.equal(result.status,"partial");assert.deepEqual(result.fields["configuration.initialCashKrw"],{status:"recorded",source:"run_metadata",verification:"stored_observation",value:0});
