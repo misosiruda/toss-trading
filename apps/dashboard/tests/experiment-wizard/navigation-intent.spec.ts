@@ -1,12 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
-for(const mode of ['back-leave','step-back','ctrl-click'])test('pending create navigation intent: '+mode,async({page,context},info)=>{
+for(const mode of ['back-leave','step-back','ctrl-click'])test('pending create navigation intent: '+mode,async({page,context,request},info)=>{
  const fixture=JSON.parse(readFileSync(process.env.EXPERIMENT_WIZARD_FIXTURE_FILE ?? ".e2e-data/experiment-wizard/fixture.json", "utf8"));
  const events: Array<Record<string, unknown>>=[];const mark=(name: string,data: Record<string, unknown>={})=>events.push({name,at:new Date().toISOString(),url:page.url(),...data});
  let releaseCreate!: () => void, releaseList!: () => void, listStarted!: () => void;
  let acceptedReady!: (value: { status: number; id: string }) => void;
  const createGate=new Promise<void>(r=>{ releaseCreate=r; }),listGate=new Promise<void>(r=>{ releaseList=r; });
  const acceptedPromise=new Promise<{ status: number; id: string }>(r=>{ acceptedReady=r; }),listPromise=new Promise<void>(r=>{ listStarted=r; });
+ let admittedId: string | undefined;
  let posts=0;let popup: Page | undefined;
  let persistedId='';
  await page.exposeBinding('__intentAdmissionObserved',(_source,value)=>{if(typeof value==='string'&&/^paper_sim_[A-Za-z0-9_.-]+$/.test(value))persistedId=value;});
@@ -19,6 +20,7 @@ for(const mode of ['back-leave','step-back','ctrl-click'])test('pending create n
  await page.route('**/simulations/create',async route=>{
   const response=await route.fetch();const accepted=await response.json();
   mark('backend-accepted',{status:response.status(),id:accepted.simulationRunId});
+  if(response.status()===202)admittedId=accepted.simulationRunId;
   acceptedReady({status:response.status(),id:accepted.simulationRunId});
   await createGate;await route.fulfill({response});mark('create-released');
  });
@@ -87,5 +89,10 @@ for(const mode of ['back-leave','step-back','ctrl-click'])test('pending create n
  }finally{
   releaseCreate();releaseList();if(popup)await popup.close();mark('final',{posts});
   await info.attach('intent-order',{body:JSON.stringify(events,null,2),contentType:'application/json'});
+  // A 202 is admission, not runner completion. Leave the shared fixture idle for the next case.
+  if(admittedId)await expect.poll(async()=>{
+   const response=await request.get('http://127.0.0.1:8791/batch/replay/runs?runId='+encodeURIComponent(admittedId!));
+   return (await response.json()).batchStatus;
+  }).toMatch(/^(completed|completed_with_failures|failed|skipped)$/);
  }
 });
