@@ -6,22 +6,97 @@ import { syncBuiltinESMExports } from "node:module";
 import type { Dir } from "node:fs";
 import { mkdtemp, mkdir, writeFile, readFile, stat, link, symlink, readdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createLocalOperationsServer } from "./localOperationsServer.js";
 import { runHistoricalBatchReplay } from "../workflows/historicalBatchReplayWorkflow.js";
+import { createStoragePaths, FileHistoricalMarketSnapshotStore } from "../storage/repositories.js";
+import type { MarketPacket } from "../domain/schemas.js";
+import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import {historicalReplayRunConfigurationSchema} from '../replay/historicalReplayAuditLog.js';
 import {isStoredProvenanceTimestamp} from './replayProvenanceProjection.js';
 import { readReplayProvenance, readReplayProvenanceRequest, provenanceReadBudgetMs, REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_LIMITS } from "./replayProvenanceReader.js";
 import { BATCH_REPLAY_MANIFEST_FILE_NAME as manifestName, BATCH_REPLAY_RUNS_FILE_NAME as runsName, HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME as metadataName, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME as researchName } from "../storage/artifactPaths.js";
 const hash=`sha256:${"1".repeat(64)}`;
-test("actual synthetic writer completed skipped index is partial, but whole-row deletion is invalid",async()=>{
-  const root=await mkdtemp(join(tmpdir(),"provenance-writer-"));const storage=join(root,"paper"),source=join(root,"source");await mkdir(storage);await mkdir(source);
-  let providers=0;
-  const result=await runHistoricalBatchReplay({sourceDataDir:source,outputBaseDir:join(root,"batch-replay"),batchId:" synthetic writer: / \uD55C\uAE00 ",seed:"s".repeat(4097),runCount:2,rangeStart:new Date("2026-01-01T00:00:00+09:00"),rangeEnd:new Date("2026-01-31T23:59:59.999+09:00"),generatedAt:new Date("2026-02-01T00:00:00Z"),minWindowSnapshots:1,decisionProviderFactory:()=>{providers++;throw Error("provider must never run");}});
-  const lines=(await readFile(result.runsPath,"utf8")).trim().split("\n");assert.equal(lines.length,2);
-  for(const line of lines){const row=JSON.parse(line);assert.equal(row.batchId,"synthetic writer: / \uD55C\uAE00");assert.equal(row.status,"skipped");const observed=await readReplayProvenance(storage,row.runId);assert.equal(observed.status,"partial");assert.doesNotMatch(JSON.stringify(observed),/synthetic writer|ssssssssss/);}
-  assert.equal(providers,0);await writeFile(result.runsPath,lines[0]+"\n");assert.equal((await readReplayProvenance(storage,JSON.parse(lines[0]!).runId)).status,"invalid");
+test("legacy completed activeRun omission is compatible but cannot hide an incomplete index",async()=>{
+  const f=await fixture();const legacy={...f.batch} as Record<string,unknown>;delete legacy.activeRun;await writeFile(f.paths.manifest,JSON.stringify(legacy));
+  assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
+  const other=join(f.root,"batch-replay","legacy_other");await mkdir(other);await writeFile(join(other,manifestName),JSON.stringify({...legacy,batchId:"legacy_other"}));await writeFile(join(other,runsName),JSON.stringify({...f.run,batchId:"legacy_other",runId:"legacy_child",storageBaseDir:join(other,"runs","legacy_child")}));
+  assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");assert.equal((await readReplayProvenance(f.storage,"legacy_child")).status,"partial");
+  await writeFile(join(other,manifestName),JSON.stringify({...legacy,batchId:"legacy_other",status:"running",completedAt:null,completedCount:0,runCount:2}));
+  assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");assert.equal((await readReplayProvenance(f.storage,"unindexed_legacy_active")).status,"missing");
+  await writeFile(join(other,manifestName),JSON.stringify({...legacy,batchId:"legacy_other"}));
+  await writeFile(join(other,runsName),"");assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
+});
+test("running active must match a terminal row or be exactly the next index of its prefix",async()=>{
+  const f=await fixture();Object.assign(f.batch,{status:"running",completedAt:null,completedCount:0,runCount:4});await f.save();
+  for(const terminalCount of [0,1,2]) {
+    const rows=Array.from({length:terminalCount},(_,i)=>({...f.run,runId:i===0?"child":`terminal_${i}`,runIndex:i}));await writeFile(f.paths.runs,rows.map(row=>JSON.stringify(row)).join("\n"));
+    for(const index of [terminalCount,terminalCount+1]) {
+      Object.assign(f.batch,{activeRun:{...f.run,runId:"active_child",runIndex:index,storageBaseDir:join(f.batchDir,"runs","active_child")}});await writeFile(f.paths.manifest,JSON.stringify(f.batch));
+      for(const id of ["active_child","child","absent"])assert.equal((await readReplayProvenance(f.storage,id)).status,index>terminalCount?"invalid":id==="active_child" || (id==="child"&&terminalCount>0)?"partial":"missing");
+    }
+  }
+  await f.save();
+  for(const change of [{runSeed:"contradictory_seed"},{startedAt:"2026-01-01T00:00:02.000Z"}]){Object.assign(f.batch,{activeRun:{...f.run,...change}});await writeFile(f.paths.manifest,JSON.stringify(f.batch));assert.equal((await readReplayProvenance(f.storage,"child")).status,"ambiguous");}
+});
+async function writerFixture(batchId:string,sharedRoot?:string) {
+  const root=sharedRoot??await mkdtemp(join(tmpdir(),"provenance-writer-"));const storage=join(root,"paper"),source=join(root,"source"),outputBaseDir=join(root,"batch-replay");
+  await mkdir(storage,{recursive:true});await mkdir(source,{recursive:true});let providers=0;
+  const result=await runHistoricalBatchReplay({sourceDataDir:source,outputBaseDir,batchId,seed:"s".repeat(4097),runCount:2,rangeStart:new Date("2026-01-01T00:00:00+09:00"),rangeEnd:new Date("2026-01-31T23:59:59.999+09:00"),generatedAt:new Date("2026-02-01T00:00:00Z"),minWindowSnapshots:1,decisionProviderFactory:()=>{providers++;throw Error("provider must never run");}});
+  const rows=(await readFile(result.runsPath,"utf8")).trim().split("\n").map(line=>JSON.parse(line) as Record<string,unknown>);const manifest=JSON.parse(await readFile(result.manifestPath,"utf8")) as Record<string,unknown>;
+  assert.equal(providers,0);assert.equal(rows.length,2);assert.equal(dirname(result.outputDir),outputBaseDir);
+  for(const row of rows){assert.equal(row.batchId,batchId.trim());assert.equal(row.status,"skipped");assert.equal(dirname(String(row.storageBaseDir)),join(result.outputDir,"runs"));}
+  const writeIndex=async(values:unknown[])=>writeFile(result.runsPath,values.map(row=>JSON.stringify(row)).join("\n")+"\n");
+  return {root,storage,result,rows,manifest,writeIndex};
+}
+test("actual writer relationship matrix accepts raw IDs and rejects corrupt unrelated rows without path escape or disclosure",async()=>{
+  for(const batchId of [" synthetic writer ","synthetic:writer / segment"," \uD55C\uAE00 \uC2E4\uD5D8 ","../synthetic:../outside"]) {
+    const f=await writerFixture(batchId),first=f.rows[0]!,other=f.rows[1]!;
+    for(const row of f.rows){const observed=await readReplayProvenance(f.storage,String(row.runId));assert.equal(observed.status,"partial");assert.equal(observed.requestedRunId,row.runId);assert.ok(!JSON.stringify(observed).includes(batchId.trim()));assert.ok(!JSON.stringify(observed).includes(f.root));assert.doesNotMatch(JSON.stringify(observed),/ssssssssss/);}
+    assert.equal((await readReplayProvenance(f.storage,"unrelated_child")).status,"missing");
+    const cases:Array<{rows:unknown[];status:string}>=[
+      {rows:[first,{}],status:"invalid"},{rows:[first,{runId:"other"}],status:"invalid"},
+      {rows:[first,{...other,batchId:"wrong_batch"}],status:"invalid"},{rows:[first,{...other,mode:"live"}],status:"invalid"},
+      {rows:[first,{...other,runId:first.runId}],status:"ambiguous"},{rows:[first,{...other,runIndex:first.runIndex}],status:"ambiguous"},
+      {rows:[first,{...other,runIndex:2}],status:"invalid"},{rows:[first],status:"invalid"},
+      {rows:[first,{...other,storageBaseDir:join(f.root,"outside_missing")}],status:"blocked"},
+      {rows:[first,{...other,storageBaseDir:join(f.result.outputDir,"runs")+sep+".."+sep+"escape"}],status:"blocked"}
+    ];
+    for(const item of cases){await f.writeIndex(item.rows);for(const requested of [String(first.runId),"unrelated_child"]){const observed=await readReplayProvenance(f.storage,requested);assert.equal(observed.status,item.status);assert.ok(Object.values(observed.fields).every(field=>field.status==="unavailable"));assert.ok(!JSON.stringify(observed).includes(f.root));}}
+    await f.writeIndex(f.rows);const legacy={...f.manifest};delete legacy.activeRun;await writeFile(f.result.manifestPath,JSON.stringify(legacy));assert.equal((await readReplayProvenance(f.storage,String(other.runId))).status,"partial");
+    await writeFile(f.result.manifestPath,JSON.stringify({...f.manifest,status:"running",completedAt:null,completedCount:0,skippedCount:0,failedCount:0}));assert.equal((await readReplayProvenance(f.storage,String(other.runId))).status,"partial");
+    await writeFile(f.result.manifestPath,JSON.stringify({...f.manifest,skippedCount:1}));assert.equal((await readReplayProvenance(f.storage,String(first.runId))).status,"invalid");
+    await f.writeIndex(f.rows.map(row=>({...row,batchId:"different:batch"})));await writeFile(f.result.manifestPath,JSON.stringify({...f.manifest,batchId:"different:batch"}));assert.equal((await readReplayProvenance(f.storage,String(first.runId))).status,"invalid");
+  }
+});
+test("actual writer batches bind different children and reject a duplicate child across batches",async()=>{
+  const first=await writerFixture("first:batch"),other=await writerFixture("other / batch",first.root);
+  for(const row of [...first.rows,...other.rows])assert.equal((await readReplayProvenance(first.storage,String(row.runId))).status,"partial");
+  await other.writeIndex([{...other.rows[0],runId:first.rows[0]!.runId},other.rows[1]]);
+  const observed=await readReplayProvenance(first.storage,String(first.rows[0]!.runId));assert.equal(observed.status,"ambiguous");assert.ok(!JSON.stringify(observed).includes(first.root));
+  const upper=await writerFixture("CASE / batch"),lower=await writerFixture("case:batch",upper.root);
+  for(const row of lower.rows)assert.equal((await readReplayProvenance(lower.storage,String(row.runId))).status,"partial");
+});
+test("actual writer running, completed, completed-with-failures and failed contracts remain readable with synthetic providers",async()=>{
+  for(const kind of ["completed","completed_with_failures","failed"] as const) {
+    const root=await mkdtemp(join(tmpdir(),"provenance-terminal-")),storage=join(root,"paper"),source=join(root,"source");await mkdir(storage);await mkdir(source);
+    const store=new FileHistoricalMarketSnapshotStore(createStoragePaths(source).historicalMarketSnapshotsPath);
+    for(const day of [3,10]){const at=`2026-02-${String(day).padStart(2,"0")}T09:00:00+09:00`;await store.append({snapshotId:`synthetic_${day}`,market:"KR",symbol:"005930",observedAt:at,interval:"1d",lastPriceKrw:70_000,volume:100_000,sourceRefs:[`fixture:synthetic_${day}`],createdAt:at});}
+    let activeReads=0;
+    const result=await runHistoricalBatchReplay({sourceDataDir:source,outputBaseDir:join(root,"batch-replay"),batchId:`terminal ${kind}: / \uD55C`,seed:"synthetic_seed",runCount:1,rangeStart:new Date("2026-02-01T00:00:00+09:00"),rangeEnd:new Date("2026-02-28T23:59:59.999+09:00"),generatedAt:new Date("2026-03-01T00:00:00Z"),stepSeconds:604_800,maxDecisionCalls:1,maxSnapshotAgeSeconds:31*86400,minWindowSnapshots:1,decisionProviderFactory:context=>{
+      if(kind==="failed")throw Error("synthetic_private_factory_failure");
+      return {decide:async(packet:MarketPacket):Promise<CodexCliDecisionResult>=>{
+        const active=await readReplayProvenance(storage,context.runId);assert.equal(active.status,"partial");assert.equal(active.requestedRunId,context.runId);activeReads++;
+        if(kind==="completed_with_failures")return {attempted:true,decision:null,failure:{code:"AI_DECISION_FAILED",reason:"synthetic_private_provider_failure"},command:null};
+        const dataRef=packet.candidates[0]?.sourceRefs[0]??"fixture:synthetic_3";
+        return {attempted:true,failure:null,command:null,decision:{packetId:packet.packetId,summary:"Synthetic hold only",decisions:[{market:"KR",symbol:"005930",action:"VIRTUAL_HOLD",confidence:0.5,budgetKrw:0,thesis:"Synthetic hold only",riskFactors:["Synthetic fixture"],dataRefs:[dataRef],claimSupport:[{claim:"Synthetic hold only",dataRefs:[dataRef]}],expiresAt:packet.expiresAt}]}};
+      }};
+    }});
+    const row=JSON.parse((await readFile(result.runsPath,"utf8")).trim()) as Record<string,unknown>;assert.equal(row.status,kind);assert.equal(activeReads,kind==="failed"?0:1);
+    const observed=await readReplayProvenance(storage,String(row.runId));assert.equal(observed.status,"partial");assert.doesNotMatch(JSON.stringify(observed),/synthetic_private|provenance-terminal-/);
+    const manifest=JSON.parse(await readFile(result.manifestPath,"utf8"));delete manifest.activeRun;await writeFile(result.manifestPath,JSON.stringify(manifest));assert.equal((await readReplayProvenance(storage,String(row.runId))).status,"partial");
+  }
 });
 test("every row identity and terminal contract is validated before requested-ID filtering",async()=>{
   const changes:Record<string,unknown>[]=[{}, {runId:"other"}, {mode:"live"}, {batchId:"wrong"}, {runId:"../bad"}, {runId:42}, {runIndex:-1}, {runIndex:1.5}, {runIndex:2}, {runSeed:null}, {storageBaseDir:null}, {status:"running"}, {status:["completed"],completedAt:null}, {status:42}, {startedAt:"garbage"}, {completedAt:null}, {skippedAt:"2026-01-01T00:00:01.000Z"}];
