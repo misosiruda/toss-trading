@@ -4,9 +4,9 @@
 
 ## 구현 경계
 
-상세 canonical exact ID와 비교 baseline/candidate 각각에 server no-store GET 1회를 추가한다. 상태·근거 읽기와 병렬로 수행하고 각 조회는 기존 2초 한도 안에서 실패를 분리한다. invalid ID와 invalid comparison 선택은 provenance GET을 시작하지 않는다. 기존 상세 snapshot polling에는 조건을 섞지 않으며 문서 조회 관측 시각을 따로 표시한다. 페이지 reload·새 tab 문서 조회는 새 GET을 수행한다.
+상세 canonical exact ID와 비교 baseline/candidate 각각에 server no-store GET 1회를 추가한다. 상태·근거 읽기와 병렬로 수행하고 실패를 분리한다. provenance transport의 기존 2초 한도를 유지하고 backend 읽기·파싱·projection은 최대 1.5초로 제한한다. 나머지 0.5초는 고정 whitelist 응답의 JSON 직렬화·전달을 위한 정책상 여유이며 모든 네트워크 지연의 보장은 아니다. adapter는 performance.now 기반 deadline에서 남은 밀리초를 x-provenance-budget-ms header로 전달한다. backend는 이 값을 2초 이하로 제한하고 여유를 뺀 더 짧은 읽기 예산만 허용한다. 서로 다른 process의 절대 monotonic 시각은 전달하지 않는다. 실제 네트워크가 남은 여유를 넘으면 기존 offline 상태가 유지된다. runs GET의 기존 2초·PR802 생성/이동 시험 timeout·worker/retry/assertion은 변경하지 않는다. invalid ID와 invalid comparison 선택은 provenance GET을 시작하지 않는다. 기존 상세 snapshot polling에는 조건을 섞지 않으며 문서 조회 관측 시각을 따로 표시한다. 페이지 reload·새 tab 문서 조회는 새 GET을 수행한다.
 
-기간, 실행 설정, 비용·체결, Risk·배분·종료, 저장 hash, 복원되지 않은 입력/runtime을 native details/summary로 분리한다. 값과 unavailable 사유를 같은 field 행에 표시한다. 저장된 0/false/null과 누락을 구별하며 absent field에 default를 넣지 않는다. source와 stored observation을 표시하고 hash는 현재 자료·코드·정책과 미검증이라고 설명한다. 전체 입력/runtime 복원, 지표 동등성·순위·clone은 계속 unavailable이다.
+숨긴 실행 설정의 strategyPreset·packetIdPrefix는 값 없이 redacted_text와 not_present 등 이유만 표시한다. 기간, 실행 설정, 비용·체결, Risk·배분·종료, 저장 hash, 복원되지 않은 입력/runtime을 native details/summary로 분리한다. 값과 unavailable 사유를 같은 field 행에 표시한다. 저장된 0/false/null과 누락을 구별하며 absent field에 default를 넣지 않는다. source와 stored observation을 표시하고 hash는 현재 자료·코드·정책과 미검증이라고 설명한다. 전체 입력/runtime 복원, 지표 동등성·순위·clone은 계속 unavailable이다.
 
 client display model은 알려진 field whitelist만 전달한다. exact requested identity와 DTO version/mode/readOnly를 대조하고 임의 field/error/path를 전달하지 않는다. 6개 timestamp는 엄격한 문법·calendar guard로 Date.parse 자유 문자열을 표시하지 않는다. 원래 입력/runtime/seed의 recorded claim도 unavailable 처리한다. API 날짜·배열 보안 수정 후보와 별도로 이 frontend 방어를 갖춘다.
 

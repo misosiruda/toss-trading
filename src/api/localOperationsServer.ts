@@ -12,7 +12,7 @@ import {
   writeLegacyDashboardRedirect
 } from "./localOperationsDashboardAssets.js";
 import { writeJson } from "./localOperationsResponse.js";
-import { REPLAY_PROVENANCE_ROUTE, readReplayProvenanceRequest } from "./replayProvenanceReader.js";
+import { REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_BUDGET_HEADER, readReplayProvenanceRequest } from "./replayProvenanceReader.js";
 import { emptyReplayProvenance } from "./replayProvenanceProjection.js";
 import { routeRequest } from "./localOperationsRouting.js";
 import {
@@ -107,7 +107,7 @@ async function handleRequest(
     if (url.pathname === REPLAY_PROVENANCE_ROUTE) {
       if (request.method !== "GET") { writeJson(response,405,{error:"method_not_allowed",readOnly:true});return; }
       try {
-        const result=await readReplayProvenanceRequest(url,options.storageBaseDir);
+        const result=await readReplayProvenanceRequest(url,options.storageBaseDir,request.headers[REPLAY_PROVENANCE_BUDGET_HEADER]);
         writeJson(response,result.statusCode,result.payload);
       } catch { writeJson(response,500,emptyReplayProvenance(null,"invalid","invalid")); }
       return;

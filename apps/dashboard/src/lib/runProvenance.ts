@@ -8,6 +8,7 @@ export type ProvenanceSource = ApiSource;
 export type ObservedField = ApiField;
 export interface ProvenanceObservation {requestedId:string;fetchedAt:string;status:ApiObservation['status']|'offline';fields:Record<string,ObservedField>;comparability:'unavailable';clone:'unavailable'}
 export const provenanceFieldGroups = {
+  '숨긴 실행 설정': ['configuration.strategyPreset','configuration.packetIdPrefix'],
   '실행 자료 설정': ['configuration.packetExpiresInSeconds','configuration.maxCandidates','configuration.maxSnapshotAgeSeconds'],
   '관측 기간': ['window.source','window.startAt','window.endAt','window.rangeStart','window.rangeEnd','window.windowMonths','window.timezoneOffsetMinutes','window.seed'],
   '실행 설정': ['configuration.initialCashKrw','configuration.clock.startAt','configuration.clock.endAt','configuration.clock.stepSeconds','configuration.clock.speedMultiplier','configuration.samplingPolicy.everyNSteps','configuration.samplingPolicy.candidateChangedOnly','configuration.samplingPolicy.decisionFrequency','configuration.samplingPolicy.maxDecisionCalls','configuration.samplingPolicy.timezoneOffsetMinutes','configuration.constraints.maxNewPositions','configuration.constraints.maxBudgetPerSymbolKrw','configuration.constraints.allowedActions','configuration.riskProfile','batch.seed','child.runSeed'],
@@ -20,17 +21,20 @@ const keys=Object.values(provenanceFieldGroups).flat();
 const reasons:readonly string[]=['not_persisted','not_present','invalid','missing','blocked','limit','ambiguous','identity_mismatch','redacted_text'];
 const sourceAllowed=(key:string,source:unknown)=>key.startsWith('research.') ? source==='research_manifest'||source==='run_metadata' : source==='run_metadata';
 const structuralFields=['requestedConfig','effectiveConfig','notices','runtime.gitRevision','runtime.dependencyLockHash','runtime.nodeVersion'];
-const seedFields=['batch.seed','child.runSeed','window.seed'];
+const seedFields=['batch.seed','child.runSeed','window.seed','configuration.strategyPreset','configuration.packetIdPrefix'];
 function reasonAllowed(key:string,status:ProvenanceObservation['status'],reason:string):boolean {
   if(structuralFields.includes(key))return reason==='not_persisted';
   if(status!=='partial')return reason===status||(status==='invalid'&&reason==='identity_mismatch');
   if(key==='batch.seed'||key==='child.runSeed')return reason==='redacted_text'||reason==='not_present';
-  if(key==='window.seed'&&reason==='redacted_text')return true;
+  if(seedFields.includes(key)&&reason==='redacted_text')return true;
   if(key.startsWith('research.')&&(reason==='identity_mismatch'||(key==='research.executionModelVersion'&&reason==='redacted_text')))return true;
   return ['not_present','invalid','missing','blocked'].includes(reason);
 }
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 export const validProvenanceId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(v);
+// The backend caps reads at 1500ms and reserves 500ms for serialization/transport.
+// Propagate remaining duration, never an absolute clock across processes.
+export const PROVENANCE_TRANSPORT_TIMEOUT_MS=2_000;
 const unavailable=(reason:ProvenanceReason):ObservedField=>({status:'unavailable',reason,value:null});
 const empty=(id:string,at:string,status:ProvenanceObservation['status']):ProvenanceObservation=>({requestedId:id,fetchedAt:at,status,fields:{},comparability:'unavailable',clone:'unavailable'});
 function safeValue(key:string,value:unknown):boolean {
@@ -78,7 +82,8 @@ export function projectRunProvenance(raw:unknown,id:string,at:string):Provenance
 }
 export async function readRunProvenance(id:string):Promise<ProvenanceObservation>{
   const at=new Date().toISOString();if(!validProvenanceId(id))return empty(id,at,'invalid');
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),2_000);
-  try{const response=await fetch(`${readOperationsApiConfig().baseUrl}/batch/replay/runs/provenance?runId=${encodeURIComponent(id)}`,{method:'GET',cache:'no-store',signal:controller.signal,headers:{accept:'application/json'}});if(!response.ok)return empty(id,at,response.status===400?'invalid':'offline');return projectRunProvenance(await response.json(),id,at);}
+  const deadline=performance.now()+PROVENANCE_TRANSPORT_TIMEOUT_MS;
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),PROVENANCE_TRANSPORT_TIMEOUT_MS);
+  try{const remaining=Math.max(0,Math.floor(deadline-performance.now()));const response=await fetch(`${readOperationsApiConfig().baseUrl}/batch/replay/runs/provenance?runId=${encodeURIComponent(id)}`,{method:'GET',cache:'no-store',signal:controller.signal,headers:{accept:'application/json','x-provenance-budget-ms':String(remaining)}});if(!response.ok)return empty(id,at,response.status===400?'invalid':'offline');return projectRunProvenance(await response.json(),id,at);}
   catch{return empty(id,at,'offline');}finally{clearTimeout(timer);}
 }

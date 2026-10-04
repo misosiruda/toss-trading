@@ -1,6 +1,12 @@
 import {heldComparisonNavigation} from '../held-comparison-navigation';
 import{test,expect}from'@playwright/test';import path from'node:path';import{createRequire}from'node:module';const require=createRequire(path.join(__dirname,'package.json'));
 const compare=(candidate='candidate')=>'/dashboard/experiments/compare?baseline=child&candidate='+candidate;
+test('redacted preset and packet prefix stay visible as reasons without their private values',async({page})=>{
+  await page.goto('/dashboard/lab/runs/child');const panel=page.getByTestId('run-provenance');await panel.getByText('숨긴 실행 설정',{exact:true}).click();
+  await expect(panel.locator('dl > div').filter({has:page.locator('dt').filter({hasText:'configuration.strategyPreset'})})).toContainText('민감 정보 보호로 값 숨김');
+  await expect(panel.locator('dl > div').filter({has:page.locator('dt').filter({hasText:'configuration.packetIdPrefix'})})).toContainText('저장 field 없음');
+  await expect(page.getByRole('main')).not.toContainText(/SYNTHETIC_PRIVATE|private_preset/);
+});
 test('stored packet scalars and omitted DTO differ from explicit absent storage fields',async({page})=>{
   await page.goto('/dashboard/lab/runs/child');const panel=page.getByTestId('run-provenance');
   await panel.getByText('실행 자료 설정',{exact:true}).click();

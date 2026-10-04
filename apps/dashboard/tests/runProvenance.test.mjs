@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';import{test}from'node:test';import{readFile}from'node:fs/promises';import{stripTypeScriptTypes}from'node:module';
 const vm='data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(await readFile(new URL('../src/lib/dashboardViewModels.ts',import.meta.url),'utf8')));
 const source=(await readFile(new URL('../src/lib/runProvenance.ts',import.meta.url),'utf8')).replace("'./dashboardViewModels'",JSON.stringify(vm));
-const{projectRunProvenance,readRunProvenance,strictTimestamp}=await import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(source)));
+const{projectRunProvenance,readRunProvenance,strictTimestamp,PROVENANCE_TRANSPORT_TIMEOUT_MS}=await import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(source)));
 const at='2026-10-04T01:00:00.000Z',recorded=value=>({status:'recorded',source:'run_metadata',verification:'stored_observation',value}),absent=reason=>({status:'unavailable',reason,value:null});
 const fixture=()=>({mode:'paper_only',readOnly:true,contractVersion:'replay_provenance_read.v1',requestedRunId:'child',status:'partial',comparability:'unavailable',clone:'unavailable',fields:{'configuration.initialCashKrw':recorded(0),'configuration.executionPolicy.allowFractionalShares':recorded(false),'window.startAt':recorded('2026-01-01T00:00:00.000Z'),'research.configHash':{...recorded('sha256:'+'1'.repeat(64)),source:'research_manifest'},'batch.seed':absent('redacted_text'),'requestedConfig':absent('not_persisted'),'runtime.nodeVersion':absent('not_persisted')}});
 const project=raw=>projectRunProvenance(raw,'child',at);
+test('preset and packet-prefix observations preserve redacted versus absent without revealing text',()=>{
+  for(const key of ['configuration.strategyPreset','configuration.packetIdPrefix']){
+    for(const reason of ['redacted_text','not_present','missing','blocked','invalid']){const raw=fixture();raw.fields[key]=absent(reason);assert.deepEqual(project(raw).fields[key],absent(reason));}
+    const raw=fixture();raw.fields[key]=recorded('SYNTHETIC_PRIVATE');assert.deepEqual(project(raw).fields[key],absent('invalid'));assert.doesNotMatch(JSON.stringify(project(raw)),/SYNTHETIC_PRIVATE/);
+  }
+});
 test('packet execution scalars follow backend bounds including zero snapshot age',()=>{
   for(const[key,minimum]of [['configuration.packetExpiresInSeconds',1],['configuration.maxCandidates',1],['configuration.maxSnapshotAgeSeconds',0]]){
     for(const value of [minimum,Number.MAX_SAFE_INTEGER]){const raw=fixture();raw.fields[key]=recorded(value);assert.equal(project(raw).fields[key].value,value);}
@@ -34,4 +40,13 @@ test('nullable, numeric bounds and action enums match stored field types',()=>{
 test('invalid requested identity makes no network request',async t=>{const original=global.fetch;t.after(()=>global.fetch=original);global.fetch=async()=>{throw Error('must not fetch');};assert.equal((await readRunProvenance('../child')).status,'invalid');});
 test('reader performs exactly one no-store GET and preserves requested identity',async t=>{const original=global.fetch;t.after(()=>global.fetch=original);const calls=[];global.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(fixture()));};assert.equal((await readRunProvenance('child')).status,'partial');assert.equal(calls.length,1);assert.match(calls[0].url,/\/batch\/replay\/runs\/provenance\?runId=child$/);assert.equal(calls[0].options.method,'GET');assert.equal(calls[0].options.cache,'no-store');});
 test('HTTP/parse/errors isolate observation and do not reveal exception bodies',async t=>{const original=global.fetch;t.after(()=>global.fetch=original);for(const response of [new Response('{}',{status:503}),new Response('{',{status:200})]){global.fetch=async()=>response;assert.equal((await readRunProvenance('child')).status,'offline');}global.fetch=async()=>{throw Error('PRIVATE_TOKEN');};assert.doesNotMatch(JSON.stringify(await readRunProvenance('child')),/PRIVATE_TOKEN/);});
-test('one two-second abort terminates stalled read without retries',async t=>{const original=global.fetch;t.after(()=>global.fetch=original);let calls=0,signal;global.fetch=async(_url,options)=>{calls++;signal=options.signal;return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('aborted'))));};assert.equal((await readRunProvenance('child')).status,'offline');assert.equal(signal.aborted,true);assert.equal(calls,1);});
+test('exact 1500ms backend limit and serialization arrive before unchanged 2000ms abort',async t=>{
+  const original=global.fetch;t.after(()=>global.fetch=original);let now=0,calls=0,signal;const timers=[];
+  t.mock.method(performance,'now',()=>now);
+  t.mock.method(global,'setTimeout',(callback,ms)=>{timers.push({callback,ms});return 123;});
+  t.mock.method(global,'clearTimeout',()=>{});
+  global.fetch=async(_url,options)=>{calls++;signal=options.signal;assert.equal(options.headers['x-provenance-budget-ms'],'2000');now=1500;return {ok:true,json:async()=>{now+=250;return {...fixture(),status:'limit'};}};};
+  assert.equal(PROVENANCE_TRANSPORT_TIMEOUT_MS,2000);assert.equal((await readRunProvenance('child')).status,'limit');
+  assert.equal(now,1750);assert.equal(timers.length,1);assert.equal(timers[0].ms,2000);assert.equal(signal.aborted,false);assert.equal(calls,1);
+});
+test('one bounded 2000ms transport abort terminates stalled read without retries',async t=>{const original=global.fetch;t.after(()=>global.fetch=original);let calls=0,signal;global.fetch=async(_url,options)=>{calls++;signal=options.signal;return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(Error('aborted'))));};assert.equal((await readRunProvenance('child')).status,'offline');assert.equal(signal.aborted,true);assert.equal(calls,1);});
