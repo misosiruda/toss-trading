@@ -29,6 +29,8 @@ pending 상태의 popstate는 현재 history 목적지를 `location.replace`로 
 
 ## Windows production 관측 (2026-10-04)
 
+재실행은 `npm --prefix apps/dashboard run test:e2e:experiment-native`다. 설치된 Chrome을 사용할 때 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`로 executable만 지정하며 sandbox를 유지한다. 전용 production config가 fixture8791·Next3003·Document gate3004를 시작하고 종료한다. 기존 dev Wizard config는 이 native 전용 파일만 제외하여 원래 66개를 독립 유지한다. native config는 실제 BFCache를 위해 Playwright의 disable-back-forward-cache 기본 인자만 제외하며 timeout/worker/retry는 기본 Wizard와 같다.
+
 설치 Chrome 154.0.8037.95, Node24.19, Next16.2.9와 격리 synthetic fixture에서 새 native 회귀 18/18 및 기존 Wizard 66/66이 1440/1024/390px에서 통과했다. worker1/retry0, test30초/URL assertion5초는 유지했다. 실제 BFCache 복귀는 세 viewport 모두 wizard의 pageshow.persisted=true로 확인했으며 synthetic pageshow만으로 대체하지 않았다. 새 회귀는 실제202·POST1·exact ID DocumentGET·실제 상세·Back/reload·native 조회 anchor·저장실패 accepted 유지·GET실패 복귀·두 pending GET 경합을 포함한다.
 
 초기 native 경합 계측은 pending navigation 뒤 이전 document를 Runtime.evaluate하여 멈췄다. storage setItem의 exact ID 이벤트를 이동 전에 받는 계측과 HTTP Document gate, 실제 브라우저 pointer/history 입력으로 교체했다. 이전 실패 기록을 보존하고 이 harness 실패를 원래 정체나 제품 원인으로 해석하지 않는다. 기존 intent 회귀도 native 이동으로 사라지는 document 대신 동일 ID 저장 이벤트를 관측한다. 기존 정상 생성 회귀의 실제202 body는 빠른 새 document commit 전에 route.fetch에서 보존하여 requested/effective·manifest·runner·sameID/POST1 assertion을 유지했다.
