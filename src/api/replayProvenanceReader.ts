@@ -46,35 +46,38 @@ async function scan(storageBaseDir:string,runId:string,budget:Budget):Promise<Ma
   check(budget);
   try {await assertExperimentPath(root,false,()=>check(budget));check(budget);} catch(error) {check(budget);if(hasFsCode(error,"ENOENT")) return null;throw error;}
   const directory=await opendir(root);let entries=0;let match:Match|null=null;
-  for await(const entry of directory) {
-    check(budget);if(++entries>REPLAY_PROVENANCE_LIMITS.entries) throw new ReadFailure("limit");
-    const batchDir=join(root,entry.name);await assertExperimentPath(batchDir,false,()=>check(budget));
-    check(budget);
-    if(!entry.isDirectory()) continue;
-    const batch=await readObject(join(batchDir,BATCH_REPLAY_MANIFEST_FILE_NAME),REPLAY_PROVENANCE_LIMITS.manifestBytes,budget);
-    const text=await readText(join(batchDir,BATCH_REPLAY_RUNS_FILE_NAME),REPLAY_PROVENANCE_LIMITS.indexBytes,budget);
-    if(batch===null) {if(text!==null) throw new ReadFailure("invalid");continue;}
-    if(batch.mode!=="paper_only" || typeof batch.batchId!=="string" || batch.batchId.length===0 || batch.batchId.length>256) throw new ReadFailure("invalid");
-    if(text===null) throw new ReadFailure("invalid");
-    let child:Record<string,unknown>|null=null;
-    const lines=text.split(/\r?\n/);
-    if(lines.length>REPLAY_PROVENANCE_LIMITS.lines+1) throw new ReadFailure("limit");
-    for(const line of lines) {
-      check(budget);if(!line.trim()) continue;
-      const raw:unknown=JSON.parse(line);
+  try {
+    while(true) {
+      check(budget);const entry=await directory.read();check(budget);if(entry===null) break;
+      check(budget);if(++entries>REPLAY_PROVENANCE_LIMITS.entries) throw new ReadFailure("limit");
+      const batchDir=join(root,entry.name);await assertExperimentPath(batchDir,false,()=>check(budget));
       check(budget);
-      if(!provenanceRecord(raw)) throw new ReadFailure("invalid");
-      if(raw.runId!==runId) continue;
-      if(child!==null) throw new ReadFailure("ambiguous");
-      child=raw;
+      if(!entry.isDirectory()) continue;
+      const batch=await readObject(join(batchDir,BATCH_REPLAY_MANIFEST_FILE_NAME),REPLAY_PROVENANCE_LIMITS.manifestBytes,budget);
+      const text=await readText(join(batchDir,BATCH_REPLAY_RUNS_FILE_NAME),REPLAY_PROVENANCE_LIMITS.indexBytes,budget);
+      if(batch===null) {if(text!==null) throw new ReadFailure("invalid");continue;}
+      if(batch.mode!=="paper_only" || typeof batch.batchId!=="string" || batch.batchId.length===0 || batch.batchId.length>256) throw new ReadFailure("invalid");
+      if(text===null) throw new ReadFailure("invalid");
+      let child:Record<string,unknown>|null=null;
+      const lines=text.split(/\r?\n/);
+      if(lines.length>REPLAY_PROVENANCE_LIMITS.lines+1) throw new ReadFailure("limit");
+      for(const line of lines) {
+        check(budget);if(!line.trim()) continue;
+        const raw:unknown=JSON.parse(line);
+        check(budget);
+        if(!provenanceRecord(raw)) throw new ReadFailure("invalid");
+        if(raw.runId!==runId) continue;
+        if(child!==null) throw new ReadFailure("ambiguous");
+        child=raw;
+      }
+      const active=provenanceRecord(batch.activeRun) && batch.activeRun.runId===runId ? batch.activeRun : null;
+      if(child && active && (active.runIndex!==child.runIndex || active.storageBaseDir!==child.storageBaseDir)) throw new ReadFailure("ambiguous");
+      const run=child ?? active;if(!run) continue;
+      if(match!==null) throw new ReadFailure("ambiguous");
+      if((run.mode!==undefined && run.mode!=="paper_only") || (child ? run.batchId!==batch.batchId : (run.batchId!==undefined && run.batchId!==batch.batchId) || batch.status!=="running") || !Number.isSafeInteger(run.runIndex) || Number(run.runIndex)<0) throw new ReadFailure("invalid");
+      match={batch,run,batchDir,active:child===null};
     }
-    const active=provenanceRecord(batch.activeRun) && batch.activeRun.runId===runId ? batch.activeRun : null;
-    if(child && active && (active.runIndex!==child.runIndex || active.storageBaseDir!==child.storageBaseDir)) throw new ReadFailure("ambiguous");
-    const run=child ?? active;if(!run) continue;
-    if(match!==null) throw new ReadFailure("ambiguous");
-    if((run.mode!==undefined && run.mode!=="paper_only") || (child ? run.batchId!==batch.batchId : (run.batchId!==undefined && run.batchId!==batch.batchId) || batch.status!=="running") || !Number.isSafeInteger(run.runIndex) || Number(run.runIndex)<0) throw new ReadFailure("invalid");
-    match={batch,run,batchDir,active:child===null};
-  }
+  } finally {await directory.close();}
   check(budget);return match;
 }
 async function boundRunDir(match:Match,referenceBase:string,budget:Budget):Promise<string|null> {
