@@ -17,7 +17,17 @@ export const provenanceFieldGroups = {
 } as const;
 const keys=Object.values(provenanceFieldGroups).flat();
 const reasons:readonly string[]=['not_persisted','not_present','invalid','missing','blocked','limit','ambiguous','identity_mismatch','redacted_text'];
-const sources:readonly string[]=['batch_manifest','run_record','run_metadata','research_manifest'];
+const sourceAllowed=(key:string,source:unknown)=>key.startsWith('research.') ? source==='research_manifest'||source==='run_metadata' : source==='run_metadata';
+const structuralFields=['requestedConfig','effectiveConfig','notices','runtime.gitRevision','runtime.dependencyLockHash','runtime.nodeVersion'];
+const seedFields=['batch.seed','child.runSeed','window.seed'];
+function reasonAllowed(key:string,status:ProvenanceObservation['status'],reason:string):boolean {
+  if(structuralFields.includes(key))return reason==='not_persisted';
+  if(status!=='partial')return reason===status||(status==='invalid'&&reason==='identity_mismatch');
+  if(key==='batch.seed'||key==='child.runSeed')return reason==='redacted_text'||reason==='not_present';
+  if(key==='window.seed'&&reason==='redacted_text')return true;
+  if(key.startsWith('research.')&&(reason==='identity_mismatch'||(key==='research.executionModelVersion'&&reason==='redacted_text')))return true;
+  return ['not_present','invalid','missing','blocked'].includes(reason);
+}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 export const validProvenanceId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(v);
 const unavailable=(reason:ProvenanceReason):ObservedField=>({status:'unavailable',reason,value:null});
@@ -35,7 +45,7 @@ function safeValue(key:string,value:unknown):boolean {
   if(value===null)return ['window.windowMonths','configuration.samplingPolicy.everyNSteps','configuration.samplingPolicy.maxDecisionCalls'].includes(key);
   if(typeof value!=='number'||!Number.isFinite(value))return false;
   if(key.endsWith('timezoneOffsetMinutes'))return Number.isSafeInteger(value);
-  if(key.endsWith('Krw')||key.endsWith('maxNewPositions')||/Positions$/.test(key))return Number.isSafeInteger(value)&&value>=0;
+  if(key.endsWith('Krw')||key.endsWith('maxNewPositions')||key.endsWith('maxNewPositionsPerDay')||/Positions$/.test(key))return Number.isSafeInteger(value)&&value>=0;
   if(/(?:Months|Steps|Calls|Days|DayIndex|stepSeconds)$/.test(key))return Number.isSafeInteger(value)&&value>0;
   if(key.endsWith('takeProfitRatio'))return value>0&&value<=10;
   if(key.startsWith('configuration.paperExitPolicy.')&&key.endsWith('Ratio'))return value>0&&value<=1;
@@ -53,12 +63,12 @@ export function projectRunProvenance(raw:unknown,id:string,at:string):Provenance
   const status=raw.status as ProvenanceObservation['status'],fields:Record<string,ObservedField>={};
   for(const key of keys){
     const field=raw.fields[key];
-    if(!record(field)){fields[key]=unavailable('not_present');continue;}
-    if(field.status==='unavailable'&&field.value===null&&typeof field.reason==='string'&&reasons.includes(field.reason)){fields[key]=unavailable(field.reason as ProvenanceReason);continue;}
+    if(!record(field)){fields[key]=unavailable(status==='partial'?'not_present':'invalid');continue;}
+    if(field.status==='unavailable'&&field.value===null&&!Object.hasOwn(field,'source')&&!Object.hasOwn(field,'verification')&&typeof field.reason==='string'&&reasons.includes(field.reason)&&reasonAllowed(key,status,field.reason)){fields[key]=unavailable(field.reason as ProvenanceReason);continue;}
     // Full input/runtime and free text never become reconstructed values, even
     // if a future or malformed response claims they are recorded.
-    const forbidden=['requestedConfig','effectiveConfig','notices','runtime.gitRevision','runtime.dependencyLockHash','runtime.nodeVersion','batch.seed','child.runSeed','window.seed'];
-    if(status==='partial'&&!forbidden.includes(key)&&field.status==='recorded'&&field.verification==='stored_observation'&&typeof field.source==='string'&&sources.includes(field.source)&&safeValue(key,field.value))fields[key]={status:'recorded',source:field.source as ProvenanceSource,verification:'stored_observation',value:field.value as Extract<ObservedField,{status:'recorded'}>['value']};
+    const forbidden=[...structuralFields,...seedFields];
+    if(status==='partial'&&!forbidden.includes(key)&&field.status==='recorded'&&field.verification==='stored_observation'&&sourceAllowed(key,field.source)&&!Object.hasOwn(field,'reason')&&safeValue(key,field.value))fields[key]={status:'recorded',source:field.source as ProvenanceSource,verification:'stored_observation',value:field.value as Extract<ObservedField,{status:'recorded'}>['value']};
     else fields[key]=unavailable('invalid');
   }
   return {requestedId:id,fetchedAt:at,status,fields,comparability:'unavailable',clone:'unavailable'};

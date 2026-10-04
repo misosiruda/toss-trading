@@ -1,8 +1,11 @@
 import http from 'node:http';
 import {evidencePayload} from '../run-evidence/fixtures.mjs';
+import {createHeldReadGate} from '../held-read-gate.mjs';
 const calls=[];
+const gates=createHeldReadGate();
 http.createServer((req,res)=>{
   const url=new URL(req.url,'http://fixture.local');res.setHeader('Content-Type','application/json');
+  if(gates.control(req,res,url))return;
   if(url.pathname==='/health'){res.end('{}');return;}
   if(url.pathname==='/__calls'){res.end(JSON.stringify(calls));return;}
   calls.push({method:req.method,path:url.pathname,id:url.searchParams.get('runId')});
@@ -25,5 +28,5 @@ http.createServer((req,res)=>{
   }
   if(id==='fixture_selected_mismatch')raw.selectedRun={...raw.runs[0],status:'failed'};
   if(id==='fixture_aggregate_fallback')Object.assign(raw,{batchId:null,batchStatus:null,aggregateStatus:'ok'});
-  const send=()=>res.end(JSON.stringify(raw));if(id==='fixture_slow')setTimeout(send,600);else send();
+  const send=()=>res.end(JSON.stringify(raw));if(!gates.hold(url,res,send))send();
 }).listen(8795,'127.0.0.1');
