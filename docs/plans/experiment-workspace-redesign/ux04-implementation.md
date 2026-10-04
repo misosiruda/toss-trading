@@ -88,3 +88,7 @@ summary/record 이동으로 새 initial이 offline 또는 invalid가 되어도 �
 ## 자동 조회 시험의 준비 관측
 
 SSR의 running 텍스트가 보여도 client effect의 첫 5초 timer와 visibility listener가 등록됐다는 보장은 없습니다. 준비 전 가상 clock 전진 뒤 timer가 등록되어 기존 5초 assertion 끝에서 첫 GET이 발생하는 순서를 합성 production trace로 재현했습니다. 시험은 GET 없이 실제 timer와 listener 등록을 관측한 다음 clock을 전진합니다. hidden에서 timer 0개·GET 0회, visible 복귀에서 timer 1개·GET 1회와 terminal/이탈 cleanup을 검증합니다. 제품 polling, GET 수, 5초 간격, assertion/timeout/retry 조건은 변경하지 않습니다.
+
+## Legacy active와 수동 snapshot 계약
+
+정상화된 legacy active는 batch가 running이라고 확정되지 않고 active source에 자체 status가 없을 때의 관측값입니다. client snapshot은 식별된 active child 또는 기존 batch alias를 좁게 허용하고, persisted terminal 네 값과 manifest-derived running은 기존대로 유지합니다. active를 running/terminal로 승격하거나 자동 polling에 추가하지 않습니다. active source에 child ID가 없으면 최신 artifact의 ID로 보충하지 않으며, artifact의 status도 같은 child에 바인딩된 경우에만 참고합니다. 타 ID·공백 ID·terminal 시각이 붙은 active·임의 status는 transport에서 거절합니다. 실제 batch writer의 합성 storage를 로컬 API reader와 UI normalizer로 읽어 정상·완전·부분·누락·타 ID를 검증하고, production에서 SSR과 수동 GET의 active 표현 및 자동 GET 없음·기록/reload를 확인합니다.

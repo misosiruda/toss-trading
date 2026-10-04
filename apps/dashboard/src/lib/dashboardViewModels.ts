@@ -1580,14 +1580,15 @@ function normalizeActiveBatchReplayRunSummary(
   if (!isRecord(value)) {
     return null;
   }
-  const runId = readString(value["runId"]) ?? context.artifacts?.runId ?? null;
-  if (runId === null) {
+  // The active source owns child identity. Artifacts cannot identify an incomplete active record.
+  const runId = readString(value["runId"]);
+  if (runId === null || runId.trim().length === 0) {
     return null;
   }
   const marketRegime = isRecord(value["marketRegime"]) ? value["marketRegime"] : {};
   const status =
     readString(value["status"]) ??
-    context.artifacts?.runStatus ??
+    (context.artifacts?.runId === runId ? context.artifacts.runStatus : null) ??
     (context.batchStatus === "running" ? "running" : "active");
 
   return {

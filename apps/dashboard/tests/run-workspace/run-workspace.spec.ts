@@ -48,6 +48,22 @@ test.afterEach(async({request})=>{
   expect(response.status()).toBe(200);
   const {requests}=await response.json();expect(requests.every((entry:{method:string})=>entry.method==='GET')).toBe(true);
 });
+test('legacy active SSR and manual GET agree without scheduling automatic reads',async({page},info)=>{
+  await page.clock.install();const id='fixture_legacy_active_'+info.project.name,reads:string[]=[];
+  page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.method());});
+  await page.goto(root+id);await expect(page.getByText('선택 child: active',{exact:false})).toBeVisible();
+  await expect(page.getByText('산출물 판독: partial',{exact:false})).toBeVisible();
+  const before=await page.getByText('GET 관측 시각:',{exact:false}).textContent();
+  await page.getByRole('button',{name:'같은 ID 새로 조회 (GET)'}).click();
+  await expect(page.getByText('GET 관측 시각:',{exact:false})).not.toHaveText(before!);
+  await expect(page.getByText('조회: ok',{exact:false})).toBeVisible();await expect(page.getByRole('status')).toHaveCount(0);
+  await expect(page.getByText('선택 child: active',{exact:false})).toBeVisible();
+  await page.clock.fastForward(20_001);expect(reads).toEqual(['GET']);
+  await page.getByRole('link',{name:'기록',exact:true}).click();await expect(page).toHaveURL(root+id+'?tab=record');
+  await expect(page.getByText('선택 child: active',{exact:false})).toBeVisible();await expect(page.getByRole('status')).toHaveCount(0);
+  await page.reload();await expect(page.getByText('선택 child: active',{exact:false})).toBeVisible();
+});
+
 test('snapshot BFF rejects mutation and invalid IDs while preserving no-store reads',async({request})=>{
   const snapshot=await request.get(root+'fixture_completed/snapshot');expect(snapshot.status()).toBe(200);
   expect(snapshot.headers()['cache-control']).toBe('no-store');
