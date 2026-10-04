@@ -72,6 +72,8 @@
 .actionGroup { display: flex; flex-direction: column; align-items: flex-end; gap: 9px; flex-shrink: 0; }
 .primaryAction { display: flex; min-height: 44px; align-items: center; justify-content: center; gap: 12px; padding: 10px 17px; border-radius: 6px; background: var(--blue); color: #fff; font-size: 14px; font-weight: 620; }
 .primaryAction:hover { background: #1459d5; }
+.secondaryAction { display:flex; min-height:44px; align-items:center; justify-content:center; padding:10px 17px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--blue); font-size:14px; font-weight:620; }
+.secondaryAction:hover { background:var(--blue-soft); }
 .primaryAction svg { width: 15px; height: 15px; }
 .actionGroup p { margin: 0; color: var(--secondary); font-size: 11px; line-height: 1.5; text-align: right; }
 .sourceSummary { margin-bottom: 20px; color: var(--secondary); font-size: 12px; }

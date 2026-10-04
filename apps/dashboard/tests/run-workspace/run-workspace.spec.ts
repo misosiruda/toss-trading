@@ -55,9 +55,20 @@ test('manual GET refresh retains last successful data through failure and stale 
   await expect(page.getByRole('status')).toHaveCount(0);
 });
 test('running GET updates exact child to terminal and stops automatic reads',async({page},info)=>{
-  await page.clock.install();await page.goto(root+'fixture_transition_'+info.project.name);
+  await page.clock.install();
+  // SSR running text can precede the effect that arms the first poll. Observe
+  // the existing five-second timeout without adding a product readiness hook.
+  await page.addInitScript(()=>{
+    const native=window.setTimeout;
+    window.setTimeout=((handler:TimerHandler,delay?:number,...args:unknown[])=>{
+      if(delay===5_000)document.documentElement.setAttribute('data-test-run-timer-ready','true');
+      return native(handler,delay,...args);
+    }) as typeof window.setTimeout;
+  });
+  await page.goto(root+'fixture_transition_'+info.project.name);
   const reads:string[]=[];page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.method());});
   await expect(page.getByText('선택 child: running',{exact:false})).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-ready','true');
   await page.clock.fastForward(5_001);await expect(page.getByText('선택 child: completed',{exact:false})).toBeVisible();
   expect(reads).toEqual(['GET']);
   const count=reads.length;await page.clock.fastForward(20_000);expect(reads.length).toBe(count);

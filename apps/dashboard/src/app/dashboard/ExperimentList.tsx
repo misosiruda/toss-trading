@@ -207,6 +207,7 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
           </div>
           <div className={styles.actionGroup}>
             <Link className={styles.primaryAction} href="/dashboard/experiments/new">새 실험<Icon name="arrow" /></Link>
+            <Link className={styles.secondaryAction} href="/dashboard/experiments/compare">실행 비교</Link>
             <p>built-in paper replay · fixture 판단<br />PortfolioPolicy 실행은 지원하지 않음</p>
           </div>
         </header>
