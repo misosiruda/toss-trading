@@ -12,6 +12,8 @@ server storage의 sibling `batch-replay` root 아래 batch manifest와 고정 �
 
 요청 ID로 필터링하기 전에 모든 index 행의 mode, batchId, ASCII runId, runCount 범위의 정수 runIndex, seed·storage 경로 타입/길이, 시작 시각, terminal status와 해당 terminal 시각/null 구분을 검사한다. 다른 child의 손상된 행도 전체 조회를 invalid로 닫는다. 모든 행의 raw 경로 문법과 batch/runs 내부 경계를 검사하지만 다른 child의 artifact 파일을 추가로 읽지는 않는다. ID 또는 index 중복은 ambiguous다. active snapshot과 terminal 행이 같은 ID 또는 index를 공유하면 두 identity와 저장 경로가 같아야 한다.
 
+raw batchId와 seed는 writer의 normalizeRequiredText 계약(양끝 공백을 제거한 비어 있지 않은 문자열)을 따른다. 공백·콜론·슬래시·Unicode가 들어간 batchId도 그대로 identity 대조에 사용하고, filesystem 이름은 writer가 별도로 safeArtifactPathPart로 만든다. reader가 raw batchId를 경로에 결합하거나 다른 디렉터리를 찾지 않는다. opaque text는 기존 manifest/index 전체 byte 한도로 제한되며 임의의 child query 길이 제한을 적용하지 않는다. 저장 child ID의 안전한 ASCII 문법과 요청 child ID의 엄격한 256자 한도는 구분한다.
+
 writer는 index에 순서대로 terminal 행을 append하고 manifest를 나중에 갱신한다. running manifest에서는 빈 index·아직 실행하지 않은 마지막 child 누락·terminal count 지연·같은 child의 active/terminal 중첩이 정상이다. 다만 저장된 행은 0부터 연속된 index prefix여야 하고 manifest count가 관측된 terminal bucket보다 많을 수 없다. completed/completed_with_failures에서는 행 수가 runCount와 같고 각 index가 정확히 한 번 존재하며 completed/skipped/failed count와 최종 status가 정확히 맞아야 한다. completed_with_failures child는 completedCount에 포함된다. 완전한 행 삭제나 정상 JSON만 남은 잘린 index도 invalid다. skipped child의 artifact directory가 없는 정상 partial 계약은 유지한다. 이것은 index identity와 완료성 검사이며 전체 replay 설정을 복원·검증하는 계약은 아니다.
 
 한도는 root entries 256개, batch manifest 256KiB, index 각 4MiB 및 10,000줄, metadata 512KiB, research manifest 64KiB, 총 파일 bytes 8MiB, 전체 2초다. deadline 이후 추가 읽기를 멈추며 진행 중인 bounded file handle은 finally에서 닫는다. 한도를 넘으면 일부 index를 유일하다고 해석하지 않고 `limit`로 응답한다.
