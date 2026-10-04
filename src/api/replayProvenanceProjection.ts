@@ -19,8 +19,14 @@ export interface ReplayProvenance {
 }
 export const provenanceRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-export const validProvenanceId = (value: unknown): value is string =>
-  typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(value);
+export function validProvenanceId(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 256) return false;
+  if (/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}(?![\s\S])/.test(value)) return true;
+  // safeArtifactPathPart preserves leading hyphens. Admit that additional
+  // boundary only for the writer's sanitized-prefix/padded-index/month form.
+  const child = /^-(?:[A-Za-z0-9_-]*[A-Za-z0-9-])?_run_([0-9]{6}|[1-9][0-9]{6,})_-?(?:0|[1-9][0-9]{0,5})-(?:0[1-9]|1[0-2])(?![\s\S])/.exec(value);
+  return child !== null && Number.isSafeInteger(Number(child[1]));
+}
 const absent = (reason: ProvenanceReason): ProvenanceField => ({ status: "unavailable", reason, value: null });
 const descriptors: Array<{ path: string; schema: ZodType }> = [];
 function add(prefix: string, shapes: Record<string, ZodType>, keys: string[]) {

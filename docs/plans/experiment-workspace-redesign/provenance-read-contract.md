@@ -49,3 +49,15 @@ backend는 performance.now로 단일 monotonic deadline을 만들고 scan, stat�
 정확한 1,500ms 경계는 monotonic clock 회귀로 limit-only를 확인한다. adapter 회귀는 1,500ms limit과 250ms 응답 처리 후에도 기존 2,000ms abort 이전에 limit으로 표시함을 고정 clock으로 확인한다. 실제 transport가 영구 정체한 경우 기존 2초 abort·GET 1회·retry 없음은 유지한다.
 
 15ms 읽기 예산에 opendir가 virtual40ms에 끝나는 경계는 directory read0/close1/limit-only로 검증한다. 첫 entry 처리 중40ms에 도달하는 경계도 read1/다음 read0/close1을 확인한다. 이 경계 검사에서 실제 sleep이나 timeout 확대를 사용하지 않는다.
+
+## Requested writer-child ID boundary (API follow-on)
+
+The frozen public API `3099348326e25a7d8899a3341ccfe290c4fc51c6` is preserved. Actual writer batches `-synthetic`, `--` and `-` generate stored children rejected by the old alphanumeric-first request gate. This is a compatibility gap within the existing bounded request contract.
+
+Generic alphanumeric-first ASCII IDs and the 256-character cap remain. Additional leading-hyphen admission is restricted to sanitized batch prefix (no dot/escape or edge underscore), `_run_`, a canonical padded nonnegative safe-integer index and the writer numeric year/month suffix. Arbitrary leading-hyphen IDs remain invalid. Terminal line breaks are rejected in both requested and stored IDs. Query decoding remains once, duplicate/extra keys are rejected and slash/backslash/percent/control/space/Unicode query characters remain invalid. Requested IDs never become paths; index storage paths retain all syntax, containment, filesystem and identity checks. Long producer IDs exceeding256 remain outside this request contract.
+
+The API-owned matrix runs fourteen actual synthetic writers, reads twenty-eight generated children over the real GET-only HTTP route, rejects unsafe encoded query suffixes and duplicate keys, and rejects six forbidden suffix classes in an unrelated stored sibling. Reads invoke neither runner nor provider. No frontend import belongs in this API test. The UI-owned companion separately proves the same writer→HTTP results through the actual display adapter and transport. Synthetic fixtures only; no paid AI, live execution, credentials or real data.
+
+The earlier combined candidate remains preserved. API-only final-tree verification is recorded separately; no latest Linux full, Security or publication is claimed by this source contract.
+
+API-only final-tree Windows verification: root build, focused API41/41 and quality gate pass. No frontend source or dynamic frontend import is included in this API follow-on. UI integration and frontend verification belong to the separately stacked UI companion. These are not latest Linux full or Security results.

@@ -14,10 +14,15 @@ import { createStoragePaths, FileHistoricalMarketSnapshotStore } from "../storag
 import type { MarketPacket } from "../domain/schemas.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import {historicalReplayRunConfigurationSchema} from '../replay/historicalReplayAuditLog.js';
-import {isStoredProvenanceTimestamp} from './replayProvenanceProjection.js';
+import {isStoredProvenanceTimestamp,validProvenanceId} from './replayProvenanceProjection.js';
 import { readReplayProvenance, readReplayProvenanceRequest, provenanceReadBudgetMs, REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_LIMITS } from "./replayProvenanceReader.js";
 import { BATCH_REPLAY_MANIFEST_FILE_NAME as manifestName, BATCH_REPLAY_RUNS_FILE_NAME as runsName, HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME as metadataName, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME as researchName } from "../storage/artifactPaths.js";
 const hash=`sha256:${"1".repeat(64)}`;
+test("requested ID keeps generic grammar and admits only canonical leading-hyphen writer children",()=>{
+  for(const id of ['child','a.b-c_1','-synthetic_run_000000_2026-01','--_run_000001_2026-01','-_run_999999_2026-12','-a_b-_run_1000000_2026-01'])assert.equal(validProvenanceId(id),true,id);
+  for(const id of ['-synthetic','--','-_run_1_2026-01','-_run_0000000_2026-01','-_run_000000_2026-00','-_run_000000_2026-13','-a._run_000000_2026-01','-_run_9007199254740992_2026-01','_child','../child','a/child','a%2Fchild','a?child','a#child','a'.repeat(257)])assert.equal(validProvenanceId(id),false,id);
+  for(const character of [0,9,10,13,32,92,0x2028,0xD55C])for(const id of ['child','-synthetic_run_000000_2026-01'])assert.equal(validProvenanceId(id+String.fromCharCode(character)),false);
+});
 test("legacy completed activeRun omission is compatible but cannot hide an incomplete index",async()=>{
   const f=await fixture();const legacy={...f.batch} as Record<string,unknown>;delete legacy.activeRun;await writeFile(f.paths.manifest,JSON.stringify(legacy));
   assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
@@ -50,6 +55,27 @@ async function writerFixture(batchId:string,sharedRoot?:string) {
   const writeIndex=async(values:unknown[])=>writeFile(result.runsPath,values.map(row=>JSON.stringify(row)).join("\n")+"\n");
   return {root,storage,result,rows,manifest,writeIndex};
 }
+test("actual writer child character boundary crosses exact HTTP query without widening unsafe identity",async()=>{
+  const batchIds=["-synthetic","--","-","-a_b-","__synthetic__","synthetic.dot","../outside","foo"+String.fromCharCode(92)+"bar","foo%2Fbar","foo?bar#x",String.fromCharCode(0xD55C,0xAE00),"synthetic"+String.fromCharCode(0)+"suffix","synthetic"+String.fromCharCode(10)+"suffix"," !@#$%^&*()+=[]{}:;'<> ,?/~ "];
+  for(const batchId of batchIds){
+    const f=await writerFixture(batchId);let runnerCalls=0;
+    const server=createLocalOperationsServer({storageBaseDir:f.storage,paperSimulationRunner:async()=>{runnerCalls++;throw Error("must not run");}});
+    await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+    try{
+      const base='http://127.0.0.1:'+String((server.address() as AddressInfo).port)+REPLAY_PROVENANCE_ROUTE;
+      for(const row of f.rows){const id=String(row.runId),response=await fetch(base+'?'+new URLSearchParams({runId:id}));assert.equal(response.status,200,id);assert.equal(response.headers.get('cache-control'),'no-store');const result=await response.json() as {status:string;requestedRunId:string};assert.equal(result.status,'partial',id);assert.equal(result.requestedRunId,id);assert.ok(!JSON.stringify(result).includes(f.root));}
+      const id=String(f.rows[0]!.runId);
+      for(const query of [new URLSearchParams({runId:id+'/../escape'}),new URLSearchParams({runId:id+String.fromCharCode(92)+'escape'}),new URLSearchParams({runId:id+String.fromCharCode(10)}),new URLSearchParams({runId:id+'%2Fescape'}),new URLSearchParams({runId:id+String.fromCharCode(0)}),new URLSearchParams([['runId',id],['runId',id]])])assert.equal((await fetch(base+'?'+query)).status,400);
+      for(const character of [10,13,0,92,47,37]){
+        await f.writeIndex([f.rows[0],{...f.rows[1],runId:String(f.rows[1]!.runId)+String.fromCharCode(character)}]);
+        const invalid=await fetch(base+'?'+new URLSearchParams({runId:id}));assert.equal(invalid.status,200);assert.equal((await invalid.json() as {status:string}).status,'invalid');
+      }
+      await f.writeIndex(f.rows);
+      assert.equal(runnerCalls,0);
+    }finally{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
+  }
+});
+
 test("actual writer relationship matrix accepts raw IDs and rejects corrupt unrelated rows without path escape or disclosure",async()=>{
   for(const batchId of [" synthetic writer ","synthetic:writer / segment"," \uD55C\uAE00 \uC2E4\uD5D8 ","../synthetic:../outside"]) {
     const f=await writerFixture(batchId),first=f.rows[0]!,other=f.rows[1]!;
