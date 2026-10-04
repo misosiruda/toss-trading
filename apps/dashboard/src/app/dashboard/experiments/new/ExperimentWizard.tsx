@@ -30,7 +30,7 @@ export function ExperimentWizard() {
   const alive = useRef(false);
   const navigationIntent = useRef(0);
   const knownAcceptedId = useRef<string | null>(null);
-  const nativeDetailPending = useRef(false);
+  const nativeDocumentPending = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const candidate = typedCandidate(draft);
@@ -54,7 +54,7 @@ export function ExperimentWizard() {
       }
     };
     synchronizeAdmission();
-    const onPageShow = () => { nativeDetailPending.current = false; synchronizeAdmission(); };
+    const onPageShow = () => { nativeDocumentPending.current = false; synchronizeAdmission(); };
     window.addEventListener("pageshow", onPageShow);
     try {
       const saved = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "null");
@@ -72,8 +72,8 @@ export function ExperimentWizard() {
   useEffect(() => {
     const { origin, pathname } = window.location;
     const onPopState = () => {
-      if (nativeDetailPending.current) {
-        navigationIntent.current += 1; nativeDetailPending.current = false;
+      if (nativeDocumentPending.current) {
+        navigationIntent.current += 1;
         window.stop(); window.location.replace(window.location.href); return;
       }
       if (window.location.origin !== origin || window.location.pathname !== pathname) navigationIntent.current += 1;
@@ -91,16 +91,15 @@ export function ExperimentWizard() {
     if (!["http:", "https:"].includes(destination.protocol)) return;
     if (destination.origin === current.origin && destination.pathname === current.pathname && destination.search === current.search) return;
     navigationIntent.current += 1;
-    const acceptedDetail = knownAcceptedId.current !== null && destination.origin === current.origin &&
-      destination.pathname === `/dashboard/lab/runs/${encodeURIComponent(knownAcceptedId.current)}` && !destination.search && !destination.hash;
-    if (nativeDetailPending.current) {
-      event.preventDefault(); event.stopPropagation(); nativeDetailPending.current = acceptedDetail;
+    const nativeAnchor = anchor.hasAttribute("data-native-document");
+    if (nativeDocumentPending.current) {
+      event.preventDefault(); event.stopPropagation();
       window.stop(); window.location.assign(destination.href);
       return;
     }
-    // The explicit same-ID native anchor uses the same cancellation guard as
-    // automatic accepted navigation, including after Back/reload restoration.
-    if (acceptedDetail) nativeDetailPending.current = true;
+    // Keep the guard through every replacement document while this wizard is alive.
+    // A new document activation (pageshow) resets it.
+    if (nativeAnchor) nativeDocumentPending.current = true;
   }
 
   function edit<K extends keyof SimulationDraft>(key: K, value: SimulationDraft[K]) {
@@ -117,8 +116,8 @@ export function ExperimentWizard() {
   function go(next: number) {
     const url = new URL(window.location.href);
     url.searchParams.set("step", String(next));
-    if (nativeDetailPending.current) {
-      navigationIntent.current += 1; nativeDetailPending.current = false;
+    if (nativeDocumentPending.current) {
+      navigationIntent.current += 1;
       window.stop(); window.location.assign(`${url.pathname}${url.search}`); return;
     }
     window.history.pushState(null, "", `${url.pathname}${url.search}`);
@@ -190,9 +189,9 @@ export function ExperimentWizard() {
       setMessage("접수됐습니다. 완료 여부는 같은 ID의 상세에서 조회합니다.");
       // A newer user navigation wins even while its destination is still loading.
       if (navigationIntent.current === requestNavigationIntent) {
-        nativeDetailPending.current = true;
+        nativeDocumentPending.current = true;
         try { window.location.assign(`/dashboard/lab/runs/${encodeURIComponent(id)}`); }
-        catch { nativeDetailPending.current = false; setMessage("접수됐지만 상세 조회 이동을 시작하지 못했습니다. 같은 ID 상태 조회 링크로 다시 조회하세요. POST는 재전송하지 않습니다."); }
+        catch { nativeDocumentPending.current = false; setMessage("접수됐지만 상세 조회 이동을 시작하지 못했습니다. 같은 ID 상태 조회 링크로 다시 조회하세요. POST는 재전송하지 않습니다."); }
       }
     } catch {
       if (alive.current && !knownAcceptedId.current) { setPhase("unknown"); setToken(""); setMessage("생성 응답이 불확실합니다. 실행 실패로 단정하거나 POST를 재전송하지 않습니다. ID를 받지 못했으므로 추측하지 않고 실험 목록에서 저장된 상태만 확인하세요."); }
@@ -240,7 +239,7 @@ export function ExperimentWizard() {
             </form>
           </>}
           <p role="status" aria-live="polite" className={styles.notice}>{message || "현재 입력 · 미검증"}</p>
-          {(phase === "unknown" || phase === "accepted") && <a className={styles.link} href={acceptedId ? `/dashboard/lab/runs/${encodeURIComponent(acceptedId)}` : "/dashboard"}>{acceptedId ? "같은 ID 상태 조회" : "실험 목록에서 상태 조회"}</a>}
+          {(phase === "unknown" || phase === "accepted") && <a data-native-document className={styles.link} href={acceptedId ? `/dashboard/lab/runs/${encodeURIComponent(acceptedId)}` : "/dashboard"}>{acceptedId ? "같은 ID 상태 조회" : "실험 목록에서 상태 조회"}</a>}
           {phase === "accepted" && <div className={styles.actions}><button type="button" onClick={() => {
             try { sessionStorage.removeItem(ADMISSION_KEY); } catch { return; }
             submitted.current = false; knownAcceptedId.current = null; version.current += 1; setReceipt(null); setAcceptedId(null); setToken(""); setPhase("idle"); setMessage("새 요청은 다시 검증해야 합니다."); go(1);

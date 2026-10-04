@@ -116,6 +116,32 @@ for(const navigation of ['list','back','step']) test(`manual same-ID pending doc
     await expect(page).toHaveURL(latest);if(navigation!=='list'){await page.getByRole('button',{name:'\uB2E4\uC74C',exact:true}).click();await restored(page,id);}expect(posts).toBe(1);
   } finally {await control('release');await info.attach('manual-native-race',{body:JSON.stringify({id,navigation,posts,url:page.url(),gate:await control('state')}),contentType:'application/json'});}
 });
+for(const replacement of ['list','step','back'])test(`held replacement native ${replacement} document yields to a newer wizard navigation`,async({page,request},info)=>{
+  let posts=0,id='';page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith(createPath))posts++;});
+  const control=async(which:string,op:string)=>{const response=await request.get('http://127.0.0.1:3004/__native_gate?'+new URLSearchParams({generation:info.project.name+'-chain-'+replacement+'-'+which,id,op,destination:which==='replacement'?(replacement==='list'?'list':'step2'):'detail'}),{headers:{'x-native-test-runner':'native-document-fixture-v1'}});expect(response.status()).toBe(200);return response.json();};
+  await prepare(page,'native-chain-'+replacement);await page.getByRole('button',{name:'paper \uC2E4\uD589 \uC2DC\uC791'}).click();await expect(page.getByRole('heading',{name:'Run Detail',exact:true})).toBeVisible();id=new URL(page.url()).pathname.split('/').at(-1)!;
+  await page.goBack({waitUntil:'commit'});await restored(page,id);await page.reload();await restored(page,id);
+  const session=await page.context().newCDPSession(page),history=await session.send('Page.getNavigationHistory'),previous=history.entries[history.currentIndex-1];expect(previous.url).toMatch(/step=2$/);
+  const list=page.getByRole('link',{name:'\u2190 \uC2E4\uD5D8 \uBAA9\uB85D',exact:true}),step=page.getByRole('button',{name:'\uC774\uC804',exact:true});
+  // Measure each target at its own visible scroll position before a GET is pending.
+  await list.scrollIntoViewIfNeeded();const listBox=await list.boundingBox(),listScroll=await page.evaluate(()=>window.scrollY);
+  await step.scrollIntoViewIfNeeded();const stepBox=await step.boundingBox(),stepScroll=await page.evaluate(()=>window.scrollY);let scroll=stepScroll;
+  expect(listBox).not.toBeNull();expect(stepBox).not.toBeNull();
+  await page.getByRole('link',{name:'\uAC19\uC740 ID \uC0C1\uD0DC \uC870\uD68C'}).evaluate(anchor=>(anchor as HTMLElement).focus({preventScroll:true}));
+  const click=async(box:NonNullable<typeof listBox>)=>{const targetScroll=box===listBox?listScroll:stepScroll;if(scroll!==targetScroll){await session.send('Input.synthesizeScrollGesture',{x:100,y:300,yDistance:scroll-targetScroll,speed:10000,gestureSourceType:'mouse'});scroll=targetScroll;}const x=box.x+box.width/2,y=box.y+box.height/2;await session.send('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1});await session.send('Input.dispatchMouseEvent',{type:'mouseReleased',x,y,button:'left',clickCount:1});};
+  await control('detail','arm');await control('replacement','arm');
+  try {
+    await session.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});await session.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+    await expect.poll(async()=>(await control('detail','state')).started).toBe(true);
+    if(replacement==='back')await session.send('Page.navigateToHistoryEntry',{entryId:previous.id});else await click(replacement==='list'?listBox!:stepBox!);
+    await expect.poll(async()=>(await control('replacement','state')).started).toBe(true);expect(await control('replacement','state')).toMatchObject({released:false,closed:false,finished:false});
+    await click(replacement==='list'?stepBox!:listBox!);const latest=replacement==='list'?/step=2$/:/\/dashboard$/;
+    await expect(page).toHaveURL(latest);
+    for(const which of ['replacement','detail']){await control(which,'release');await expect.poll(async()=>{const state=await control(which,'state');return state.closed||state.finished;}).toBe(true);await expect(page).toHaveURL(latest);}
+    if(replacement==='list'){await expect(page.getByRole('heading',{name:/^2\./})).toBeVisible();await page.getByRole('button',{name:'\uB2E4\uC74C',exact:true}).click();await restored(page,id);}else await expect(page.getByRole('heading',{name:'\uC2E4\uD5D8',exact:true})).toBeVisible();
+    expect(posts).toBe(1);
+  } finally {await control('replacement','release');await control('detail','release');await info.attach('native-replacement-chain',{body:JSON.stringify({replacement,id,posts,url:page.url(),detail:await control('detail','state'),next:await control('replacement','state')}),contentType:'application/json'});}
+});
 test('native document completes while old synthetic RSC response remains held',async({page},info)=>{
   let posts=0,id='',held=0,released=false;const events:string[]=[];let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
   page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith(createPath))posts++;if(r.isNavigationRequest()&&r.url().includes('/dashboard/lab/runs/'))events.push('document:'+held+':'+released);});
