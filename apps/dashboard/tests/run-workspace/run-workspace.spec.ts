@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
+import {observeRunTimer} from './timerProbe';
 const root='/dashboard/lab/runs/';
 
 for(const failure of ['offline','invalid'])test('failed same-run tab replacement preserves last good and isolates different run: '+failure,async({page,request},info)=>{
@@ -96,22 +97,34 @@ test('manual GET refresh retains last successful data through failure and stale 
   await expect(page.getByRole('status')).toHaveCount(0);
 });
 test('running GET updates exact child to terminal and stops automatic reads',async({page},info)=>{
-  await page.clock.install();await page.goto(root+'fixture_transition_'+info.project.name);
+  await page.clock.install();await observeRunTimer(page);
   const reads:string[]=[];page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.method());});
+  await page.goto(root+'fixture_transition_'+info.project.name);
   await expect(page.getByText('선택 child: running',{exact:false})).toBeVisible();
+  // SSR text precedes the client effect: observe registration without issuing a GET.
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-ready','true');
+  await expect(page.locator('html')).toHaveAttribute('data-test-visibility-listener-ready','true');
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-active','1');
   await page.clock.fastForward(5_001);await expect(page.getByText('선택 child: completed',{exact:false})).toBeVisible();
   expect(reads).toEqual(['GET']);
   const count=reads.length;await page.clock.fastForward(20_000);expect(reads.length).toBe(count);
 });
 test('hidden document pauses running reads and route departure cleans up the timer',async({page})=>{
-  await page.clock.install();await page.goto(root+'fixture_running');
+  await page.clock.install();await observeRunTimer(page);
   const reads:string[]=[];page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.method());});
+  await page.goto(root+'fixture_running');
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-ready','true');
+  await expect(page.locator('html')).toHaveAttribute('data-test-visibility-listener-ready','true');
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-active','1');
   await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-active','0');
   await page.clock.fastForward(10_000);expect(reads).toEqual([]);
   await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-active','1');
   await page.clock.fastForward(5_001);await expect.poll(()=>reads.length).toBe(1);
   await expect(page.getByRole('button',{name:'같은 ID 새로 조회 (GET)'})).toBeEnabled();
   await page.getByRole('link',{name:'실험 목록',exact:true}).click();await expect(page).toHaveURL('/dashboard');
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-active','0');
   const count=reads.length;await page.clock.fastForward(20_000);expect(reads.length).toBe(count);
 });
 test('rendered detail is accessible, responsive and free of app errors',async({page},info)=>{
@@ -147,7 +160,10 @@ test('keyboard tab links preserve focus through fresh GET and history',async({pa
 });
 
 test('pending running GET becomes stale without declaring execution failure',async({page})=>{
-  await page.clock.install();await page.goto(root+'fixture_running');
+  await page.clock.install();await observeRunTimer(page);await page.goto(root+'fixture_running');
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-ready','true');
+  await expect(page.locator('html')).toHaveAttribute('data-test-visibility-listener-ready','true');
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-active','1');
   let release!:()=>void,started!:()=>void;const gate=new Promise<void>(r=>release=r),entered=new Promise<void>(r=>started=r);
   await page.route('**/snapshot',async route=>{started();await gate;const response=await route.fetch();const value=await response.json();value.fetchedAt=await page.evaluate(()=>new Date().toISOString());value.runDetail.fetchedAt=value.fetchedAt;await route.fulfill({response,json:value});});
   try{await page.clock.fastForward(5_001);await entered;await page.clock.fastForward(16_001);
@@ -159,7 +175,10 @@ test('pending running GET becomes stale without declaring execution failure',asy
 });
 
 test('hidden running observation warns on return until a fresh GET completes',async({page})=>{
-  await page.clock.install();await page.goto(root+'fixture_running');
+  await page.clock.install();await observeRunTimer(page);await page.goto(root+'fixture_running');
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-ready','true');
+  await expect(page.locator('html')).toHaveAttribute('data-test-visibility-listener-ready','true');
+  await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-active','1');
   const reads:string[]=[];page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.method());});
   await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
   await page.clock.fastForward(20_001);expect(reads).toEqual([]);

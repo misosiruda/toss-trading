@@ -84,3 +84,7 @@ summary/record 이동으로 새 initial이 offline 또는 invalid가 되어도 �
 - Tab-only URL 이동은 링크 DOM을 유지한다. run ID만 workspace identity로 사용하고 새 fetchedAt의 관측 상태·polling lifecycle을 갱신한다. 키보드 Enter 및 Back/Forward의 포커스를 검사한다.
 - running/accepted-unknown 관측은 응답 pending 또는 hidden 복귀에서도 마지막 성공 GET 이후 15초가 지나면 관측 지연을 표시한다. terminal 결과는 시간 경과만으로 stale 처리하지 않으며 실행 상태를 실패로 바꾸지 않는다.
 - Wizard navigation-intent fixture는 202 접수 뒤 같은 ID의 batch terminal 상태를 bounded GET으로 확인하고 다음 케이스로 넘어간다. POST 재시도·고정 sleep·timeout 상향 없이 admission guard를 보존한다. 최초 full-run409 기록은 별도 증거로 유지한다.
+
+## 자동 조회 시험의 준비 관측
+
+SSR의 running 텍스트가 보여도 client effect의 첫 5초 timer와 visibility listener가 등록됐다는 보장은 없습니다. 준비 전 가상 clock 전진 뒤 timer가 등록되어 기존 5초 assertion 끝에서 첫 GET이 발생하는 순서를 합성 production trace로 재현했습니다. 시험은 GET 없이 실제 timer와 listener 등록을 관측한 다음 clock을 전진합니다. hidden에서 timer 0개·GET 0회, visible 복귀에서 timer 1개·GET 1회와 terminal/이탈 cleanup을 검증합니다. 제품 polling, GET 수, 5초 간격, assertion/timeout/retry 조건은 변경하지 않습니다.
