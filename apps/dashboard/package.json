@@ -13,7 +13,8 @@
     "test:e2e:experiment-production": "npm run build && playwright test --config=playwright.experiment-production.config.ts",
     "test:e2e:run-workspace": "npm run build && playwright test --config=playwright.run-workspace.config.ts",
     "test:portfolio-fixture": "npm --prefix ../.. run build && node --test tests/portfolio-policy/portfolio-fixture.test.mjs",
-    "test:e2e:portfolio-policy": "node tests/portfolio-policy/run-e2e.mjs"
+    "test:e2e:portfolio-policy": "node tests/portfolio-policy/run-e2e.mjs",
+    "test:e2e:run-evidence": "npm run build && playwright test --config=playwright.run-evidence.config.ts"
   },
   "dependencies": {
     "next": "16.2.9",

@@ -139,6 +139,7 @@ manifest 선택 진단 없는 응답에 최신 label 금지, legacy route 보존
 | UX-02b | 구현·병합 | [PR #798](https://github.com/misosiruda/toss-trading/pull/798), main `9235ab7`; 전체 4,462 tests 중 4,429 pass/33 skip/0 fail |
 | UX-03 | 이 PR의 구현 범위 | [구현·검증 경계](ux03-implementation.md); 최종 head 검증 및 자동 review 결과는 PR 기록에서 확인 |
 | UX-04 | 별도 후보 구현 · 병합 전 | [구현 계약](ux04-implementation.md); #802 위 stacked 후보이며 #802의 navigation merge hold를 해소하지 않음. 현재 검증/PR 상태는 해당 PR에서 확인 |
-| UX-02c, UX-05~07 | 미구현 | PR별 완료 조건을 통과한 뒤 갱신 |
+| UX-05 | 로컬 구현·검증 후보 | [구현 기록](ux05-implementation.md); UX-04 local379fae 위 별도 branch. 원격 PR·독립 review·root full 통과를 뜻하지 않으며 기존 merge hold 유지 |
+| UX-02c, UX-06~07 | 미구현 | PR별 완료 조건을 통과한 뒤 갱신 |
 
 설계 시안을 구현 완료로, accepted를 실행 완료로, review 대기를 승인으로 표시하지 않는다.

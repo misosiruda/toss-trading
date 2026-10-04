@@ -18,8 +18,8 @@ test('batch alias identifies child; URL summary and records survive history and 
   const mutations:string[]=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push(r.method());});
   await page.goto(root+'fixture_batch');await expect(page.getByRole('heading',{name:'Run Detail',exact:true})).toBeVisible();
   await expect(page.getByText('fixture_completed',{exact:true}).first()).toBeVisible();
-  await expect(page.getByRole('button',{name:'리플레이',exact:true})).toBeDisabled();
-  await expect(page.getByRole('button',{name:'판단 근거',exact:true})).toBeDisabled();
+  await expect(page.getByRole('link',{name:'리플레이',exact:true})).toHaveAttribute('href',root+'fixture_batch?tab=replay');
+  await expect(page.getByRole('link',{name:'판단 근거',exact:true})).toHaveAttribute('href',root+'fixture_batch?tab=evidence');
   await page.getByRole('link',{name:'기록',exact:true}).click();await expect(page).toHaveURL(root+'fixture_batch?tab=record');
   await expect(page.getByRole('heading',{name:'선택 실행 기록',exact:true})).toBeVisible();
   await expect(page.getByRole('link',{name:'전체 운영 기록 · Audit'})).toHaveAttribute('href','/dashboard/audit');
