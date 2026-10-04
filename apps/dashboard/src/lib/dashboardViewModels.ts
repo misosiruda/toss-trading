@@ -1438,7 +1438,7 @@ async function fetchViewModel<T>(
   }
 }
 
-function normalizeRunDetailView(
+export function normalizeRunDetailView(
   value: unknown,
   runId: string
 ): RunDetailView | null {

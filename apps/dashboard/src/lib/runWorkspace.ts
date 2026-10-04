@@ -1,12 +1,14 @@
+import { isRunEvidence } from './runEvidence';
+import type { RunWorkspacePageData } from './runEvidenceReader';
 import type { RunDetailPageData, RunDetailView, ViewModelResult } from "./dashboardViewModels";
 
-export type RunWorkspaceTab = "summary" | "record";
+export type RunWorkspaceTab = "summary" | "record" | "replay" | "evidence";
 export const RUN_REFRESH_INTERVAL_MS = 5_000;
 export const RUN_REFRESH_LIMIT = 12;
 const TERMINAL = new Set(["completed", "completed_with_failures", "failed", "skipped"]);
 
 export function readRunWorkspaceTab(value: string | null): RunWorkspaceTab {
-  return value === "record" ? "record" : "summary";
+  return value === "record" || value === "replay" || value === "evidence" ? value : "summary";
 }
 
 export function runWorkspaceState(result: ViewModelResult<RunDetailView>) {
@@ -28,10 +30,11 @@ export function validRunLookupId(value: string): boolean {
 
 export function isRunSnapshot(value: unknown, requestedId: string): value is RunDetailPageData {
   if (!value || typeof value !== "object") return false;
-  const page = value as RunDetailPageData;
+  const page = value as RunWorkspacePageData;
   if (typeof page.apiBaseLabel !== "string" || typeof page.fetchedAt !== "string" || !Number.isFinite(Date.parse(page.fetchedAt))) return false;
   const result = page.runDetail;
   if (!result || typeof result.endpoint !== "string" || typeof result.fetchedAt !== "string" || !Number.isFinite(Date.parse(result.fetchedAt))) return false;
+  if (page.evidence !== undefined && !isRunEvidence(page.evidence, result.status === "ok" ? result.data?.run?.runId ?? null : null)) return false;
   if (result.status === "offline" || result.status === "invalid") return result.data === null && typeof result.message === "string";
   if (result.status !== "ok") return false;
   const data = result.data;

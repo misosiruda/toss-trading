@@ -6,7 +6,8 @@ import {join} from 'node:path';
 import {stripTypeScriptTypes} from 'node:module';
 import {runHistoricalBatchReplay} from '../../../../dist/workflows/historicalBatchReplayWorkflow.js';
 import {createLocalOperationsServer} from '../../../../dist/api/localOperationsServer.js';
-const load=async name=>import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(await readFile(new URL('../../src/lib/'+name+'.ts',import.meta.url),'utf8'))));
+const evidenceUrl='data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(await readFile(new URL('../../src/lib/runEvidence.ts',import.meta.url),'utf8')));
+const load=async name=>import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes((await readFile(new URL('../../src/lib/'+name+'.ts',import.meta.url),'utf8')).replace("'./runEvidence'",JSON.stringify(evidenceUrl)))));
 const {readRunDetailPageData}=await load('dashboardViewModels');
 const {isRunSnapshot,runWorkspaceState}=await load('runWorkspace');
 test('actual batch writer and HTTP reader preserve legacy active identity without promoting execution',async t=>{

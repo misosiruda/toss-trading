@@ -3,17 +3,19 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { RunDetailPageData } from "@/lib/dashboardViewModels";
+import type { RunWorkspacePageData } from "@/lib/runEvidenceReader";
+import { RunEvidenceWorkspace } from "./RunEvidenceWorkspace";
 import { createRunRefresh, isRunSnapshot, readRunWorkspaceTab, runWorkspaceState, type RunRefreshState } from "@/lib/runWorkspace";
 import { WorkspaceNavigation } from "../../../ExperimentList";
 import { ArtifactStatusGrid, EvidencePanel, ProgressPanel, RunSummary, SimulationObservationPanel, SourcePanel, UnavailablePanel } from "./RunDetailPanels";
 import shell from "../../../ExperimentList.module.css";
 import styles from "./RunWorkspace.module.css";
 
-export function RunWorkspace({ requestedId, initial }: { requestedId: string; initial: RunDetailPageData }) {
-  const tab = readRunWorkspaceTab(useSearchParams().get("tab"));
-  const [snapshot, setSnapshot] = useState(initial);
-  const [lastGood, setLastGood] = useState(initial.runDetail.status === "ok" ? initial : null);
+export function RunWorkspace({ requestedId, initial }: { requestedId: string; initial: RunWorkspacePageData }) {
+  const query = useSearchParams();
+  const tab = readRunWorkspaceTab(query.get("tab"));
+  const [snapshot, setSnapshot] = useState<RunWorkspacePageData>(initial);
+  const [lastGood, setLastGood] = useState<RunWorkspacePageData | null>(initial.runDetail.status === "ok" ? initial : null);
   const [transportError, setTransportError] = useState(false);
   const [refreshState, setRefreshState] = useState<RunRefreshState>({ busy: false, automaticCount: 0, limited: false });
   const [now, setNow] = useState(() => Date.now());
@@ -78,11 +80,11 @@ export function RunWorkspace({ requestedId, initial }: { requestedId: string; in
       </header>
       <nav aria-label="실행 상세 보기" className={styles.tabs}>
         <Link href={`${href}?tab=summary`} aria-current={tab === "summary" ? "page" : undefined}>요약</Link>
+        <Link href={`${href}?tab=replay`} aria-current={tab === "replay" ? "page" : undefined}>리플레이</Link>
+        <Link href={`${href}?tab=evidence`} aria-current={tab === "evidence" ? "page" : undefined}>판단 근거</Link>
         <Link href={`${href}?tab=record`} aria-current={tab === "record" ? "page" : undefined}>기록</Link>
-        <button type="button" disabled aria-describedby="run-unsupported">리플레이</button>
-        <button type="button" disabled aria-describedby="run-unsupported">판단 근거</button>
       </nav>
-      <p id="run-unsupported" className={styles.note}>이 조회에는 검증된 시계열·실행별 event 참조가 없어 리플레이와 판단 근거를 제공하지 않습니다.</p>
+      <p id="run-unsupported" className={styles.note}>저장된 근거는 같은 child의 명시적 참조만 연결합니다. 검증된 자산 시계열·재생은 제공하지 않습니다.</p>
       <section aria-label="조회 상태" className={styles.observation}>
         <div><h2>조회와 실행 상태</h2>
           <p>조회: {transportError ? "offline" : snapshot.runDetail.status} · endpoint: {data?.endpointStatus ?? "미관측"} · batch: {data?.batchStatus ?? "미관측"}</p>
@@ -97,7 +99,8 @@ export function RunWorkspace({ requestedId, initial }: { requestedId: string; in
       <p className={styles.note}>{state.poll && !unavailable ? `5초 간격 GET 관측 · 최대 12회 (${refreshState.automaticCount}/12)` : "자동 조회 중단 · 실행 상태와 조회 상태는 별개입니다."}</p>
       {snapshot.runDetail.status !== "ok" && <UnavailablePanel result={snapshot.runDetail} />}
       {data && !["not_requested", "unsupported"].includes(data.simulationObservation.status) && <SimulationObservationPanel data={data} />}
-      {data && (data.run ? <>
+      {(tab === "replay" || tab === "evidence") && <RunEvidenceWorkspace model={display.evidence} requestedId={requestedId} tab={tab} />}
+      {data && (tab === "summary" || tab === "record") && (data.run ? <>
         {tab === "summary" ? <>
           <RunSummary run={data.run} />
           <ArtifactStatusGrid artifacts={data.artifacts} run={data.run} />
