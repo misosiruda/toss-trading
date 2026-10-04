@@ -34,6 +34,8 @@ raw 문자열 길이와 배열 길이는 Zod safeParse 전에 제한한다. 날�
 
 UI transport는 기존 2초이며 backend 읽기·파싱·projection은 최대 1.5초다. 고정 field whitelist의 JSON 직렬화와 loopback 전달에 0.5초를 남기는 정책이다. client의 x-provenance-budget-ms는 남은 상대 duration만 전달하며 backend는 최대 2초로 clamp하고 reserve를 뺀다. 누락·잘못된 값은 기본 예산이며 client hint로 최대 읽기 예산을 늘릴 수 없다. 네트워크 이동 시간 자체를 정확히 알거나 모든 지연을 보장하는 계약은 아니다.
 
-backend는 performance.now로 단일 monotonic deadline을 만들고 scan, stat·path 확인 후, 각 bounded file read 전후, UTF-8 decode·JSON parse·projection 후에 같은 deadline을 검사한다. OS에서 진행 중인 lstat/open/read를 강제로 취소할 수는 없다. 이미 열린 handle은 finally에서 닫고 deadline 뒤 새로운 read를 시작하지 않는다. directory iterator도 unwind하며 닫힌다. Promise race가 먼저 limit을 반환한 뒤 늦은 I/O 결과는 채택하지 않으며 부분 결과를 완전한 관측으로 노출하지 않는다. 다른 reader는 checkpoint 기본 no-op으로 기존 동작을 유지한다.
+backend는 performance.now로 단일 monotonic deadline을 만들고 scan, stat·path 확인 후, 각 bounded file read 전후, UTF-8 decode·JSON parse·projection 후에 같은 deadline을 검사한다. OS에서 진행 중인 lstat/open/read를 강제로 취소할 수는 없다. 이미 열린 handle은 finally에서 닫고 deadline 뒤 새로운 read를 시작하지 않는다. directory는 명시적 read loop로 순회하며 모든 read 이전과 이후에 deadline을 검사하고 finally에서 닫힌다. opendir가 예산 뒤 끝나거나 entry 처리 중 예산이 지나도 다음 read를 시작하지 않는다. Promise race가 먼저 limit을 반환한 뒤 늦은 I/O 결과는 채택하지 않으며 부분 결과를 완전한 관측으로 노출하지 않는다. 다른 reader는 checkpoint 기본 no-op으로 기존 동작을 유지한다.
 
 정확한 1,500ms 경계는 monotonic clock 회귀로 limit-only를 확인한다. adapter 회귀는 1,500ms limit과 250ms 응답 처리 후에도 기존 2,000ms abort 이전에 limit으로 표시함을 고정 clock으로 확인한다. 실제 transport가 영구 정체한 경우 기존 2초 abort·GET 1회·retry 없음은 유지한다.
+
+15ms 읽기 예산에 opendir가 virtual40ms에 끝나는 경계는 directory read0/close1/limit-only로 검증한다. 첫 entry 처리 중40ms에 도달하는 경계도 read1/다음 read0/close1을 확인한다. 이 경계 검사에서 실제 sleep이나 timeout 확대를 사용하지 않는다.

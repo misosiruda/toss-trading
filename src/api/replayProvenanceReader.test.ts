@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { performance } from "node:perf_hooks";
+import filesystem from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+import type { Dir } from "node:fs";
 import { mkdtemp, mkdir, writeFile, readFile, stat, link, symlink, readdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -11,6 +14,26 @@ import {isStoredProvenanceTimestamp} from './replayProvenanceProjection.js';
 import { readReplayProvenance, readReplayProvenanceRequest, provenanceReadBudgetMs, REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_LIMITS } from "./replayProvenanceReader.js";
 import { BATCH_REPLAY_MANIFEST_FILE_NAME as manifestName, BATCH_REPLAY_RUNS_FILE_NAME as runsName, HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME as metadataName, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME as researchName } from "../storage/artifactPaths.js";
 const hash=`sha256:${"1".repeat(64)}`;
+test("directory opening beyond the deadline closes before any directory read",async t=>{
+  const f=await fixture();let now=0,readCalls=0,closeCalls=0;
+  const original=filesystem.opendir;
+  t.mock.timers.enable({apis:["setTimeout"]});t.mock.method(performance,"now",()=>now);
+  t.mock.method(filesystem,"opendir",async()=>{
+    now=40;
+    return {close:async()=>{closeCalls++;},read:async()=>{readCalls++;return null;}} as unknown as Dir;
+  });syncBuiltinESMExports();t.after(()=>{filesystem.opendir=original;syncBuiltinESMExports();});
+  const result=await readReplayProvenance(f.storage,"child","515");
+  assert.equal(result.status,"limit");assert.equal(readCalls,0);assert.equal(closeCalls,1);
+  assert.ok(Object.values(result.fields).every(field=>field.status==="unavailable"));
+});
+test("deadline reached while inspecting an entry prevents the next directory read and closes",async t=>{
+  const f=await fixture();let now=0,readCalls=0,closeCalls=0;
+  const original=filesystem.opendir;t.mock.timers.enable({apis:["setTimeout"]});t.mock.method(performance,"now",()=>now);
+  t.mock.method(filesystem,"opendir",async()=>({
+    close:async()=>{closeCalls++;},read:async()=>{readCalls++;return {name:"fixture_batch",isDirectory:()=>{now=40;return false;}};}
+  } as unknown as Dir));syncBuiltinESMExports();t.after(()=>{filesystem.opendir=original;syncBuiltinESMExports();});
+  assert.equal((await readReplayProvenance(f.storage,"child","515")).status,"limit");assert.equal(readCalls,1);assert.equal(closeCalls,1);
+});
 test("indexed skipped child with no artifact directory remains partial and cannot bypass path boundaries",async()=>{
   const f=await fixture();f.run.runId="skipped_child";f.run.status="skipped";f.run.storageBaseDir=join(f.batchDir,"runs","skipped_child");await f.save();
   const result=await readReplayProvenance(f.storage,"skipped_child");assert.equal(result.status,"partial");assert.equal(result.requestedRunId,"skipped_child");
