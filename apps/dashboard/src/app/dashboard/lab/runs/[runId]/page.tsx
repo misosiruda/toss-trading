@@ -10,5 +10,5 @@ export default async function RunDetailPage({ params }: { params: Promise<{runId
     apiBaseLabel: 'read-only operations endpoint', fetchedAt,
     runDetail: { status: 'invalid' as const, endpoint: '/batch/replay/runs', fetchedAt, data: null, message: 'Invalid run lookup ID' }
   };
-  return <RunWorkspace key={`${runId}:${initial.fetchedAt}`} requestedId={runId} initial={initial} />;
+  return <RunWorkspace key={runId} requestedId={runId} initial={initial} />;
 }

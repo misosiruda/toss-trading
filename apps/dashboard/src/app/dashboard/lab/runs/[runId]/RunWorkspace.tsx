@@ -17,6 +17,15 @@ export function RunWorkspace({ requestedId, initial }: { requestedId: string; in
   const [transportError, setTransportError] = useState(false);
   const [refreshState, setRefreshState] = useState<RunRefreshState>({ busy: false, automaticCount: 0, limited: false });
   const [now, setNow] = useState(() => Date.now());
+  const [source, setSource] = useState(initial);
+  // Reset observation state for a fresh server read without replacing focused DOM.
+  if (source !== initial) {
+    setSource(initial); setSnapshot(initial);
+    setLastGood(initial.runDetail.status === "ok" ? initial : null);
+    setTransportError(false);
+    setRefreshState({ busy: false, automaticCount: 0, limited: false });
+    setNow(Date.parse(initial.fetchedAt));
+  }
   const lifecycle = useRef<ReturnType<typeof createRunRefresh> | null>(null);
   useEffect(() => {
     const refresh = createRunRefresh({
@@ -33,7 +42,7 @@ export function RunWorkspace({ requestedId, initial }: { requestedId: string; in
       error: () => { setTransportError(true); setNow(Date.now()); }
     });
     lifecycle.current = refresh;
-    const visibility = () => refresh.setVisible(!document.hidden);
+    const visibility = () => { refresh.setVisible(!document.hidden); setNow(Date.now()); };
     visibility(); document.addEventListener("visibilitychange", visibility);
     return () => { refresh.dispose(); lifecycle.current = null; document.removeEventListener("visibilitychange", visibility); };
   }, [initial, requestedId]);
@@ -43,13 +52,13 @@ export function RunWorkspace({ requestedId, initial }: { requestedId: string; in
   const result = display.runDetail;
   const data = result.status === "ok" ? result.data : null;
   const state = runWorkspaceState(result);
-  const stale = unavailable && lastGood !== null && now - Date.parse(lastGood.fetchedAt) >= 15_000;
+  const stale = (unavailable || state.poll) && lastGood !== null && now - Date.parse(lastGood.fetchedAt) >= 15_000;
   const href = `/dashboard/lab/runs/${encodeURIComponent(requestedId)}`;
   useEffect(() => {
-    if (!unavailable || !lastGood) return;
+    if ((!unavailable && !state.poll) || !lastGood) return;
     const clock = window.setInterval(() => setNow(Date.now()), 5_000);
     return () => window.clearInterval(clock);
-  }, [unavailable, lastGood]);
+  }, [unavailable, state.poll, lastGood]);
   return <div className={`${shell.workspace} ${styles.workspace}`}>
     <a className={shell.skipLink} href="#run-workspace-main">실행 상세로 건너뛰기</a>
     <WorkspaceNavigation />
@@ -79,7 +88,7 @@ export function RunWorkspace({ requestedId, initial }: { requestedId: string; in
         </div>
         <button type="button" className={styles.refresh} disabled={refreshState.busy} onClick={() => void lifecycle.current?.refresh()}>{refreshState.busy ? "조회 중…" : "같은 ID 새로 조회 (GET)"}</button>
       </section>
-      {unavailable && <p role="status" className={styles.warning}>{stale ? "조회 갱신 지연 · " : ""}{lastGood ? "마지막 정상 조회 자료를 표시합니다. 현재 실행 생존·실패는 단정할 수 없습니다." : "현재 자료를 확인할 수 없습니다. GET으로 다시 조회할 수 있습니다."}</p>}
+      {(unavailable || stale) && <p role="status" className={styles.warning}>{stale ? "조회 갱신 지연 · " : ""}{lastGood ? "마지막 정상 조회 자료를 표시합니다. 현재 실행 생존·실패는 단정할 수 없습니다." : "현재 자료를 확인할 수 없습니다. GET으로 다시 조회할 수 있습니다."}</p>}
       {refreshState.limited && <p role="status" className={styles.warning}>자동 조회 한도 도달 · 실행 상태 단정 불가. 필요하면 GET으로 다시 조회하세요.</p>}
       <p className={styles.note}>{state.poll && !unavailable ? `5초 간격 GET 관측 · 최대 12회 (${refreshState.automaticCount}/12)` : "자동 조회 중단 · 실행 상태와 조회 상태는 별개입니다."}</p>
       {snapshot.runDetail.status !== "ok" && <UnavailablePanel result={snapshot.runDetail} />}

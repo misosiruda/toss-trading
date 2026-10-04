@@ -74,3 +74,9 @@ browser: production desktop1440/1024/mobile390, summary↔record URL·Back·relo
 시각 비교는 정본 시안과 실제 source의 의도적 편차를 기록하고 screenshot으로 검증한다.
 최종 후보는 diff/check:review 및 환경이 지원하는 check:merge와 dashboard lint/unit/type/build를
 실행하고 이전 head 증거와 합산하지 않는다. 초기 Ready 자동 review는 한 번만 수행한다.
+
+## 독립 리뷰 회귀 보완
+
+- Tab-only URL 이동은 링크 DOM을 유지한다. run ID만 workspace identity로 사용하고 새 fetchedAt의 관측 상태·polling lifecycle을 갱신한다. 키보드 Enter 및 Back/Forward의 포커스를 검사한다.
+- running/accepted-unknown 관측은 응답 pending 또는 hidden 복귀에서도 마지막 성공 GET 이후 15초가 지나면 관측 지연을 표시한다. terminal 결과는 시간 경과만으로 stale 처리하지 않으며 실행 상태를 실패로 바꾸지 않는다.
+- Wizard navigation-intent fixture는 202 접수 뒤 같은 ID의 batch terminal 상태를 bounded GET으로 확인하고 다음 케이스로 넘어간다. POST 재시도·고정 sleep·timeout 상향 없이 admission guard를 보존한다. 최초 full-run409 기록은 별도 증거로 유지한다.

@@ -88,3 +88,72 @@ test('rendered detail is accessible, responsive and free of app errors',async({p
   await page.getByRole('link',{name:'기록',exact:true}).click();await expect(page.getByRole('heading',{name:'선택 실행 기록',exact:true})).toBeVisible();
   await page.screenshot({path:info.outputPath('record.png'),fullPage:true});expect(errors).toEqual([]);
 });
+
+
+test('keyboard tab links preserve focus through fresh GET and history',async({page})=>{
+  const base=root+'fixture_completed';await page.goto(base);
+  const record=page.locator('a[href="'+base+'?tab=record"]');
+  // Complete a real client GET before keyboard activation, so SSR hydration cannot replace the focused node.
+  const first=await page.getByText('GET 관측 시각:',{exact:false}).textContent();
+  await page.getByRole('button',{name:'같은 ID 새로 조회 (GET)'}).click();
+  await expect(page.getByText('GET 관측 시각:',{exact:false})).not.toHaveText(first!);
+  const before=await page.getByText('GET 관측 시각:',{exact:false}).textContent();
+  await record.focus();await expect(record).toBeFocused();await page.keyboard.press('Enter');await expect(page).toHaveURL(base+'?tab=record');
+  await expect(page.getByText('GET 관측 시각:',{exact:false})).not.toHaveText(before!);
+  await expect(record).toBeFocused();
+  await page.goBack();await expect(page).toHaveURL(base);await expect(record).toBeFocused();
+  await page.goForward();await expect(page).toHaveURL(base+'?tab=record');await expect(record).toBeFocused();
+});
+
+test('pending running GET becomes stale without declaring execution failure',async({page})=>{
+  await page.clock.install();await page.goto(root+'fixture_running');
+  let release!:()=>void,started!:()=>void;const gate=new Promise<void>(r=>release=r),entered=new Promise<void>(r=>started=r);
+  await page.route('**/snapshot',async route=>{started();await gate;const response=await route.fetch();const value=await response.json();value.fetchedAt=await page.evaluate(()=>new Date().toISOString());value.runDetail.fetchedAt=value.fetchedAt;await route.fulfill({response,json:value});});
+  try{await page.clock.fastForward(5_001);await entered;await page.clock.fastForward(16_001);
+    await expect(page.getByRole('status')).toContainText('조회 갱신 지연');
+    await expect(page.getByText('선택 child: running',{exact:false})).toBeVisible();
+    await expect(page.getByText('조회: ok',{exact:false})).toBeVisible();
+    release();await expect(page.getByRole('status')).toHaveCount(0);
+  }finally{release();}
+});
+
+test('hidden running observation warns on return until a fresh GET completes',async({page})=>{
+  await page.clock.install();await page.goto(root+'fixture_running');
+  const reads:string[]=[];page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.method());});
+  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+  await page.clock.fastForward(20_001);expect(reads).toEqual([]);
+  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
+  await expect(page.getByRole('status')).toContainText('조회 갱신 지연');
+  await expect(page.getByText('선택 child: running',{exact:false})).toBeVisible();
+  await page.route('**/snapshot',async route=>{const response=await route.fetch();const value=await response.json();value.fetchedAt=await page.evaluate(()=>new Date().toISOString());value.runDetail.fetchedAt=value.fetchedAt;await route.fulfill({response,json:value});});
+  await page.clock.fastForward(5_001);await expect(page.getByRole('status')).toHaveCount(0);
+});
+
+
+for(const oldResult of ['running','error'])test('fresh terminal tab read retires held same-ID snapshot: '+oldResult,async({page},info)=>{
+  await page.clock.install();const id='fixture_race_'+oldResult+'_'+info.project.name,base=root+id;
+  await page.goto(base);await expect(page.getByText('선택 child: running',{exact:false})).toBeVisible();
+  let release!:()=>void,ready!:()=>void,handled!:()=>void;
+  const gate=new Promise<void>(r=>release=r),entered=new Promise<void>(r=>ready=r),finished=new Promise<void>(r=>handled=r);
+  await page.route('**/snapshot',async route=>{
+    const response=await route.fetch();const value=await response.json();expect(value.runDetail.data.run.status).toBe('running');ready();
+    await gate;
+    try{await route.fulfill(oldResult==='error'?{status:503,body:'fixture_read_failure'}:{response,json:value});}
+    catch(error){if(route.request().failure()?.errorText!=='net::ERR_ABORTED')throw error;}
+    finally{handled();}
+  });
+  try{
+    await page.getByRole('button',{name:'같은 ID 새로 조회 (GET)'}).click();await entered;
+    const before=await page.getByText('GET 관측 시각:',{exact:false}).textContent();
+    const record=page.locator('a[href="'+base+'?tab=record"]');await record.focus();await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(base+'?tab=record');await expect(page.getByText('선택 child: completed',{exact:false})).toBeVisible();
+    const terminalTime=await page.getByText('GET 관측 시각:',{exact:false}).textContent();expect(terminalTime).not.toBe(before);
+    release();await finished;await page.evaluate(()=>new Promise<void>(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>r()))));
+    await expect(page.getByText('선택 child: completed',{exact:false})).toBeVisible();
+    await expect(page.getByText('GET 관측 시각:',{exact:false})).toHaveText(terminalTime!);
+    await expect(record).toHaveAttribute('aria-current','page');await expect(page).toHaveURL(base+'?tab=record');
+    await expect(page.getByRole('status')).toHaveCount(0);await page.clock.fastForward(20_001);
+    await expect(page.getByText('GET 관측 시각:',{exact:false})).toHaveText(terminalTime!);
+    await expect(page.getByRole('status')).toHaveCount(0);
+  }finally{release();}
+});

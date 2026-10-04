@@ -12,7 +12,7 @@ function payload(id) {
   const batch=id.startsWith('paper_sim_')?id:'fixture_batch';
   const observation=id.startsWith('paper_sim_')?{status:'available',schemaVersion:'paper_simulation_observation.v1',simulationRunId:id,batchId:id,acceptedAt:start,outcome:id.endsWith('_failed')?'runner_failed':'unknown',runnerFailure:id.endsWith('_failed')?{observedAt:end,reasonCode:'runner_rejected'}:null}:null;
   const empty=['fixture_missing','paper_sim_20261004000000000_accepted','paper_sim_20261004000000000_failed'].includes(id);
-  const status=id==='fixture_partial'?'completed_with_failures':id==='fixture_failed'?'failed':id==='fixture_skipped'?'skipped':id.startsWith('fixture_running')||id.startsWith('fixture_transition_')?'running':'completed';
+  const status=id==='fixture_partial'?'completed_with_failures':id==='fixture_failed'?'failed':id==='fixture_skipped'?'skipped':id.startsWith('fixture_running')||id.startsWith('fixture_transition_')||id.startsWith('fixture_race_')?'running':'completed';
   const childId=id==='fixture_batch'?'fixture_completed':id;
   const selected=run(childId,status,batch);
   const active=status==='running'?{runId:childId,runIndex:0,startedAt:start,window:{startAt:start,endAt:end},storageBaseDir:'fixture/run',reportPath:'fixture/report',marketRegime:{label:'fixture'}}:null;
@@ -32,7 +32,7 @@ const server=createServer((request,response)=>{
   const id=url.searchParams.get('runId')??'fixture_completed';
   if(id==='fixture_offline')return send(response,503,{error:'fixture_offline'});
   const data=payload(id);
-  if(id.startsWith('fixture_transition_')&&requests.filter(r=>r.id===id).length>1){data.batchStatus='completed';data.activeRun=null;data.runs=[run(id,'completed')];data.selectedRun=data.runs[0];data.status='ok';data.latestRunArtifacts.runStatus='completed';}
+  if((id.startsWith('fixture_transition_')&&requests.filter(r=>r.id===id).length>1)||(id.startsWith('fixture_race_')&&requests.filter(r=>r.id===id).length>2)){data.batchStatus='completed';data.activeRun=null;data.runs=[run(id,'completed')];data.selectedRun=data.runs[0];data.status='ok';data.latestRunArtifacts.runStatus='completed';}
   send(response,200,data);
 });
 server.listen(port,host,()=>process.stdout.write(`${marker} http://${host}:${port}\n`));
