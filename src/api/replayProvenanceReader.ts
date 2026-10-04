@@ -4,7 +4,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   BATCH_REPLAY_MANIFEST_FILE_NAME, BATCH_REPLAY_RUNS_FILE_NAME,
   HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME,
-  createBatchReplayRootDirForStorage
+  createBatchReplayRootDirForStorage, safeArtifactPathPart
 } from "../storage/artifactPaths.js";
 import { assertExperimentPath, assertExperimentPathSyntax, hasFsCode, PaperExperimentStorageError, readExperimentFile } from "../storage/paperExperimentFilesystem.js";
 import { stableStringifyResearchInput } from "../replay/replayRunManifest.js";
@@ -58,14 +58,17 @@ function validateIdentity(raw:Record<string,unknown>,batch:Record<string,unknown
   }
 }
 function validateManifest(batch:Record<string,unknown>) {
+  // Older writers had no activeRun field, even in running manifests. The
+  // terminal proof still applies; omission cannot restore an active identity.
+  const noActive=batch.activeRun===null || !Object.hasOwn(batch,"activeRun");
   if(batch.mode!=="paper_only" || !producerText(batch.batchId) ||
     !producerText(batch.seed) || !isStoredProvenanceTimestamp(batch.startedAt) || !isStoredProvenanceTimestamp(batch.updatedAt) ||
     typeof batch.status!=="string" || !["running","completed","completed_with_failures"].includes(batch.status) ||
     !count(batch.runCount) || batch.runCount===0 ||
     !count(batch.completedCount) || !count(batch.skippedCount) || !count(batch.failedCount) ||
     Number(batch.completedCount)+Number(batch.skippedCount)+Number(batch.failedCount)>batch.runCount ||
-    (batch.activeRun!==null && !provenanceRecord(batch.activeRun))) throw new ReadFailure("invalid");
-  if(batch.status!=="running" && (batch.activeRun!==null || !isStoredProvenanceTimestamp(batch.completedAt))) throw new ReadFailure("invalid");
+    (!noActive && !provenanceRecord(batch.activeRun))) throw new ReadFailure("invalid");
+  if(batch.status!=="running" && (!noActive || !isStoredProvenanceTimestamp(batch.completedAt))) throw new ReadFailure("invalid");
   if(batch.status==="running" && batch.completedAt!==null) throw new ReadFailure("invalid");
   if(provenanceRecord(batch.activeRun)) validateIdentity(batch.activeRun,batch,false);
 }
@@ -89,6 +92,9 @@ async function scan(storageBaseDir:string,runId:string,budget:Budget,referenceBa
       const text=await readText(join(batchDir,BATCH_REPLAY_RUNS_FILE_NAME),REPLAY_PROVENANCE_LIMITS.indexBytes,budget);
       if(batch===null) {if(text!==null) throw new ReadFailure("invalid");continue;}
       validateManifest(batch);
+      // Verify the producer's sanitized directory binding without using the
+      // opaque raw ID as a path or opening any alternative location.
+      if(relative(join(root,safeArtifactPathPart(String(batch.batchId),"batch")),batchDir)!=="") throw new ReadFailure("invalid");
       if(text===null) throw new ReadFailure("invalid");
       let child:Record<string,unknown>|null=null;
       const ids=new Set<string>(),indices=new Set<number>();
@@ -105,7 +111,7 @@ async function scan(storageBaseDir:string,runId:string,budget:Budget,referenceBa
         validateIdentity(raw,batch,true);
         validateStoredPath(raw,batchDir,referenceBase);
         if(activeIdentity && (raw.runId===activeIdentity.runId || raw.runIndex===activeIdentity.runIndex) &&
-          (raw.runId!==activeIdentity.runId || raw.runIndex!==activeIdentity.runIndex || raw.storageBaseDir!==activeIdentity.storageBaseDir)) throw new ReadFailure("ambiguous");
+          (raw.runId!==activeIdentity.runId || raw.runIndex!==activeIdentity.runIndex || raw.storageBaseDir!==activeIdentity.storageBaseDir || raw.runSeed!==activeIdentity.runSeed || raw.startedAt!==activeIdentity.startedAt)) throw new ReadFailure("ambiguous");
         if(ids.has(String(raw.runId)) || indices.has(Number(raw.runIndex))) throw new ReadFailure("ambiguous");
         ids.add(String(raw.runId));indices.add(Number(raw.runIndex));
         if(raw.status==="skipped") skipped++;else if(raw.status==="failed") failed++;else completed++;
@@ -122,6 +128,7 @@ async function scan(storageBaseDir:string,runId:string,budget:Budget,referenceBa
       // Sequential append produces a prefix, including legitimately skipped
       // children without artifact directories. A deleted middle row is corrupt.
       for(let index=0;index<indices.size;index++) {check(budget);if(!indices.has(index)) throw new ReadFailure("invalid");}
+      if(activeIdentity && !indices.has(Number(activeIdentity.runIndex)) && activeIdentity.runIndex!==indices.size) throw new ReadFailure("invalid");
       const active=provenanceRecord(batch.activeRun) && batch.activeRun.runId===runId ? batch.activeRun : null;
       if(child && active && (active.runIndex!==child.runIndex || active.storageBaseDir!==child.storageBaseDir)) throw new ReadFailure("ambiguous");
       const run=child ?? active;if(!run) continue;
