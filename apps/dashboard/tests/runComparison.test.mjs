@@ -96,3 +96,15 @@ test('selected source mismatch never mixes terminal observation with other recor
 test('corrupt or malformed full-index counts suppress evidence rather than assert absence',()=>{
   for(const change of [{corruptLineCount:1},{totalCount:-1},{totalCount:0},{totalCount:1.1}]){const raw=evidencePayload('child');Object.assign(raw,change);assert.equal(project(raw).status,'incomplete');}
 });
+
+test('manifest-missing aggregate fallback preserves unbound stored terminal observations',()=>{
+  const raw=evidencePayload('child');Object.assign(raw,{batchId:null,batchStatus:null,batchStatusCounts:null,aggregateStatus:'ok',totalCount:1,corruptLineCount:0});
+  const o=project(raw);assert.equal(o.status,'available');assert.equal(o.runStatus,'completed');assert.equal(o.observationSource,'stored_terminal');assert.equal(o.artifactBinding,'bound');assert.equal(o.scopes.length,4);
+  raw.runs[0].batchId='legacy raw batch ID';assert.equal(project(raw).status,'available');
+  raw.runs=[];raw.totalCount=0;raw.activeRun={runId:'child',runIndex:0};raw.selectedRun=raw.activeRun;raw.batchStatus='running';assert.equal(project(raw).status,'invalid');
+});
+test('bound terminal accepts matching legacy raw batch labels and rejects contradictions',()=>{
+  const raw=evidencePayload('child');raw.batchId='legacy raw batch ID';raw.runs[0].batchId=raw.batchId;assert.equal(project(raw).status,'available');
+  raw.runs[0].batchId='other batch';assert.equal(project(raw).status,'invalid');
+  raw.batchId={private:'bad'};assert.equal(project(raw).status,'invalid');
+});

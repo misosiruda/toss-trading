@@ -6,6 +6,7 @@
 
 - endpoint `blocked`는 빈 목록 해석보다 먼저 보존한다. 차단을 저장 실행 없음으로 표시하지 않는다.
 - 저장 `runs[]`는 종료 상태만 허용한다. 진행 관측은 자신의 정확한 `activeRun.runId`와 running batch가 있어야 한다. artifact ID로 누락된 identity를 보충하지 않는다. 화면은 `stored_terminal`과 `manifest_active` 출처를 구분한다.
+- terminal 기록은 manifest가 없는 정상 aggregate fallback(`batchId/batchStatus:null`)에서도 exact row와 selectedRun이 일치하면 관측한다. manifest가 있을 때 matching raw batch label을 허용하고 다른 batch의 row는 거절한다. active 관측에는 manifest 결속이 계속 필수다.
 - `totalCount`와 반환 길이가 다르거나 전체 count가 누락·잘못됐거나 corrupt 줄이 있으면 `incomplete`로 처리한다. 전체 중복 여부를 증명할 수 없어 상태·시각·근거를 연결하지 않는다. 같은 ID의 terminal/active 충돌은 `ambiguous`다.
 - `selectedRun`은 선택한 source의 ID·batch·index·상태·lifecycle 시각·storage/report binding과 같아야 한다. 불일치하면 근거를 섞지 않는다. 경로 값은 내부 일치 비교에만 쓰고 화면/진단 응답에 반환하지 않는다.
 

@@ -55,7 +55,13 @@ export function projectComparisonObservation(value: unknown, requestedId: string
   }
   if (run.mode !== undefined && run.mode !== 'paper_only') return unavailable(requestedId,fetchedAt,'invalid');
   const isActive = exactRows.length === 0;
-  if (!validId(value.batchId) || (isActive ? value.batchStatus !== 'running' || (run.batchId !== undefined && run.batchId !== value.batchId) || (run.status !== undefined && run.status !== 'running') : run.batchId !== value.batchId)) return unavailable(requestedId,fetchedAt,'invalid');
+  const boundActive = validId(value.batchId) && value.batchStatus === 'running' &&
+    (run.batchId === undefined || run.batchId === value.batchId) && (run.status === undefined || run.status === 'running');
+  // Aggregate fallback has no manifest batch identity. Exact stored child and
+  // selected record still bind evidence; no manifest inference is required.
+  const boundTerminal = value.batchId === null ||
+    (typeof value.batchId === 'string' && value.batchId.length > 0 && value.batchId.length <= 256 && run.batchId === value.batchId);
+  if (isActive ? !boundActive : !boundTerminal) return unavailable(requestedId,fetchedAt,'invalid');
   const status = isActive ? 'running' : member(run.status,['completed','completed_with_failures','failed','skipped']);
   if (!status) return unavailable(requestedId,fetchedAt,'invalid');
   // No legacy selected/active identity fallback. Selected evidence must describe

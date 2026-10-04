@@ -24,5 +24,6 @@ http.createServer((req,res)=>{
     Object.assign(raw,{runs:original.slice(-100),totalCount:original.length,selectedRun:first});
   }
   if(id==='fixture_selected_mismatch')raw.selectedRun={...raw.runs[0],status:'failed'};
+  if(id==='fixture_aggregate_fallback')Object.assign(raw,{batchId:null,batchStatus:null,aggregateStatus:'ok'});
   const send=()=>res.end(JSON.stringify(raw));if(id==='fixture_slow')setTimeout(send,600);else send();
 }).listen(8795,'127.0.0.1');

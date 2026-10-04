@@ -15,6 +15,10 @@ test('blocked, source-invalid, clipped duplicate and selected disagreement suppr
   await page.goto(url('fixture_running','fixture_base'));
   await expect(page.getByTestId('comparison-baseline')).toContainText('manifest 진행 관측');
   await expect(page.getByTestId('comparison-candidate')).toContainText('저장 종료 기록');
+  await page.goto(url('fixture_aggregate_fallback','fixture_base'));
+  await expect(page.getByTestId('comparison-baseline')).toContainText('저장 종료 기록');
+  await expect(page.getByTestId('comparison-baseline').getByRole('table')).toBeVisible();
+  await expect(page.getByTestId('comparison-baseline').getByRole('link',{name:'이 실행 상세 보기'})).toBeVisible();
 });
 
 test('list entry reaches an empty selector and long exact IDs stay within the viewport',async({page})=>{
