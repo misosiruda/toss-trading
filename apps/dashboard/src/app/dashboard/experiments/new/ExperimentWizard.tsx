@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { acceptedSimulationId, emptySimulationDraft, readValidation, typedCandidate, type SimulationDraft, type SimulationValidation } from "@/lib/simulationCandidate";
 import { WorkspaceNavigation } from "../../ExperimentList";
@@ -15,7 +15,6 @@ type Receipt = { version: number; body: string; validation: SimulationValidation
 type Phase = "idle" | "validating" | "submitting" | "unknown" | "accepted";
 
 export function ExperimentWizard() {
-  const router = useRouter();
   const search = useSearchParams();
   const step = search.get("step") === "2" ? 2 : search.get("step") === "3" ? 3 : 1;
   const [draft, setDraft] = useState<SimulationDraft>(emptySimulationDraft);
@@ -30,6 +29,8 @@ export function ExperimentWizard() {
   const submitted = useRef(false);
   const alive = useRef(false);
   const navigationIntent = useRef(0);
+  const knownAcceptedId = useRef<string | null>(null);
+  const nativeDetailPending = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const candidate = typedCandidate(draft);
@@ -38,16 +39,24 @@ export function ExperimentWizard() {
 
   useEffect(() => {
     alive.current = true;
-    try {
-      // Restore the admission barrier before parsing an independently corruptible draft.
-      const admission = sessionStorage.getItem(ADMISSION_KEY);
-      if (admission) {
-        submitted.current = true;
-        const knownId = /^paper_sim_\d{17}_[A-Za-z0-9_-]{1,32}(?![\s\S])/.test(admission) ? admission : null;
-        setAcceptedId(knownId);
-        setPhase(knownId ? "accepted" : "unknown");
-        setMessage(knownId ? "이 탭의 이전 요청은 접수됐습니다. 같은 ID의 상세를 조회하세요." : "이전에 보낸 생성 요청의 결과는 미확인입니다. 재전송하지 말고 실험 목록에서 저장된 상태를 확인하세요.");
+    const synchronizeAdmission = () => {
+      setToken(""); setReceipt(null); validating.current = false; version.current += 1;
+      let admission: string | null = null;
+      try { admission = sessionStorage.getItem(ADMISSION_KEY); } catch { /* Preserve the in-memory barrier and known ID. */ }
+      const storedId = admission && /^paper_sim_\d{17}_[A-Za-z0-9_-]{1,32}(?![\s\S])/.test(admission) ? admission : null;
+      const id = storedId ?? knownAcceptedId.current;
+      if (admission || submitted.current || id) {
+        submitted.current = true; knownAcceptedId.current = id; setAcceptedId(id);
+        setPhase(id ? "accepted" : "unknown");
+        setMessage(id ? "이 탭의 이전 요청은 접수됐습니다. 같은 ID의 상세를 조회하세요." : "이전에 보낸 생성 요청의 결과는 미확인입니다. 재전송하지 말고 실험 목록에서 저장된 상태를 확인하세요.");
+      } else {
+        setPhase("idle"); setMessage("현재 입력 · 다시 검증하세요.");
       }
+    };
+    synchronizeAdmission();
+    const onPageShow = () => { nativeDetailPending.current = false; synchronizeAdmission(); };
+    window.addEventListener("pageshow", onPageShow);
+    try {
       const saved = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "null");
       if (saved && typeof saved === "object" && Object.keys(emptySimulationDraft).every(key => typeof saved[key] === "string")) {
         // Restore raw input only; validation credentials never survive a mount.
@@ -55,7 +64,7 @@ export function ExperimentWizard() {
       }
     } catch { /* Input remains usable when storage is unavailable. Admission fails closed below. */ }
     setReady(true);
-    return () => { alive.current = false; version.current += 1; controller.current?.abort(); };
+    return () => { window.removeEventListener("pageshow", onPageShow); alive.current = false; version.current += 1; controller.current?.abort(); };
   }, []);
 
   useEffect(() => { heading.current?.focus({ preventScroll: false }); }, [step]);
@@ -63,6 +72,10 @@ export function ExperimentWizard() {
   useEffect(() => {
     const { origin, pathname } = window.location;
     const onPopState = () => {
+      if (nativeDetailPending.current) {
+        navigationIntent.current += 1; nativeDetailPending.current = false;
+        window.stop(); window.location.replace(window.location.href); return;
+      }
       if (window.location.origin !== origin || window.location.pathname !== pathname) navigationIntent.current += 1;
     };
     window.addEventListener("popstate", onPopState);
@@ -78,6 +91,10 @@ export function ExperimentWizard() {
     if (!["http:", "https:"].includes(destination.protocol)) return;
     if (destination.origin === current.origin && destination.pathname === current.pathname && destination.search === current.search) return;
     navigationIntent.current += 1;
+    if (nativeDetailPending.current) {
+      event.preventDefault(); event.stopPropagation(); nativeDetailPending.current = false;
+      window.stop(); window.location.assign(destination.href);
+    }
   }
 
   function edit<K extends keyof SimulationDraft>(key: K, value: SimulationDraft[K]) {
@@ -94,6 +111,10 @@ export function ExperimentWizard() {
   function go(next: number) {
     const url = new URL(window.location.href);
     url.searchParams.set("step", String(next));
+    if (nativeDetailPending.current) {
+      navigationIntent.current += 1; nativeDetailPending.current = false;
+      window.stop(); window.location.assign(`${url.pathname}${url.search}`); return;
+    }
     window.history.pushState(null, "", `${url.pathname}${url.search}`);
   }
   async function validate() {
@@ -154,14 +175,21 @@ export function ExperimentWizard() {
       }
       const id = response.status === 202 ? acceptedSimulationId(payload, currentReceipt.validation) : null;
       if (!id) throw new Error("uncertain");
-      setAcceptedId(id); setPhase("accepted"); setToken("");
-      try { sessionStorage.setItem(ADMISSION_KEY, id); } catch { /* The earlier no-retry barrier remains; the known ID stays available in this view. */ }
+      knownAcceptedId.current = id;
+      setAcceptedId(id); setPhase("accepted"); setToken(""); setReceipt(null);
+      try { sessionStorage.setItem(ADMISSION_KEY, id); } catch {
+        setMessage("접수됐지만 ID를 저장하지 못했습니다. 알려진 ID를 잃지 않도록 자동 이동을 멈췄습니다. 같은 ID 상태 조회 링크를 사용할 수 있으며 POST는 재전송하지 않습니다."); return;
+      }
       // Keep a no-retry barrier and the exact accepted ID on Back/reload, without the token.
       setMessage("접수됐습니다. 완료 여부는 같은 ID의 상세에서 조회합니다.");
       // A newer user navigation wins even while its destination is still loading.
-      if (navigationIntent.current === requestNavigationIntent) router.push(`/dashboard/lab/runs/${encodeURIComponent(id)}`);
+      if (navigationIntent.current === requestNavigationIntent) {
+        nativeDetailPending.current = true;
+        try { window.location.assign(`/dashboard/lab/runs/${encodeURIComponent(id)}`); }
+        catch { nativeDetailPending.current = false; setMessage("접수됐지만 상세 조회 이동을 시작하지 못했습니다. 같은 ID 상태 조회 링크로 다시 조회하세요. POST는 재전송하지 않습니다."); }
+      }
     } catch {
-      if (alive.current) { setPhase("unknown"); setToken(""); setMessage("생성 응답이 불확실합니다. 실행 실패로 단정하거나 POST를 재전송하지 않습니다. ID를 받지 못했으므로 추측하지 않고 실험 목록에서 저장된 상태만 확인하세요."); }
+      if (alive.current && !knownAcceptedId.current) { setPhase("unknown"); setToken(""); setMessage("생성 응답이 불확실합니다. 실행 실패로 단정하거나 POST를 재전송하지 않습니다. ID를 받지 못했으므로 추측하지 않고 실험 목록에서 저장된 상태만 확인하세요."); }
     } finally { clearTimeout(timeout); }
   }
   const locked = phase === "submitting" || phase === "accepted" || phase === "unknown";
@@ -206,10 +234,10 @@ export function ExperimentWizard() {
             </form>
           </>}
           <p role="status" aria-live="polite" className={styles.notice}>{message || "현재 입력 · 미검증"}</p>
-          {(phase === "unknown" || phase === "accepted") && <Link className={styles.link} href={acceptedId ? `/dashboard/lab/runs/${encodeURIComponent(acceptedId)}` : "/dashboard"}>{acceptedId ? "같은 ID 상태 조회" : "실험 목록에서 상태 조회"}</Link>}
+          {(phase === "unknown" || phase === "accepted") && <a className={styles.link} href={acceptedId ? `/dashboard/lab/runs/${encodeURIComponent(acceptedId)}` : "/dashboard"}>{acceptedId ? "같은 ID 상태 조회" : "실험 목록에서 상태 조회"}</a>}
           {phase === "accepted" && <div className={styles.actions}><button type="button" onClick={() => {
             try { sessionStorage.removeItem(ADMISSION_KEY); } catch { return; }
-            submitted.current = false; version.current += 1; setReceipt(null); setAcceptedId(null); setToken(""); setPhase("idle"); setMessage("새 요청은 다시 검증해야 합니다."); go(1);
+            submitted.current = false; knownAcceptedId.current = null; version.current += 1; setReceipt(null); setAcceptedId(null); setToken(""); setPhase("idle"); setMessage("새 요청은 다시 검증해야 합니다."); go(1);
           }}>별도의 새 실험 준비</button></div>}
           <div className={styles.actions}>{step > 1 && <button type="button" onClick={() => go(step - 1)}>이전</button>}{step < 3 && <button className={styles.primary} type="button" disabled={!ready} onClick={() => go(step + 1)}>다음</button>}</div>
         </section>
