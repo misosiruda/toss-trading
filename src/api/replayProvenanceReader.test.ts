@@ -18,9 +18,9 @@ const hash=`sha256:${"1".repeat(64)}`;
 test("actual synthetic writer completed skipped index is partial, but whole-row deletion is invalid",async()=>{
   const root=await mkdtemp(join(tmpdir(),"provenance-writer-"));const storage=join(root,"paper"),source=join(root,"source");await mkdir(storage);await mkdir(source);
   let providers=0;
-  const result=await runHistoricalBatchReplay({sourceDataDir:source,outputBaseDir:join(root,"batch-replay"),batchId:"synthetic_writer",seed:"synthetic_seed",runCount:2,rangeStart:new Date("2026-01-01T00:00:00+09:00"),rangeEnd:new Date("2026-01-31T23:59:59.999+09:00"),generatedAt:new Date("2026-02-01T00:00:00Z"),minWindowSnapshots:1,decisionProviderFactory:()=>{providers++;throw Error("provider must never run");}});
+  const result=await runHistoricalBatchReplay({sourceDataDir:source,outputBaseDir:join(root,"batch-replay"),batchId:" synthetic writer: / \uD55C\uAE00 ",seed:"s".repeat(4097),runCount:2,rangeStart:new Date("2026-01-01T00:00:00+09:00"),rangeEnd:new Date("2026-01-31T23:59:59.999+09:00"),generatedAt:new Date("2026-02-01T00:00:00Z"),minWindowSnapshots:1,decisionProviderFactory:()=>{providers++;throw Error("provider must never run");}});
   const lines=(await readFile(result.runsPath,"utf8")).trim().split("\n");assert.equal(lines.length,2);
-  for(const line of lines){const row=JSON.parse(line);assert.equal(row.status,"skipped");assert.equal((await readReplayProvenance(storage,row.runId)).status,"partial");}
+  for(const line of lines){const row=JSON.parse(line);assert.equal(row.batchId,"synthetic writer: / \uD55C\uAE00");assert.equal(row.status,"skipped");const observed=await readReplayProvenance(storage,row.runId);assert.equal(observed.status,"partial");assert.doesNotMatch(JSON.stringify(observed),/synthetic writer|ssssssssss/);}
   assert.equal(providers,0);await writeFile(result.runsPath,lines[0]+"\n");assert.equal((await readReplayProvenance(storage,JSON.parse(lines[0]!).runId)).status,"invalid");
 });
 test("every row identity and terminal contract is validated before requested-ID filtering",async()=>{

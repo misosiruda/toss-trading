@@ -43,9 +43,13 @@ async function readObject(path:string,cap:number,budget:Budget):Promise<Record<s
 interface Match {batch:Record<string,unknown>;run:Record<string,unknown>;batchDir:string;active:boolean}
 const count=(value:unknown):value is number=>Number.isSafeInteger(value) && Number(value)>=0;
 const boundedText=(value:unknown):value is string=>typeof value==="string" && value.length>0 && value.length<=4096;
+// Producer normalizes opaque batch/seed text, then derives safe filesystem
+// names separately. Never apply the bounded requested-child grammar to it.
+const producerText=(value:unknown):value is string=>typeof value==="string" && value.trim().length>0 && value===value.trim();
+const storedChildId=(value:unknown):value is string=>typeof value==="string" && /^[A-Za-z0-9_.-]+$/.test(value) && value!=="." && value!=="..";
 function validateIdentity(raw:Record<string,unknown>,batch:Record<string,unknown>,terminal:boolean) {
-  if(!validProvenanceId(raw.runId) || !count(raw.runIndex) || raw.runIndex>=Number(batch.runCount) ||
-    !boundedText(raw.runSeed) || !boundedText(raw.storageBaseDir) || !isStoredProvenanceTimestamp(raw.startedAt)) throw new ReadFailure("invalid");
+  if(!storedChildId(raw.runId) || !count(raw.runIndex) || raw.runIndex>=Number(batch.runCount) ||
+    !producerText(raw.runSeed) || !boundedText(raw.storageBaseDir) || !isStoredProvenanceTimestamp(raw.startedAt)) throw new ReadFailure("invalid");
   if(terminal && (raw.mode!=="paper_only" || raw.batchId!==batch.batchId ||
     !["completed","completed_with_failures","skipped","failed"].includes(String(raw.status)))) throw new ReadFailure("invalid");
   if(!terminal && ((raw.mode!==undefined && raw.mode!=="paper_only") || (raw.batchId!==undefined && raw.batchId!==batch.batchId))) throw new ReadFailure("invalid");
@@ -54,8 +58,8 @@ function validateIdentity(raw:Record<string,unknown>,batch:Record<string,unknown
   }
 }
 function validateManifest(batch:Record<string,unknown>) {
-  if(batch.mode!=="paper_only" || !validProvenanceId(batch.batchId) ||
-    !boundedText(batch.seed) || !isStoredProvenanceTimestamp(batch.startedAt) || !isStoredProvenanceTimestamp(batch.updatedAt) ||
+  if(batch.mode!=="paper_only" || !producerText(batch.batchId) ||
+    !producerText(batch.seed) || !isStoredProvenanceTimestamp(batch.startedAt) || !isStoredProvenanceTimestamp(batch.updatedAt) ||
     !["running","completed","completed_with_failures"].includes(String(batch.status)) ||
     !count(batch.runCount) || batch.runCount===0 ||
     !count(batch.completedCount) || !count(batch.skippedCount) || !count(batch.failedCount) ||
