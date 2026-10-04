@@ -107,7 +107,7 @@ test("experiment navigation retains live existing destinations and anchored repo
   });
   try {
     await page.goto("/dashboard");
-    await expect(page.getByRole("link", { name: "기존 실행 설정", exact: true })).toHaveAttribute("href", "/dashboard/lab/policies");
+    await expect(page.getByRole("link", { name: "새 실험", exact: true })).toHaveAttribute("href", "/dashboard/experiments/new");
     await expect(page.getByText(/PortfolioPolicy 실행은 지원하지 않음/)).toBeVisible();
     if (isMobile) await recordMobileMenuContrast(page, testInfo, "closed");
 
@@ -260,7 +260,7 @@ async function recordMobileMenuContrast(page: Page, testInfo: TestInfo, state: s
 async function expectMobileMenuFocusExit(page: Page, testInfo: TestInfo) {
   const trigger = page.locator("summary").filter({ hasText: /^메뉴$/ });
   const menu = page.getByRole("navigation", { name: "모바일 주 메뉴", exact: true });
-  const cta = page.getByRole("link", { name: "기존 실행 설정", exact: true });
+  const cta = page.getByRole("link", { name: "새 실험", exact: true });
   for (const expanded of [false, true]) {
     await openMobileMenu(page);
     const settings = menu.locator("summary").filter({ hasText: "설정·운영" });

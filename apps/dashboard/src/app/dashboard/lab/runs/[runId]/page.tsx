@@ -80,6 +80,8 @@ export default async function RunDetailPage({ params }: RunDetailParams) {
           <BoundaryCard label="Live order" tone="blocked" value="not exposed" />
         </section>
 
+        {pageData.runDetail.status === "ok" && <SimulationObservationPanel data={pageData.runDetail.data} />}
+
         {pageData.runDetail.status === "ok" ? (
           <RunDetailViewPanel data={pageData.runDetail.data} />
         ) : (
@@ -94,6 +96,26 @@ export default async function RunDetailPage({ params }: RunDetailParams) {
       </div>
     </main>
   );
+}
+
+function SimulationObservationPanel({ data }: { data: RunDetailView }) {
+  const observation = data.simulationObservation;
+  const labels = {
+    missing: "접수 관측 원본 없음", invalid: "접수 관측 형식 또는 ID 불일치",
+    unavailable: "접수 관측 판독 불가", unsupported: "접수 관측 필드 미지원", not_requested: "접수 관측 자료 없음 (요청 안 됨)"
+  };
+  return <section aria-label="Simulation 접수 관측" className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4 text-sm leading-6">
+    <h2 className="text-base font-semibold">{observation.status === "available" ? observation.outcome === "runner_failed" ? "Runner 실패 관측" : "접수 관측 · 이후 실행 상태 미확인" : labels[observation.status]}</h2>
+    <p className="break-all">조회 ID: {data.requestedId}</p>
+    <p>실행 index 판독: {data.endpointStatus ?? "미확인"} · batch 상태: {data.batchStatus ?? "미확인"}</p>
+    {observation.status === "available" && <>
+      <p>접수 시각: {observation.acceptedAt}</p>
+      {observation.runnerFailure && <p>실패 관측 시각: {observation.runnerFailure.observedAt} · {observation.runnerFailure.reasonCode}</p>}
+      <p>{observation.outcome === "runner_failed" ? "Batch 범위의 runner rejection 관측입니다. 아래 child 실행의 상태와 부분·완료 결과는 별도로 보존합니다." : "접수 사실만 확인됐습니다. running·생존·완료를 뜻하지 않으며, 아래 실행 원본이 있으면 함께 확인하세요."}</p>
+    </>}
+    {observation.status !== "available" && <p>이 관측의 부재나 오류로 기존 child 실행의 상태를 변경하지 않습니다.</p>}
+    <a className="mt-2 inline-flex min-h-11 items-center underline" href={`/dashboard/lab/runs/${encodeURIComponent(data.requestedId)}`}>같은 ID 새로 조회 (GET)</a>
+  </section>;
 }
 
 function RunDetailViewPanel({ data }: { data: RunDetailView }) {
@@ -125,11 +147,11 @@ function RunSummary({ run }: { run: BatchReplayRunSummary }) {
   return (
     <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="font-mono text-xs text-[var(--muted)]">
+        <div className="min-w-0">
+          <p className="font-mono text-xs text-[var(--muted)] [overflow-wrap:anywhere]">
             batch {run.batchId ?? "missing"}
           </p>
-          <h2 className="mt-1 break-words text-base font-semibold">{run.runId}</h2>
+          <h2 className="mt-1 text-base font-semibold [overflow-wrap:anywhere]">{run.runId}</h2>
         </div>
         <Badge tone={statusTone(run.status)} value={run.status} />
       </div>
@@ -296,7 +318,7 @@ function SourcePanel({ data }: { data: RunDetailView }) {
   return (
     <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <SectionHeader eyebrow="source" title="Read-only Source Boundary" />
-      <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+      <dl className="mt-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
         <KeyValue label="Batch status" value={data.batchStatus ?? "missing"} />
         <KeyValue label="Batch id" value={data.batchId ?? "missing"} />
         <KeyValue
@@ -355,7 +377,7 @@ function BoundaryCard({
 function SectionHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
     <div>
-      <p className="font-mono text-xs text-[var(--muted)]">{eyebrow}</p>
+      <p className="font-mono text-xs text-[var(--muted)] [overflow-wrap:anywhere]">{eyebrow}</p>
       <h2 className="mt-1 text-base font-semibold">{title}</h2>
     </div>
   );
@@ -391,9 +413,9 @@ function ArtifactStatus({
 
 function KeyValue({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs font-medium uppercase text-[var(--muted)]">{label}</dt>
-      <dd className="mt-1 break-words font-mono text-xs">{value}</dd>
+      <dd className="mt-1 font-mono text-xs [overflow-wrap:anywhere]">{value}</dd>
     </div>
   );
 }
