@@ -98,7 +98,7 @@ export function evidenceReference(view: RunEvidenceView, kind: EvidenceKind, tar
   const matches=bucket.rows.filter(r=>r.id===targetId);
   if (matches.length>1 || matches.some(r=>r.duplicate)) return result('ambiguous');
   // Rejected rows may contain the target; exclusion does not prove absence.
-  if (matches.length===0 && (bucket.invalid>0 || bucket.wrongRun>0)) return result('unavailable');
+  if (matches.length===0 && (bucket.invalid>0 || bucket.wrongRun>0 || (bucket.corrupt??0)>0)) return result('unavailable');
   if (matches.length===0) return result(bucket.truncated ? 'outside_loaded_range' : 'missing');
   return result('linked');
 }

@@ -27,3 +27,7 @@ accepted detail의 rail/header·기존 palette/type·네 탭·list/inspector·mo
 ## 로컬 검증 결과
 최종 frontend source: unit144/144, type/lint/build 통과. UX05 production24/24와 상세 workspace33/33 (1440/1024/390px), 기본 production30/30, Wizard66/66 통과. 마지막 두 suite는 동일 reader/정상 projection 소스로 통과했으며 이후 child 라벨·중복 ID fail-closed·탭 순서 보완은 unit 및 UX05/상세 회귀로 재확인했다. retry/skip/flaky0. 합성 fixture만 사용했다.
 root review는 frontend 파일 영향이 unresolved로 전체 suite fallback: 4462 중4442pass/18fail/2skip. build/quality/tooling 통과. 기존379fae와 실패 이름·위치 동일18개, symlink EPERM14개. Node 실행 중 frontend 라벨/중복/탭 순서가 바뀌어 이 결과는 final exact-HEAD merge 증거가 아니다. root source/lock 변경 없음. Linux full gate·최신 독립 review·원래 PR802 간헐 URL commit 문제 해결은 미완료다. 원격 push/PR 생성/Ready/merge는 하지 않았다.
+
+## syntax-corrupt JSONL 참조의 불완전 관측
+
+API가 문법 파손 행을 drop하고 corrupt count를 반환한 collection에서는 로드된 대상이 없더라도 missing/outside_loaded_range로 단정하지 않는다. corrupt count가 양수면 unavailable이다. 정상 로드된 exact 대상은 linked를 유지하며 중복은 ambiguous다. UI 소유 integration은 실제 JSONL 파손→API GET→UI projection을 1행 및100건 초과 반환 조건에서 검증한다.
