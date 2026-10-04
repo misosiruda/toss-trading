@@ -11,6 +11,18 @@ import {isStoredProvenanceTimestamp} from './replayProvenanceProjection.js';
 import { readReplayProvenance, readReplayProvenanceRequest, provenanceReadBudgetMs, REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_LIMITS } from "./replayProvenanceReader.js";
 import { BATCH_REPLAY_MANIFEST_FILE_NAME as manifestName, BATCH_REPLAY_RUNS_FILE_NAME as runsName, HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME as metadataName, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME as researchName } from "../storage/artifactPaths.js";
 const hash=`sha256:${"1".repeat(64)}`;
+test("indexed skipped child with no artifact directory remains partial and cannot bypass path boundaries",async()=>{
+  const f=await fixture();f.run.runId="skipped_child";f.run.status="skipped";f.run.storageBaseDir=join(f.batchDir,"runs","skipped_child");await f.save();
+  const result=await readReplayProvenance(f.storage,"skipped_child");assert.equal(result.status,"partial");assert.equal(result.requestedRunId,"skipped_child");
+  assert.deepEqual(result.fields["configuration.initialCashKrw"],{status:"unavailable",reason:"missing",value:null});
+  assert.deepEqual(result.fields["research.configHash"],{status:"unavailable",reason:"missing",value:null});
+  assert.equal(result.fields["batch.seed"]?.status,"unavailable");assert.equal(result.fields["child.runSeed"]?.status,"unavailable");
+  assert.equal((await readReplayProvenance(f.storage,"unknown_child")).status,"missing");
+  f.run.storageBaseDir=join(f.root,"outside_missing");await f.save();assert.equal((await readReplayProvenance(f.storage,"skipped_child")).status,"blocked");
+  f.run.storageBaseDir=join(f.batchDir,"runs","missing","..","skipped_child");
+  // Preserve the raw traversal in the persisted record rather than normalizing it.
+  f.run.storageBaseDir=join(f.batchDir,"runs")+"/missing/../skipped_child";await f.save();assert.equal((await readReplayProvenance(f.storage,"skipped_child")).status,"blocked");
+});
 async function fixture(parent=tmpdir()) {
   const root=await mkdtemp(join(parent,"provenance-fixture-")),storage=join(root,"paper"),batchDir=join(root,"batch-replay","fixture_batch"),childDir=join(batchDir,"runs","child");
   await mkdir(storage);await mkdir(childDir,{recursive:true});

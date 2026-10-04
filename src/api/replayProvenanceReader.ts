@@ -77,7 +77,7 @@ async function scan(storageBaseDir:string,runId:string,budget:Budget):Promise<Ma
   }
   check(budget);return match;
 }
-async function boundRunDir(match:Match,referenceBase:string,budget:Budget):Promise<string> {
+async function boundRunDir(match:Match,referenceBase:string,budget:Budget):Promise<string|null> {
   check(budget);
   const storedPath=match.run.storageBaseDir;
   if(typeof storedPath!=="string" || storedPath.length>4096) throw new ReadFailure("blocked");
@@ -87,13 +87,14 @@ async function boundRunDir(match:Match,referenceBase:string,budget:Budget):Promi
   const path=isAbsolute(storedPath)?resolve(storedPath):resolve(referenceBase,storedPath);
   const runsDir=join(match.batchDir,"runs");
   if(!inside(path,runsDir)) throw new ReadFailure("blocked");
-  await assertExperimentPath(path,false,()=>check(budget));
-  check(budget);
-  const stat=await lstat(path);check(budget);
-  const actualPath=await realpath(path);check(budget);
-  const actualRuns=await realpath(runsDir);check(budget);
-  if(!stat.isDirectory() || !inside(actualPath,actualRuns)) throw new ReadFailure("blocked");
-  return path;
+  try {
+    await assertExperimentPath(path,false,()=>check(budget));check(budget);
+    const stat=await lstat(path);check(budget);
+    const actualPath=await realpath(path);check(budget);
+    const actualRuns=await realpath(runsDir);check(budget);
+    if(!stat.isDirectory() || !inside(actualPath,actualRuns)) throw new ReadFailure("blocked");
+    return path;
+  } catch(error) {check(budget);if(hasFsCode(error,"ENOENT")) return null;throw error;}
 }
 function metadataBound(raw:Record<string,unknown>,match:Match,runId:string):boolean {
   const id=raw.identity;return raw.mode==="paper_only" && provenanceRecord(id) && id.runId===runId && id.batchId===match.batch.batchId && id.runIndex===match.run.runIndex;
@@ -105,6 +106,10 @@ async function readBound(storageBaseDir:string,runId:string,budget:Budget,refere
   const match=await scan(storageBaseDir,runId,budget);
   if(!match) return emptyReplayProvenance(runId,"missing","missing");
   const dir=await boundRunDir(match,referenceBase,budget);check(budget);
+  if(dir===null) {
+    const result=projectReplayProvenance({runId,batch:match.batch,run:match.run,metadata:null,metadataReason:"missing",research:null,researchReason:"missing",researchSource:"research_manifest"});
+    check(budget);return result;
+  }
   let metadata:Record<string,unknown>|null=null;let metadataReason:ProvenanceReason="missing";
   try {
     metadata=await readObject(join(dir,HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME),REPLAY_PROVENANCE_LIMITS.metadataBytes,budget);
