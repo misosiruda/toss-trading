@@ -4,6 +4,19 @@ import {createRequire} from 'node:module';
 const resolve=createRequire(path.join(__dirname,'package.json'));
 const url=(baseline='fixture_base',candidate='fixture_candidate')=>`/dashboard/experiments/compare?baseline=${baseline}&candidate=${candidate}`;
 
+test('blocked, source-invalid, clipped duplicate and selected disagreement suppress only affected evidence',async({page})=>{
+  for(const [id,label] of [['fixture_endpoint_blocked','차단'],['fixture_stored_running','응답 확인 필요'],['fixture_no_active_id','실행 ID 불일치'],['fixture_outside_duplicate','전체 기록 확인 불가'],['fixture_selected_mismatch','실행 ID 불일치']] as const){
+    await page.goto(url('fixture_base',id));
+    await expect(page.getByTestId('comparison-baseline').getByRole('table')).toBeVisible();
+    const candidate=page.getByTestId('comparison-candidate');await expect(candidate).toContainText(label);
+    await expect(candidate.getByRole('table')).toHaveCount(0);await expect(candidate.getByRole('link')).toHaveCount(0);
+    if(id==='fixture_endpoint_blocked')await expect(candidate).not.toContainText('저장 실행 없음');
+  }
+  await page.goto(url('fixture_running','fixture_base'));
+  await expect(page.getByTestId('comparison-baseline')).toContainText('manifest 진행 관측');
+  await expect(page.getByTestId('comparison-candidate')).toContainText('저장 종료 기록');
+});
+
 test('list entry reaches an empty selector and long exact IDs stay within the viewport',async({page})=>{
   await page.goto('/dashboard');await page.getByRole('link',{name:'실행 비교',exact:true}).click();await expect(page).toHaveURL(/\/dashboard\/experiments\/compare$/);await expect(page.getByTestId('comparison-baseline')).toHaveCount(0);
   const id='fixture_'+ 'x'.repeat(240);await page.getByRole('textbox',{name:'기준 실행 ID'}).fill(id);await page.getByRole('textbox',{name:'후보 실행 ID'}).fill('fixture_candidate');await page.getByRole('button',{name:'두 실행 조회'}).click();await expect(page.getByTestId('comparison-baseline')).toContainText(id);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);

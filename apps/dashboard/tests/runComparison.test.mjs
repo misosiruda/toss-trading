@@ -26,14 +26,14 @@ test('both missing provenance remain unavailable, never equal or comparable',()=
 });
 test('exact child lookup rejects aliases, duplicate source rows and malformed exact rows',()=>{
   const raw=evidencePayload('different');raw.selectedRun.batchId='child';raw.batchId='child';assert.equal(project(raw).status,'identity_mismatch');
-  const duplicate=evidencePayload('child');duplicate.runs.push({...duplicate.runs[0],status:'invented'});assert.equal(project(duplicate).status,'ambiguous');
+  const duplicate=evidencePayload('child');duplicate.runs.push({...duplicate.runs[0],status:'invented'});duplicate.totalCount=2;assert.equal(project(duplicate).status,'ambiguous');
   const bad=evidencePayload('child');bad.runs[0]={runId:'child',status:'invented'};assert.equal(project(bad).status,'invalid');
 });
 test('missing run does not become zero or terminal success',()=>{
-  const raw=evidencePayload('child');raw.runs=[];raw.selectedRun=null;raw.latestRunArtifacts=null;const o=project(raw);assert.equal(o.status,'missing');assert.equal(o.runStatus,null);assert.deepEqual(o.scopes,[]);
+  const raw=evidencePayload('child');raw.runs=[];raw.totalCount=0;raw.selectedRun=null;raw.latestRunArtifacts=null;const o=project(raw);assert.equal(o.status,'missing');assert.equal(o.runStatus,null);assert.deepEqual(o.scopes,[]);
 });
-test('running and partial failure remain original states',()=>{
-  for(const status of ['running','completed_with_failures','failed','skipped']){const raw=evidencePayload('child');raw.runs[0].status=status;raw.selectedRun=raw.runs[0];assert.equal(project(raw).runStatus,status);}
+test('stored terminal outcomes remain original states',()=>{
+  for(const status of ['completed_with_failures','failed','skipped']){const raw=evidencePayload('child');raw.runs[0].status=status;raw.selectedRun=raw.runs[0];assert.equal(project(raw).runStatus,status);}
 });
 test('ended time follows the observed lifecycle field rather than a stale completion date',()=>{
   const raw=evidencePayload('child');raw.runs[0].status='running';assert.equal(project(raw).endedAt,null);raw.runs[0].status='failed';raw.runs[0].failedAt='2026-10-04T00:03:00.000Z';assert.equal(project(raw).endedAt,raw.runs[0].failedAt);
@@ -48,7 +48,8 @@ test('genuine zero, clipping, corruption and malformed evidence remain distinct'
   const malformed=project(evidencePayload('child','enum_object'));assert.equal(malformed.status,'available');assert.equal(malformed.scopes[0].displayed,1);assert.equal(malformed.scopes[1].excluded,1);assert.equal(malformed.scopes[1].displayed,0);
 });
 test('invalid dates and unknown endpoint statuses do not become provenance',()=>{
-  const raw=evidencePayload('child');raw.runs[0].startedAt='2026-02-31T00:00:00Z';raw.status='invented';const o=project(raw);assert.equal(o.startedAt,null);assert.equal(o.sourceStatus,null);assert.equal(o.comparability,'unavailable');
+  const raw=evidencePayload('child');raw.runs[0].startedAt='2026-02-31T00:00:00Z';const o=project(raw);assert.equal(o.status,'available');assert.equal(o.startedAt,null);assert.equal(o.comparability,'unavailable');
+  raw.status='invented';assert.equal(project(raw).status,'invalid');
 });
 test('invalid selection performs no GET',async t=>{const original=global.fetch;t.after(()=>global.fetch=original);global.fetch=async()=>{throw Error('must not fetch');};assert.deepEqual(await readComparisonPage(readComparisonSelection({baseline:'child',candidate:'child'})),[]);assert.equal((await readComparisonObservation('../child')).status,'invalid');});
 test('a stalled read aborts at the existing two-second bound',async t=>{
@@ -62,4 +63,36 @@ test('two no-store GETs isolate one offline run and preserve ordering',async t=>
 });
 test('read errors do not disclose exception bodies and invalid payload differs from offline',async t=>{
   const original=global.fetch;t.after(()=>global.fetch=original);global.fetch=async()=>new Response('{}');assert.equal((await readComparisonObservation('child')).status,'invalid');global.fetch=async()=>{throw Error('private token path');};const result=await readComparisonObservation('child');assert.equal(result.status,'offline');assert.doesNotMatch(JSON.stringify(result),/private|token|path/);
+});
+
+test('endpoint blocked is preserved before empty records are interpreted',()=>{
+  const raw=evidencePayload('child');Object.assign(raw,{status:'blocked',runs:[],selectedRun:null,latestRunArtifacts:null,totalCount:0});
+  const o=project(raw);assert.equal(o.status,'blocked');assert.equal(o.sourceStatus,'blocked');assert.equal(o.artifactBinding,'blocked');assert.deepEqual(o.scopes,[]);
+});
+test('running requires exact manifest active identity and bound running batch',()=>{
+  const raw=evidencePayload('child');const active={runId:'child',runIndex:0,startedAt:raw.runs[0].startedAt};
+  Object.assign(raw,{status:'running',batchStatus:'running',runs:[],totalCount:0,activeRun:active,selectedRun:active});
+  assert.equal(project(raw).runStatus,'running');assert.equal(project(raw).observationSource,'manifest_active');assert.equal(project(raw).endedAt,null);
+  delete active.runId;assert.equal(project(raw).status,'identity_mismatch');
+  active.runId='child';raw.batchStatus='completed';assert.equal(project(raw).status,'invalid');
+});
+test('stored running and artifact identity cannot replace absent active identity',()=>{
+  const raw=evidencePayload('child');raw.runs[0].status='running';assert.equal(project(raw).status,'invalid');
+  Object.assign(raw,{runs:[],totalCount:0,activeRun:{runIndex:0},selectedRun:{runIndex:0},batchStatus:'running'});assert.equal(project(raw).status,'identity_mismatch');
+});
+test('truncated index cannot establish uniqueness outside its last 100 records',()=>{
+  const raw=evidencePayload('child');const first={...raw.runs[0]};
+  const original=[first,...Array.from({length:99},(_,i)=>({...first,runId:'other_'+i})),{...first,status:'failed'}];
+  Object.assign(raw,{runs:original.slice(-100),totalCount:101,selectedRun:first});
+  const o=project(raw);assert.equal(o.status,'incomplete');assert.equal(o.runStatus,null);assert.deepEqual(o.scopes,[]);
+  delete raw.totalCount;assert.equal(project(raw).status,'incomplete');
+});
+test('selected source mismatch never mixes terminal observation with other record evidence',()=>{
+  for(const field of ['runId','batchId','status','runIndex','startedAt','completedAt','failedAt','skippedAt','storageBaseDir','reportPath']){
+    const raw=evidencePayload('child');raw.selectedRun={...raw.runs[0],[field]:'different'};assert.equal(project(raw).status,'identity_mismatch');
+  }
+  const raw=evidencePayload('child');raw.activeRun={runId:'child'};assert.equal(project(raw).status,'ambiguous');
+});
+test('corrupt or malformed full-index counts suppress evidence rather than assert absence',()=>{
+  for(const change of [{corruptLineCount:1},{totalCount:-1},{totalCount:0},{totalCount:1.1}]){const raw=evidencePayload('child');Object.assign(raw,change);assert.equal(project(raw).status,'incomplete');}
 });

@@ -6,12 +6,14 @@ import styles from './comparison.module.css';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-const statuses: Record<string,string> = {available:'조회됨',missing:'저장 실행 없음',offline:'조회 연결 불가',invalid:'응답 확인 필요',identity_mismatch:'실행 ID 불일치',ambiguous:'중복 실행 ID',running:'진행 중',completed:'완료',completed_with_failures:'부분 실패',failed:'실패',skipped:'건너뜀',ok:'정상',corrupt:'손상',degraded:'일부 기록만 사용',blocked:'차단'};
+const statuses: Record<string,string> = {incomplete:'전체 기록 확인 불가',available:'조회됨',missing:'저장 실행 없음',offline:'조회 연결 불가',invalid:'응답 확인 필요',identity_mismatch:'실행 ID 불일치',ambiguous:'중복 실행 ID',running:'진행 중',completed:'완료',completed_with_failures:'부분 실패',failed:'실패',skipped:'건너뜀',ok:'정상',corrupt:'손상',degraded:'일부 기록만 사용',blocked:'차단'};
 const kinds = {packet:'Packet',decision:'판단',risk:'Risk',trade:'가상 체결'};
 const text = (value:string|null)=>value ? statuses[value] ?? '미확인' : '미확인';
 const count = (value:number|null)=>value === null ? '미확인' : String(value);
 const time = (value:string|null)=>value ? value.replace('T',' ').replace('Z',' UTC') : '미확인';
 const reasons: Record<string,string> = {
+  blocked:'저장 경로 조회가 차단됐어요. 실행 기록이 없다는 뜻은 아니에요.',
+  incomplete:'전체 실행 기록의 중복 여부를 확인할 수 없어 이 실행의 근거를 연결하지 않았어요.',
   missing:'이 정확한 실행 ID에 해당하는 저장 실행을 찾지 못했어요. batch 별칭으로 다른 실행을 선택하지 않았어요.',
   offline:'이 실행을 조회할 수 없어요. 저장 기록이 없다는 뜻은 아니에요.',
   invalid:'응답 계약을 확인할 수 없어 이 실행의 관측을 표시하지 않았어요.',
@@ -43,7 +45,7 @@ export default async function ComparisonPage({searchParams}:{searchParams:Promis
 function Observation({roleLabel,observation:o}:{roleLabel:string;observation:ComparisonObservation}) {
   return <article className={styles.observation} aria-label={`${roleLabel} 실행 관측`} data-testid={`comparison-${roleLabel === '기준' ? 'baseline' : 'candidate'}`}>
     <header><h2>{roleLabel} 실행</h2><p className={styles.id}>{o.requestedId}</p><strong className={styles.status}>{text(o.status)}</strong></header>
-    <dl className={styles.facts}><div><dt>실행 상태</dt><dd>{text(o.runStatus)}</dd></div><div><dt>실행 시작</dt><dd>{time(o.startedAt)}</dd></div><div><dt>실행 종료</dt><dd>{time(o.endedAt)}</dd></div><div><dt>조회 시각</dt><dd>{time(o.fetchedAt)}</dd></div><div><dt>소스 응답</dt><dd>{text(o.sourceStatus)}</dd></div></dl>
+    <dl className={styles.facts}><div><dt>관측 출처</dt><dd>{o.observationSource === 'manifest_active' ? 'manifest 진행 관측' : o.observationSource === 'stored_terminal' ? '저장 종료 기록' : '미확인'}</dd></div><div><dt>실행 상태</dt><dd>{text(o.runStatus)}</dd></div><div><dt>실행 시작</dt><dd>{time(o.startedAt)}</dd></div><div><dt>실행 종료</dt><dd>{time(o.endedAt)}</dd></div><div><dt>조회 시각</dt><dd>{time(o.fetchedAt)}</dd></div><div><dt>소스 응답</dt><dd>{text(o.sourceStatus)}</dd></div></dl>
     {o.status !== 'available' ? <p className={styles.notice}>{reasons[o.status]}</p> : <>
       <h3>저장 근거의 관측 범위</h3>
       <p className={styles.scopeNote}>실행 ID 연결: {o.artifactBinding === 'bound' ? '일치' : '사용 불가'} · report {text(o.reportStatus)} · progress {text(o.progressStatus)}</p>
