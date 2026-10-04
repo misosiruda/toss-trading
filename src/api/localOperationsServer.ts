@@ -12,6 +12,8 @@ import {
   writeLegacyDashboardRedirect
 } from "./localOperationsDashboardAssets.js";
 import { writeJson } from "./localOperationsResponse.js";
+import { REPLAY_PROVENANCE_ROUTE, readReplayProvenanceRequest } from "./replayProvenanceReader.js";
+import { emptyReplayProvenance } from "./replayProvenanceProjection.js";
 import { routeRequest } from "./localOperationsRouting.js";
 import {
   isPaperPolicyValidationApiRoutePath,
@@ -102,6 +104,14 @@ async function handleRequest(
 ): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === REPLAY_PROVENANCE_ROUTE) {
+      if (request.method !== "GET") { writeJson(response,405,{error:"method_not_allowed",readOnly:true});return; }
+      try {
+        const result=await readReplayProvenanceRequest(url,options.storageBaseDir);
+        writeJson(response,result.statusCode,result.payload);
+      } catch { writeJson(response,500,emptyReplayProvenance(null,"invalid","invalid")); }
+      return;
+    }
     if (
       isPaperSimulationValidationApiRoutePath(url.pathname) &&
       isPaperSimulationValidationMethod(request.method)
