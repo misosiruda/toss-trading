@@ -21,7 +21,9 @@ const number = (value: unknown): value is number => typeof value === 'number' &&
 const count = (value: unknown): number | null => number(value) && Number.isSafeInteger(value) ? value : null;
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.length <= 100 && value.every(line);
 const market = (value: unknown) => value === 'KR' || value === 'US';
-const action = (value: unknown) => ['VIRTUAL_BUY','VIRTUAL_SELL','VIRTUAL_HOLD'].includes(String(value));
+const member = (value: unknown, allowed: readonly string[]) => typeof value === 'string' && allowed.includes(value);
+const action = (value: unknown) => member(value, ['VIRTUAL_BUY','VIRTUAL_SELL','VIRTUAL_HOLD']);
+const readStatus = (value: unknown): value is EvidenceReadStatus => typeof value === 'string' && READ.has(value);
 const fields: Record<EvidenceKind, {array:string; status:string; returned:string; total:string; corrupt:string}> = {
   packet:{array:'packets',status:'packetsStatus',returned:'packetCount',total:'totalPacketCount',corrupt:'packetCorruptLineCount'},
   decision:{array:'decisions',status:'decisionsStatus',returned:'decisionCount',total:'totalDecisionCount',corrupt:'decisionCorruptLineCount'},
@@ -49,7 +51,7 @@ function project(kind: EvidenceKind, value: unknown): Omit<EvidenceRow,'duplicat
     return {kind,id:value.riskDecisionId,packetId,at:value.createdAt,details:{riskDecisionId:value.riskDecisionId,packetId,...(value.symbol === undefined ? {} : {symbol:value.symbol}),approved:value.approved,rejectCodes:value.rejectCodes,checkedRules:value.checkedRules,createdAt:value.createdAt}};
   }
   if (!id(value.tradeId) || !id(value.decisionId) || !market(value.market) || !id(value.symbol) ||
-      !['VIRTUAL_BUY','VIRTUAL_SELL'].includes(String(value.action)) || !number(value.quantity) || value.quantity === 0 || count(value.priceKrw)===null || count(value.amountKrw)===null || !time(value.executedAt) || !["VIRTUAL_PENDING","VIRTUAL_FILLED","VIRTUAL_REJECTED","VIRTUAL_EXPIRED"].includes(String(value.status))) return null;
+      !member(value.action, ['VIRTUAL_BUY','VIRTUAL_SELL']) || !number(value.quantity) || value.quantity === 0 || count(value.priceKrw)===null || count(value.amountKrw)===null || !time(value.executedAt) || !member(value.status, ["VIRTUAL_PENDING","VIRTUAL_FILLED","VIRTUAL_REJECTED","VIRTUAL_EXPIRED"])) return null;
   return {kind,id:value.tradeId,packetId,at:value.executedAt,details:{tradeId:value.tradeId,packetId,decisionId:value.decisionId,market:value.market,symbol:value.symbol,action:value.action,quantity:value.quantity,priceKrw:value.priceKrw,amountKrw:value.amountKrw,status:value.status,executedAt:value.executedAt}};
 }
 function empty(kind: EvidenceKind, status: EvidenceReadStatus): EvidenceBucket {
@@ -64,7 +66,7 @@ export function buildRunEvidence(raw: unknown, selectedChildId: string | null): 
   if (raw.status !== 'ok' && raw.status !== 'missing') return unavailable('invalid');
   const buckets = EVIDENCE_KINDS.map(kind => {
     const f=fields[kind], status=raw[f.status];
-    const bucket=empty(kind,READ.has(String(status)) ? status as EvidenceReadStatus : 'invalid');
+    const bucket=empty(kind,readStatus(status) ? status : 'invalid');
     const rows=raw[f.array];bucket.returned=count(raw[f.returned]);bucket.total=count(raw[f.total]);bucket.corrupt=count(raw[f.corrupt]);
     if (!Array.isArray(rows) || rows.length > 100 || bucket.returned !== rows.length || bucket.total === null || bucket.total < rows.length || bucket.corrupt === null) {bucket.status='invalid';bucket.returned=null;bucket.total=null;bucket.corrupt=null;return bucket;}
     bucket.truncated=bucket.total > rows.length;
@@ -82,7 +84,8 @@ export function buildRunEvidence(raw: unknown, selectedChildId: string | null): 
     }
     bucket.rows=bucket.rows.map(row=>({...row,duplicate:(counts.get(row.id)??0)>1}));
     bucket.duplicates=[...counts.values()].filter(n=>n>1).length;
-    let previous=-Infinity;for (const row of bucket.rows) if(row.at){const stamp=Date.parse(row.at);if(stamp<previous)bucket.outOfOrder=true;if(stamp===previous)bucket.sameTime=true;previous=stamp;}
+    const seenTimes=new Set<number>();
+    let previous=-Infinity;for (const row of bucket.rows) if(row.at){const stamp=Date.parse(row.at);if(stamp<previous)bucket.outOfOrder=true;if(seenTimes.has(stamp))bucket.sameTime=true;seenTimes.add(stamp);previous=stamp;}
     return bucket;
   });
   return {runId:selectedChildId,source:'bound',buckets};
@@ -113,9 +116,9 @@ export function readEvidenceSelection(value: string | null): {kind:EvidenceKind;
   return EVIDENCE_KINDS.includes(kind) && id(target) ? {kind,id:target} : null;
 }
 export function isRunEvidence(value: unknown, selectedChildId: string | null): value is RunEvidenceView {
-  if (!object(value) || (value.source==='bound' && !id(selectedChildId)) || value.runId!==selectedChildId || !['bound','missing','mismatch','blocked','invalid'].includes(String(value.source)) || !Array.isArray(value.buckets) || value.buckets.length!==4) return false;
+  if (!object(value) || (value.source==='bound' && !id(selectedChildId)) || value.runId!==selectedChildId || !member(value.source, ['bound','missing','mismatch','blocked','invalid']) || !Array.isArray(value.buckets) || value.buckets.length!==4) return false;
   return value.buckets.every((b,index)=>{
-    if (!object(b) || b.kind!==EVIDENCE_KINDS[index] || !READ.has(String(b.status)) || !Array.isArray(b.rows) || b.rows.length>100 || ![b.returned,b.total,b.corrupt].every(n=>n===null||count(n)!==null) || ![b.invalid,b.wrongRun,b.duplicates].every(n=>count(n)!==null) || (b.truncated!==null && typeof b.truncated!=='boolean') || typeof b.outOfOrder!=='boolean' || typeof b.sameTime!=='boolean')return false;
+    if (!object(b) || b.kind!==EVIDENCE_KINDS[index] || !readStatus(b.status) || !Array.isArray(b.rows) || b.rows.length>100 || ![b.returned,b.total,b.corrupt].every(n=>n===null||count(n)!==null) || ![b.invalid,b.wrongRun,b.duplicates].every(n=>count(n)!==null) || (b.truncated!==null && typeof b.truncated!=='boolean') || typeof b.outOfOrder!=='boolean' || typeof b.sameTime!=='boolean')return false;
     if(value.source!=='bound' && b.rows.length)return false;
     if((b.status!=='ok' && b.status!=='degraded') && b.rows.length)return false;
     if(b.returned!==null && b.total!==null && (Number(b.returned)>100 || Number(b.total)<Number(b.returned) || b.truncated!==(Number(b.total)>Number(b.returned))))return false;

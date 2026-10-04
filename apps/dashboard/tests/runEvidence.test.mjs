@@ -28,3 +28,22 @@ test('reader distinguishes invalid/offline without propagating raw exception det
 test('display money, provider text and Risk rule fields obey their stored schema',()=>{for(const mutate of [r=>r.packets[0].candidates[0].lastPriceKrw=0.5,r=>r.decisions[0].decisions[0].budgetKrw=0.5,r=>r.decisions[0].summary='',r=>r.riskDecisions[0].checkedRules=[''],r=>r.trades[0].priceKrw=0.5,r=>r.trades[0].status='invented']){const raw=evidenceArtifacts('child');mutate(raw);assert.equal(buildRunEvidence(raw,'child').buckets.reduce((sum,b)=>sum+b.invalid,0),1);}});
 
 test('missing record arrays remain regional invalid evidence, not invalid snapshot transport',()=>{const raw=evidenceArtifacts('child');delete raw.packets;const view=buildRunEvidence(raw,'child');assert.equal(view.buckets[0].status,'invalid');assert.equal(view.buckets[0].returned,null);assert.equal(isRunEvidence(view,'child'),true);});
+test('malformed row enums reject arrays and objects without coercion or throwing',()=>{
+  for(const [kind,field,value] of [['decision','action',['VIRTUAL_BUY']],['decision','action',{toString:null}],['trade','action',['VIRTUAL_BUY']],['trade','action',{toString:null}],['trade','status',['VIRTUAL_FILLED']],['trade','status',{toString:null}]]){
+    const raw=evidenceArtifacts('child');const target=kind==='decision'?raw.decisions[0].decisions[0]:raw.trades[0];target[field]=value;
+    let view;assert.doesNotThrow(()=>view=buildRunEvidence(raw,'child'));const bucket=view.buckets.find(b=>b.kind===kind);
+    assert.equal(bucket.invalid,1,kind+'.'+field);assert.equal(bucket.rows.length,0);assert.equal(isRunEvidence(view,'child'),true);
+    assert.equal(evidenceReference(view,'packet','packet_1').state,'linked');
+  }
+});
+test('malformed collection statuses are regional invalid without string conversion',()=>{
+  for(const value of [['ok'],{toString:null}]){const raw=evidenceArtifacts('child');raw.decisionsStatus=value;let view;assert.doesNotThrow(()=>view=buildRunEvidence(raw,'child'));assert.equal(view.buckets[1].status,'invalid');assert.equal(view.buckets[1].rows.length,0);assert.equal(isRunEvidence(view,'child'),true);assert.equal(view.buckets[0].rows.length,1);}
+});
+test('client enum guard rejects malformed source, status and row enum JSON types',()=>{
+  for(const mutate of [v=>v.source=['bound'],v=>v.source={toString:null},v=>{v.buckets[0].status=['ok'];v.buckets[0].rows=[];},v=>v.buckets[0].status={toString:null},v=>v.buckets[1].rows[0].details.decisions[0].action=['VIRTUAL_BUY'],v=>v.buckets[1].rows[0].details.decisions[0].action={toString:null},v=>v.buckets[3].rows[0].details.status=['VIRTUAL_FILLED'],v=>v.buckets[3].rows[0].details.status={toString:null}]){const view=make();mutate(view);assert.doesNotThrow(()=>assert.equal(isRunEvidence(view,'child'),false));}
+});
+test('reader keeps a valid detail available when one evidence enum is malformed',async t=>{
+  const original=global.fetch;t.after(()=>global.fetch=original);const {readRunWorkspacePageData}=await reader();
+  for(const mutate of [v=>v.latestRunArtifacts.decisions[0].decisions[0].action={toString:null},v=>v.latestRunArtifacts.decisionsStatus={toString:null}]){const payload=evidencePayload('child');mutate(payload);global.fetch=async()=>new Response(JSON.stringify(payload),{status:200});const result=await readRunWorkspacePageData('child');assert.equal(result.runDetail.status,'ok');assert.equal(result.evidence.source,'bound');assert.equal(result.evidence.buckets[0].rows.length,1);assert.equal(result.evidence.buckets[1].rows.length,0);}
+});
+test('nonadjacent equal timestamps are diagnosed alongside source-order reversal',()=>{const raw=evidenceArtifacts('child');raw.packets.push({...raw.packets[0],packetId:'packet_2',generatedAt:'2026-10-04T00:01:00.000Z'},{...raw.packets[0],packetId:'packet_3'});raw.packetCount=3;raw.totalPacketCount=3;const view=buildRunEvidence(raw,'child');assert.equal(view.buckets[0].outOfOrder,true);assert.equal(view.buckets[0].sameTime,true);assert.deepEqual(view.buckets[0].rows.map(r=>r.id),['packet_1','packet_2','packet_3']);});

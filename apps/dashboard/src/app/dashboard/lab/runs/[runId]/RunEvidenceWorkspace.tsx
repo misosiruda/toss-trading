@@ -26,7 +26,7 @@ export function RunEvidenceWorkspace({model,requestedId,tab}:{model:RunEvidenceV
   },[view]);
   const kindFilter=tab==='replay'?'packet':EVIDENCE_KINDS.includes(query.get('kind') as EvidenceKind)?query.get('kind') as EvidenceKind:null;
   const buckets=view.buckets.filter(b=>kindFilter===null||b.kind===kindFilter);
-  const href=(kind:EvidenceKind,id:string)=>`/dashboard/lab/runs/${encodeURIComponent(requestedId)}?tab=${tab}&event=${encodeURIComponent(kind+':'+id)}`;
+  const href=(kind:EvidenceKind,id:string)=>`/dashboard/lab/runs/${encodeURIComponent(requestedId)}?tab=${tab}${tab==='evidence'&&kindFilter?`&kind=${kindFilter}`:''}&event=${encodeURIComponent(kind+':'+id)}`;
   const reference=selection?evidenceReference(view,selection.kind,selection.id):null;
   const outOfScope=tab==='replay' && selection?.kind!=='packet';
   const row=selection && reference?.state==='linked' && !outOfScope ? view.buckets.find(b=>b.kind===selection.kind)?.rows.find(r=>r.id===selection.id):undefined;

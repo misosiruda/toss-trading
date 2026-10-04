@@ -83,3 +83,34 @@ test('automatic evidence update restores the active tab when a focused record be
   await expect(page.getByRole('link',{name:'판단 근거',exact:true})).toBeFocused();
   await expect(page.getByText('선택 child: completed',{exact:false})).toBeVisible();
 });
+test('malformed enum JSON stays regional while valid detail and Packet remain usable',async({page})=>{
+  for(const scenario of ['enum_array','enum_object','enum_read_status']){
+    await page.goto(root+'fixture_evidence_'+scenario+'?tab=evidence&event=decision%3Apacket_1');
+    await expect(page.getByText('선택 child: completed',{exact:false})).toBeVisible();
+    await expect(page.getByText('조회: ok',{exact:false})).toBeVisible();
+    await expect(page.getByText(scenario==='enum_read_status'?'판독: invalid':'스키마 제외 1',{exact:false}).first()).toBeVisible();
+    await expect(page.getByRole('region',{name:'근거 사건 목록'}).locator('a[href$="event=decision%3Apacket_1"]')).toHaveCount(0);
+    await page.getByRole('region',{name:'근거 사건 목록'}).locator('a[href$="event=packet%3Apacket_1"]').click();
+    await expect(inspector(page).getByRole('heading',{name:'Packet · packet_1',exact:true})).toBeVisible();
+  }
+});
+test('kind filter and selected record survive selection, Back, Forward and reload',async({page})=>{
+  const filtered=normal+'?tab=evidence&kind=risk',selected=filtered+'&event=risk%3Arisk_1';
+  await page.goto(filtered);const region=page.getByRole('region',{name:'근거 사건 목록'});
+  const risk=region.locator('a[href$="event=risk%3Arisk_1"]');await risk.focus();await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(selected);await expect(inspector(page).getByRole('heading',{name:'Deterministic Risk · risk_1',exact:true})).toBeVisible();
+  await expect(region.getByRole('heading',{name:'Packet',exact:true})).toHaveCount(0);
+  await page.goBack();await expect(page).toHaveURL(filtered);await expect(region.getByRole('heading',{name:'Packet',exact:true})).toHaveCount(0);
+  await page.goForward();await expect(page).toHaveURL(selected);await page.reload();await expect(page).toHaveURL(selected);
+  await expect(page.getByRole('navigation',{name:'근거 자료 종류'}).getByRole('link',{name:'Deterministic Risk',exact:true})).toHaveAttribute('aria-current','page');
+  await expect(region.getByRole('heading',{name:'Packet',exact:true})).toHaveCount(0);
+  await inspector(page).getByRole('link',{name:'packet_1',exact:true}).click();await expect(page).toHaveURL(filtered+'&event=packet%3Apacket_1');
+  await expect(inspector(page).getByRole('heading',{name:'Packet · packet_1',exact:true})).toBeVisible();
+  await expect(region.getByRole('heading',{name:'Packet',exact:true})).toHaveCount(0);
+});
+test('nonadjacent repeated timestamps retain both diagnostics and original event order',async({page})=>{
+  await page.goto(root+'fixture_evidence_same_time_nonadjacent?tab=evidence');
+  await expect(page.getByText('원본 시각 순서 역전 · 동일 시각 있음 · 원본 순서를 유지합니다.',{exact:true})).toBeVisible();
+  const links=page.getByRole('region',{name:'근거 사건 목록'}).locator('a[href*="event=packet%3A"]');
+  await expect(links.locator('strong')).toHaveText(['packet_1','packet_2','packet_3']);
+});

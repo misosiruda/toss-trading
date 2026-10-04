@@ -11,6 +11,9 @@ export function evidenceArtifacts(runId='fixture_evidence_normal',scenario='norm
   if(scenario==='cross_packet'){risk.packetId='packet_2';arrays.packets.push({...clone(packet),packetId:'packet_2',generatedAt:later});}
   if(scenario==='out_of_order')arrays.packets.push({...clone(packet),packetId:'packet_2',generatedAt:'2026-10-03T23:00:00.000Z'});
   if(scenario==='same_time')arrays.packets.push({...clone(packet),packetId:'packet_2'});
+  if(scenario==='same_time_nonadjacent')arrays.packets.push({...clone(packet),packetId:'packet_2',generatedAt:later},{...clone(packet),packetId:'packet_3'});
+  if(scenario==='enum_array'){decision.decisions[0].action=['VIRTUAL_BUY'];trade.status=['VIRTUAL_FILLED'];}
+  if(scenario==='enum_object'){decision.decisions[0].action={toString:null};trade.action={toString:null};}
   if(scenario==='bad'){packet.generatedAt='invalid';decision.decisions[0].confidence=2;risk.checkedRules=[];trade.quantity=-1;}
   if(scenario==='wrong_run')for(const rows of Object.values(arrays))rows[0].runId='different_child';
   if(scenario==='empty')for(const key of Object.keys(arrays))arrays[key]=[];
@@ -20,6 +23,7 @@ export function evidenceArtifacts(runId='fixture_evidence_normal',scenario='norm
     result[returned]=result[array].length;result[total]=scenario==='truncated'?120:result[array].length;result[corrupt]=scenario==='corrupt'||scenario==='degraded'?1:0;
   }
   if(scenario==='truncated'){result.decisions[0].packetId='outside_packet';result.trades[0].decisionId='outside_risk';}
+  if(scenario==='enum_read_status')result.decisionsStatus={toString:null};
   return result;
 }
 export function evidencePayload(runId='fixture_evidence_normal',scenario='normal') {
