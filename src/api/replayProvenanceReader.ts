@@ -8,7 +8,7 @@ import {
 } from "../storage/artifactPaths.js";
 import { assertExperimentPath, assertExperimentPathSyntax, hasFsCode, PaperExperimentStorageError, readExperimentFile } from "../storage/paperExperimentFilesystem.js";
 import { stableStringifyResearchInput } from "../replay/replayRunManifest.js";
-import { emptyReplayProvenance, projectReplayProvenance, provenanceRecord, validProvenanceId, type ProvenanceReason, type ReplayProvenance } from "./replayProvenanceProjection.js";
+import { emptyReplayProvenance, projectReplayProvenance, provenanceRecord, validProvenanceId, isStoredProvenanceTimestamp, type ProvenanceReason, type ReplayProvenance } from "./replayProvenanceProjection.js";
 import { LOCAL_OPERATIONS_GET_ONLY_API_ROUTES } from "./localOperationsSurface.js";
 
 export const REPLAY_PROVENANCE_ROUTE = LOCAL_OPERATIONS_GET_ONLY_API_ROUTES[0];
@@ -41,7 +41,35 @@ async function readObject(path:string,cap:number,budget:Budget):Promise<Record<s
   const parsed:unknown=JSON.parse(text);check(budget);if(!provenanceRecord(parsed)) throw new ReadFailure("invalid");return parsed;
 }
 interface Match {batch:Record<string,unknown>;run:Record<string,unknown>;batchDir:string;active:boolean}
-async function scan(storageBaseDir:string,runId:string,budget:Budget):Promise<Match|null> {
+const count=(value:unknown):value is number=>Number.isSafeInteger(value) && Number(value)>=0;
+const boundedText=(value:unknown):value is string=>typeof value==="string" && value.length>0 && value.length<=4096;
+function validateIdentity(raw:Record<string,unknown>,batch:Record<string,unknown>,terminal:boolean) {
+  if(!validProvenanceId(raw.runId) || !count(raw.runIndex) || raw.runIndex>=Number(batch.runCount) ||
+    !boundedText(raw.runSeed) || !boundedText(raw.storageBaseDir) || !isStoredProvenanceTimestamp(raw.startedAt)) throw new ReadFailure("invalid");
+  if(terminal && (raw.mode!=="paper_only" || raw.batchId!==batch.batchId ||
+    !["completed","completed_with_failures","skipped","failed"].includes(String(raw.status)))) throw new ReadFailure("invalid");
+  if(!terminal && ((raw.mode!==undefined && raw.mode!=="paper_only") || (raw.batchId!==undefined && raw.batchId!==batch.batchId))) throw new ReadFailure("invalid");
+  if(terminal) for(const [key,expected] of [["completedAt",raw.status==="completed" || raw.status==="completed_with_failures"],["skippedAt",raw.status==="skipped"],["failedAt",raw.status==="failed"]] as const) {
+    if(expected ? !isStoredProvenanceTimestamp(raw[key]) : raw[key]!==null) throw new ReadFailure("invalid");
+  }
+}
+function validateManifest(batch:Record<string,unknown>) {
+  if(batch.mode!=="paper_only" || !validProvenanceId(batch.batchId) ||
+    !boundedText(batch.seed) || !isStoredProvenanceTimestamp(batch.startedAt) || !isStoredProvenanceTimestamp(batch.updatedAt) ||
+    !["running","completed","completed_with_failures"].includes(String(batch.status)) ||
+    !count(batch.runCount) || batch.runCount===0 ||
+    !count(batch.completedCount) || !count(batch.skippedCount) || !count(batch.failedCount) ||
+    Number(batch.completedCount)+Number(batch.skippedCount)+Number(batch.failedCount)>batch.runCount ||
+    (batch.activeRun!==null && !provenanceRecord(batch.activeRun))) throw new ReadFailure("invalid");
+  if(batch.status!=="running" && (batch.activeRun!==null || !isStoredProvenanceTimestamp(batch.completedAt))) throw new ReadFailure("invalid");
+  if(batch.status==="running" && batch.completedAt!==null) throw new ReadFailure("invalid");
+  if(provenanceRecord(batch.activeRun)) validateIdentity(batch.activeRun,batch,false);
+}
+function validateStoredPath(raw:Record<string,unknown>,batchDir:string,referenceBase:string) {
+  assertExperimentPathSyntax(String(raw.storageBaseDir));
+  if(!inside(resolve(referenceBase,String(raw.storageBaseDir)),join(batchDir,"runs"))) throw new ReadFailure("blocked");
+}
+async function scan(storageBaseDir:string,runId:string,budget:Budget,referenceBase:string):Promise<Match|null> {
   const root=createBatchReplayRootDirForStorage(storageBaseDir);
   check(budget);
   try {await assertExperimentPath(root,false,()=>check(budget));check(budget);} catch(error) {check(budget);if(hasFsCode(error,"ENOENT")) return null;throw error;}
@@ -56,9 +84,13 @@ async function scan(storageBaseDir:string,runId:string,budget:Budget):Promise<Ma
       const batch=await readObject(join(batchDir,BATCH_REPLAY_MANIFEST_FILE_NAME),REPLAY_PROVENANCE_LIMITS.manifestBytes,budget);
       const text=await readText(join(batchDir,BATCH_REPLAY_RUNS_FILE_NAME),REPLAY_PROVENANCE_LIMITS.indexBytes,budget);
       if(batch===null) {if(text!==null) throw new ReadFailure("invalid");continue;}
-      if(batch.mode!=="paper_only" || typeof batch.batchId!=="string" || batch.batchId.length===0 || batch.batchId.length>256) throw new ReadFailure("invalid");
+      validateManifest(batch);
       if(text===null) throw new ReadFailure("invalid");
       let child:Record<string,unknown>|null=null;
+      const ids=new Set<string>(),indices=new Set<number>();
+      const activeIdentity=provenanceRecord(batch.activeRun)?batch.activeRun:null;
+      if(activeIdentity) validateStoredPath(activeIdentity,batchDir,referenceBase);
+      let completed=0,skipped=0,failed=0,withFailures=false;
       const lines=text.split(/\r?\n/);
       if(lines.length>REPLAY_PROVENANCE_LIMITS.lines+1) throw new ReadFailure("limit");
       for(const line of lines) {
@@ -66,10 +98,26 @@ async function scan(storageBaseDir:string,runId:string,budget:Budget):Promise<Ma
         const raw:unknown=JSON.parse(line);
         check(budget);
         if(!provenanceRecord(raw)) throw new ReadFailure("invalid");
+        validateIdentity(raw,batch,true);
+        validateStoredPath(raw,batchDir,referenceBase);
+        if(activeIdentity && (raw.runId===activeIdentity.runId || raw.runIndex===activeIdentity.runIndex) &&
+          (raw.runId!==activeIdentity.runId || raw.runIndex!==activeIdentity.runIndex || raw.storageBaseDir!==activeIdentity.storageBaseDir)) throw new ReadFailure("ambiguous");
+        if(ids.has(String(raw.runId)) || indices.has(Number(raw.runIndex))) throw new ReadFailure("ambiguous");
+        ids.add(String(raw.runId));indices.add(Number(raw.runIndex));
+        if(raw.status==="skipped") skipped++;else if(raw.status==="failed") failed++;else completed++;
+        if(raw.status==="completed_with_failures") withFailures=true;
         if(raw.runId!==runId) continue;
         if(child!==null) throw new ReadFailure("ambiguous");
         child=raw;
       }
+      // A running writer can have appended terminal rows before its next
+      // manifest update. Counts may lag, but cannot claim absent terminal rows.
+      if(Number(batch.completedCount)>completed || Number(batch.skippedCount)>skipped || Number(batch.failedCount)>failed) throw new ReadFailure("invalid");
+      if(batch.status!=="running" && (ids.size!==batch.runCount || completed!==batch.completedCount || skipped!==batch.skippedCount || failed!==batch.failedCount ||
+        batch.status!==(failed>0 || withFailures ? "completed_with_failures" : "completed"))) throw new ReadFailure("invalid");
+      // Sequential append produces a prefix, including legitimately skipped
+      // children without artifact directories. A deleted middle row is corrupt.
+      for(let index=0;index<indices.size;index++) {check(budget);if(!indices.has(index)) throw new ReadFailure("invalid");}
       const active=provenanceRecord(batch.activeRun) && batch.activeRun.runId===runId ? batch.activeRun : null;
       if(child && active && (active.runIndex!==child.runIndex || active.storageBaseDir!==child.storageBaseDir)) throw new ReadFailure("ambiguous");
       const run=child ?? active;if(!run) continue;
@@ -106,7 +154,7 @@ function researchBound(raw:Record<string,unknown>,match:Match,runId:string):bool
   return raw.mode==="paper_only" && raw.manifestVersion==="replay_research_manifest.v1" && raw.runId===runId && raw.batchId===match.batch.batchId;
 }
 async function readBound(storageBaseDir:string,runId:string,budget:Budget,referenceBase:string):Promise<ReplayProvenance> {
-  const match=await scan(storageBaseDir,runId,budget);
+  const match=await scan(storageBaseDir,runId,budget,referenceBase);
   if(!match) return emptyReplayProvenance(runId,"missing","missing");
   const dir=await boundRunDir(match,referenceBase,budget);check(budget);
   if(dir===null) {

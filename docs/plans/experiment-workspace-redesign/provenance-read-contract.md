@@ -8,7 +8,11 @@ server storage의 sibling `batch-replay` root 아래 batch manifest와 고정 �
 
 저장 record의 child storage는 절대경로 또는 기본 CLI가 저장한 프로젝트 작업 기준 상대경로다. reader 시작 시 작업 기준을 고정하고 상대경로를 한 번만 resolve한 뒤 해당 batch `runs` 내부인지 확인한다. 다른 cwd·경로 후보를 탐색하거나 추측하지 않는다. 사용자 query나 source/log/report/manifest path 필드로 파일을 찾지 않는다. 부모부터 lstat으로 symlink/junction을 거절하고, 파일은 regular file/nlink 1, O_RDONLY/O_NOFOLLOW open 뒤 dev/ino/nlink를 확인한다. UTF-8 및 읽기 전후 크기/mtime도 검사한다. 실제 경로의 root containment와 child/batch/index identity를 유지한다. 이 검사는 기존 신뢰된 server storage를 위한 경계이며 악의적 동시 parent-directory 교체를 막는 OS sandbox를 주장하지 않는다.
 
-유효한 batch manifest가 있는데 runs index 파일이 없으면 저장 손상 또는 아직 검사하지 못한 index로 취급해 전체 lookup을 invalid로 닫는다. 다른 batch의 match나 missing을 반환해 uniqueness를 주장하지 않는다. 실제 존재하는 빈 index는 허용하며 exact active manifest identity는 기존 계약대로 대조한다.
+유효한 batch manifest가 있는데 runs index 파일이 없으면 저장 손상 또는 아직 검사하지 못한 index로 취급해 전체 lookup을 invalid로 닫는다. 다른 batch의 match나 missing을 반환해 uniqueness를 주장하지 않는다. 실제 존재하는 빈 index는 running manifest의 count가 0일 때만 허용하며 exact active manifest identity는 기존 계약대로 대조한다.
+
+요청 ID로 필터링하기 전에 모든 index 행의 mode, batchId, ASCII runId, runCount 범위의 정수 runIndex, seed·storage 경로 타입/길이, 시작 시각, terminal status와 해당 terminal 시각/null 구분을 검사한다. 다른 child의 손상된 행도 전체 조회를 invalid로 닫는다. 모든 행의 raw 경로 문법과 batch/runs 내부 경계를 검사하지만 다른 child의 artifact 파일을 추가로 읽지는 않는다. ID 또는 index 중복은 ambiguous다. active snapshot과 terminal 행이 같은 ID 또는 index를 공유하면 두 identity와 저장 경로가 같아야 한다.
+
+writer는 index에 순서대로 terminal 행을 append하고 manifest를 나중에 갱신한다. running manifest에서는 빈 index·아직 실행하지 않은 마지막 child 누락·terminal count 지연·같은 child의 active/terminal 중첩이 정상이다. 다만 저장된 행은 0부터 연속된 index prefix여야 하고 manifest count가 관측된 terminal bucket보다 많을 수 없다. completed/completed_with_failures에서는 행 수가 runCount와 같고 각 index가 정확히 한 번 존재하며 completed/skipped/failed count와 최종 status가 정확히 맞아야 한다. completed_with_failures child는 completedCount에 포함된다. 완전한 행 삭제나 정상 JSON만 남은 잘린 index도 invalid다. skipped child의 artifact directory가 없는 정상 partial 계약은 유지한다. 이것은 index identity와 완료성 검사이며 전체 replay 설정을 복원·검증하는 계약은 아니다.
 
 한도는 root entries 256개, batch manifest 256KiB, index 각 4MiB 및 10,000줄, metadata 512KiB, research manifest 64KiB, 총 파일 bytes 8MiB, 전체 2초다. deadline 이후 추가 읽기를 멈추며 진행 중인 bounded file handle은 finally에서 닫는다. 한도를 넘으면 일부 index를 유일하다고 해석하지 않고 `limit`로 응답한다.
 
