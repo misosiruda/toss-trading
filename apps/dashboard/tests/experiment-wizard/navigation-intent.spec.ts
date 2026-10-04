@@ -9,6 +9,12 @@ for(const mode of ['back-leave','step-back','ctrl-click'])test('pending create n
  const acceptedPromise=new Promise<{ status: number; id: string }>(r=>{ acceptedReady=r; }),listPromise=new Promise<void>(r=>{ listStarted=r; });
  let admittedId: string | undefined;
  let posts=0;let popup: Page | undefined;
+ let persistedId='';
+ await page.exposeBinding('__intentAdmissionObserved',(_source,value)=>{if(typeof value==='string'&&/^paper_sim_[A-Za-z0-9_.-]+$/.test(value))persistedId=value;});
+ await page.addInitScript(()=>{
+  const original=Storage.prototype.setItem;
+  Storage.prototype.setItem=function(key,value){original.call(this,key,value);if(this===sessionStorage&&key==='paper-experiment-admission-v1'&&value.startsWith('paper_sim_'))void (window as unknown as {__intentAdmissionObserved:(id:string)=>Promise<void>}).__intentAdmissionObserved(value);};
+ });
  page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith('/simulations/create'))posts++;});
  page.on('framenavigated',f=>{if(f===page.mainFrame())mark('main-frame-url');});
  await page.route('**/simulations/create',async route=>{
@@ -60,7 +66,7 @@ for(const mode of ['back-leave','step-back','ctrl-click'])test('pending create n
    await expect(page).toHaveURL(/step=3$/);mark('new-tab-open-original-unchanged',{popupPath:new URL(popup.url()).pathname});
   }
   releaseCreate();
-  await expect.poll(()=>page.evaluate(()=>sessionStorage.getItem('paper-experiment-admission-v1'))).toBe(accepted.id);
+  await expect.poll(()=>persistedId).toBe(accepted.id);
   mark('accepted-id-persisted');
   if(mode==='back-leave'){
    await expect(page.getByRole('heading',{name:'새 실험',exact:true})).toBeVisible();
