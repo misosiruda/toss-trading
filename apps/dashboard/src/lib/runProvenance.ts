@@ -8,6 +8,7 @@ export type ProvenanceSource = ApiSource;
 export type ObservedField = ApiField;
 export interface ProvenanceObservation {requestedId:string;fetchedAt:string;status:ApiObservation['status']|'offline';fields:Record<string,ObservedField>;comparability:'unavailable';clone:'unavailable'}
 export const provenanceFieldGroups = {
+  '실행 자료 설정': ['configuration.packetExpiresInSeconds','configuration.maxCandidates','configuration.maxSnapshotAgeSeconds'],
   '관측 기간': ['window.source','window.startAt','window.endAt','window.rangeStart','window.rangeEnd','window.windowMonths','window.timezoneOffsetMinutes','window.seed'],
   '실행 설정': ['configuration.initialCashKrw','configuration.clock.startAt','configuration.clock.endAt','configuration.clock.stepSeconds','configuration.clock.speedMultiplier','configuration.samplingPolicy.everyNSteps','configuration.samplingPolicy.candidateChangedOnly','configuration.samplingPolicy.decisionFrequency','configuration.samplingPolicy.maxDecisionCalls','configuration.samplingPolicy.timezoneOffsetMinutes','configuration.constraints.maxNewPositions','configuration.constraints.maxBudgetPerSymbolKrw','configuration.constraints.allowedActions','configuration.riskProfile','batch.seed','child.runSeed'],
   '비용·체결': ['configuration.executionPolicy.fillPriceRule','configuration.executionPolicy.slippageBps','configuration.executionPolicy.feeBps','configuration.executionPolicy.taxBps','configuration.executionPolicy.halfSpreadBps','configuration.executionPolicy.fillRatio','configuration.executionPolicy.allowFractionalShares','configuration.executionPolicy.maxVolumeParticipationRate','configuration.executionPolicy.minLiquidityFillRatio','configuration.executionPolicy.rejectStaleLiquidity','configuration.executionPolicy.marketImpactBpsPerParticipationRate'],
@@ -45,6 +46,8 @@ function safeValue(key:string,value:unknown):boolean {
   if(value===null)return ['window.windowMonths','configuration.samplingPolicy.everyNSteps','configuration.samplingPolicy.maxDecisionCalls'].includes(key);
   if(typeof value!=='number'||!Number.isFinite(value))return false;
   if(key.endsWith('timezoneOffsetMinutes'))return Number.isSafeInteger(value);
+  if(key==='configuration.maxSnapshotAgeSeconds')return Number.isSafeInteger(value)&&value>=0;
+  if(['configuration.packetExpiresInSeconds','configuration.maxCandidates'].includes(key))return Number.isSafeInteger(value)&&value>0;
   if(key.endsWith('Krw')||key.endsWith('maxNewPositions')||key.endsWith('maxNewPositionsPerDay')||/Positions$/.test(key))return Number.isSafeInteger(value)&&value>=0;
   if(/(?:Months|Steps|Calls|Days|DayIndex|stepSeconds)$/.test(key))return Number.isSafeInteger(value)&&value>0;
   if(key.endsWith('takeProfitRatio'))return value>0&&value<=10;
@@ -63,7 +66,7 @@ export function projectRunProvenance(raw:unknown,id:string,at:string):Provenance
   const status=raw.status as ProvenanceObservation['status'],fields:Record<string,ObservedField>={};
   for(const key of keys){
     const field=raw.fields[key];
-    if(!record(field)){fields[key]=unavailable(status==='partial'?'not_present':'invalid');continue;}
+    if(!record(field)){fields[key]=unavailable('invalid');continue;}
     if(field.status==='unavailable'&&field.value===null&&!Object.hasOwn(field,'source')&&!Object.hasOwn(field,'verification')&&typeof field.reason==='string'&&reasons.includes(field.reason)&&reasonAllowed(key,status,field.reason)){fields[key]=unavailable(field.reason as ProvenanceReason);continue;}
     // Full input/runtime and free text never become reconstructed values, even
     // if a future or malformed response claims they are recorded.

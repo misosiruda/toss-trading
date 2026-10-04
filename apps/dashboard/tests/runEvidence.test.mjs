@@ -47,3 +47,14 @@ test('reader keeps a valid detail available when one evidence enum is malformed'
   for(const mutate of [v=>v.latestRunArtifacts.decisions[0].decisions[0].action={toString:null},v=>v.latestRunArtifacts.decisionsStatus={toString:null}]){const payload=evidencePayload('child');mutate(payload);global.fetch=async()=>new Response(JSON.stringify(payload),{status:200});const result=await readRunWorkspacePageData('child');assert.equal(result.runDetail.status,'ok');assert.equal(result.evidence.source,'bound');assert.equal(result.evidence.buckets[0].rows.length,1);assert.equal(result.evidence.buckets[1].rows.length,0);}
 });
 test('nonadjacent equal timestamps are diagnosed alongside source-order reversal',()=>{const raw=evidenceArtifacts('child');raw.packets.push({...raw.packets[0],packetId:'packet_2',generatedAt:'2026-10-04T00:01:00.000Z'},{...raw.packets[0],packetId:'packet_3'});raw.packetCount=3;raw.totalPacketCount=3;const view=buildRunEvidence(raw,'child');assert.equal(view.buckets[0].outOfOrder,true);assert.equal(view.buckets[0].sameTime,true);assert.deepEqual(view.buckets[0].rows.map(r=>r.id),['packet_1','packet_2','packet_3']);});
+test('excluded reference targets never become an assertion of absence',()=>{
+  for(const truncated of [false,true])for(const rejection of ['malformed','wrong-run']){
+    const raw=evidenceArtifacts('child');const target=raw.riskDecisions[0].riskDecisionId;
+    if(rejection==='malformed')raw.riskDecisions[0].checkedRules=42;else raw.riskDecisions[0].runId='other';
+    if(truncated)raw.totalRiskDecisionCount=2;
+    const view=buildRunEvidence(raw,'child');assert.equal(evidenceReference(view,'risk',target).state,'unavailable');
+    assert.equal(evidenceReference(view,'packet','packet_1').state,'linked');
+  }
+  const raw=evidenceArtifacts('child');raw.riskDecisions=[];raw.riskDecisionCount=0;raw.totalRiskDecisionCount=0;
+  assert.equal(evidenceReference(buildRunEvidence(raw,'child'),'risk','absent').state,'missing');
+});

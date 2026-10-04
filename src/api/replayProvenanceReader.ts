@@ -65,10 +65,13 @@ async function scan(storageBaseDir:string,runId:string,budget:Budget):Promise<Ma
   }
   return match;
 }
-async function boundRunDir(match:Match):Promise<string> {
-  const path=match.run.storageBaseDir;
-  if(typeof path!=="string" || path.length>4096 || !isAbsolute(path)) throw new ReadFailure("blocked");
-  assertExperimentPathSyntax(path);
+async function boundRunDir(match:Match,referenceBase:string):Promise<string> {
+  const storedPath=match.run.storageBaseDir;
+  if(typeof storedPath!=="string" || storedPath.length>4096) throw new ReadFailure("blocked");
+  assertExperimentPathSyntax(storedPath);
+  // The CLI persists project-working-directory relative paths. Resolve once
+  // against the reader's captured working directory; never search/fallback.
+  const path=isAbsolute(storedPath)?resolve(storedPath):resolve(referenceBase,storedPath);
   const runsDir=join(match.batchDir,"runs");
   if(!inside(path,runsDir)) throw new ReadFailure("blocked");
   await assertExperimentPath(path);
@@ -81,10 +84,10 @@ function metadataBound(raw:Record<string,unknown>,match:Match,runId:string):bool
 function researchBound(raw:Record<string,unknown>,match:Match,runId:string):boolean {
   return raw.mode==="paper_only" && raw.manifestVersion==="replay_research_manifest.v1" && raw.runId===runId && raw.batchId===match.batch.batchId;
 }
-async function readBound(storageBaseDir:string,runId:string,budget:Budget):Promise<ReplayProvenance> {
+async function readBound(storageBaseDir:string,runId:string,budget:Budget,referenceBase:string):Promise<ReplayProvenance> {
   const match=await scan(storageBaseDir,runId,budget);
   if(!match) return emptyReplayProvenance(runId,"missing","missing");
-  const dir=await boundRunDir(match);check(budget);
+  const dir=await boundRunDir(match,referenceBase);check(budget);
   let metadata:Record<string,unknown>|null=null;let metadataReason:ProvenanceReason="missing";
   try {
     metadata=await readObject(join(dir,HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME),REPLAY_PROVENANCE_LIMITS.metadataBytes,budget);
@@ -106,10 +109,12 @@ async function readBound(storageBaseDir:string,runId:string,budget:Budget):Promi
 export async function readReplayProvenance(storageBaseDir:string,runId:string):Promise<ReplayProvenance> {
   if(!validProvenanceId(runId)) return emptyReplayProvenance(null,"invalid","invalid");
   const budget:Budget={bytes:0,deadline:Date.now()+REPLAY_PROVENANCE_LIMITS.deadlineMs,stopped:false};
+  const referenceBase=resolve(process.cwd());
+  const resolvedStorage=resolve(referenceBase,storageBaseDir);
   let timer:ReturnType<typeof setTimeout>|undefined;
   const bounded=new Promise<ReplayProvenance>(resolve=>{timer=setTimeout(()=>{budget.stopped=true;resolve(emptyReplayProvenance(runId,"limit","limit"));},REPLAY_PROVENANCE_LIMITS.deadlineMs);});
   try {
-    return await Promise.race([readBound(storageBaseDir,runId,budget).catch(error=>{const reason=code(error);return emptyReplayProvenance(runId,reason==="identity_mismatch" ? "invalid" : reason==="blocked" || reason==="limit" || reason==="ambiguous" || reason==="missing" ? reason : "invalid",reason);}),bounded]);
+    return await Promise.race([readBound(resolvedStorage,runId,budget,referenceBase).catch(error=>{const reason=code(error);return emptyReplayProvenance(runId,reason==="identity_mismatch" ? "invalid" : reason==="blocked" || reason==="limit" || reason==="ambiguous" || reason==="missing" ? reason : "invalid",reason);}),bounded]);
   } finally {budget.stopped=true;if(timer) clearTimeout(timer);}
 }
 export async function readReplayProvenanceRequest(url:URL,storageBaseDir:string):Promise<{statusCode:number;payload:ReplayProvenance}> {

@@ -32,7 +32,7 @@ const server=createServer((request,response)=>{
   if(request.method!=='GET'||url.pathname!=='/batch/replay/runs')return send(response,404,{error:'fixture_read_only'});
   const id=url.searchParams.get('runId')??'fixture_completed';
   if(id.startsWith('fixture_evidence_focus_loss_')){
-    const first=requests.filter(r=>r.id===id).length===1;
+    const first=requests.filter(r=>r.id===id&&r.path==='/batch/replay/runs').length===1;
     const data=evidencePayload(id,first?'normal':'duplicate');
     if(first){data.status='running';data.batchStatus='running';data.runs=[];data.selectedRun=null;data.activeRun={runId:id,runIndex:0,startedAt:'2026-10-04T00:00:00.000Z',window:{startAt:'2026-10-04T00:00:00.000Z',endAt:'2026-10-04T00:01:00.000Z'},storageBaseDir:'fixture/run',reportPath:'fixture/report',marketRegime:{label:'fixture'}};data.latestRunArtifacts.runStatus='running';}
     return send(response,200,data);
@@ -40,7 +40,7 @@ const server=createServer((request,response)=>{
   if(id.startsWith('fixture_evidence_'))return send(response,200,evidencePayload(id,id.slice('fixture_evidence_'.length)));
   if(id==='fixture_offline')return send(response,503,{error:'fixture_offline'});
   const data=payload(id);
-  if(id.startsWith('fixture_transition_')&&requests.filter(r=>r.id===id).length>1){data.batchStatus='completed';data.activeRun=null;data.runs=[run(id,'completed')];data.selectedRun=data.runs[0];data.status='ok';data.latestRunArtifacts.runStatus='completed';}
+  if(id.startsWith('fixture_transition_')&&requests.filter(r=>r.id===id&&r.path==='/batch/replay/runs').length>1){data.batchStatus='completed';data.activeRun=null;data.runs=[run(id,'completed')];data.selectedRun=data.runs[0];data.status='ok';data.latestRunArtifacts.runStatus='completed';}
   send(response,200,data);
 });
 server.listen(port,host,()=>process.stdout.write(`${marker} http://${host}:${port}\n`));

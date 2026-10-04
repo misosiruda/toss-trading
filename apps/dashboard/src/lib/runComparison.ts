@@ -17,7 +17,14 @@ export interface ComparisonObservation {
 }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const validId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(value);
-const timestamp = (value: unknown): string | null => typeof value === 'string' && value && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,19) === value.slice(0,19) ? value : null;
+const timestamp = (value: unknown): string | null => {
+  if(typeof value!=='string'||value.length>40)return null;
+  const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if(!m)return null;
+  const calendar=new Date(0);calendar.setUTCFullYear(Number(m[1]),Number(m[2]),0);
+  if(Number(m[2])<1||Number(m[2])>12||Number(m[3])<1||Number(m[3])>calendar.getUTCDate()||Number(m[4])>23||Number(m[5])>59||Number(m[6])>59||Number(m[7]??0)>23||Number(m[8]??0)>59)return null;
+  const instant=Date.parse(value);return Number.isFinite(instant)?new Date(instant).toISOString():null;
+};
 const member = (value: unknown, values: readonly string[]): string | null => typeof value === 'string' && values.includes(value) ? value : null;
 
 export function readComparisonSelection(params: Record<string, string | string[] | undefined>): ComparisonSelection {
