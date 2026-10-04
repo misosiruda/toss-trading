@@ -9,11 +9,64 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import type { AddressInfo } from "node:net";
 import { createLocalOperationsServer } from "./localOperationsServer.js";
+import { runHistoricalBatchReplay } from "../workflows/historicalBatchReplayWorkflow.js";
 import {historicalReplayRunConfigurationSchema} from '../replay/historicalReplayAuditLog.js';
 import {isStoredProvenanceTimestamp} from './replayProvenanceProjection.js';
 import { readReplayProvenance, readReplayProvenanceRequest, provenanceReadBudgetMs, REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_LIMITS } from "./replayProvenanceReader.js";
 import { BATCH_REPLAY_MANIFEST_FILE_NAME as manifestName, BATCH_REPLAY_RUNS_FILE_NAME as runsName, HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME as metadataName, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME as researchName } from "../storage/artifactPaths.js";
 const hash=`sha256:${"1".repeat(64)}`;
+test("actual synthetic writer completed skipped index is partial, but whole-row deletion is invalid",async()=>{
+  const root=await mkdtemp(join(tmpdir(),"provenance-writer-"));const storage=join(root,"paper"),source=join(root,"source");await mkdir(storage);await mkdir(source);
+  let providers=0;
+  const result=await runHistoricalBatchReplay({sourceDataDir:source,outputBaseDir:join(root,"batch-replay"),batchId:"synthetic_writer",seed:"synthetic_seed",runCount:2,rangeStart:new Date("2026-01-01T00:00:00+09:00"),rangeEnd:new Date("2026-01-31T23:59:59.999+09:00"),generatedAt:new Date("2026-02-01T00:00:00Z"),minWindowSnapshots:1,decisionProviderFactory:()=>{providers++;throw Error("provider must never run");}});
+  const lines=(await readFile(result.runsPath,"utf8")).trim().split("\n");assert.equal(lines.length,2);
+  for(const line of lines){const row=JSON.parse(line);assert.equal(row.status,"skipped");assert.equal((await readReplayProvenance(storage,row.runId)).status,"partial");}
+  assert.equal(providers,0);await writeFile(result.runsPath,lines[0]+"\n");assert.equal((await readReplayProvenance(storage,JSON.parse(lines[0]!).runId)).status,"invalid");
+});
+test("every row identity and terminal contract is validated before requested-ID filtering",async()=>{
+  const changes:Record<string,unknown>[]=[{}, {runId:"other"}, {mode:"live"}, {batchId:"wrong"}, {runId:"../bad"}, {runId:42}, {runIndex:-1}, {runIndex:1.5}, {runIndex:2}, {runSeed:null}, {storageBaseDir:null}, {status:"running"}, {startedAt:"garbage"}, {completedAt:null}, {skippedAt:"2026-01-01T00:00:01.000Z"}];
+  for(let i=0;i<changes.length;i++) {
+    const f=await fixture();f.batch.runCount=2;f.batch.completedCount=2;await f.save();
+    const other=i<2?changes[i]:{...f.run,runId:"other",runIndex:1,...changes[i]};
+    for(const requested of ["child","absent"]) {
+      await writeFile(f.paths.runs,JSON.stringify(f.run)+"\n"+JSON.stringify(other)+"\n");
+      const result=await readReplayProvenance(f.storage,requested);assert.equal(result.status,"invalid",JSON.stringify(changes[i]));
+      assert.ok(Object.values(result.fields).every(field=>field.status==="unavailable"));
+    }
+  }
+});
+test("completed manifests require complete distinct bounded indexes and exact terminal counts",async()=>{
+  for(const change of [{runCount:2},{completedCount:0},{skippedCount:1},{failedCount:1},{runCount:0},{runCount:-1},{runCount:1.5},{status:"running",completedAt:"2026-01-01T00:00:01.000Z"},{status:"completed_with_failures"},{activeRun:{runId:"other"}}]) {
+    const f=await fixture();Object.assign(f.batch,change);await f.save();assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid",JSON.stringify(change));
+  }
+  const f=await fixture();f.batch.runCount=3;f.batch.completedCount=3;await f.save();
+  const rows=[f.run,{...f.run,runId:"second",runIndex:1},{...f.run,runId:"third",runIndex:2}];
+  await writeFile(f.paths.runs,rows.map(row=>JSON.stringify(row)).join("\n")+"\n");assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
+  for(const subset of [[],[rows[0]],[rows[0],rows[2]],[rows[1],rows[2]]]) {
+    await writeFile(f.paths.runs,subset.map(row=>JSON.stringify(row)).join("\n"));assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
+  }
+  await writeFile(f.paths.runs,[rows[0],{...rows[1],runIndex:0},rows[2]].map(row=>JSON.stringify(row)).join("\n"));assert.equal((await readReplayProvenance(f.storage,"child")).status,"ambiguous");
+});
+test("running prefix, lagging counters, active-only and terminal-active overlap remain legitimate",async()=>{
+  const f=await fixture();Object.assign(f.batch,{status:"running",completedAt:null,completedCount:0,runCount:3,activeRun:f.run});await f.save();
+  await writeFile(f.paths.runs,"");assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
+  await f.save();assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
+  const skipped={...f.run,runId:"skipped",runIndex:1,status:"skipped",completedAt:null,skippedAt:"2026-01-01T00:00:01.000Z",storageBaseDir:join(f.batchDir,"runs","skipped")};
+  await writeFile(f.paths.runs,[f.run,skipped].map(row=>JSON.stringify(row)).join("\n"));
+  assert.equal((await readReplayProvenance(f.storage,"skipped")).status,"partial");
+  assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
+  f.batch.completedCount=2;await writeFile(f.paths.manifest,JSON.stringify(f.batch));assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
+  f.batch.completedCount=0;await writeFile(f.paths.manifest,JSON.stringify(f.batch));
+  await writeFile(f.paths.runs,JSON.stringify({...skipped,runIndex:2})+"\n");assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
+  await f.save();Object.assign(f.batch,{activeRun:{...f.run,runId:"other",storageBaseDir:f.storage}});await writeFile(f.paths.manifest,JSON.stringify(f.batch));assert.equal((await readReplayProvenance(f.storage,"child")).status,"blocked");
+  Object.assign(f.batch,{activeRun:{...f.run,runId:"other"}});await writeFile(f.paths.manifest,JSON.stringify(f.batch));assert.equal((await readReplayProvenance(f.storage,"child")).status,"ambiguous");
+});
+test("completed failure and skipped buckets are checked independently",async()=>{
+  const f=await fixture();Object.assign(f.batch,{status:"completed_with_failures",runCount:3,completedCount:1,skippedCount:1,failedCount:1});await f.save();
+  const rows=[{...f.run,status:"completed_with_failures"},{...f.run,runId:"skipped",runIndex:1,status:"skipped",completedAt:null,skippedAt:"2026-01-01T00:00:01.000Z"},{...f.run,runId:"failed",runIndex:2,status:"failed",completedAt:null,failedAt:"2026-01-01T00:00:01.000Z"}];
+  await writeFile(f.paths.runs,rows.map(row=>JSON.stringify(row)).join("\r\n")+"\r\n");assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
+  Object.assign(f.batch,{completedCount:2,failedCount:0});await writeFile(f.paths.manifest,JSON.stringify(f.batch));assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
+});
 test("directory opening beyond the deadline closes before any directory read",async t=>{
   const f=await fixture();let now=0,readCalls=0,closeCalls=0;
   const original=filesystem.opendir;
@@ -35,7 +88,7 @@ test("deadline reached while inspecting an entry prevents the next directory rea
   assert.equal((await readReplayProvenance(f.storage,"child","515")).status,"limit");assert.equal(readCalls,1);assert.equal(closeCalls,1);
 });
 test("indexed skipped child with no artifact directory remains partial and cannot bypass path boundaries",async()=>{
-  const f=await fixture();f.run.runId="skipped_child";f.run.status="skipped";f.run.storageBaseDir=join(f.batchDir,"runs","skipped_child");await f.save();
+  const f=await fixture();f.run.runId="skipped_child";f.run.status="skipped";f.run.completedAt=null;f.run.skippedAt="2026-01-01T00:00:01.000Z";f.batch.completedCount=0;f.batch.skippedCount=1;f.run.storageBaseDir=join(f.batchDir,"runs","skipped_child");await f.save();
   const result=await readReplayProvenance(f.storage,"skipped_child");assert.equal(result.status,"partial");assert.equal(result.requestedRunId,"skipped_child");
   assert.deepEqual(result.fields["configuration.initialCashKrw"],{status:"unavailable",reason:"missing",value:null});
   assert.deepEqual(result.fields["research.configHash"],{status:"unavailable",reason:"missing",value:null});
@@ -49,8 +102,8 @@ test("indexed skipped child with no artifact directory remains partial and canno
 async function fixture(parent=tmpdir()) {
   const root=await mkdtemp(join(parent,"provenance-fixture-")),storage=join(root,"paper"),batchDir=join(root,"batch-replay","fixture_batch"),childDir=join(batchDir,"runs","child");
   await mkdir(storage);await mkdir(childDir,{recursive:true});
-  const batch={mode:"paper_only",batchId:"fixture_batch",status:"completed",seed:"synthetic_private_seed",activeRun:null};
-  const run={mode:"paper_only",batchId:"fixture_batch",runId:"child",runIndex:0,status:"completed",storageBaseDir:childDir,runSeed:"synthetic_private_seed:0"};
+  const batch={mode:"paper_only",batchId:"fixture_batch",status:"completed",seed:"synthetic_private_seed",startedAt:"2026-01-01T00:00:00.000Z",updatedAt:"2026-01-01T00:00:01.000Z",activeRun:null,runCount:1,completedCount:1,skippedCount:0,failedCount:0,completedAt:"2026-01-01T00:00:01.000Z" as string|null};
+  const run={mode:"paper_only",batchId:"fixture_batch",runId:"child",runIndex:0,status:"completed",storageBaseDir:childDir,runSeed:"synthetic_private_seed:0",startedAt:"2026-01-01T00:00:00.000Z",completedAt:"2026-01-01T00:00:01.000Z" as string|null,skippedAt:null as string|null,failedAt:null as string|null};
   const research={mode:"paper_only",manifestVersion:"replay_research_manifest.v1",runId:"child",batchId:"fixture_batch",configHash:hash,dataSnapshotHash:hash,universeHash:hash,coverageHash:hash,promptHash:hash,schemaHash:hash,riskPolicyHash:hash,costModelHash:hash,executionModelVersion:"execution_simulator.v4"};
   const metadata={mode:"paper_only",identity:{runId:"child",batchId:"fixture_batch",runIndex:0},window:{source:"explicit",startAt:"2026-01-01T00:00:00.000Z",endAt:"2026-02-01T00:00:00.000Z",timezoneOffsetMinutes:540,seed:"synthetic_private_seed"},configuration:{initialCashKrw:0,clock:{stepSeconds:60,speedMultiplier:10},samplingPolicy:null,executionPolicy:{slippageBps:2},riskProfile:"balanced",strategyPreset:"synthetic_private_preset"},researchManifest:research};
   const paths={manifest:join(batchDir,manifestName),runs:join(batchDir,runsName),metadata:join(childDir,metadataName),research:join(childDir,researchName)};
@@ -69,7 +122,8 @@ test("missing established batch indexes cannot prove uniqueness, while explicit 
   const f=await fixture();await unlink(f.paths.runs);assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
   await f.save();const other=join(f.root,"batch-replay","other_batch");await mkdir(other);await writeFile(join(other,manifestName),JSON.stringify({...f.batch,batchId:"other_batch"}));
   for(const id of ["child","absent"]){const result=await readReplayProvenance(f.storage,id);assert.equal(result.status,"invalid");assert.doesNotMatch(JSON.stringify(result),/other_batch|provenance-fixture-/);}
-  await writeFile(join(other,runsName),"");Object.assign(f.batch,{status:"running",activeRun:f.run});await f.save();await writeFile(f.paths.runs,"");assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
+  await writeFile(join(other,manifestName),JSON.stringify({...f.batch,batchId:"other_batch",status:"running",completedAt:null,completedCount:0}));
+  await writeFile(join(other,runsName),"");Object.assign(f.batch,{status:"running",completedAt:null,completedCount:0,activeRun:f.run});await f.save();await writeFile(f.paths.runs,"");assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
 });
 test("stored scalar/hash observations remain partial, absent defaults are not fabricated and free text stays redacted",async()=>{
   const f=await fixture(),result=await readReplayProvenance(f.storage,"child");
@@ -126,14 +180,16 @@ test("malformed metadata is per-field unavailable and does not disclose parser b
 test("missing metadata and research leave fields missing rather than restoring original input",async()=>{
   const f=await fixture();f.run.storageBaseDir=join(f.batchDir,"runs","empty_child");await mkdir(f.run.storageBaseDir);await f.save();const result=await readReplayProvenance(f.storage,"child");assert.equal(result.status,"partial");assert.deepEqual(result.fields["configuration.initialCashKrw"],{status:"unavailable",reason:"missing",value:null});assert.equal(result.fields["research.configHash"]?.status,"unavailable");
 });
-test("full index duplicates beyond row 100 and malformed exact duplicates are ambiguous",async()=>{
-  const f=await fixture(),rows=[f.run,...Array.from({length:99},(_,i)=>({...f.run,runId:`other_${i}`})),{runId:"child",status:"malformed"}];await writeFile(f.paths.runs,rows.map(row=>JSON.stringify(row)).join("\n"));assert.equal((await readReplayProvenance(f.storage,"child")).status,"ambiguous");
+test("full index duplicates beyond row 100 are ambiguous and malformed exact duplicates invalid",async()=>{
+  const f=await fixture();f.batch.runCount=101;f.batch.completedCount=101;await f.save();
+  const rows=[f.run,...Array.from({length:99},(_,i)=>({...f.run,runId:`other_${i}`,runIndex:i+1})),{...f.run,runIndex:100}];await writeFile(f.paths.runs,rows.map(row=>JSON.stringify(row)).join("\n"));assert.equal((await readReplayProvenance(f.storage,"child")).status,"ambiguous");
+  rows[100]={runId:"child",status:"malformed"} as typeof f.run;await writeFile(f.paths.runs,rows.map(row=>JSON.stringify(row)).join("\n"));assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
 });
 test("malformed index does not salvage an unproven unique child",async()=>{
   const f=await fixture();await writeFile(f.paths.runs,JSON.stringify(f.run)+"\n{malformed");assert.equal((await readReplayProvenance(f.storage,"child")).status,"invalid");
 });
 test("cross-batch duplicate exact child is ambiguous",async()=>{
-  const f=await fixture(),other=join(f.root,"batch-replay","other_batch");await mkdir(other);await writeFile(join(other,manifestName),JSON.stringify({...f.batch,batchId:"other_batch"}));await writeFile(join(other,runsName),JSON.stringify({...f.run,batchId:"other_batch"}));assert.equal((await readReplayProvenance(f.storage,"child")).status,"ambiguous");
+  const f=await fixture(),other=join(f.root,"batch-replay","other_batch");await mkdir(other);await writeFile(join(other,manifestName),JSON.stringify({...f.batch,batchId:"other_batch"}));await writeFile(join(other,runsName),JSON.stringify({...f.run,batchId:"other_batch",storageBaseDir:join(other,"runs","child")}));assert.equal((await readReplayProvenance(f.storage,"child")).status,"ambiguous");
 });
 test("outside-root and other-batch run storage paths are blocked without exposing path",async()=>{
   const f=await fixture();f.run.storageBaseDir=f.storage;await f.save();const result=await readReplayProvenance(f.storage,"child");assert.equal(result.status,"blocked");assert.ok(!JSON.stringify(result).includes(f.root));
@@ -152,8 +208,7 @@ test("valid reads leave synthetic fixture bytes, mtime and entries unchanged",as
 });
 test("directory-entry, individual index bytes and cumulative byte budgets fail closed",async()=>{
   const f=await fixture();await writeFile(f.paths.runs," ".repeat(REPLAY_PROVENANCE_LIMITS.indexBytes+1));assert.equal((await readReplayProvenance(f.storage,"child")).status,"limit");await f.save();
-  const padded=JSON.stringify({runId:"other",padding:"x".repeat(3*1024*1024)});
-  for(let i=0;i<3;i++){const dir=join(f.root,"batch-replay",`padding_${i}`);await mkdir(dir);await writeFile(join(dir,manifestName),JSON.stringify({...f.batch,batchId:`padding_${i}`}));await writeFile(join(dir,runsName),padded);}
+  for(let i=0;i<3;i++){const dir=join(f.root,"batch-replay",`padding_${i}`);await mkdir(dir);await writeFile(join(dir,manifestName),JSON.stringify({...f.batch,batchId:`padding_${i}`}));await writeFile(join(dir,runsName),JSON.stringify({...f.run,batchId:`padding_${i}`,runId:`other_${i}`,storageBaseDir:join(dir,"runs",`other_${i}`),padding:"x".repeat(3*1024*1024)}));}
   assert.equal((await readReplayProvenance(f.storage,"child")).status,"limit");
   const empty=await fixture();await Promise.all(Array.from({length:REPLAY_PROVENANCE_LIMITS.entries},(_,i)=>mkdir(join(empty.root,"batch-replay",`empty_${i}`))));assert.equal((await readReplayProvenance(empty.storage,"child")).status,"limit");
 });
