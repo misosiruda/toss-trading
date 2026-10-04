@@ -51,9 +51,12 @@ export function isRunSnapshot(value: unknown, requestedId: string): value is Run
     ![run.runIndex, run.totalReturnRatio, run.finalVirtualNetWorthKrw, run.tradeCount, run.rejectedCount, run.aiDecisionFailureCount].every(nullableNumber))) return false;
   // Legacy active is observable, but is not evidence of running or terminal execution.
   // A child or existing batch alias must identify it without borrowing artifact identity.
-  if (run?.status === "active" && (!validRunLookupId(run.runId) || run.runId.trim().length === 0 ||
+  if (run?.status === "active" && (data.runSource !== "legacy_active" || !validRunLookupId(run.runId) || run.runId.trim().length === 0 ||
     !(run.runId === requestedId || (run.batchId === requestedId && data.batchId === requestedId)) ||
     run.completedAt !== null || run.failedAt !== null || run.skippedAt !== null)) return false;
+  if (run ? !["persisted", "active_manifest", "legacy_active"].includes(data.runSource ?? "") ||
+    (run.status === "running" && data.runSource !== "active_manifest") ||
+    (TERMINAL.has(run.status) && data.runSource === "legacy_active") : data.runSource !== null) return false;
   const artifact = data.artifacts;
   if (artifact && (!Object.values({ report: artifact.reportStatus, progress: artifact.progressStatus, decisions: artifact.decisionsStatus, risk: artifact.riskDecisionsStatus, trades: artifact.tradesStatus }).every(entry => ["ok", "missing", "corrupt", "degraded", "blocked", "invalid"].includes(entry)) ||
     typeof artifact.status !== "string" || ![artifact.runStatus, artifact.reportTitle, artifact.progressStatusLabel, artifact.simulatedAt].every(nullableString) ||

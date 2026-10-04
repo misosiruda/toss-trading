@@ -35,6 +35,13 @@ test('actual batch writer and HTTP reader preserve legacy active identity withou
     for(const activeRun of [null,{...active,runId:'other_child'},Object.fromEntries(Object.entries(active).filter(([key])=>key!=='runId'))]){
       await writeFile(written.manifestPath,JSON.stringify({...manifest,status:'unknown',activeRun}));const absent=await readRunDetailPageData(child.runId);assert.equal(absent.runDetail.data.run,null);assert.equal(absent.runDetail.data.artifacts,null);assert.equal(absent.runDetail.data.status,'missing');assert.equal(isRunSnapshot(absent,child.runId),true);assert.equal(runWorkspaceState(absent.runDetail).poll,false);
     }
+    for(const status of ['active','running','unknown','queued']){
+      await writeFile(written.runsPath,[{...child,status},rows[1]].map(JSON.stringify).join('\n')+'\n');
+      await writeFile(written.manifestPath,JSON.stringify({...manifest,status:'unknown',activeRun:null}));
+      const rejected=await readRunDetailPageData(child.runId);assert.equal(rejected.runDetail.status,'invalid');assert.equal(rejected.runDetail.data,null);assert.equal(runWorkspaceState(rejected.runDetail).poll,false);
+      await writeFile(written.manifestPath,JSON.stringify({...manifest,status:'unknown',activeRun:active}));
+      const fallback=await readRunDetailPageData(child.runId);assert.equal(fallback.runDetail.data.run.status,'active');assert.equal(fallback.runDetail.data.runSource,'legacy_active');assert.equal(isRunSnapshot(fallback,child.runId),true);assert.equal(runWorkspaceState(fallback.runDetail).poll,false);
+    }
     assert.equal(runnerCalls,0);
   }finally{await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
 });

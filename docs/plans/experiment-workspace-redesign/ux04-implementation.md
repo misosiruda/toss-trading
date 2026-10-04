@@ -92,3 +92,7 @@ SSR의 running 텍스트가 보여도 client effect의 첫 5초 timer와 visibil
 ## Legacy active와 수동 snapshot 계약
 
 정상화된 legacy active는 batch가 running이라고 확정되지 않고 active source에 자체 status가 없을 때의 관측값입니다. client snapshot은 식별된 active child 또는 기존 batch alias를 좁게 허용하고, persisted terminal 네 값과 manifest-derived running은 기존대로 유지합니다. active를 running/terminal로 승격하거나 자동 polling에 추가하지 않습니다. active source에 child ID가 없으면 최신 artifact의 ID로 보충하지 않으며, artifact의 status도 같은 child에 바인딩된 경우에만 참고합니다. 타 ID·공백 ID·terminal 시각이 붙은 active·임의 status는 transport에서 거절합니다. 실제 batch writer의 합성 storage를 로컬 API reader와 UI normalizer로 읽어 정상·완전·부분·누락·타 ID를 검증하고, production에서 SSR과 수동 GET의 active 표현 및 자동 GET 없음·기록/reload를 확인합니다.
+
+## Source별 실행 상태와 선택 우선순위
+
+저장 runs/selectedRun은 terminal 네 값만 정규화합니다. 저장 active/running/unknown/queued 등은 실행 증거로 선택하지 않습니다. 같은 ID의 정상 terminal 또는 식별된 active manifest가 있으면 잘못된 저장 자료가 이를 가리지 않으며, 그 외에는 invalid 관측으로 남깁니다. 정규화 결과는 persisted/active_manifest/legacy_active source를 보존하고 client도 source와 상태의 조합을 검증합니다. legacy_active는 manifest fallback에서 유도된 관측만 뜻하며 자동 polling 대상이 아닙니다. 원본 active source 자체가 임의 status를 선언한 경우는 legacy fallback으로 취급하지 않습니다.

@@ -40,6 +40,13 @@ const server=createServer((request,response)=>{
   if(replacementFailures.get(id)==='offline')return send(response,503,{error:'synthetic_replacement_offline'});
   if(id==='fixture_offline')return send(response,503,{error:'fixture_offline'});
   const data=payload(id);
+  if(data.activeRun !== null){data.runs=[];data.selectedRun={...data.activeRun};}
+  if(id.startsWith('fixture_source_bad_')||id.startsWith('fixture_source_mixed_')){
+    const status=id.includes('_running_')?'running':id.includes('_queued_')?'queued':'active';
+    const invalid={...data.selectedRun,status};data.runs=[invalid];data.batchStatus='unknown';data.latestRunArtifacts=null;
+    if(id.startsWith('fixture_source_mixed_')){data.activeRun={...invalid};delete data.activeRun.status;data.selectedRun=data.activeRun;}
+    else{data.activeRun=null;data.selectedRun=invalid;}
+  }
   if(id.startsWith('fixture_legacy_active_')){
     data.batchStatus='unknown';data.activeRun={...data.selectedRun};delete data.activeRun.status;
     data.selectedRun=null;data.runs=[];data.latestRunArtifacts.runStatus=null;

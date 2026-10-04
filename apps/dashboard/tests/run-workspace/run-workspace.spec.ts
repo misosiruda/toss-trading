@@ -49,10 +49,11 @@ test.afterEach(async({request})=>{
   const {requests}=await response.json();expect(requests.every((entry:{method:string})=>entry.method==='GET')).toBe(true);
 });
 test('legacy active SSR and manual GET agree without scheduling automatic reads',async({page},info)=>{
-  await page.clock.install();const id='fixture_legacy_active_'+info.project.name,reads:string[]=[];
+  await page.clock.install();await observeRunTimer(page);const id='fixture_legacy_active_'+info.project.name,reads:string[]=[];
   page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.method());});
   await page.goto(root+id);await expect(page.getByText('선택 child: active',{exact:false})).toBeVisible();
   await expect(page.getByText('산출물 판독: partial',{exact:false})).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-test-visibility-listener-ready','true');
   const before=await page.getByText('GET 관측 시각:',{exact:false}).textContent();
   await page.getByRole('button',{name:'같은 ID 새로 조회 (GET)'}).click();
   await expect(page.getByText('GET 관측 시각:',{exact:false})).not.toHaveText(before!);
@@ -62,6 +63,25 @@ test('legacy active SSR and manual GET agree without scheduling automatic reads'
   await page.getByRole('link',{name:'기록',exact:true}).click();await expect(page).toHaveURL(root+id+'?tab=record');
   await expect(page.getByText('선택 child: active',{exact:false})).toBeVisible();await expect(page.getByRole('status')).toHaveCount(0);
   await page.reload();await expect(page.getByText('선택 child: active',{exact:false})).toBeVisible();
+});
+
+test('stored nonterminal values cannot poll or hide a valid legacy manifest',async({page},info)=>{
+  await page.clock.install();await observeRunTimer(page);const reads:string[]=[];
+  page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.method());});
+  for(const status of ['active','running','queued'])for(const source of ['bad','mixed']){
+    const id='fixture_source_'+source+'_'+status+'_'+info.project.name;await page.goto(root+id);
+    await expect(page.locator('html')).toHaveAttribute('data-test-visibility-listener-ready','true');
+    const observation=source==='bad'?'invalid':'ok',execution=source==='bad'?'unknown':'active';
+    await expect(page.getByText('조회: '+observation,{exact:false})).toBeVisible();
+    await expect(page.getByText('선택 child: '+execution,{exact:false})).toBeVisible();
+    const before=await page.getByText('GET 관측 시각:',{exact:false}).textContent();
+    await page.getByRole('button',{name:'같은 ID 새로 조회 (GET)'}).click();
+    await expect(page.getByText('GET 관측 시각:',{exact:false})).not.toHaveText(before!);
+    await expect(page.getByText('조회: '+observation,{exact:false})).toBeVisible();
+    await expect(page.getByText('선택 child: '+execution,{exact:false})).toBeVisible();
+    await page.clock.fastForward(20_001);
+  }
+  expect(reads).toEqual(Array(6).fill('GET'));
 });
 
 test('snapshot BFF rejects mutation and invalid IDs while preserving no-store reads',async({request})=>{

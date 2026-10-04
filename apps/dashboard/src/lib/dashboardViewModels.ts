@@ -609,6 +609,7 @@ export interface RunDetailView {
   batchStatus: string | null;
   sourceRunsPath: string | null;
   run: BatchReplayRunSummary | null;
+  runSource: "persisted" | "active_manifest" | "legacy_active" | null;
   artifacts: BatchReplayRunArtifacts | null;
   latestArtifactsRunId: string | null;
   warnings: string[];
@@ -1473,7 +1474,7 @@ function normalizeRunDetailView(
   const exactTerminal = normalizeBatchReplayRunSummary(
     projectExperimentListSource(value)?.terminalRecordsById.get(runId)
   );
-  const run = exactTerminal ?? findRunDetailTargetRun({
+  const selection = exactTerminal ? { run: exactTerminal, source: "persisted" as const } : findRunDetailTargetRun({
     activeRun,
     batchId,
     batchStatus,
@@ -1481,6 +1482,15 @@ function normalizeRunDetailView(
     runs,
     selectedRun
   });
+  const run = selection?.run ?? null;
+  const matchesLookup = (raw: unknown) => isRecord(raw) && (raw["runId"] === runId || raw["batchId"] === runId);
+  // Invalid stored rows never win over a valid terminal or explicit active source.
+  // When they are the only evidence for this lookup, expose an invalid read, not absence.
+  const invalidStored = value["runs"].some(raw => matchesLookup(raw) && normalizeBatchReplayRunSummary(raw) === null);
+  const rawSelected = value["selectedRun"], rawActive = value["activeRun"];
+  const invalidSelected = matchesLookup(rawSelected) && selectedRun === null;
+  const invalidActiveStatus = matchesLookup(rawActive) && isRecord(rawActive) && rawActive["status"] !== undefined && rawActive["status"] !== null && activeRun === null;
+  if (run === null && (invalidStored || invalidSelected || invalidActiveStatus)) return null;
   const resolvedRunId = run?.runId ?? runId;
   const latestArtifactsRunId = artifacts?.runId ?? null;
   const warnings =
@@ -1503,6 +1513,7 @@ function normalizeRunDetailView(
     batchStatus,
     sourceRunsPath: readNullableString(value["sourceRunsPath"]),
     run,
+    runSource: selection?.source ?? null,
     artifacts: latestArtifactsRunId === resolvedRunId ? artifacts : null,
     latestArtifactsRunId,
     warnings,
@@ -1527,46 +1538,20 @@ function normalizeSimulationObservation(value: unknown, requestedId: string): Si
   return { status: "available", simulationRunId: requestedId, acceptedAt, outcome, runnerFailure: { observedAt: failure["observedAt"], reasonCode: "runner_rejected" } };
 }
 
-function findRunDetailTargetRun({
-  activeRun,
-  batchId,
-  batchStatus,
-  lookupId,
-  runs,
-  selectedRun
-}: {
-  activeRun: BatchReplayRunSummary | null;
-  batchId: string | null;
-  batchStatus: string | null;
-  lookupId: string;
-  runs: BatchReplayRunSummary[];
-  selectedRun: BatchReplayRunSummary | null;
-}): BatchReplayRunSummary | null {
-  const directRun = runs.find((candidate) => candidate.runId === lookupId);
-  if (directRun !== undefined) {
-    return directRun;
-  }
-  if (
-    selectedRun !== null &&
-    (selectedRun.runId === lookupId || selectedRun.batchId === lookupId)
-  ) {
-    return selectedRun;
-  }
-  if (activeRun !== null && activeRun.runId === lookupId) {
-    return activeRun;
-  }
-  if (
-    activeRun !== null &&
-    batchId === lookupId &&
-    (batchStatus === "running" || runs.length === 0)
-  ) {
-    return activeRun;
-  }
-  return (
-    [...runs].reverse().find((candidate) => candidate.batchId === lookupId) ??
-    (activeRun !== null && batchId === lookupId ? activeRun : null) ??
-    null
-  );
+type RunDetailSelection = { run: BatchReplayRunSummary; source: "persisted" | "active_manifest" | "legacy_active" };
+function findRunDetailTargetRun({activeRun,batchId,batchStatus,lookupId,runs,selectedRun}: {
+  activeRun: BatchReplayRunSummary | null; batchId: string | null; batchStatus: string | null;
+  lookupId: string; runs: BatchReplayRunSummary[]; selectedRun: BatchReplayRunSummary | null;
+}): RunDetailSelection | null {
+  const persisted = (run: BatchReplayRunSummary): RunDetailSelection => ({run,source:"persisted"});
+  const active = (): RunDetailSelection | null => activeRun === null ? null : {run:activeRun,source:activeRun.status === "active" ? "legacy_active" : "active_manifest"};
+  const directRun = runs.find(candidate => candidate.runId === lookupId);
+  if (directRun !== undefined) return persisted(directRun);
+  if (selectedRun !== null && (selectedRun.runId === lookupId || selectedRun.batchId === lookupId)) return persisted(selectedRun);
+  if (activeRun !== null && activeRun.runId === lookupId) return active();
+  if (activeRun !== null && batchId === lookupId && (batchStatus === "running" || runs.length === 0)) return active();
+  const alias = [...runs].reverse().find(candidate => candidate.batchId === lookupId);
+  return alias !== undefined ? persisted(alias) : activeRun !== null && batchId === lookupId ? active() : null;
 }
 
 function normalizeActiveBatchReplayRunSummary(
@@ -1586,10 +1571,13 @@ function normalizeActiveBatchReplayRunSummary(
     return null;
   }
   const marketRegime = isRecord(value["marketRegime"]) ? value["marketRegime"] : {};
-  const status =
-    readString(value["status"]) ??
-    (context.artifacts?.runId === runId ? context.artifacts.runStatus : null) ??
-    (context.batchStatus === "running" ? "running" : "active");
+  const rawStatus = value["status"];
+  if (rawStatus !== undefined && rawStatus !== null && typeof rawStatus !== "string") return null;
+  const ownStatus = readString(rawStatus);
+  const artifactStatus = context.artifacts?.runId === runId ? context.artifacts.runStatus : null;
+  const observedStatus = ownStatus ?? artifactStatus;
+  if (observedStatus !== null && !["running", "completed", "completed_with_failures", "failed", "skipped"].includes(observedStatus)) return null;
+  const status = observedStatus ?? (context.batchStatus === "running" ? "running" : "active");
 
   return {
     runId,
@@ -1621,7 +1609,7 @@ function normalizeBatchReplayRunSummary(
   }
   const runId = readString(value["runId"]);
   const status = readString(value["status"]);
-  if (runId === null || status === null) {
+  if (runId === null || runId.trim().length === 0 || status === null || !["completed", "completed_with_failures", "failed", "skipped"].includes(status)) {
     return null;
   }
   const summary = isRecord(value["summary"]) ? value["summary"] : {};
