@@ -1,0 +1,33 @@
+.wizard { max-width: 1100px; }
+.wizard h1 { font-size: 28px; font-weight: 700; margin: 12px 0 8px; }
+.wizard h2 { font-size: 20px; font-weight: 650; margin: 0 0 18px; }
+.wizard p { margin: 8px 0; }
+.steps { display: flex; gap: 12px; padding: 20px 0; color: #57657a; flex-wrap: wrap; }
+.steps [aria-current] { color: #174faa; font-weight: 700; }
+.layout { display: grid; grid-template-columns: minmax(0, 7fr) minmax(220px, 5fr); gap: 24px; align-items: start; }
+.panel { min-width: 0; padding: 24px; border: 1px solid #e1e6ed; border-radius: 10px; background: white; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.field { display: flex; flex-direction: column; gap: 7px; min-width: 0; font-weight: 550; }
+.field input, .field select { width: 100%; min-height: 44px; border: 1px solid #aab7c8; border-radius: 6px; padding: 9px; background: white; color: #172234; font-weight: 400; }
+.field small { font-weight: 400; color: #57657a; }
+.wide { grid-column: 1 / -1; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+.actions button, .link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid #c2ccda; border-radius: 6px; padding: 10px 16px; background: white; font-weight: 600; }
+.actions .primary { background: #1f63df; border-color: #1f63df; color: white; }
+.actions button:disabled { background: #e8ecf2; border-color: #d6dde7; color: #5a6575; cursor: not-allowed; }
+.notice { padding: 12px 16px; border-radius: 6px; background: #fff7e6; color: #79500b; overflow-wrap: anywhere; }
+.summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; margin: 16px 0; }
+.summary > div { border-bottom: 1px solid #e1e6ed; padding: 12px 0; min-width: 0; }
+.summary dt { font-weight: 650; margin-bottom: 5px; }
+.summary dd { color: #42516a; overflow-wrap: anywhere; }
+.details { border-top: 1px solid #e1e6ed; margin-top: 16px; }
+.details summary { min-height: 44px; padding: 12px 0; cursor: pointer; font-weight: 600; }
+.details pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; font-size: 12px; background: #f7f8fa; }
+.details li { margin: 10px 0; overflow-wrap: anywhere; }
+.muted { color: #57657a; font-size: 13px; }
+@media (max-width: 767px) {
+  .layout, .fields, .summary { grid-template-columns: minmax(0, 1fr); }
+  .panel { padding: 18px; }
+  .steps { gap: 8px 12px; font-size: 12px; }
+  .summary > div { padding: 9px 0; }
+}

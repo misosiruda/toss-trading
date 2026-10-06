@@ -36,6 +36,8 @@ export interface VerifiedManualCapacityReservationHistory {
 /** Trusted journal composition only: no slot allocation, policy eligibility or transaction authority. */
 export interface ManualCapacityAppendSession {
   append(value: unknown, snapshots?: VerifiedPortfolioSizingSnapshotHistory): Promise<VerifiedManualCapacityReservationOrigin>;
+  /** Close admission and drain before a shared publication snapshot lease expires. */
+  finish(): Promise<void>;
 }
 const observations = new WeakMap<VerifiedManualCapacityReservationHistory, { observedAt: string; sourcePath: string; verifySources: () => void }>();
 
@@ -147,7 +149,13 @@ export class ManualOpeningCapacityReservationFileRepository {
         }
         clockFloor = currentFloor;
       };
-      const session: ManualCapacityAppendSession = Object.freeze({ append: (value: unknown, current = snapshots) => {
+      const session: ManualCapacityAppendSession = Object.freeze({ finish: async () => {
+        if (!active) throw new Error("manual capacity append session has expired");
+        accepting = false;
+        if (pending) await pending;
+        verify(snapshots);
+        if (failed) throw failure;
+      }, append: (value: unknown, current = snapshots) => {
         if (!accepting || !active) return Promise.reject(new Error("manual capacity append session has expired"));
         if (pending) return Promise.reject(new Error("manual capacity append session already has an in-flight write"));
         if (failed) return Promise.reject(failure);
@@ -166,15 +174,25 @@ export class ManualOpeningCapacityReservationFileRepository {
         void task.then(() => { pending = undefined; }, (error: unknown) => { failed = true; failure = error; pending = undefined; });
         return task;
       } });
+      let operationFailed = false, operationError: unknown;
       try {
         verify(snapshots);
         return await operation(session, history);
+      } catch (error) {
+        operationFailed = true; operationError = error; throw error;
       } finally {
         accepting = false;
         try {
           if (pending) await pending;
           verify(snapshots);
           if (failed) throw failure;
+        } catch (error) {
+          if (operationFailed && error !== operationError) {
+            throw new AggregateError([operationError, error],
+              operationError instanceof Error ? operationError.message : "manual capacity consumer failed during session cleanup",
+              { cause: operationError });
+          }
+          throw error;
         } finally { active = false; observations.delete(history); }
       }
     });

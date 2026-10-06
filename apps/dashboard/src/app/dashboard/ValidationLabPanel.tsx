@@ -476,7 +476,12 @@ function ValidationCandidateComparison({
   variant: ValidationPanelVariant;
 }) {
   return (
-    <section aria-label="Policy Candidate Comparison" className="mt-5">
+    <section
+      id="candidate-comparison"
+      aria-label="Policy Candidate Comparison"
+      className="mt-5 scroll-mt-6"
+      tabIndex={-1}
+    >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h3 className="text-sm font-semibold">Policy Candidate Comparison</h3>
@@ -663,7 +668,11 @@ function ObjectSummary({ title, value }: { title: string; value: unknown }) {
 function DataUniverseCoverageSummary({ value }: { value: unknown }) {
   const metrics = dataUniverseCoverageMetrics(value);
   return (
-    <article className="rounded-[8px] border border-[var(--border)] p-3">
+    <article
+      id="data-universe-coverage"
+      className="scroll-mt-6 rounded-[8px] border border-[var(--border)] p-3"
+      tabIndex={-1}
+    >
       <h3 className="text-sm font-semibold">Data universe coverage</h3>
       {metrics === null ? null : (
         <dl

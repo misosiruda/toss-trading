@@ -180,7 +180,12 @@ function PortfolioComplianceView({
 
 function BucketAllocationMatrix({ rows }: { rows: BucketComplianceRow[] }) {
   return (
-    <div className="mt-4 w-full max-w-full overflow-x-auto">
+    <div
+      role="region"
+      aria-label="Bucket allocation table scroll area"
+      tabIndex={0}
+      className="mt-4 w-full max-w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+    >
       <table
         aria-label="Bucket allocation compliance table"
         className="min-w-full text-left text-sm"
@@ -535,7 +540,12 @@ function BucketCostTurnoverTable({
   rows: BucketCostTurnoverRow[];
 }) {
   return (
-    <div className="mt-4 overflow-x-auto">
+    <div
+      role="region"
+      aria-label="Bucket cost and turnover table scroll area"
+      tabIndex={0}
+      className="mt-4 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+    >
       <table
         aria-label="Bucket cost and turnover table"
         className="min-w-full text-left text-sm"

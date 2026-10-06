@@ -1,9 +1,12 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import axe from "axe-core";
+import { expectPortfolioHedgeDisplay, expectPortfolioPolicyApi, expectPortfolioTableKeyboardAccess } from "../portfolio-policy/assertions";
+import { missingPolicyWarning } from "../portfolio-policy/scenarios.mjs";
 
 const DASHBOARD_MUTATION_TOKEN = "playwright-dashboard-mutation-token";
 const DASHBOARD_BOUNDARY_ROUTES = [
   "/dashboard",
+  "/dashboard/operations",
   "/dashboard/component-catalog",
   "/dashboard/portfolio",
   "/dashboard/live-readiness",
@@ -41,105 +44,123 @@ type AxeRunResult = {
   }>;
 };
 
-test("renders paper-only dashboard readiness without live mutation controls", async ({
-  page,
-}) => {
-  await page.goto("/dashboard");
+for (const route of ["/dashboard/operations"]) {
+  test(`renders paper-only dashboard readiness without live mutation controls at ${route}`, async ({
+    page,
+  }) => {
+    await page.goto(route);
+    await expect(page).toHaveURL(new RegExp(`${route}$`));
+    await expect(page.getByRole("main")).toHaveCount(1);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
 
-  await expect(
-    page.getByRole("heading", { name: "Paper-only Dashboard" })
-  ).toBeVisible();
-  await expect(page.getByText("Paper-only operations")).toBeVisible();
-  await expect(page.getByText("TRADING_ENABLED")).toBeVisible();
-  await expect(page.getByText("ViewModel API")).toBeVisible();
-  await expect(page.getByText("4/4 online")).toBeVisible();
-  await expect(page.getByText("configured operations endpoint")).toBeVisible();
-  await expect(page.getByText("127.0.0.1:8789")).toHaveCount(0);
-  await expect(page.getByText("OrderRouter")).toBeVisible();
-  await expect(page.getByText("Mutation tools")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Paper-only Dashboard" })
+    ).toBeVisible();
+    await expect(page.getByText("Paper-only operations")).toBeVisible();
+    await expect(page.getByText("TRADING_ENABLED")).toBeVisible();
+    await expect(page.getByText("ViewModel API")).toBeVisible();
+    await expect(page.getByText("4/4 online")).toBeVisible();
+    await expect(page.getByText("configured operations endpoint")).toBeVisible();
+    await expect(page.getByText("127.0.0.1:8789")).toHaveCount(0);
+    await expect(page.getByText("OrderRouter")).toBeVisible();
+    await expect(page.getByText("Mutation tools")).toBeVisible();
 
-  await expect(
-    page.getByText("Dashboard does not expose live broker mutation")
-  ).toBeVisible();
-  await expect(
-    page.getByText("No live OrderIntent path is connected")
-  ).toBeVisible();
-  await expect(
-    page.getByText("No raw command or place_order surface is present")
-  ).toBeVisible();
+    await expect(
+      page.getByText("Dashboard does not expose live broker mutation")
+    ).toBeVisible();
+    await expect(
+      page.getByText("No live OrderIntent path is connected")
+    ).toBeVisible();
+    await expect(
+      page.getByText("No raw command or place_order surface is present")
+    ).toBeVisible();
 
-  await expect(
-    page.getByRole("heading", { name: "Portfolio Compliance" })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Compliance Analytics" })
-  ).toBeVisible();
-  await expect(page.getByText("Strategy Bucket Mix")).toBeVisible();
-  await expect(page.getByText("Cash Reserve")).toBeVisible();
-  await expect(page.getByText("Hedge Effectiveness")).toBeVisible();
-  await expect(page.getByText("Cost & Turnover")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Strategy Test Lab" })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Risk Gate Trace" })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Validation Lab" })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Policy Candidate Comparison" })
-  ).toBeVisible();
-  await expect(page.getByText("Data universe coverage")).toBeVisible();
-  await expect(page.getByText("dashboard-e2e-universe").first()).toBeVisible();
-  const coverageMetrics = page.getByLabel(
-    "Data universe coverage strategy bucket metrics"
-  );
-  await expect(coverageMetrics).toContainText("Available buckets");
-  await expect(coverageMetrics).toContainText("long_term: 1");
-  await expect(coverageMetrics).toContainText("Bucket gaps");
-  await expect(coverageMetrics).toContainText(
-    "missing required: 0, insufficient: 0"
-  );
-  await expect(
-    page.getByText("universe selection bias warning").first()
-  ).toBeVisible();
-  await expect(
-    page.getByText("prompt sha256:prompt-alpha-differentiator")
-  ).toBeVisible();
-  await expect(
-    page.getByText("prompt sha256:prompt-beta-differentiator")
-  ).toBeVisible();
-  await expect(page.getByText("config sha256:config-alpha")).toBeVisible();
-  await expect(page.getByText("config sha256:config-beta")).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Strategy lab Buckets/i })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Portfolio Compliance/i })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Live Readiness Status/i })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Risk Gate Trace/i })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Validation Lab/i })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /Components Catalog/i })
-  ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Portfolio Compliance" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Compliance Analytics" })
+    ).toBeVisible();
+    await expect(page.getByText("Strategy Bucket Mix")).toBeVisible();
+    await expect(page.getByText("Cash Reserve")).toBeVisible();
+    await expect(page.getByText("Hedge Effectiveness")).toBeVisible();
+    await expect(page.getByText("Cost & Turnover")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Strategy Test Lab" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Risk Gate Trace" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Validation Lab" })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Policy Candidate Comparison" })
+    ).toBeVisible();
+    await expect(page.getByText("Data universe coverage")).toBeVisible();
+    await expect(page.getByText("dashboard-e2e-universe").first()).toBeVisible();
+    const coverageMetrics = page.getByLabel(
+      "Data universe coverage strategy bucket metrics"
+    );
+    await expect(coverageMetrics).toContainText("Available buckets");
+    await expect(coverageMetrics).toContainText("long_term: 1");
+    await expect(coverageMetrics).toContainText("Bucket gaps");
+    await expect(coverageMetrics).toContainText(
+      "missing required: 0, insufficient: 0"
+    );
+    await expect(
+      page.getByText("universe selection bias warning").first()
+    ).toBeVisible();
+    await expect(
+      page.getByText("prompt sha256:prompt-alpha-differentiator")
+    ).toBeVisible();
+    await expect(
+      page.getByText("prompt sha256:prompt-beta-differentiator")
+    ).toBeVisible();
+    await expect(page.getByText("config sha256:config-alpha")).toBeVisible();
+    await expect(page.getByText("config sha256:config-beta")).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Strategy lab Buckets/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Portfolio Compliance/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Live Readiness Status/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Risk Gate Trace/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Validation Lab/i })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Components Catalog/i })
+    ).toBeVisible();
 
-  await expect(
-    page.getByRole("button", { name: /order|trade|buy|sell/i })
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("link", { name: /order|trade|buy|sell/i })
-  ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /order|trade|buy|sell/i })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /order|trade|buy|sell/i })
+    ).toHaveCount(0);
 
-  await expectNoAxeViolations(page);
-});
+    await expectNoAxeViolations(page);
+
+    const riskGateLink = page.getByRole("link", { name: /Risk Gate Trace/i });
+    await expect(riskGateLink).toHaveAttribute("href", "/dashboard/risk-gate");
+    await riskGateLink.click();
+    await expect(page).toHaveURL(/\/dashboard\/risk-gate$/);
+    await expect(
+      page.getByRole("heading", { name: "Decision to Risk Gate Trace" })
+    ).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`${route}$`));
+    await expect(
+      page.getByRole("heading", { name: "Paper-only Dashboard" })
+    ).toBeVisible();
+  });
+}
 
 test("dashboard smoke routes do not expose live order or raw command endpoints", async ({
   page,
@@ -207,8 +228,9 @@ test("renders component catalog without backend mutation controls", async ({
 });
 
 test("renders portfolio compliance detail without mutation controls", async ({
-  page,
+  page, request,
 }) => {
+  await expectPortfolioPolicyApi(request, "http://127.0.0.1:8789", "missing");
   await page.goto("/dashboard/portfolio");
 
   await expect(
@@ -231,14 +253,8 @@ test("renders portfolio compliance detail without mutation controls", async ({
   await expect(
     page.getByRole("heading", { name: "Compliance Breaches" })
   ).toBeVisible();
-  await expect(page.getByTestId("portfolio-breach-hedge")).toContainText(
-    "ineffective"
-  );
-  await expect(
-    page.getByTestId("portfolio-breach-hedge").getByText("ineffective")
-  ).toHaveClass(
-    /text-\[var\(--danger\)\]/
-  );
+  await expectPortfolioHedgeDisplay(page, "missing");
+  await expectPortfolioTableKeyboardAccess(page);
   await expect(
     page.getByRole("heading", { name: "Compliance Analytics" })
   ).toBeVisible();
@@ -270,7 +286,7 @@ test("renders portfolio compliance detail without mutation controls", async ({
   await expect(page.getByText("Reject Codes")).toBeVisible();
   await expect(
     page.getByText(
-      "portfolio policy artifact is not available; target weights are reported as missing"
+      missingPolicyWarning
     )
   ).toBeVisible();
 
@@ -945,11 +961,8 @@ test("renders strategy bucket test lab with queued create boundary", async ({
   await expect(activeTestRow).toContainText("Long-term");
   await expect(activeTestRow).toContainText("queued");
   await expect(page.getByText("polling fallback")).toBeVisible();
-  await expect(
-    activeTestRow.getByRole("progressbar", {
-      name: "Bucket test progress ratio"
-    })
-  ).toBeVisible();
+  const progressDisplay = activeTestRow.getByLabel("Bucket test progress ratio", { exact: true });
+  await expect(progressDisplay).toBeVisible();
   const progressUrl = `/dashboard/lab/strategy-tests/tests/${encodeURIComponent(
     createdTestId
   )}/progress`;
@@ -989,6 +1002,18 @@ test("renders strategy bucket test lab with queued create boundary", async ({
     }
   });
 
+  if (progressPayload.test.progress.progressRatio === null) {
+    await expect(progressDisplay).toHaveAttribute("role", "group");
+    await expect(progressDisplay).toHaveText("진행률 없음");
+    await expect(activeTestRow.getByRole("progressbar")).toHaveCount(0);
+    await expect(progressDisplay.locator("[style]")).toHaveCount(0);
+  } else {
+    await expect(progressDisplay).toHaveAttribute("role", "progressbar");
+    await expect(progressDisplay).toHaveAttribute("aria-valuenow",
+      String(Math.max(0, Math.min(100, Math.round(progressPayload.test.progress.progressRatio * 100)))));
+  }
+  await expectStrategyLabContainedTables(page);
+
   await page.locator("#start-at").fill("2024/02/31");
   await activateButton(page, "Validate bucket config");
   await expect(page.getByText("Strategy validation invalid")).toBeVisible();
@@ -1009,52 +1034,92 @@ test("renders strategy bucket test lab with queued create boundary", async ({
 
 test("renders bucket-specific strategy test route with locked bucket boundary", async ({
   page,
-}) => {
-  await page.goto("/dashboard/lab/strategy-tests/buckets/hedge/new");
+}, testInfo) => {
+  const route = "/dashboard/lab/strategy-tests/buckets/hedge/new";
+  const rscRequests: string[] = [];
+  const recordRsc = (request: Request) => {
+    if (request.method() === "GET" && new URL(request.url()).pathname === route && request.headers().rsc === "1") {
+      rscRequests.push(request.url());
+    }
+  };
+  await page.goto(route);
+  // Immediate observation, not a wait for metadata to recover after creation.
+  const initialTitle = await page.title();
+  await page.evaluate(() => {
+    const records = [{ title: document.title, at: performance.now() }];
+    const observer = new MutationObserver(() => {
+      if (records.at(-1)?.title !== document.title) records.push({ title: document.title, at: performance.now() });
+    });
+    observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+    (window as typeof window & { __bucketTitleObservation: { records: typeof records; observer: MutationObserver } }).__bucketTitleObservation = { records, observer };
+  });
+  page.on("request", recordRsc);
+  try {
+    expect(initialTitle).toBe("Toss Trading Dashboard");
 
-  await expect(
-    page.getByRole("heading", { name: "Hedge Bucket Test" })
-  ).toBeVisible();
-  await expect(page.getByText("Isolated Strategy Bucket Test")).toBeVisible();
-  await expect(page.getByText("queued record only")).toBeVisible();
-  await expect(page.getByText("not started")).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Hedge Test Config" })
-  ).toBeVisible();
-  await expect(page.locator("#test-bucket")).toHaveValue("hedge");
-  await expect(page.locator("#test-bucket")).toBeDisabled();
-  await expect(
-    page.getByRole("button", { name: "Queue enabled bucket matrix" })
-  ).toHaveCount(0);
-  await expect(
-    page.getByLabel("Strategy bucket test request preview")
-  ).toContainText('"bucket": "hedge"');
-  await expect(
-    page.getByLabel("Strategy bucket test request preview")
-  ).toContainText("strategy-test-lab-hedge-seed");
+    await expect(
+      page.getByRole("heading", { name: "Hedge Bucket Test" })
+    ).toBeVisible();
+    await expect(page.getByText("Isolated Strategy Bucket Test")).toBeVisible();
+    await expect(page.getByText("queued record only")).toBeVisible();
+    await expect(page.getByText("not started")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Hedge Test Config" })
+    ).toBeVisible();
+    await expect(page.locator("#test-bucket")).toHaveValue("hedge");
+    await expect(page.locator("#test-bucket")).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Queue enabled bucket matrix" })
+    ).toHaveCount(0);
+    await expect(
+      page.getByLabel("Strategy bucket test request preview")
+    ).toContainText('"bucket": "hedge"');
+    await expect(
+      page.getByLabel("Strategy bucket test request preview")
+    ).toContainText("strategy-test-lab-hedge-seed");
 
-  await activateButton(page, "Validate bucket config");
-  await expect(page.getByText("Strategy validation valid")).toBeVisible();
-  await page.locator("#mutation-token").fill(DASHBOARD_MUTATION_TOKEN);
-  await expect(
-    page.getByText(
-      "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
-    )
-  ).toBeVisible();
-  await activateButton(page, "Queue bucket test record");
-  await expect(page.getByText("Strategy bucket test queued")).toBeVisible();
-  await expect(page.getByText("Bucket").last()).toBeVisible();
-  await expect(page.getByText("hedge").last()).toBeVisible();
-  await expect(page.getByText("replay runner not started")).toBeVisible();
+    await activateButton(page, "Validate bucket config");
+    await expect(page.getByText("Strategy validation valid")).toBeVisible();
+    await page.locator("#mutation-token").fill(DASHBOARD_MUTATION_TOKEN);
+    await expect(
+      page.getByText(
+        "Backend validation passed. A queued paper-only test record can be created; replay runner remains disabled."
+      )
+    ).toBeVisible();
+    await activateButton(page, "Queue bucket test record");
+    await expect(page.getByText("Strategy bucket test queued")).toBeVisible();
+    await expect(page.getByText("Bucket").last()).toBeVisible();
+    await expect(page.getByText("hedge").last()).toBeVisible();
+    await expect(page.getByText("replay runner not started")).toBeVisible();
 
-  await expect(
-    page.getByRole("button", { name: /order|trade|buy|sell/i })
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("link", { name: /order|trade|buy|sell/i })
-  ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /order|trade|buy|sell/i })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /order|trade|buy|sell/i })
+    ).toHaveCount(0);
 
-  await expectNoAxeViolations(page);
+    expect(await page.title()).toBe("Toss Trading Dashboard");
+    await expectNoAxeViolations(page);
+    expect(await page.title()).toBe("Toss Trading Dashboard");
+    expect(rscRequests).toEqual([]);
+    const titles = await page.evaluate(() => (window as typeof window & {
+      __bucketTitleObservation: { records: Array<{ title: string; at: number }> }
+    }).__bucketTitleObservation.records);
+    expect(titles.every((entry) => entry.title === "Toss Trading Dashboard")).toBe(true);
+  } finally {
+    page.off("request", recordRsc);
+    const titles = await page.evaluate(() => {
+      const observation = (window as typeof window & {
+        __bucketTitleObservation: { records: Array<{ title: string; at: number }>; observer: MutationObserver }
+      }).__bucketTitleObservation;
+      observation.observer.disconnect();
+      return { records: observation.records, finalTitle: document.title,
+        headTitles: Array.from(document.head.querySelectorAll("title"), (element) => element.textContent),
+        bodyTitles: Array.from(document.body.querySelectorAll("title"), (element) => element.textContent) };
+    });
+    await testInfo.attach("bucket-create-title-lifecycle", { body: JSON.stringify({ ...titles, rscRequests }, null, 2), contentType: "application/json" });
+  }
 });
 
 test("renders paper policy builder draft validation without live mutation controls", async ({
@@ -1403,7 +1468,7 @@ async function expectNoAxeViolations(page: Page) {
   await page.addScriptTag({ content: axe.source });
   const accessibility = await page.evaluate(async () => {
     const axeApi = (
-      window as Window & {
+      window as typeof window & {
         axe: { run: () => Promise<AxeRunResult> };
       }
     ).axe;
@@ -1411,4 +1476,26 @@ async function expectNoAxeViolations(page: Page) {
   });
 
   expect(accessibility.violations).toEqual([]);
+}
+
+async function expectStrategyLabContainedTables(page: Page) {
+  const geometry = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+  expect(geometry.width).toBeLessThanOrEqual((page.viewportSize()?.width ?? geometry.width) + 1);
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1);
+  await page.getByRole("button", { name: "Refresh progress", exact: true }).focus();
+  for (const name of ["Bucket test progress table scroll area", "Bucket result matrix table scroll area", "Bucket baseline comparison table scroll area"]) {
+    const area = page.getByRole("region", { name, exact: true });
+    await page.keyboard.press("Tab");
+    await expect(area).toBeFocused();
+    await expect(area).toHaveCSS("outline-style", "solid");
+    await expect(area).toHaveCSS("outline-width", "2px");
+    const overflow = await area.evaluate((element) => element.scrollWidth > element.clientWidth);
+    if ((page.viewportSize()?.width ?? 0) < 500) expect(overflow).toBe(true);
+    if (overflow) {
+      await page.keyboard.press("ArrowRight");
+      await expect.poll(() => area.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    }
+  }
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.getByRole("region", { name: "Bucket result matrix table scroll area", exact: true })).toBeFocused();
 }

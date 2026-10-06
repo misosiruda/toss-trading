@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 
+import { readPaperSimulationObservation } from "../storage/paperSimulationObservationStore.js";
 import { createPaperSchedulerPaths } from "../scheduler/paperRunScheduler.js";
 import {
   BATCH_REPLAY_ARTIFACT_DIR_NAME,
@@ -192,12 +193,14 @@ export async function readReplayResearchReport(
 export async function readBatchReplayRuns(
   storageBaseDir: string,
   limit: number,
-  options: { includeLatestRunArtifacts?: boolean; runId?: string | null } = {}
+  options: { includeLatestRunArtifacts?: boolean; runId?: string | null; observationRunId?: string | null } = {}
 ): Promise<Record<string, unknown>> {
   const paths = createStoragePaths(storageBaseDir);
   const aggregate = await readJsonFile(paths.batchReplayAggregateReportPath);
   const manifests = await readBatchReplayManifests(storageBaseDir);
   const lookupId = normalizeRunLookupId(options.runId ?? null);
+  const observationLookupId = options.observationRunId === undefined ? (options.runId ?? null) : options.observationRunId;
+  const simulationObservation = observationLookupId === null ? null : await readPaperSimulationObservation(storageBaseDir, observationLookupId);
   const selectedManifest =
     lookupId === null
       ? (manifests[0] ?? null)
@@ -226,6 +229,7 @@ export async function readBatchReplayRuns(
       batchStatus,
       batchId: selectedManifest?.batchId ?? null,
       ...manifestMetadata,
+      simulationObservation,
       sourceRunsPath: null,
       runs: [],
       selectedRun: null,
@@ -249,6 +253,7 @@ export async function readBatchReplayRuns(
       batchStatus,
       batchId: selectedManifest?.batchId ?? null,
       ...manifestMetadata,
+      simulationObservation,
       sourceRunsPath,
       runs: [],
       selectedRun: null,
@@ -298,6 +303,7 @@ export async function readBatchReplayRuns(
     batchStatus: normalizedBatchStatus,
     batchId,
     ...manifestMetadata,
+    simulationObservation,
     sourceRunsPath,
     runs,
     selectedRun,

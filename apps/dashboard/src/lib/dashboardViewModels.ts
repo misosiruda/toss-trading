@@ -593,6 +593,14 @@ export interface BatchReplayRunArtifacts {
   currentPositionCount: number | null;
 }
 
+export type SimulationObservationView = {
+  status: "available";
+  simulationRunId: string;
+  acceptedAt: string;
+  outcome: "unknown" | "runner_failed";
+  runnerFailure: { observedAt: string; reasonCode: "runner_rejected" } | null;
+} | { status: "missing" | "invalid" | "unavailable" | "unsupported" | "not_requested" };
+
 export interface RunDetailView {
   mode: "paper_only";
   readOnly: true;
@@ -601,10 +609,14 @@ export interface RunDetailView {
   batchStatus: string | null;
   sourceRunsPath: string | null;
   run: BatchReplayRunSummary | null;
+  runSource: "persisted" | "active_manifest" | "legacy_active" | null;
   artifacts: BatchReplayRunArtifacts | null;
   latestArtifactsRunId: string | null;
   warnings: string[];
   status: "ok" | "missing";
+  requestedId: string;
+  endpointStatus: string | null;
+  simulationObservation: SimulationObservationView;
 }
 
 export type ViewModelResult<T> =
@@ -671,6 +683,96 @@ export interface RunDetailPageData {
   apiBaseLabel: string;
   fetchedAt: string;
   runDetail: ViewModelResult<RunDetailView>;
+}
+
+export type ExperimentTerminalStatus =
+  | "completed"
+  | "completed_with_failures"
+  | "failed"
+  | "skipped";
+
+export type ExperimentListWarningCode =
+  | "batch_metadata_invalid"
+  | "batch_status_unknown"
+  | "aggregate_status_unknown"
+  | "active_progress_status_unknown"
+  | "row_invalid"
+  | "row_status_unknown"
+  | "row_batch_mismatch"
+  | "row_duplicate"
+  | "row_metadata_invalid"
+  | "unbound_rows"
+  | "active_run_invalid"
+  | "active_run_unbound"
+  | "active_run_inconsistent"
+  | "active_run_terminal_duplicate"
+  | "status_counts_unknown"
+  | "corrupt_lines";
+
+export interface ExperimentListWarning {
+  code: ExperimentListWarningCode;
+  count: number;
+}
+
+export interface ExperimentListRow {
+  runId: string;
+  batchId: string | null;
+  status: ExperimentTerminalStatus | "running";
+  provenance: "bound_manifest" | "unbound_stored";
+  detailHref: string;
+  runIndex: number | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  skippedAt: string | null;
+  windowStartAt: string | null;
+  windowEndAt: string | null;
+  marketRegimeLabel: string | null;
+  totalReturnRatio: number | null;
+  finalVirtualNetWorthKrw: number | null;
+  tradeCount: number | null;
+  rejectedCount: number | null;
+  aiDecisionFailureCount: number | null;
+}
+
+export interface ExperimentListView {
+  mode: "paper_only";
+  readOnly: true;
+  sourceLabel: "API-selected/latest-unverified";
+  endpointStatus: "ok" | "running" | "missing" | "blocked" | "degraded";
+  aggregateStatus: "ok" | "missing" | "corrupt" | null;
+  batchId: string | null;
+  batchStatus: "running" | "completed" | "completed_with_failures" | null;
+  batchStartedAt: string | null;
+  batchUpdatedAt: string | null;
+  batchCompletedAt: string | null;
+  requestedRunCount: number | null;
+  manifestCounts: {
+    completed: number | null;
+    skipped: number | null;
+    failed: number | null;
+  };
+  riskProfile: string | null;
+  decisionProviderMode: string | null;
+  initialCashKrw: number | null;
+  // These are API counts over the returned window / complete stored source.
+  // They must not be replaced by the validated projection or manifest counts.
+  count: number;
+  totalCount: number;
+  statusCounts: Partial<Record<ExperimentTerminalStatus, number>>;
+  unknownStatusCount: number;
+  corruptLineCount: number;
+  activeRunProgressStatus: "ok" | "missing" | "corrupt" | null;
+  rows: ExperimentListRow[];
+  projectedTerminalCount: number;
+  projectedActiveCount: number;
+  excludedRowCount: number;
+  warnings: ExperimentListWarning[];
+}
+
+export interface ExperimentListPageData {
+  fetchedAt: string;
+  experimentList: ViewModelResult<ExperimentListView>;
 }
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8787";
@@ -849,6 +951,346 @@ export async function readRunDetailPageData(
   };
 }
 
+/** A single read of the API-selected source, without run artifacts or mutations. */
+export async function readExperimentListPageData(): Promise<ExperimentListPageData> {
+  const { baseUrl } = readOperationsApiConfig();
+  const endpoint = "/batch/replay/runs?limit=100";
+  const fetchedAt = new Date().toISOString();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const unavailable = (
+    status: "offline" | "invalid",
+    message: string
+  ): ExperimentListPageData => ({
+    fetchedAt,
+    experimentList: { status, endpoint, fetchedAt, data: null, message }
+  });
+
+  try {
+    const response = await fetch(`${baseUrl}${endpoint}`, {
+      method: "GET",
+      cache: "no-store",
+      headers: { accept: "application/json" },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return unavailable("offline", "실험 목록 API에 연결할 수 없습니다");
+    }
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return unavailable("invalid", "실험 목록 응답 형식이 올바르지 않습니다");
+      }
+      throw error;
+    }
+    const data = normalizeExperimentListView(payload);
+    if (data === null) {
+      return unavailable("invalid", "실험 목록 응답이 읽기 전용 계약과 일치하지 않습니다");
+    }
+    return {
+      fetchedAt,
+      experimentList: { status: "ok", endpoint, fetchedAt, data }
+    };
+  } catch {
+    // Never forward transport errors, configured API URLs, or runner diagnostics.
+    return unavailable("offline", "실험 목록 API에 연결할 수 없습니다");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** Safe list payload only; raw detail records never cross this public boundary. */
+export function normalizeExperimentListView(value: unknown): ExperimentListView | null {
+  return projectExperimentListSource(value)?.view ?? null;
+}
+
+function projectExperimentListSource(value: unknown): {
+  view: ExperimentListView;
+  terminalRecordsById: Map<string, Record<string, unknown>>;
+} | null {
+  if (
+    !isRecord(value) || value["mode"] !== "paper_only" || value["readOnly"] !== true ||
+    !Array.isArray(value["runs"]) || value["runs"].length > 100 ||
+    !isExperimentEndpointStatus(value["status"]) ||
+    !isExperimentCount(value["count"]) || !isExperimentCount(value["totalCount"]) ||
+    !isExperimentCount(value["corruptLineCount"]) ||
+    value["count"] !== value["runs"].length || value["totalCount"] < value["count"] ||
+    !isRecord(value["statusCounts"])
+  ) {
+    return null;
+  }
+
+  const warningCounts = new Map<ExperimentListWarningCode, number>();
+  const warn = (code: ExperimentListWarningCode, count = 1) => {
+    if (count > 0) warningCounts.set(code, (warningCounts.get(code) ?? 0) + count);
+  };
+  const statusCounts: ExperimentListView["statusCounts"] = {};
+  let allStatusCount = 0;
+  let unknownStatusCount = 0;
+  for (const [status, count] of Object.entries(value["statusCounts"])) {
+    if (!isExperimentCount(count)) return null;
+    allStatusCount += count;
+    if (!Number.isSafeInteger(allStatusCount)) return null;
+    if (isExperimentTerminalStatus(status)) statusCounts[status] = count;
+    else unknownStatusCount += count;
+  }
+  if (allStatusCount !== value["totalCount"]) return null;
+  warn("status_counts_unknown", unknownStatusCount);
+  warn("corrupt_lines", value["corruptLineCount"]);
+
+  const metadata = <T>(
+    raw: unknown,
+    read: (input: unknown) => T | null,
+    code: ExperimentListWarningCode = "batch_metadata_invalid"
+  ): T | null => {
+    const parsed = read(raw);
+    if (raw !== null && raw !== undefined && parsed === null) warn(code);
+    return parsed;
+  };
+  // Manifest counts describe optional metadata, not the returned source cardinality.
+  // Degrade only malformed fields so independently valid stored children survive.
+  const rawManifestCounts = metadata(value["manifestCounts"],
+    (input) => isRecord(input) ? input : null) ?? {};
+  const manifestCounts = {
+    completed: metadata(rawManifestCounts["completed"], readExperimentCount),
+    skipped: metadata(rawManifestCounts["skipped"], readExperimentCount),
+    failed: metadata(rawManifestCounts["failed"], readExperimentCount)
+  };
+  const requestedRunCount = metadata(value["requestedRunCount"], readExperimentCount);
+  const batchId = metadata(value["batchId"], readExperimentId);
+  const rawBatchStatus = value["batchStatus"];
+  const batchStatus = rawBatchStatus === "running" || rawBatchStatus === "completed" ||
+    rawBatchStatus === "completed_with_failures" ? rawBatchStatus : null;
+  if (batchStatus === null && rawBatchStatus !== null && rawBatchStatus !== undefined) {
+    warn("batch_status_unknown");
+  }
+  const aggregateStatus = metadata(
+    value["aggregateStatus"], readExperimentSourceStatus, "aggregate_status_unknown"
+  );
+  const activeRunProgressStatus = metadata(
+    value["activeRunProgressStatus"], readExperimentSourceStatus, "active_progress_status_unknown"
+  );
+  const batchStartedAt = metadata(value["batchStartedAt"], readExperimentTimestamp);
+  const batchUpdatedAt = metadata(value["batchUpdatedAt"], readExperimentTimestamp);
+  const batchCompletedAt = metadata(value["batchCompletedAt"], readExperimentTimestamp);
+  const riskProfile = metadata(value["riskProfile"], readExperimentLabel);
+  const decisionProviderMode = metadata(value["decisionProviderMode"], readExperimentLabel);
+  const initialCashKrw = metadata(value["initialCashKrw"], readExperimentNonnegativeNumber);
+  const terminalRows = new Map<string, ExperimentListRow>();
+  const terminalRecordsById = new Map<string, Record<string, unknown>>();
+  const observedTerminalIds = new Set<string>();
+  let excludedRowCount = 0;
+
+  for (const raw of value["runs"]) {
+    if (!isRecord(raw)) {
+      warn("row_invalid");
+      excludedRowCount++;
+      continue;
+    }
+    if (!isExperimentTerminalStatus(raw["status"])) {
+      warn("row_status_unknown");
+      excludedRowCount++;
+      continue;
+    }
+    const runId = readExperimentId(raw["runId"]);
+    const rowBatchId = readExperimentId(raw["batchId"]);
+    if (runId === null) {
+      warn("row_invalid");
+      excludedRowCount++;
+      continue;
+    }
+    observedTerminalIds.add(runId);
+    // Legacy rows may omit mode; an explicit contradiction cannot become paper data.
+    if (raw["mode"] !== undefined && raw["mode"] !== "paper_only") {
+      warn("row_invalid");
+      excludedRowCount++;
+      continue;
+    }
+    if (batchId !== null && rowBatchId !== batchId) {
+      warn("row_batch_mismatch");
+      excludedRowCount++;
+      continue;
+    }
+    const row = projectExperimentRow(raw, runId, rowBatchId, raw["status"],
+      batchId === null ? "unbound_stored" : "bound_manifest", warn,
+      raw["batchId"] != null && rowBatchId === null);
+    if (terminalRows.has(runId)) {
+      warn("row_duplicate");
+      excludedRowCount++;
+    }
+    // Use returned source order, not timestamps: the last valid terminal record wins.
+    terminalRows.set(runId, row);
+    terminalRecordsById.set(runId, raw);
+  }
+
+  const rows = [...terminalRows.values()];
+  const projectedTerminalCount = rows.length;
+  if (batchId === null) warn("unbound_rows", projectedTerminalCount);
+  let projectedActiveCount = 0;
+  const active = value["activeRun"];
+  if (active !== null && active !== undefined) {
+    const activeId = isRecord(active) ? readExperimentId(active["runId"]) : null;
+    if (!isRecord(active) || activeId === null ||
+      (active["mode"] !== undefined && active["mode"] !== "paper_only")) {
+      warn("active_run_invalid");
+    } else if (observedTerminalIds.has(activeId)) {
+      warn("active_run_terminal_duplicate");
+    } else if (batchId === null) {
+      warn("active_run_unbound");
+    } else if (batchStatus !== "running") {
+      warn("active_run_inconsistent");
+    } else {
+      rows.unshift(projectExperimentRow(active, activeId, batchId, "running", "bound_manifest", warn));
+      projectedActiveCount = 1;
+    }
+  }
+
+  const view: ExperimentListView = {
+    mode: "paper_only",
+    readOnly: true,
+    sourceLabel: "API-selected/latest-unverified",
+    endpointStatus: value["status"],
+    aggregateStatus,
+    batchId,
+    batchStatus,
+    batchStartedAt,
+    batchUpdatedAt,
+    batchCompletedAt,
+    requestedRunCount,
+    manifestCounts,
+    riskProfile,
+    decisionProviderMode,
+    initialCashKrw,
+    count: value["count"],
+    totalCount: value["totalCount"],
+    statusCounts,
+    unknownStatusCount,
+    corruptLineCount: value["corruptLineCount"],
+    activeRunProgressStatus,
+    rows,
+    projectedTerminalCount,
+    projectedActiveCount,
+    excludedRowCount,
+    warnings: [...warningCounts].map(([code, count]) => ({ code, count }))
+  };
+  return { view, terminalRecordsById };
+}
+
+function projectExperimentRow(
+  raw: Record<string, unknown>,
+  runId: string,
+  batchId: string | null,
+  status: ExperimentListRow["status"],
+  provenance: ExperimentListRow["provenance"],
+  warn: (code: ExperimentListWarningCode, count?: number) => void,
+  invalidMetadata = false
+): ExperimentListRow {
+  let malformed = invalidMetadata;
+  const optional = <T>(value: unknown, read: (input: unknown) => T | null): T | null => {
+    const parsed = read(value);
+    if (value != null && parsed === null) malformed = true;
+    return parsed;
+  };
+  const record = (value: unknown): Record<string, unknown> => {
+    if (value != null && !isRecord(value)) malformed = true;
+    return isRecord(value) ? value : {};
+  };
+  const summary = status === "running" ? {} : record(raw["summary"]);
+  const marketRegime = record(raw["marketRegime"]);
+  const window = record(raw["window"]);
+  let windowStartAt = optional(window["startAt"], readExperimentTimestamp);
+  let windowEndAt = optional(window["endAt"], readExperimentTimestamp);
+  if (windowStartAt === null || windowEndAt === null ||
+    Date.parse(windowStartAt) > Date.parse(windowEndAt)) {
+    if (window["startAt"] != null || window["endAt"] != null) malformed = true;
+    windowStartAt = null;
+    windowEndAt = null;
+  }
+  const terminalTime = (key: string) => status === "running"
+    ? null : optional(raw[key], readExperimentTimestamp);
+  const row: ExperimentListRow = {
+    runId,
+    batchId,
+    status,
+    provenance,
+    detailHref: `/dashboard/lab/runs/${encodeURIComponent(runId)}`,
+    runIndex: optional(raw["runIndex"], readExperimentCount),
+    startedAt: optional(raw["startedAt"], readExperimentTimestamp),
+    completedAt: terminalTime("completedAt"),
+    failedAt: terminalTime("failedAt"),
+    skippedAt: terminalTime("skippedAt"),
+    windowStartAt,
+    windowEndAt,
+    marketRegimeLabel: optional(marketRegime["label"], readExperimentLabel),
+    totalReturnRatio: optional(summary["totalReturnRatio"], readExperimentFiniteNumber),
+    finalVirtualNetWorthKrw: optional(summary["finalVirtualNetWorthKrw"], readExperimentNonnegativeNumber),
+    tradeCount: optional(summary["tradeCount"], readExperimentCount),
+    rejectedCount: optional(summary["rejectedCount"], readExperimentCount),
+    aiDecisionFailureCount: optional(summary["aiDecisionFailureCount"], readExperimentCount)
+  };
+  if (malformed) warn("row_metadata_invalid");
+  return row;
+}
+
+function isExperimentTerminalStatus(value: unknown): value is ExperimentTerminalStatus {
+  return value === "completed" || value === "completed_with_failures" ||
+    value === "failed" || value === "skipped";
+}
+
+function isExperimentEndpointStatus(value: unknown): value is ExperimentListView["endpointStatus"] {
+  return value === "ok" || value === "running" || value === "missing" ||
+    value === "blocked" || value === "degraded";
+}
+
+function readExperimentSourceStatus(value: unknown): ExperimentListView["aggregateStatus"] {
+  return value === "ok" || value === "missing" || value === "corrupt" ? value : null;
+}
+
+function isExperimentCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function readExperimentCount(value: unknown): number | null {
+  return isExperimentCount(value) ? value : null;
+}
+
+function readExperimentFiniteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readExperimentNonnegativeNumber(value: unknown): number | null {
+  const number = readExperimentFiniteNumber(value);
+  return number !== null && number >= 0 ? number : null;
+}
+
+function readExperimentId(value: unknown): string | null {
+  // UI projection limit for one ASCII filesystem component; the backend does not
+  // impose this cap on raw IDs. Preserve accepted identities exactly, never truncate.
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,255}$/.test(value)
+    ? value : null;
+}
+
+function readExperimentLabel(value: unknown): string | null {
+  return typeof value === "string" && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value)
+    ? value : null;
+}
+
+function readExperimentTimestamp(value: unknown): string | null {
+  if (typeof value !== "string" || value.length > 40) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (match === null || !Number.isFinite(Date.parse(value))) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1] &&
+    Number(match[4]) <= 23 && Number(match[5]) <= 59 && Number(match[6]) <= 59
+    ? value : null;
+}
+
 export function readOperationsApiConfig(): { baseUrl: string; label: string } {
   const value =
     [
@@ -996,7 +1438,7 @@ async function fetchViewModel<T>(
   }
 }
 
-function normalizeRunDetailView(
+export function normalizeRunDetailView(
   value: unknown,
   runId: string
 ): RunDetailView | null {
@@ -1027,7 +1469,12 @@ function normalizeRunDetailView(
     .map(normalizeBatchReplayRunSummary)
     .filter((run): run is BatchReplayRunSummary => run !== null);
   const selectedRun = normalizeBatchReplayRunSummary(value["selectedRun"]);
-  const run = findRunDetailTargetRun({
+  // An exact child link from the list must resolve to the same last eligible
+  // terminal source record. Keep detail fields and all legacy lookup fallbacks.
+  const exactTerminal = normalizeBatchReplayRunSummary(
+    projectExperimentListSource(value)?.terminalRecordsById.get(runId)
+  );
+  const selection = exactTerminal ? { run: exactTerminal, source: "persisted" as const } : findRunDetailTargetRun({
     activeRun,
     batchId,
     batchStatus,
@@ -1035,6 +1482,15 @@ function normalizeRunDetailView(
     runs,
     selectedRun
   });
+  const run = selection?.run ?? null;
+  const matchesLookup = (raw: unknown) => isRecord(raw) && (raw["runId"] === runId || raw["batchId"] === runId);
+  // Invalid stored rows never win over a valid terminal or explicit active source.
+  // When they are the only evidence for this lookup, expose an invalid read, not absence.
+  const invalidStored = value["runs"].some(raw => matchesLookup(raw) && normalizeBatchReplayRunSummary(raw) === null);
+  const rawSelected = value["selectedRun"], rawActive = value["activeRun"];
+  const invalidSelected = matchesLookup(rawSelected) && selectedRun === null;
+  const invalidActiveStatus = matchesLookup(rawActive) && isRecord(rawActive) && rawActive["status"] !== undefined && rawActive["status"] !== null && activeRun === null;
+  if (run === null && (invalidStored || invalidSelected || invalidActiveStatus)) return null;
   const resolvedRunId = run?.runId ?? runId;
   const latestArtifactsRunId = artifacts?.runId ?? null;
   const warnings =
@@ -1050,10 +1506,14 @@ function normalizeRunDetailView(
     mode: "paper_only",
     readOnly: true,
     runId: resolvedRunId,
+    requestedId: runId,
+    endpointStatus: readNullableString(value["status"]),
+    simulationObservation: normalizeSimulationObservation(value["simulationObservation"], runId),
     batchId,
     batchStatus,
     sourceRunsPath: readNullableString(value["sourceRunsPath"]),
     run,
+    runSource: selection?.source ?? null,
     artifacts: latestArtifactsRunId === resolvedRunId ? artifacts : null,
     latestArtifactsRunId,
     warnings,
@@ -1061,46 +1521,37 @@ function normalizeRunDetailView(
   };
 }
 
-function findRunDetailTargetRun({
-  activeRun,
-  batchId,
-  batchStatus,
-  lookupId,
-  runs,
-  selectedRun
-}: {
-  activeRun: BatchReplayRunSummary | null;
-  batchId: string | null;
-  batchStatus: string | null;
-  lookupId: string;
-  runs: BatchReplayRunSummary[];
-  selectedRun: BatchReplayRunSummary | null;
-}): BatchReplayRunSummary | null {
-  const directRun = runs.find((candidate) => candidate.runId === lookupId);
-  if (directRun !== undefined) {
-    return directRun;
-  }
-  if (
-    selectedRun !== null &&
-    (selectedRun.runId === lookupId || selectedRun.batchId === lookupId)
-  ) {
-    return selectedRun;
-  }
-  if (activeRun !== null && activeRun.runId === lookupId) {
-    return activeRun;
-  }
-  if (
-    activeRun !== null &&
-    batchId === lookupId &&
-    (batchStatus === "running" || runs.length === 0)
-  ) {
-    return activeRun;
-  }
-  return (
-    [...runs].reverse().find((candidate) => candidate.batchId === lookupId) ??
-    (activeRun !== null && batchId === lookupId ? activeRun : null) ??
-    null
-  );
+function normalizeSimulationObservation(value: unknown, requestedId: string): SimulationObservationView {
+  if (value === undefined) return { status: "unsupported" };
+  if (value === null) return { status: "not_requested" };
+  const invalid = { status: "invalid" as const };
+  if (!isRecord(value) || value["simulationRunId"] !== requestedId) return invalid;
+  if (value["status"] === "missing" || value["status"] === "invalid" || value["status"] === "unavailable") return { status: value["status"] };
+  if (value["status"] !== "available" || value["schemaVersion"] !== "paper_simulation_observation.v1" ||
+      value["batchId"] !== requestedId || !/^paper_sim_\d{17}_[A-Za-z0-9_-]{1,32}(?![\s\S])/.test(requestedId)) return invalid;
+  const acceptedAt = value["acceptedAt"];
+  const validTimestamp = (time: unknown): time is string => typeof time === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(time) && Number.isFinite(Date.parse(time)) && new Date(time).toISOString().slice(0, 19) === time.slice(0, 19);
+  if (!validTimestamp(acceptedAt)) return invalid;
+  const outcome = value["outcome"], failure = value["runnerFailure"];
+  if (outcome === "unknown" && failure === null) return { status: "available", simulationRunId: requestedId, acceptedAt, outcome, runnerFailure: null };
+  if (outcome !== "runner_failed" || !isRecord(failure) || failure["reasonCode"] !== "runner_rejected" || !validTimestamp(failure["observedAt"]) || Date.parse(failure["observedAt"]) < Date.parse(acceptedAt)) return invalid;
+  return { status: "available", simulationRunId: requestedId, acceptedAt, outcome, runnerFailure: { observedAt: failure["observedAt"], reasonCode: "runner_rejected" } };
+}
+
+type RunDetailSelection = { run: BatchReplayRunSummary; source: "persisted" | "active_manifest" | "legacy_active" };
+function findRunDetailTargetRun({activeRun,batchId,batchStatus,lookupId,runs,selectedRun}: {
+  activeRun: BatchReplayRunSummary | null; batchId: string | null; batchStatus: string | null;
+  lookupId: string; runs: BatchReplayRunSummary[]; selectedRun: BatchReplayRunSummary | null;
+}): RunDetailSelection | null {
+  const persisted = (run: BatchReplayRunSummary): RunDetailSelection => ({run,source:"persisted"});
+  const active = (): RunDetailSelection | null => activeRun === null ? null : {run:activeRun,source:activeRun.status === "active" ? "legacy_active" : "active_manifest"};
+  const directRun = runs.find(candidate => candidate.runId === lookupId);
+  if (directRun !== undefined) return persisted(directRun);
+  if (selectedRun !== null && (selectedRun.runId === lookupId || selectedRun.batchId === lookupId)) return persisted(selectedRun);
+  if (activeRun !== null && activeRun.runId === lookupId) return active();
+  if (activeRun !== null && batchId === lookupId && (batchStatus === "running" || runs.length === 0)) return active();
+  const alias = [...runs].reverse().find(candidate => candidate.batchId === lookupId);
+  return alias !== undefined ? persisted(alias) : activeRun !== null && batchId === lookupId ? active() : null;
 }
 
 function normalizeActiveBatchReplayRunSummary(
@@ -1114,15 +1565,19 @@ function normalizeActiveBatchReplayRunSummary(
   if (!isRecord(value)) {
     return null;
   }
-  const runId = readString(value["runId"]) ?? context.artifacts?.runId ?? null;
-  if (runId === null) {
+  // The active source owns child identity. Artifacts cannot identify an incomplete active record.
+  const runId = readString(value["runId"]);
+  if (runId === null || runId.trim().length === 0) {
     return null;
   }
   const marketRegime = isRecord(value["marketRegime"]) ? value["marketRegime"] : {};
-  const status =
-    readString(value["status"]) ??
-    context.artifacts?.runStatus ??
-    (context.batchStatus === "running" ? "running" : "active");
+  const rawStatus = value["status"];
+  if (rawStatus !== undefined && rawStatus !== null && typeof rawStatus !== "string") return null;
+  const ownStatus = readString(rawStatus);
+  const artifactStatus = context.artifacts?.runId === runId ? context.artifacts.runStatus : null;
+  const observedStatus = ownStatus ?? artifactStatus;
+  if (observedStatus !== null && !["running", "completed", "completed_with_failures", "failed", "skipped"].includes(observedStatus)) return null;
+  const status = observedStatus ?? (context.batchStatus === "running" ? "running" : "active");
 
   return {
     runId,
@@ -1154,7 +1609,7 @@ function normalizeBatchReplayRunSummary(
   }
   const runId = readString(value["runId"]);
   const status = readString(value["status"]);
-  if (runId === null || status === null) {
+  if (runId === null || runId.trim().length === 0 || status === null || !["completed", "completed_with_failures", "failed", "skipped"].includes(status)) {
     return null;
   }
   const summary = isRecord(value["summary"]) ? value["summary"] : {};

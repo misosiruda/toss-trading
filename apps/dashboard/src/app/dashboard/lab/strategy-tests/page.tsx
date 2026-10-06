@@ -9,8 +9,7 @@ import {
   type StrategyBucketTestResultSummary,
   type ViewModelResult
 } from "@/lib/dashboardViewModels";
-import { StrategyBucketTestProgressPanel } from "./StrategyBucketTestProgressPanel";
-import { StrategyBucketTestValidationForm } from "./StrategyBucketTestValidationForm";
+import { StrategyBucketTestWorkspace } from "./StrategyBucketTestWorkspace";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,8 +31,8 @@ export default async function StrategyTestsPage() {
   const pageData = await readStrategyTestLabPageData();
 
   return (
-    <main className="min-h-screen px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
+    <main className="min-h-screen min-w-0 [overflow-wrap:anywhere] px-4 py-5 sm:px-6 lg:px-8">
+      <div className="mx-auto flex min-w-0 w-full max-w-7xl flex-col gap-5">
         <header className="border-b border-[var(--border)] pb-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -119,7 +118,7 @@ function StrategyLabView({ data }: { data: StrategyBucketTestLabViewModel }) {
           label="Runnable buckets"
           value={`${enabledCount}/${data.supportedBuckets.length}`}
         />
-        <Metric label="Active tests" value={String(data.activeTests.length)} />
+        <Metric label="Server active snapshot" value={String(data.activeTests.length)} />
       </section>
 
       <section>
@@ -134,20 +133,9 @@ function StrategyLabView({ data }: { data: StrategyBucketTestLabViewModel }) {
         </div>
       </section>
 
-      <StrategyBucketTestValidationForm />
-
-      <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <StrategyBucketTestProgressPanel
-          initialActiveTests={data.activeTests}
-          key={data.activeTests
-            .map(
-              (test) =>
-                `${test.testId}:${test.status}:${test.progress.phase}:${test.progress.updatedAt}`
-            )
-            .join("\n")}
-        />
+      <StrategyBucketTestWorkspace initialActiveTests={data.activeTests}>
         <ResultsPanel results={data.recentResults} />
-      </section>
+      </StrategyBucketTestWorkspace>
 
       <ComparisonPanel comparison={data.comparison} labStatus={data.status} />
       <SourceStatusList sourceStatus={data.sourceStatus} />
@@ -214,12 +202,13 @@ function ResultsPanel({
   results: StrategyBucketTestResultSummary[];
 }) {
   return (
-    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+    <section className="min-w-0 max-w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <SectionHeader eyebrow="recent results" title="Bucket Result Matrix" />
-      <div className="mt-4 overflow-x-auto">
+      <div role="region" aria-label="Bucket result matrix table scroll area" tabIndex={0}
+        className="mt-4 min-w-0 max-w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
         <table
           aria-label="Bucket result matrix table"
-          className="min-w-full text-left text-sm"
+          className="w-full min-w-[40rem] text-left text-sm"
         >
           <thead className="text-xs uppercase text-[var(--muted)]">
             <tr>
@@ -284,7 +273,7 @@ function ComparisonPanel({
   );
 
   return (
-    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+    <section className="min-w-0 max-w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <SectionHeader
         eyebrow="comparison"
         title="Full Portfolio Baseline Comparison"
@@ -308,8 +297,9 @@ function ComparisonPanel({
         />
         <Metric label="Lab status" value={labStatus} />
       </div>
-      <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+      <div role="region" aria-label="Bucket baseline comparison table scroll area" tabIndex={0}
+        className="mt-4 min-w-0 max-w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">
+        <table className="w-full min-w-[32rem] text-left text-sm">
           <thead className="text-xs uppercase text-[var(--muted)]">
             <tr>
               <th className="py-2 pr-3 font-medium">Bucket</th>
@@ -355,7 +345,7 @@ function ComparisonPanel({
 
 function UnavailablePanel({ result }: { result: UnavailableStrategyLab }) {
   return (
-    <section className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+    <section className="min-w-0 max-w-full rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <SectionHeader eyebrow={result.endpoint} title="Strategy Test Lab" />
       <div className="mt-4 rounded-[8px] border border-[var(--warning-soft)] bg-[var(--warning-soft)] p-3 text-sm leading-5 text-[var(--warning)]">
         {result.message}
@@ -374,7 +364,7 @@ function BoundaryCard({
   value: string;
 }) {
   return (
-    <article className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+    <article className="min-w-0 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-medium text-[var(--muted)]">{label}</h2>
         <Badge tone={tone} value={tone === "blocked" ? "disabled" : tone} />
@@ -401,7 +391,7 @@ function SectionHeader({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
+    <div className="min-w-0 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4">
       <p className="text-xs font-medium uppercase text-[var(--muted)]">
         {label}
       </p>

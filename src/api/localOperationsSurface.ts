@@ -1,4 +1,5 @@
 export const READ_ONLY_HTTP_METHODS = ["GET", "HEAD"] as const;
+export const PAPER_SIMULATION_VALIDATION_METHODS = ["POST"] as const;
 export const PAPER_SIMULATION_MUTATION_METHODS = ["POST"] as const;
 export const PAPER_POLICY_VALIDATION_METHODS = ["POST"] as const;
 export const PAPER_POLICY_MUTATION_METHODS = ["POST"] as const;
@@ -6,6 +7,8 @@ export const STRATEGY_BUCKET_TEST_VALIDATION_METHODS = ["POST"] as const;
 export const STRATEGY_BUCKET_TEST_MUTATION_METHODS = ["POST"] as const;
 
 export type ReadOnlyHttpMethod = (typeof READ_ONLY_HTTP_METHODS)[number];
+export type PaperSimulationValidationMethod =
+  (typeof PAPER_SIMULATION_VALIDATION_METHODS)[number];
 export type PaperSimulationMutationMethod =
   (typeof PAPER_SIMULATION_MUTATION_METHODS)[number];
 export type PaperPolicyValidationMethod =
@@ -42,6 +45,13 @@ export const LOCAL_OPERATIONS_API_ROUTES = [
 
 export type LocalOperationsApiRoutePath =
   (typeof LOCAL_OPERATIONS_API_ROUTES)[number];
+
+export const PAPER_SIMULATION_VALIDATION_API_ROUTES = [
+  "/paper/simulations/validate"
+] as const;
+
+export type PaperSimulationValidationApiRoutePath =
+  (typeof PAPER_SIMULATION_VALIDATION_API_ROUTES)[number];
 
 export const PAPER_SIMULATION_MUTATION_API_ROUTES = [
   "/paper/simulations"
@@ -168,6 +178,12 @@ export function isReadOnlyHttpMethod(
   return method === "GET" || method === "HEAD";
 }
 
+export function isPaperSimulationValidationMethod(
+  method: string | undefined
+): method is PaperSimulationValidationMethod {
+  return method === "POST";
+}
+
 export function isPaperSimulationMutationMethod(
   method: string | undefined
 ): method is PaperSimulationMutationMethod {
@@ -203,6 +219,14 @@ export function isLocalOperationsApiRoutePath(
 ): pathname is LocalOperationsApiRoutePath {
   return LOCAL_OPERATIONS_API_ROUTES.includes(
     pathname as LocalOperationsApiRoutePath
+  );
+}
+
+export function isPaperSimulationValidationApiRoutePath(
+  pathname: string
+): pathname is PaperSimulationValidationApiRoutePath {
+  return PAPER_SIMULATION_VALIDATION_API_ROUTES.includes(
+    pathname as PaperSimulationValidationApiRoutePath
   );
 }
 

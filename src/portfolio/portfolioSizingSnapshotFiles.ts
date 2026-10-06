@@ -277,13 +277,31 @@ export class PortfolioSizingSnapshotFileRepository {
       if (observedAt < Date.parse(publication.openingBudget.occupancy.assessment.observedAt) || Date.now() < observedAt) {
         throw new Error("published snapshot source observation clock moved backwards");
       }
-      const result = await operation(publication, snapshots, {
-        manualSession: sources.manualSession,
-        selectorSession: sources.selectorSession
-      });
+      let result: T | undefined;
+      let consumerFailed = false, consumerError: unknown;
+      try {
+        result = await operation(publication, snapshots, {
+          manualSession: sources.manualSession,
+          selectorSession: sources.selectorSession
+        });
+      } catch (error) {
+        consumerFailed = true; consumerError = error;
+      }
+      // Close both admissions immediately and wait for every started write while
+      // this publication lease remains live, even if either finish rejects.
+      const settled = await Promise.allSettled([sources.manualSession.finish(), sources.selectorSession.finish()]);
+      const drainErrors = settled.flatMap(outcome => outcome.status === "rejected" ? [outcome.reason as unknown] : []);
+      if (consumerFailed) {
+        if (drainErrors.length) throw new AggregateError([consumerError, ...drainErrors],
+          consumerError instanceof Error ? consumerError.message : "opening budget consumer failed during session drain",
+          { cause: consumerError });
+        throw consumerError;
+      }
+      if (drainErrors.length === 1) throw drainErrors[0];
+      if (drainErrors.length > 1) throw new AggregateError(drainErrors, "opening budget session drains failed");
       await verifyDependencies();
       if (Date.now() < observedAt) throw new Error("published snapshot source observation clock moved backwards");
-      return result;
+      return result as T;
     });
   }
 

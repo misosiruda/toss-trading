@@ -18,6 +18,8 @@ import {
   isPaperPolicyValidationMethod,
   isPaperPolicyMutationApiRoutePath,
   isPaperPolicyMutationMethod,
+  isPaperSimulationValidationApiRoutePath,
+  isPaperSimulationValidationMethod,
   isPaperSimulationMutationApiRoutePath,
   isPaperSimulationMutationMethod,
   isReadOnlyHttpMethod,
@@ -40,10 +42,12 @@ import {
 } from "./paperPolicyRecords.js";
 import {
   createPaperSimulationRun,
+  PAPER_SIMULATION_VALIDATION_OPERATION,
   PAPER_SIMULATION_CREATE_OPERATION,
   PAPER_SIMULATION_MUTATION_HEADER_NAME,
   PaperSimulationRequestError
 } from "./paperSimulationRuns.js";
+import { validatePaperSimulationCandidate } from "./paperSimulationConfig.js";
 import {
   STRATEGY_BUCKET_TEST_VALIDATION_HEADER_NAME,
   STRATEGY_BUCKET_TEST_VALIDATION_OPERATION,
@@ -98,6 +102,13 @@ async function handleRequest(
 ): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (
+      isPaperSimulationValidationApiRoutePath(url.pathname) &&
+      isPaperSimulationValidationMethod(request.method)
+    ) {
+      await handlePaperSimulationValidation(request, response, options);
+      return;
+    }
     if (
       isPaperSimulationMutationApiRoutePath(url.pathname) &&
       isPaperSimulationMutationMethod(request.method)
@@ -532,12 +543,47 @@ function validatePaperPolicyValidationGuard(
   return null;
 }
 
+async function handlePaperSimulationValidation(
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: LocalOperationsServerOptions
+): Promise<void> {
+  const safety = {
+    readOnly: true,
+    storageMutationEnabled: false,
+    liveTradingEnabled: false,
+    orderPlacementEnabled: false,
+    replayRunnerStarted: false,
+    dataAvailabilityChecked: false
+  };
+  const guard = validatePaperSimulationRequestGuard(request, true);
+  if (guard !== null) {
+    writeJson(response, guard.statusCode, { error: guard.code, message: guard.message, ...safety });
+    return;
+  }
+  try {
+    const body = await readJsonBody(request, {
+      operationName: "paper simulation validation",
+      maxBytes: 32_768,
+      createError: (message, statusCode, code) =>
+        new PaperSimulationRequestError(message, statusCode, code)
+    });
+    writeJson(response, 200, validatePaperSimulationCandidate(body, options.env ?? process.env));
+  } catch (error) {
+    if (error instanceof PaperSimulationRequestError) {
+      writeJson(response, error.statusCode, { error: error.code, message: error.message, ...safety });
+      return;
+    }
+    throw error;
+  }
+}
+
 async function handlePaperSimulationCreate(
   request: IncomingMessage,
   response: ServerResponse,
   options: LocalOperationsServerOptions
 ): Promise<void> {
-  const guard = validatePaperSimulationMutationGuard(request);
+  const guard = validatePaperSimulationRequestGuard(request, false);
   if (guard !== null) {
     writeJson(response, guard.statusCode, {
       error: guard.code,
@@ -555,7 +601,7 @@ async function handlePaperSimulationCreate(
       createError: (message, statusCode, code) =>
         new PaperSimulationRequestError(message, statusCode, code)
     });
-    const payload = createPaperSimulationRun(body, options);
+    const payload = await createPaperSimulationRun(body, options);
     writeJson(response, 202, payload);
   } catch (error) {
     if (error instanceof PaperSimulationRequestError) {
@@ -572,17 +618,17 @@ async function handlePaperSimulationCreate(
   }
 }
 
-function validatePaperSimulationMutationGuard(
-  request: IncomingMessage
+function validatePaperSimulationRequestGuard(
+  request: IncomingMessage,
+  validationOnly: boolean
 ): { statusCode: number; code: string; message: string } | null {
-  if (
-    request.headers[PAPER_SIMULATION_MUTATION_HEADER_NAME] !==
-    PAPER_SIMULATION_CREATE_OPERATION
-  ) {
+  const operation = validationOnly ? "validation" : "create";
+  const intent = validationOnly ? PAPER_SIMULATION_VALIDATION_OPERATION : PAPER_SIMULATION_CREATE_OPERATION;
+  if (request.headers[PAPER_SIMULATION_MUTATION_HEADER_NAME] !== intent) {
     return {
       statusCode: 403,
-      code: "mutation_guard_required",
-      message: "paper simulation create requires an explicit operation header"
+      code: validationOnly ? "validation_guard_required" : "mutation_guard_required",
+      message: `paper simulation ${operation} requires an explicit operation header`
     };
   }
 
@@ -591,7 +637,7 @@ function validatePaperSimulationMutationGuard(
     return {
       statusCode: 415,
       code: "unsupported_media_type",
-      message: "paper simulation create accepts application/json only"
+      message: `paper simulation ${operation} accepts application/json only`
     };
   }
 
@@ -599,7 +645,7 @@ function validatePaperSimulationMutationGuard(
     return {
       statusCode: 403,
       code: "origin_not_allowed",
-      message: "paper simulation create is limited to same-origin dashboard requests"
+      message: `paper simulation ${operation} is limited to same-origin dashboard requests`
     };
   }
 

@@ -18,7 +18,8 @@ export const SELECTOR_OPENING_CAPACITY_RESERVATIONS_FILE_NAME = "selector-openin
 const journalObservationSchema = z.object({ originCount: z.number().int().nonnegative().safe().refine((value) => !Object.is(value, -0)),
   generationHash: sha256HashSchema.nullable(), observedAt: offsetQualifiedIsoDateTimeSchema }).strict();
 const sourceSchema = z.object({ requestObservation: bucketSelectionRequestObservationSchema,
-  snapshotObservation: portfolioSizingSnapshotObservationSchema, assignmentObservation: journalObservationSchema,
+  snapshotObservation: portfolioSizingSnapshotObservationSchema,
+  publishedSnapshotObservation: portfolioSizingSnapshotObservationSchema.optional(), assignmentObservation: journalObservationSchema,
   sizingInputObservation: journalObservationSchema }).strict();
 type Source = Readonly<z.infer<typeof sourceSchema>>;
 const entrySchema = z.object({ schemaVersion: z.literal("selector_capacity_reservation_entry.v1"), record: z.unknown(), source: sourceSchema,
@@ -40,6 +41,8 @@ export interface VerifiedSelectorCapacityReservationHistory {
 }
 export interface SelectorCapacityAppendSession {
   append(value: unknown, snapshots?: VerifiedPortfolioSizingSnapshotHistory): Promise<VerifiedSelectorCapacityReservationOrigin>;
+  /** Close admission and drain while any shared publication snapshot lease is still live. */
+  finish(): Promise<void>;
 }
 const observations = new WeakMap<VerifiedSelectorCapacityReservationHistory, { observedAt: string; sourcePath: string; verifySources: () => void }>();
 
@@ -144,7 +147,13 @@ export class SelectorOpeningCapacityReservationFileRepository {
       let expectedGeneration = history.generationHash;
       let failed: unknown;
       let pending: Promise<VerifiedSelectorCapacityReservationOrigin> | undefined;
-      const session: SelectorCapacityAppendSession = Object.freeze({ append: (value: unknown, currentSnapshots = snapshots) => {
+      const session: SelectorCapacityAppendSession = Object.freeze({ finish: async () => {
+        if (!active) throw new Error("selector capacity append session has expired");
+        accepting = false;
+        if (pending) await pending;
+        verifySources();
+        if (failed) throw failed;
+      }, append: (value: unknown, currentSnapshots = snapshots) => {
         if (!accepting || !active) return Promise.reject(new Error("selector capacity append session has expired"));
         if (pending) return Promise.reject(new Error("selector capacity append session already has an in-flight write"));
         if (failed) return Promise.reject(failed);
@@ -153,7 +162,7 @@ export class SelectorOpeningCapacityReservationFileRepository {
           assertDurablePortfolioSizingSnapshotSource(currentSnapshots, this.baseDir);
           resolveObservedPortfolioSizingSnapshotHistory(currentSnapshots, getDurablePortfolioSizingSnapshotObservation(snapshots));
           const record = parseSelectorOpeningCapacityReservationRecord(value);
-          const currentSources = currentSnapshots === snapshots ? sources : { ...sources, snapshots: currentSnapshots };
+          const currentSources = currentSnapshots === snapshots ? sources : { ...sources, snapshots: currentSnapshots, snapshotPrefix: snapshots };
           const origin = await this.appendUnderLock(record, currentSources, (current) => {
             verifySources();
             assertDurablePortfolioSizingSnapshotSource(currentSnapshots, this.baseDir);
@@ -282,6 +291,7 @@ export class SelectorOpeningCapacityReservationFileRepository {
 type Sources = {
   assignments: VerifiedCandidateAssignmentHistory; inputs: VerifiedCandidateSizingInputHistory;
   requests: VerifiedBucketSelectionRequestHistory; snapshots: VerifiedPortfolioSizingSnapshotHistory;
+  snapshotPrefix?: VerifiedPortfolioSizingSnapshotHistory;
   index: ReturnType<typeof createSourceIndex>;
 };
 function createSourceIndex(assignments: VerifiedCandidateAssignmentHistory, inputs: VerifiedCandidateSizingInputHistory) {
@@ -295,7 +305,8 @@ function createSourceIndex(assignments: VerifiedCandidateAssignmentHistory, inpu
 }
 function captureSource(sources: Sources): Source {
   return freezeSource({ requestObservation: getDurableBucketSelectionRequestObservation(sources.requests),
-    snapshotObservation: getDurablePortfolioSizingSnapshotObservation(sources.snapshots),
+    snapshotObservation: getDurablePortfolioSizingSnapshotObservation(sources.snapshotPrefix ?? sources.snapshots),
+    ...(sources.snapshotPrefix === undefined ? {} : { publishedSnapshotObservation: getDurablePortfolioSizingSnapshotObservation(sources.snapshots) }),
     assignmentObservation: { originCount: sources.assignments.origins.length, generationHash: sources.assignments.generationHash,
       observedAt: getDurableCandidateAssignmentObservation(sources.assignments) },
     sizingInputObservation: { originCount: sources.inputs.origins.length, generationHash: sources.inputs.generationHash,
@@ -312,11 +323,21 @@ function verifySource(record: SelectorOpeningCapacityReservationRecord, source: 
   const timeline = [source.requestObservation.observedAt, source.snapshotObservation.observedAt,
     source.sizingInputObservation.observedAt, source.assignmentObservation.observedAt, appendStartedAt].map(Date.parse);
   if (timeline.some((time, index) => index > 0 && time < timeline[index - 1]!)) throw new Error("selector capacity source observation clock moved backwards");
+  // Publication extends the locked snapshot prefix after sizing/assignment observation.
+  // Keep the original chain and authenticate this later observation independently.
+  resolveObservedPortfolioSizingSnapshotHistory(sources.snapshots, source.snapshotObservation);
+  const snapshotObservation = source.publishedSnapshotObservation ?? source.snapshotObservation;
+  if (source.publishedSnapshotObservation !== undefined &&
+    (Date.parse(snapshotObservation.observedAt) < Date.parse(source.assignmentObservation.observedAt) ||
+      Date.parse(snapshotObservation.observedAt) > Date.parse(appendStartedAt) ||
+      snapshotObservation.recordCount < source.snapshotObservation.recordCount)) {
+    throw new Error("selector capacity published snapshot observation chronology mismatch");
+  }
   verifyJournalPrefix(sources.assignments, source.assignmentObservation, getDurableCandidateAssignmentObservation(sources.assignments), appendStartedAt);
   verifyJournalPrefix(sources.inputs, source.sizingInputObservation, getDurableCandidateSizingInputObservation(sources.inputs), appendStartedAt);
   const request = resolveObservedBucketSelectionRequestHistory(sources.requests, source.requestObservation)
     .find((item) => item.requestId === record.selectionRequestId);
-  const snapshot = resolveObservedPortfolioSizingSnapshotHistory(sources.snapshots, source.snapshotObservation)
+  const snapshot = resolveObservedPortfolioSizingSnapshotHistory(sources.snapshots, snapshotObservation)
     .find((item) => item.portfolioSnapshotId === record.currentPortfolioSnapshotId);
   const candidate = sources.index.assignments.get(record.candidateAssignmentId), set = sources.index.sets.get(record.candidateAssignmentSetId);
   const selected = sources.index.selections.get(record.candidateAssignmentId);
@@ -340,7 +361,7 @@ function verifySource(record: SelectorOpeningCapacityReservationRecord, source: 
   }
   if (snapshot.portfolioSnapshotHash !== record.currentPortfolioSnapshotHash || snapshot.portfolioId !== record.portfolioId ||
     snapshot.policyHash !== record.policyHash || Date.parse(snapshot.asOf) < Date.parse(request.asOf) ||
-    Date.parse(snapshot.asOf) > Date.parse(record.createdAt) || Date.parse(snapshot.asOf) > Date.parse(source.snapshotObservation.observedAt) ||
+    Date.parse(snapshot.asOf) > Date.parse(record.createdAt) || Date.parse(snapshot.asOf) > Date.parse(snapshotObservation.observedAt) ||
     Date.parse(set.origin.committedAt) > Date.parse(record.createdAt) || Date.parse(record.createdAt) > Date.parse(appendStartedAt) ||
     Date.parse(source.requestObservation.observedAt) > Date.parse(appendStartedAt) ||
     Date.parse(source.snapshotObservation.observedAt) > Date.parse(appendStartedAt)) {
@@ -349,7 +370,9 @@ function verifySource(record: SelectorOpeningCapacityReservationRecord, source: 
 }
 function freezeSource(source: Source): Source {
   return Object.freeze({ requestObservation: Object.freeze({ ...source.requestObservation }),
-    snapshotObservation: Object.freeze({ ...source.snapshotObservation }), assignmentObservation: Object.freeze({ ...source.assignmentObservation }),
+    snapshotObservation: Object.freeze({ ...source.snapshotObservation }),
+    ...(source.publishedSnapshotObservation === undefined ? {} : { publishedSnapshotObservation: Object.freeze({ ...source.publishedSnapshotObservation }) }),
+    assignmentObservation: Object.freeze({ ...source.assignmentObservation }),
     sizingInputObservation: Object.freeze({ ...source.sizingInputObservation }) });
 }
 
