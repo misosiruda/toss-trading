@@ -4,6 +4,9 @@ test('header comparison link has independent spacing and compact keyboard grid',
   await page.goto('/dashboard');
   const compare=page.locator('header a[href="/dashboard/experiments/compare"]');
   const create=page.locator('header a[href="/dashboard/experiments/new"]');
+  await expect(page.getByText('Dashboard data loading', { exact: true })).toHaveCount(0);
+  await expect(compare).toBeVisible();
+  await expect(create).toBeVisible();
   await expect(compare).toHaveCSS('margin-top','0px');
   expect((await compare.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   if(page.viewportSize()!.width<=450){

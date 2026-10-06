@@ -49,3 +49,13 @@ Home 실제 production은808 origin missing/configured/invalid 총27pass, 809 na
 ### 발견한 기존 legacy 폭 회귀와 검증된 최소 수정
 
 1024px current 화면 document scrollWidth1048/viewport1024를 관측했다. 긴 합성 fixture 출처는 기존 .subtle의 white-space: nowrap으로 줄바꿈이 막혀 batch-run-panel의 암시적 auto grid 열을 확장했다. source의 min-width/overflow-wrap만으로는23pass/4fail가 유지됐다. grid 열을 minmax(0,1fr)로 제한한 뒤에는 요소 경계 넘침이 없어도 nowrap 텍스트가 scrollWidth1089를 만들었다. source에만 white-space: normal을 적용하고 grid 열을 제한한 최종 production 검증은27/27pass(27.4초)다. body overflow를 숨기거나 데이터/문자열/identity를 자르지 않았으며 동일한 assertion을 유지했다. 결과는 main809-legacy-wrap-final.log 및 main809-legacy-results.json에 남겼다. CSS는 legacy 정적 자산 변경이며 Next/API 로직 변경은 없다. root full의 과거 동일 입력 재사용을 이 CSS 변경에 대한 신규 통과로 주장하지 않는다.
+
+### 독립 검토 후 정식 E2E 경로 보완
+
+최초 공개 head a56151의 기본 configured origin은 기존 role-index의 missing/예제 origin 기대와 충돌했고 token selector의 first()는 실제 panel 대신 html을 선택할 수 있었다. 최초27pass는 이 두 결함 및 source 준비 대기 부재 때문에 실제 panel·완료된 데이터의 보존 증거로 쓰지 않는다.
+
+기본 config의 origin 주입을 제거하고 기존 missing/3-origin 의미를 보존했다. legacy 시험은 tests/legacy-compatibility와 전용 production config로 격리하고 test:e2e에서 기본 suite 다음 순차 실행한다. 전용 script도 제공하며1440/1024/390px, worker1/retry0, 기존30s/5s를 유지한다. 실제 section.panel과 결속 heading을 검증하고 숨김·제거 negative control을 추가했다. batch 응답200·body 완료와 source의 실제 batch-replay-runs.jsonl 표시 후 overflow를 측정한다.
+
+Home에서는 설치된 Chrome을 지정하고 log/output/cwd만 보정하는 외부 wrapper로 정식 config를 읽었다. backend는 현재 후보, Next는 제품 소스가 동일한 기존 materialized-dependency checkout에서 원래 dev 또는 production command로 실행했다. 브라우저 cache가 없어 npm script 자체를 그대로 실행했다고 주장하지 않는다. 기본 전체 suite38/38 및 role-index6/6, 전용 강화 production30/30을 통과했다. 기본 전체 검사에서 기존 comparison-header가 loading 화면 도중 boundingBox를 측정하는 경합을 발견해 loading 해제·두 실제 link의 visible assertion을 먼저 추가했으며 timeout/기존44px·keyboard/Back/overflow assertion을 유지했다. source/config lint/type은 별도로 확인한다.
+
+사용자 승인 방향의 새 정본·기능별 실행 계획은 PR811이 소유한다. 이 PR은 숫자·benchmark 계산·membership·clone 의미를 구현하지 않는다. 부모의 a56151 Linux full4499pass/0fail/33skip는 그 이전 head 증거이며 새 head full 통과로 부르지 않는다.
