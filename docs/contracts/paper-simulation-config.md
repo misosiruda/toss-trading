@@ -1,3 +1,5 @@
+> 2026-10-06 사용자 승인: 비용 직접 입력·기존 3종 benchmark의 표시 선택·coverage metadata 유지·원래 batch 요청 정본을 재검증해 새 ID 생성 방향은 [승인 계약](../plans/experiment-workspace-redesign/approved-options-contract-20261006.md)과 [기능별 PR](../plans/experiment-workspace-redesign/approved-options-pr-plan-20261006.md)을 따른다. 아래 UX02a 계약과 현재 미지원 guard는 후속 구현 전까지 유지하며 승인 방향을 구현 완료로 표시하지 않는다.
+
 # Paper simulation 입력·실효 조건 계약
 
 UX-02a 범위: 기존 historical batch runner의 동작을 설명하는 side-effect-free 검증과

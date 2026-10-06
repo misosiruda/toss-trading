@@ -1,3 +1,5 @@
+> 2026-10-06 사용자 결정: 아래 비용·benchmark·universe 질문은 결정 전 이력이다. 사용자는 네 추천 방향을 승인했다. 현재 정본은 [승인 계약](approved-options-contract-20261006.md), 실행 순서는 [기능별 PR](approved-options-pr-plan-20261006.md)이다. 숫자 preset·실제 membership filter·유료 AI 활성화는 승인되지 않았으며 후속 구현 전 기존 guard를 유지한다.
+
 # UX07 역할별 index와 호환 진입 계약
 
 Initial implementation baseline: PR807 `764829e8b143c2ae327fc0e52e1ebc01c85d4da3` (historical). The frozen review object `69d2b274d7e01d411f5a15cafc9cdfc554b0cac7` has parent `d459137148bf92757e434dc62ee295575cdd3476` and tree `ef9308db4c598cdbe4a1bec532adf340a2dfe65b`. That historical public object remains unchanged. This next candidate is transplanted onto final PR807 `ee691908bece97f552d71158f059973dc4d8a747`, tree `e21a903cc76d38105c775ff89a925f51cd8ad9df`, which includes final PR806 `3099348326e25a7d8899a3341ccfe290c4fc51c6`. Only eleven role-index source/test/document files differ from that UI base; API reader/tests/provenance contract retain the final stack bytes.
