@@ -14,6 +14,9 @@ export interface SimulationDraft {
   decisionFrequency: "every_tick" | "once_per_day" | "once_per_week";
   stepSeconds: string;
   maxDecisionCalls: string;
+  feeBps: string;
+  taxBps: string;
+  slippageBps: string;
   paperExitPolicy: "none" | "take_profit_stop_loss" | "rebalance_threshold";
 }
 
@@ -21,14 +24,35 @@ export const emptySimulationDraft: SimulationDraft = {
   riskProfile: "conservative", market: "mixed_global", runType: "single_replay",
   runCount: "1", sourceDataDir: "", windowMode: "fixed_range", startAt: "", endAt: "",
   windowMonths: "1", seed: "", initialCashKrw: "", decisionFrequency: "once_per_day",
-  stepSeconds: "86400", maxDecisionCalls: "30", paperExitPolicy: "none"
+  stepSeconds: "86400", maxDecisionCalls: "30", feeBps: "0", taxBps: "0", slippageBps: "0", paperExitPolicy: "none"
 };
+
+const costKeys = ["feeBps", "taxBps", "slippageBps"] as const;
+
+// Additive migration of raw input only. Never restore tokens or validation receipts.
+export function restoreSimulationDraft(value: unknown): SimulationDraft | null {
+  if (!isObject(value)) return null;
+  const keys = Object.keys(emptySimulationDraft) as Array<keyof SimulationDraft>;
+  const legacyKeys = keys.filter(key => !costKeys.some(costKey => costKey === key));
+  if (!legacyKeys.every(key => typeof value[key] === "string")) return null;
+  const absentCosts = costKeys.every(key => !Object.hasOwn(value, key));
+  if (!absentCosts && !costKeys.every(key => typeof value[key] === "string")) return null;
+  return Object.fromEntries(keys.map(key => [key, absentCosts && costKeys.some(costKey => costKey === key) ? emptySimulationDraft[key] : value[key]])) as unknown as SimulationDraft;
+}
+
+function costValue(raw: string): number | null {
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw)) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
 
 export function typedCandidate(draft: SimulationDraft) {
   if (!["conservative", "balanced", "aggressive_paper"].includes(draft.riskProfile) ||
       !["mixed_global", "kr", "us"].includes(draft.market) || !["single_replay", "batch_replay"].includes(draft.runType) ||
       !["fixed_range", "random_month"].includes(draft.windowMode) || !["every_tick", "once_per_day", "once_per_week"].includes(draft.decisionFrequency) ||
       !["none", "take_profit_stop_loss", "rebalance_threshold"].includes(draft.paperExitPolicy)) return null;
+  const costs = costKeys.map(key => costValue(draft[key]));
+  if (costs.some(value => value === null)) return null;
   const integers = [draft.runCount, draft.windowMonths, draft.initialCashKrw, draft.stepSeconds, draft.maxDecisionCalls];
   if (integers.some((value) => !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return null;
   if (!draft.sourceDataDir || !draft.startAt || !draft.endAt || !draft.seed) return null;
@@ -41,6 +65,7 @@ export function typedCandidate(draft: SimulationDraft) {
     capital: { initialCashKrw: Number(draft.initialCashKrw) },
     decisionProvider: { mode: "dry_run_fixture" as const, modelId: "fixture", outputSchema: "schemas/virtual-decision.schema.json" as const },
     riskProfile: draft.riskProfile, paperExitPolicy: draft.paperExitPolicy,
+    executionCosts: { feeBps: costs[0] as number, taxBps: costs[1] as number, slippageBps: costs[2] as number },
     costModel: "standard" as const, benchmarkPolicy: "cash_equal_weight_initial_hold" as const
   };
 }
@@ -110,6 +135,8 @@ export function readValidation(value: unknown, candidate: SimulationCandidate): 
       !numericFields(cost.executionPolicy, ["slippageBps", "feeBps", "taxBps", "halfSpreadBps", "fillRatio", "maxVolumeParticipationRate", "minLiquidityFillRatio", "marketImpactBpsPerParticipationRate"]) ||
       !isObject(cost.executionPolicy) || typeof cost.executionPolicy.fillPriceRule !== "string" ||
       typeof cost.executionPolicy.allowFractionalShares !== "boolean" || typeof cost.executionPolicy.rejectStaleLiquidity !== "boolean") return null;
+  const executionPolicy = cost.executionPolicy;
+  if (!costKeys.every(key => candidate.executionCosts[key] >= 0 && executionPolicy[key] === candidate.executionCosts[key])) return null;
   if (candidate.universe.market === "mixed_global" && !numericFields(allocation.marketTargetExposureRatios, ["KR", "US"])) return null;
   if (candidate.riskProfile === "aggressive_paper" && !numericFields(allocation, ["deploymentRampDays", "maxInitialDeploymentRatio", "maxDailyGrossBuyRatio", "maxInitialOpenPositions", "maxNewPositionsPerDay", "maxConcurrentPositions", "positionSlotRampDays"])) return null;
   if (candidate.paperExitPolicy === "none" ? e.paperExitPolicy !== null :

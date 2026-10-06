@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
-import { acceptedSimulationId, emptySimulationDraft, readValidation, typedCandidate, type SimulationDraft, type SimulationValidation } from "@/lib/simulationCandidate";
+import { acceptedSimulationId, emptySimulationDraft, restoreSimulationDraft, readValidation, typedCandidate, type SimulationDraft, type SimulationValidation } from "@/lib/simulationCandidate";
 import { WorkspaceNavigation } from "../../ExperimentList";
 import shell from "../../ExperimentList.module.css";
 import styles from "./ExperimentWizard.module.css";
@@ -58,10 +58,8 @@ export function ExperimentWizard() {
     window.addEventListener("pageshow", onPageShow);
     try {
       const saved = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "null");
-      if (saved && typeof saved === "object" && Object.keys(emptySimulationDraft).every(key => typeof saved[key] === "string")) {
-        // Restore raw input only; validation credentials never survive a mount.
-        setDraft(Object.fromEntries(Object.keys(emptySimulationDraft).map(key => [key, saved[key]])) as unknown as SimulationDraft);
-      }
+      const restored = restoreSimulationDraft(saved);
+      if (restored) setDraft(restored);
     } catch { /* Input remains usable when storage is unavailable. Admission fails closed below. */ }
     setReady(true);
     return () => { window.removeEventListener("pageshow", onPageShow); alive.current = false; version.current += 1; controller.current?.abort(); };
@@ -198,7 +196,7 @@ export function ExperimentWizard() {
     } finally { clearTimeout(timeout); }
   }
   const locked = phase === "submitting" || phase === "accepted" || phase === "unknown";
-  const input = (key: keyof SimulationDraft, label: string, type = "text", hint?: string) => <label className={styles.field}>{label}<input type={type} value={draft[key]} onChange={e => edit(key, e.target.value)} disabled={!ready || locked} autoComplete="off" aria-describedby={hint ? `hint-${key}` : undefined} />{hint && <small id={`hint-${key}`}>{hint}</small>}</label>;
+  const input = (key: keyof SimulationDraft, label: string, type = "text", hint?: string) => <label className={styles.field}>{label}<input type={type} step={["feeBps", "taxBps", "slippageBps"].includes(key) ? "any" : undefined} min={["feeBps", "taxBps", "slippageBps"].includes(key) ? 0 : undefined} value={draft[key]} onChange={e => edit(key, e.target.value)} disabled={!ready || locked} autoComplete="off" aria-describedby={hint ? `hint-${key}` : undefined} />{hint && <small id={`hint-${key}`}>{hint}</small>}</label>;
   const select = <K extends keyof SimulationDraft>(key: K, label: string, options: Array<[SimulationDraft[K], string]>) => <label className={styles.field}>{label}<select value={draft[key]} onChange={e => edit(key, e.target.value as SimulationDraft[K])} disabled={!ready || locked}>{options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>;
 
   return <div className={shell.workspace} onClickCapture={rememberNavigation}>
@@ -225,13 +223,17 @@ export function ExperimentWizard() {
             {input("windowMonths", "추출 월 수", "number", "1–12 · 고정 기간에서는 metadata만 유지")}{input("seed", "추출 seed")}
             {select("decisionFrequency", "판단 빈도", [["every_tick", "매 tick"], ["once_per_day", "하루 한 번"], ["once_per_week", "일주일 한 번"]])}
             {input("stepSeconds", "Replay 간격 (초)", "number", "60–2,592,000")}{input("maxDecisionCalls", "판단 호출 상한", "number", "1–100")}
+            {input("feeBps", "수수료 (bps)", "number", "매수·매도 금액 기준 · 1 bps = 0.01%")}
+            {input("taxBps", "매도세 (bps)", "number", "매도 금액에만 적용")}
+            {input("slippageBps", "슬리피지 (bps)", "number", "기존 paper 체결 가격 모델에 적용")}
+            <p className={`${styles.notice} ${styles.wide}`}>비용은 0 이상 유한한 숫자로 직접 입력합니다. 소수와 명시한 0을 보존합니다. 나머지 체결 설정은 기존 standard 모델이며 실제 거래 비용이나 AI 사용료를 보장하지 않습니다.</p>
             <p className={`${styles.notice} ${styles.wide}`}>판단 provider: dry_run_fixture · 외부 AI 호출 0. 자료 종류는 별도이며 미확인입니다. 날짜는 서버에서 +09:00 기준으로 해석합니다.</p>
           </div>}
           {step === 3 && <>
             <p className={styles.notice}>자료 종류 미확인 · 가용성 미검증. 검증은 입력만 확인하며 파일·coverage·실행 슬롯·성공 여부를 확인하지 않습니다.</p>
             {currentReceipt ? <Confirmation validation={currentReceipt.validation} /> : <p>현재 입력의 서버 검증이 필요합니다. 입력 변경 후에는 이전 결과를 사용할 수 없습니다.</p>}
             <div className={styles.actions}><button type="button" onClick={validate} disabled={!ready || !candidate || phase !== "idle"}>{phase === "validating" ? "검증 중…" : "현재 입력 검증"}</button></div>
-            {!candidate && <p className={styles.muted}>앞 단계의 자료 경로·기간·seed·자본과 정수 입력을 모두 채워 주세요.</p>}
+            {!candidate && <p className={styles.muted}>앞 단계의 자료 경로·기간·seed·자본과 정수 입력을 채우고 비용 3개를 0 이상 유한한 숫자로 입력해 주세요.</p>}
             <form onSubmit={create}>
               <label className={styles.field}>실행 승인 토큰<input type="password" value={token} autoComplete="off" disabled={!ready || locked} onChange={e => setToken(e.target.value)} aria-describedby="token-help" /></label>
               <p id="token-help" className={styles.muted}>현재 화면에서만 사용하며 URL·저장소·로그에 기록하지 않습니다.</p>
@@ -246,7 +248,7 @@ export function ExperimentWizard() {
           }}>별도의 새 실험 준비</button></div>}
           <div className={styles.actions}>{step > 1 && <button type="button" onClick={() => go(step - 1)}>이전</button>}{step < 3 && <button className={styles.primary} type="button" disabled={!ready} onClick={() => go(step + 1)}>다음</button>}</div>
         </section>
-        {step < 3 && <aside className={styles.panel} aria-label="입력 요약"><h2>입력 요약</h2><p>{draft.riskProfile} · {draft.runType}</p><p>{draft.initialCashKrw || "자본 미입력"} KRW</p><p>{draft.startAt || "시작 미입력"} → {draft.endAt || "종료 미입력"}</p><p className={styles.muted}>Source 자료 종류 미확인<br />판단 provider dry_run_fixture<br />비용 standard · 고정 benchmark 3종<br />서버 검증 후 실제 적용 조건을 확인합니다.</p></aside>}
+        {step < 3 && <aside className={styles.panel} aria-label="입력 요약"><h2>입력 요약</h2><p>{draft.riskProfile} · {draft.runType}</p><p>{draft.initialCashKrw || "자본 미입력"} KRW</p><p>{draft.startAt || "시작 미입력"} → {draft.endAt || "종료 미입력"}</p><p className={styles.muted}>Source 자료 종류 미확인<br />판단 provider dry_run_fixture<br />비용 (bps): 수수료 {draft.feeBps || "미입력"} / 매도세 {draft.taxBps || "미입력"} / 슬리피지 {draft.slippageBps || "미입력"}<br />standard 체결 모델 · 고정 benchmark 3종<br />서버 검증 후 실제 적용 조건을 확인합니다.</p></aside>}
       </div>
     </main>
   </div>;
@@ -270,12 +272,12 @@ function Confirmation({ validation: v }: { validation: SimulationValidation }) {
     ["샘플링·속도", `${e.samplingPolicy.decisionFrequency} · ${e.samplingPolicy.stepSeconds}초 · 판단 상한 ${e.samplingPolicy.maxDecisionCalls} · tick 지연 ${e.tickDelayMs}ms`],
     ["판단 provider", `${e.decisionProvider.mode} · Codex 요청 ${r.samplingPolicy.maxCodexCallsPerRun} → 실제 ${e.samplingPolicy.maxCodexCallsPerRun} · model/schema 요청값은 미사용(null)`],
     ["Risk·청산", `신규 상한 ${e.constraints.maxNewPositions}종목 · 종목 예산 ${e.constraints.maxBudgetPerSymbolKrw} KRW · 목표 노출 ${e.allocationPolicy.targetExposureRatio} · 청산 ${r.paperExitPolicy} · constraints/riskPolicy/allocationPolicy 전체 값 아래`],
-    ["비용·benchmark", `standard: 수수료 ${cost.feeBps} / 슬리피지 ${cost.slippageBps} / 세금 ${cost.taxBps} bps (현실 비용 보장 아님) · ${e.benchmarkPolicy.names.join(" / ")} · equal-weight는 가격 packet 필요`]
+    ["비용·benchmark", `요청 → 실효 (bps): 수수료 ${r.executionCosts.feeBps} → ${cost.feeBps} / 매도세 ${r.executionCosts.taxBps} → ${cost.taxBps} / 슬리피지 ${r.executionCosts.slippageBps} → ${cost.slippageBps} · 나머지 standard 체결 설정 (현실 비용·AI 사용료 보장 아님) · ${e.benchmarkPolicy.names.join(" / ")} · equal-weight는 가격 packet 필요`]
   ];
   return <>
     <dl className={styles.summary}>{groups.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
     <p className={styles.notice}>중요: preset은 metadata이며 미적용 · market은 배분만 적용 · fixed 기간의 월 수는 metadata · fixture는 자료 종류를 뜻하지 않습니다. 아래 서버 notices와 전체 실효값을 확인하세요.</p>
-    {v.notices.filter(n => !["preset_not_applied", "allocation_only", "workflow_execution_defaults", "fixed_report_benchmarks", "fixture_provider", "single_run_count", "fixed_range_metadata_only"].includes(n.code)).map((notice, index) => <p className={styles.notice} key={`${notice.code}-${index}`}>{notice.field}: {notice.message}</p>)}
+    {v.notices.filter(n => !["preset_not_applied", "allocation_only", "workflow_execution_defaults", "explicit_execution_costs", "fixed_report_benchmarks", "fixture_provider", "single_run_count", "fixed_range_metadata_only"].includes(n.code)).map((notice, index) => <p className={styles.notice} key={`${notice.code}-${index}`}>{notice.field}: {notice.message}</p>)}
     <details className={styles.details}><summary>전체 요청값·실효값·서버 notices ({v.notices.length})</summary>
       <h3>서버 notices</h3><ul>{v.notices.map((n, i) => <li key={`${n.code}-${i}`}><strong>{n.field} · {n.code}</strong><p>{n.message}</p></li>)}</ul>
       <h3>requestedConfig</h3><pre>{JSON.stringify(v.requestedConfig, null, 2)}</pre><h3>effectiveConfig</h3><pre>{JSON.stringify(v.effectiveConfig, null, 2)}</pre>
