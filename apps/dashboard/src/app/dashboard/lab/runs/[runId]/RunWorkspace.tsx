@@ -21,10 +21,13 @@ export function RunWorkspace({ requestedId, initial, provenance }: { requestedId
   const [refreshState, setRefreshState] = useState<RunRefreshState>({ busy: false, automaticCount: 0, limited: false });
   const [now, setNow] = useState(() => Date.now());
   const [source, setSource] = useState(initial);
+  const [sourceRunId, setSourceRunId] = useState(requestedId);
   // Reset observation state for a fresh server read without replacing focused DOM.
-  if (source !== initial) {
+  if (source !== initial || sourceRunId !== requestedId) {
+    const sameRun = sourceRunId === requestedId;
+    setSourceRunId(requestedId);
     setSource(initial); setSnapshot(initial);
-    setLastGood(initial.runDetail.status === "ok" ? initial : null);
+    setLastGood(previous => initial.runDetail.status === "ok" ? initial : sameRun ? previous : null);
     setTransportError(false);
     setRefreshState({ busy: false, automaticCount: 0, limited: false });
     setNow(Date.parse(initial.fetchedAt));
@@ -88,6 +91,7 @@ export function RunWorkspace({ requestedId, initial, provenance }: { requestedId
           <p>조회: {transportError ? "offline" : snapshot.runDetail.status} · endpoint: {data?.endpointStatus ?? "미관측"} · batch: {data?.batchStatus ?? "미관측"}</p>
           <p>선택 child: {state.execution} · 산출물 판독: {state.completeness} · heartbeat: 미관측</p>
           <p>GET 관측 시각: {display.fetchedAt}</p>
+          <p>최근 서버 관측 시각: {snapshot.fetchedAt}</p>
         </div>
         <button type="button" className={styles.refresh} disabled={refreshState.busy} onClick={() => void lifecycle.current?.refresh()}>{refreshState.busy ? "조회 중…" : "같은 ID 새로 조회 (GET)"}</button>
       </section>

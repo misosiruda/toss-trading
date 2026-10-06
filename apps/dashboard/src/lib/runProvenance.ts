@@ -1,3 +1,4 @@
+import { isSafeChildLookupId } from './childLookupId';
 import { readOperationsApiConfig } from './dashboardViewModels';
 import type {ProvenanceReason as ApiReason,ProvenanceSource as ApiSource,ProvenanceField as ApiField,ReplayProvenance as ApiObservation} from '../../../../src/api/replayProvenanceProjection';
 
@@ -31,7 +32,7 @@ function reasonAllowed(key:string,status:ProvenanceObservation['status'],reason:
   return ['not_present','invalid','missing','blocked'].includes(reason);
 }
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
-export const validProvenanceId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(v);
+export const validProvenanceId = isSafeChildLookupId;
 // The backend caps reads at 1500ms and reserves 500ms for serialization/transport.
 // Propagate remaining duration, never an absolute clock across processes.
 export const PROVENANCE_TRANSPORT_TIMEOUT_MS=2_000;

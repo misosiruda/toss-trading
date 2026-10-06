@@ -75,8 +75,24 @@ browser: production desktop1440/1024/mobile390, summary↔record URL·Back·relo
 최종 후보는 diff/check:review 및 환경이 지원하는 check:merge와 dashboard lint/unit/type/build를
 실행하고 이전 head 증거와 합산하지 않는다. 초기 Ready 자동 review는 한 번만 수행한다.
 
+## 같은 run의 실패한 server replacement
+
+summary/record 이동으로 새 initial이 offline 또는 invalid가 되어도 같은 요청 run ID의 마지막 정상 snapshot은 유지한다. 새 실패 상태와 최근 서버 관측 시각은 현재 snapshot에서 표시하고, 보존한 자료의 GET 관측 시각은 이전 정상 snapshot의 시각으로 유지한다. 요청 run ID가 바뀌면 이전 자료를 초기화한다. replacement는 이전 GET lifecycle을 dispose하여 늦은 성공/실패가 새 관측을 덮지 못하게 한다. 합성 production 회귀는 offline/invalid에서 자료·선택 탭·keyboard focus·시각 보존, 보류된 이전 GET 폐기와 자동 조회 중단, 다른 run의 실패/정상 이동 시 identity 분리를 검증한다.
+
 ## 독립 리뷰 회귀 보완
 
 - Tab-only URL 이동은 링크 DOM을 유지한다. run ID만 workspace identity로 사용하고 새 fetchedAt의 관측 상태·polling lifecycle을 갱신한다. 키보드 Enter 및 Back/Forward의 포커스를 검사한다.
 - running/accepted-unknown 관측은 응답 pending 또는 hidden 복귀에서도 마지막 성공 GET 이후 15초가 지나면 관측 지연을 표시한다. terminal 결과는 시간 경과만으로 stale 처리하지 않으며 실행 상태를 실패로 바꾸지 않는다.
 - Wizard navigation-intent fixture는 202 접수 뒤 같은 ID의 batch terminal 상태를 bounded GET으로 확인하고 다음 케이스로 넘어간다. POST 재시도·고정 sleep·timeout 상향 없이 admission guard를 보존한다. 최초 full-run409 기록은 별도 증거로 유지한다.
+
+## 자동 조회 시험의 준비 관측
+
+SSR의 running 텍스트가 보여도 client effect의 첫 5초 timer와 visibility listener가 등록됐다는 보장은 없습니다. 준비 전 가상 clock 전진 뒤 timer가 등록되어 기존 5초 assertion 끝에서 첫 GET이 발생하는 순서를 합성 production trace로 재현했습니다. 시험은 GET 없이 실제 timer와 listener 등록을 관측한 다음 clock을 전진합니다. hidden에서 timer 0개·GET 0회, visible 복귀에서 timer 1개·GET 1회와 terminal/이탈 cleanup을 검증합니다. 제품 polling, GET 수, 5초 간격, assertion/timeout/retry 조건은 변경하지 않습니다.
+
+## Legacy active와 수동 snapshot 계약
+
+정상화된 legacy active는 batch가 running이라고 확정되지 않고 active source에 자체 status가 없을 때의 관측값입니다. client snapshot은 식별된 active child 또는 기존 batch alias를 좁게 허용하고, persisted terminal 네 값과 manifest-derived running은 기존대로 유지합니다. active를 running/terminal로 승격하거나 자동 polling에 추가하지 않습니다. active source에 child ID가 없으면 최신 artifact의 ID로 보충하지 않으며, artifact의 status도 같은 child에 바인딩된 경우에만 참고합니다. 타 ID·공백 ID·terminal 시각이 붙은 active·임의 status는 transport에서 거절합니다. 실제 batch writer의 합성 storage를 로컬 API reader와 UI normalizer로 읽어 정상·완전·부분·누락·타 ID를 검증하고, production에서 SSR과 수동 GET의 active 표현 및 자동 GET 없음·기록/reload를 확인합니다.
+
+## Source별 실행 상태와 선택 우선순위
+
+저장 runs/selectedRun은 terminal 네 값만 정규화합니다. 저장 active/running/unknown/queued 등은 실행 증거로 선택하지 않습니다. 같은 ID의 정상 terminal 또는 식별된 active manifest가 있으면 잘못된 저장 자료가 이를 가리지 않으며, 그 외에는 invalid 관측으로 남깁니다. 정규화 결과는 persisted/active_manifest/legacy_active source를 보존하고 client도 source와 상태의 조합을 검증합니다. legacy_active는 manifest fallback에서 유도된 관측만 뜻하며 자동 polling 대상이 아닙니다. 원본 active source 자체가 임의 status를 선언한 경우는 legacy fallback으로 취급하지 않습니다.

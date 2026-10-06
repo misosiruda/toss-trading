@@ -49,3 +49,17 @@ backend는 performance.now로 단일 monotonic deadline을 만들고 scan, stat�
 정확한 1,500ms 경계는 monotonic clock 회귀로 limit-only를 확인한다. adapter 회귀는 1,500ms limit과 250ms 응답 처리 후에도 기존 2,000ms abort 이전에 limit으로 표시함을 고정 clock으로 확인한다. 실제 transport가 영구 정체한 경우 기존 2초 abort·GET 1회·retry 없음은 유지한다.
 
 15ms 읽기 예산에 opendir가 virtual40ms에 끝나는 경계는 directory read0/close1/limit-only로 검증한다. 첫 entry 처리 중40ms에 도달하는 경계도 read1/다음 read0/close1을 확인한다. 이 경계 검사에서 실제 sleep이나 timeout 확대를 사용하지 않는다.
+
+## 요청 lookup 문법과 저장 구조 검증
+
+요청 ID는 월 형식과 무관한 1~256자의 ASCII opaque ID다. 첫 문자는 영문·숫자·hyphen, 이후 문자는 영문·숫자·underscore·dot·hyphen이다. 빈 값, dot/underscore 시작, slash/backslash/percent/control/space/Unicode 및 길이 초과는 거절한다. query는 한 번 decode하며 중복·추가 key도 거절한다. 안전하지만 저장되지 않은 ID는 missing이다.
+
+요청 ID를 파일 경로로 사용하지 않는다. manifest/index binding, 정제된 producer directory, 전체 index 집합·count·terminal/active identity와 저장 path containment/filesystem 검사를 유지한다. YYYY-MM/legacy YYYYMM은 요청 gate에서 구분하지 않고 저장된 exact identity를 대조한다.
+
+현재 실제 synthetic writer 16개/child32개를 GET-only HTTP로 읽는다. 지원 이력48f94577·1b9f5544·8b10b6c6의 순수 ID 함수를 원문에서 추출해 legacy record96개를 검사한다. 옛 workflow 전체 실행이 아니며 해당 activeRun 생략 여부를 fixture에 반영한다. unsafe query·다른 sibling 금지 suffix와 runner/provider 호출0도 유지한다.
+
+Windows root build/API42가 통과했다. UI 증거는 UI 소유 계약에서 구분하며 새 Linux full·Security·독립 리뷰 성공을 주장하지 않는다. 공개 bb90fdd/UI118ba60 검토 object는 보존한다.
+
+## 구조화 요청 replay identity와 마스킹
+
+검증된 provenance DTO의 최상위 requestedRunId만 안전 lookup 문법을 확인해 exact 보존한다. 일반 응답은 기존 maskObject를 유지하며 전용 응답도 나머지 field·중첩 문자열·orderId·executionId·계좌·token을 계속 가린다. 다른 endpoint 또는 arbitrary nested runId를 전역 whitelist하지 않는다. actual writer의 ord_abcdef/exec_abcdef batch를 HTTP에서 검증하며, malformed contract와 unsafe ID는 복원하지 않는 negative 회귀를 둔다.

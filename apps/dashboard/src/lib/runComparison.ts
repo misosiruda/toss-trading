@@ -1,3 +1,4 @@
+import { isSafeChildLookupId } from './childLookupId';
 import { readOperationsApiConfig } from './dashboardViewModels';
 import { buildRunEvidence, type EvidenceKind, type EvidenceReadStatus } from './runEvidence';
 
@@ -16,7 +17,7 @@ export interface ComparisonObservation {
   observationSource: 'stored_terminal' | 'manifest_active' | null;
 }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
-const validId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(value);
+const validId = isSafeChildLookupId;
 const timestamp = (value: unknown): string | null => {
   if(typeof value!=='string'||value.length>40)return null;
   const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(value);

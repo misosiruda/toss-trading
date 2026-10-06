@@ -46,7 +46,7 @@ const boundedText=(value:unknown):value is string=>typeof value==="string" && va
 // Producer normalizes opaque batch/seed text, then derives safe filesystem
 // names separately. Never apply the bounded requested-child grammar to it.
 const producerText=(value:unknown):value is string=>typeof value==="string" && value.trim().length>0 && value===value.trim();
-const storedChildId=(value:unknown):value is string=>typeof value==="string" && /^[A-Za-z0-9_.-]+$/.test(value) && value!=="." && value!=="..";
+const storedChildId=(value:unknown):value is string=>typeof value==="string" && /^[A-Za-z0-9_.-]+(?![\s\S])/.test(value) && value!=="." && value!=="..";
 function validateIdentity(raw:Record<string,unknown>,batch:Record<string,unknown>,terminal:boolean) {
   if(!storedChildId(raw.runId) || !count(raw.runIndex) || raw.runIndex>=Number(batch.runCount) ||
     !producerText(raw.runSeed) || !boundedText(raw.storageBaseDir) || !isStoredProvenanceTimestamp(raw.startedAt)) throw new ReadFailure("invalid");
