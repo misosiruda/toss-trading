@@ -145,18 +145,18 @@ export class SelectorOpeningCapacityReservationFileRepository {
       observations.set(history, { observedAt, sourcePath: this.paths.recordsPath, verifySources });
       let active = true, accepting = true;
       let expectedGeneration = history.generationHash;
-      let failed: unknown;
+      let failed = false, failure: unknown;
       let pending: Promise<VerifiedSelectorCapacityReservationOrigin> | undefined;
       const session: SelectorCapacityAppendSession = Object.freeze({ finish: async () => {
         if (!active) throw new Error("selector capacity append session has expired");
         accepting = false;
         if (pending) await pending;
         verifySources();
-        if (failed) throw failed;
+        if (failed) throw failure;
       }, append: (value: unknown, currentSnapshots = snapshots) => {
         if (!accepting || !active) return Promise.reject(new Error("selector capacity append session has expired"));
         if (pending) return Promise.reject(new Error("selector capacity append session already has an in-flight write"));
-        if (failed) return Promise.reject(failed);
+        if (failed) return Promise.reject(failure);
         const task = (async () => {
           verifySources();
           assertDurablePortfolioSizingSnapshotSource(currentSnapshots, this.baseDir);
@@ -172,15 +172,23 @@ export class SelectorOpeningCapacityReservationFileRepository {
           return origin;
         })();
         pending = task;
-        void task.then(() => { pending = undefined; }, (error: unknown) => { failed = error; pending = undefined; });
+        void task.then(() => { pending = undefined; }, (error: unknown) => { failed = true; failure = error; pending = undefined; });
         return task;
       } });
+      let operationFailed = false, operationError: unknown;
       try { return await operation(session, history); }
-      catch (error) { failed = error; throw error; }
+      catch (error) { operationFailed = true; operationError = error; throw error; }
       finally {
         accepting = false;
-        try { if (pending) await pending; verifySources(); if (failed) throw failed; }
-        finally { active = false; observations.delete(history); }
+        try { if (pending) await pending; verifySources(); if (failed) throw failure; }
+        catch (error) {
+          if (operationFailed && error !== operationError) {
+            throw new AggregateError([operationError, error],
+              operationError instanceof Error ? operationError.message : "selector capacity consumer failed during session cleanup",
+              { cause: operationError });
+          }
+          throw error;
+        } finally { active = false; observations.delete(history); }
       }
     });
   }
