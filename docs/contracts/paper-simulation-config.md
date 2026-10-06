@@ -48,7 +48,8 @@ UX-02b 접수·실패 관측의 별도 범위는 [관측 계약](paper-simulatio
 | `capital`, `riskProfile` | initialCashKrw와 profile로 기존 constraints/riskPolicy/allocationPolicy를 결정하고 값 공개 |
 | `paperExitPolicy` | none=null; take_profit_stop_loss=0.15/0.08; rebalance_threshold=max position weight 0.4. 기존 full_exit 정규화 유지 |
 | `decisionProvider` | fixture는 외부 model/schema 파일을 쓰지 않아 실효 modelId/outputSchema=null. Codex는 기존 enable guard 뒤 지정 model/schema/cap 사용 |
-| `costModel=standard` | 별도 fee preset이 아님. 기존 `createPaperCostModel(undefined)` 전체 값과 version 공개. 실행에도 동일 기본 executionPolicy를 명시 전달 |
+| `costModel=standard` | 기존 paper execution model을 사용하며 별도 fee preset이 아님. executionCosts가 없으면 기존 기본값, 있으면 아래 명시 비용만 적용. 실행에 동일 executionPolicy 전달 |
+| `executionCosts` (optional) | 객체가 있으면 feeBps/taxBps/slippageBps 세 유한 비음수 숫자를 모두 명시. 기존 historical replay execution-policy schema에서 해당 세 필드를 재사용하고 다른 비용 옵션은 거절. validation/create/runner/metadata/cost hash에 같은 값 전달 |
 | `benchmarkPolicy=cash_equal_weight_initial_hold` | 고정 cashOnly/equalWeightBuyAndHold/initialPortfolioBuyAndHold 보고서. equal weight는 첫 priced replay packet이 없으면 unavailable |
 | `portfolioPolicy` | 직접 실행 adapter가 없어 필드가 있으면 명시적 400. `portfolioPolicyApplied=false` |
 | server tick pacing | 기존 환경변수 기본 0ms/상한 5,000ms 유지, 실효값 공개 |
@@ -87,3 +88,11 @@ legacy의 기존 에러 표시 경로는 유지하며, 새 UI는 이 선택들�
 - `git diff --check`, `npm run check:review`; 최종 후보 전체 검증은 병합 절차에서 수행
 
 검증은 credential-free이며 실제 시장 성과·실제 데이터 가용성·유료 AI를 검증했다고 보고하지 않는다.
+
+## 승인된 명시 비용 backend 확장
+
+사용자가 승인한 첫 기능 PR은 executionCosts의 세 명시 비용만 지원한다. 숫자는 caller 입력이며 고정 업무 preset이나 실제 거래 비용 제안이 아니다. 기존 요청은 이 객체 없이도 동일 기본값을 사용하고 명시0과 객체 부재를 requestedConfig에서 구분한다. 객체의 누락 필드/음수/NaN/Infinity/타입 변환 문자열/허용하지 않은 비용 필드는400 invalid_simulation_config다. 새로운 임의 bps 상한을 만들지 않고 기존 replay schema의 숫자 경계를 따른다. high_cost/cash_only/PortfolioPolicy/provider/token/same-origin guard는 유지한다.
+
+1bps는0.01%이며 fee는 기존 gross fill notional에, tax는 매도에만 적용한다. slippage는 기존 paper fill price 계산과 원 단위 반올림을 사용한다. spread/impact/liquidity/fill 및 benchmark3종 계산·universe 무필터 의미는 바꾸지 않는다. 명시 비용은 explicit_execution_costs notice로 default preset 오해를 막으며 accepted는 실행 완료를 뜻하지 않는다.
+
+단위 검증은 소수/명시0/default 호환과 strict negative, 합성 buy/sell 계산을 확인한다. HTTP 검증은 invalid validation/create에서 runner/storage0 및 valid validation→create1회→동일 실효값을 확인한다. 실제 fixture runner는 metadata/cost hash 및 저장 trade들의 비용 합계와 보고서의 일치를 확인한다. 테스트 수치는 합성 값이다. 이 backend PR은 wizard 입력/benchmark 표시/coverage 변경/canonical 저장/clone 구현을 포함하지 않는다.
