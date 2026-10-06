@@ -9,6 +9,7 @@ import { virtualTradeSchema, type MarketPacket } from "../domain/schemas.js";
 import { historicalReplayRunMetadataSchema } from "../replay/historicalReplayAuditLog.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
+import { readPaperSimulationRequest } from "../storage/paperSimulationRequestStore.js";
 import { readPaperSimulationObservation } from "../storage/paperSimulationObservationStore.js";
 import { createBatchReplayArtifactPaths } from "../storage/artifactPaths.js";
 import { createStoragePaths, FileHistoricalMarketSnapshotStore } from "../storage/repositories.js";
@@ -53,6 +54,9 @@ test("default runner persists the validated effective contract on synthetic fixe
       });
       assert.deepEqual(accepted.effectiveConfig, validated.effectiveConfig);
       assert.equal(accepted.status, "accepted");
+      const canonical = await readPaperSimulationRequest(join(root, caseName, "paper"), accepted.batchId);
+      assert.equal(canonical.status, "available");
+      assert.deepEqual(canonical.status === "available" && canonical.requestedConfig, config);
       const paths = createBatchReplayArtifactPaths(accepted.outputBaseDir, accepted.batchId);
       const manifest = await waitForManifest(paths.manifestPath);
       assert.equal(manifest.status, "completed");

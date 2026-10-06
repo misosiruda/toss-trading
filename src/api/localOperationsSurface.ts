@@ -1,6 +1,6 @@
 export const READ_ONLY_HTTP_METHODS = ["GET", "HEAD"] as const;
 // This bounded provenance reader accepts GET only; HEAD must not trigger reads.
-export const LOCAL_OPERATIONS_GET_ONLY_API_ROUTES = ["/batch/replay/runs/provenance"] as const;
+export const LOCAL_OPERATIONS_GET_ONLY_API_ROUTES = ["/batch/replay/runs/provenance", "/paper/simulations/request"] as const;
 export const PAPER_SIMULATION_VALIDATION_METHODS = ["POST"] as const;
 export const PAPER_SIMULATION_MUTATION_METHODS = ["POST"] as const;
 export const PAPER_POLICY_VALIDATION_METHODS = ["POST"] as const;

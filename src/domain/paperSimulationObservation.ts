@@ -9,7 +9,7 @@ const identity = {
 };
 
 export const paperSimulationObservationEventSchema = z.discriminatedUnion("event", [
-  z.object({ ...identity, event: z.literal("accepted") }).strict(),
+  z.object({ ...identity, event: z.literal("accepted"), canonicalRequestHash: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional() }).strict(),
   z.object({
     ...identity,
     event: z.literal("runner_failed"),
