@@ -102,7 +102,7 @@ async function scan(storageBaseDir:string,runId:string,budget:Budget,referenceBa
       if(activeIdentity) validateStoredPath(activeIdentity,batchDir,referenceBase);
       let completed=0,skipped=0,failed=0,withFailures=false;
       const lines=text.split(/\r?\n/);
-      if(lines.length>REPLAY_PROVENANCE_LIMITS.lines+1) throw new ReadFailure("limit");
+      if(lines.length>REPLAY_PROVENANCE_LIMITS.lines+(text.endsWith("\n")?1:0)) throw new ReadFailure("limit");
       for(const line of lines) {
         check(budget);if(!line.trim()) continue;
         const raw:unknown=JSON.parse(line);

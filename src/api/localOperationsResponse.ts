@@ -1,6 +1,6 @@
 import type { ServerResponse } from "node:http";
 
-import { maskObject } from "../security/masking.js";
+import { maskObject, maskReplayRunIdentity } from "../security/masking.js";
 import { validProvenanceId, type ReplayProvenance } from "./replayProvenanceProjection.js";
 
 export function writeJson(
@@ -18,7 +18,7 @@ export function writeReplayProvenanceJson(response:ServerResponse,statusCode:num
   const masked=maskObject(value);
   if(value.mode==="paper_only"&&value.readOnly===true&&value.contractVersion==="replay_provenance_read.v1"&&
       value.comparability==="unavailable"&&value.clone==="unavailable"&&validProvenanceId(value.requestedRunId)){
-    masked.requestedRunId=value.requestedRunId;
+    masked.requestedRunId=maskReplayRunIdentity(value.requestedRunId);
   }
   writeMaskedJson(response,statusCode,masked);
 }

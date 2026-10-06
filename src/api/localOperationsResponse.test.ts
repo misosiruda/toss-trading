@@ -24,3 +24,14 @@ test("malformed provenance contracts and unsafe requested IDs never receive iden
     writeReplayProvenanceJson(c.response,200,payload);assert.notEqual(c.read().body.requestedRunId,payload.requestedRunId);
   }
 });
+
+test("provenance identity exception retains account and token masking in every DTO status",()=>{
+  for(const status of ["partial","missing","invalid","blocked","limit","ambiguous"] as const) {
+    for(const [id,masked] of [["123-456-789","****-****-****"],["aaaaaaaaaaaaaaaa.bbbbbbbb.cccccccc","***.***.***"],["ord_abcdef.123-456-789","ord_abcdef.****-****-****"],["exec_aaaaaaaaaaaaaaaa.bbbbbbbb.cccccccc","***.***.***"]]) {
+      for(const code of [200,400,500]) {
+        const c=responseCapture();writeReplayProvenanceJson(c.response,code,emptyReplayProvenance(id!,status,"missing"));
+        assert.equal(c.read().body.requestedRunId,masked);assert.equal(c.read().status,code);
+      }
+    }
+  }
+});

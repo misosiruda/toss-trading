@@ -63,3 +63,7 @@ Windows root build/API42가 통과했다. UI 증거는 UI 소유 계약에서 �
 ## 구조화 요청 replay identity와 마스킹
 
 검증된 provenance DTO의 최상위 requestedRunId만 안전 lookup 문법을 확인해 exact 보존한다. 일반 응답은 기존 maskObject를 유지하며 전용 응답도 나머지 field·중첩 문자열·orderId·executionId·계좌·token을 계속 가린다. 다른 endpoint 또는 arbitrary nested runId를 전역 whitelist하지 않는다. actual writer의 ord_abcdef/exec_abcdef batch를 HTTP에서 검증하며, malformed contract와 unsafe ID는 복원하지 않는 negative 회귀를 둔다.
+
+### 요청 identity 마스킹 경계
+
+최상위 requestedRunId의 예외는 order/execution 휴리스틱에만 적용한다. 계좌형·JWT형 문자열은 실제 child 여부나 partial/missing/error 상태와 관계없이 기존 패턴으로 마스킹한다. 따라서 민감 패턴과 겹치는 요청은 raw identity를 응답에 노출하지 않으며 클라이언트 exact-ID 검증은 fail-closed한다. writer의 일반 ord_/exec_ 및 leading-hyphen child identity는 정확히 유지한다. raw batchId/seed/path, nested 필드와 다른 endpoint의 마스킹은 변경하지 않는다.
