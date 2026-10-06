@@ -23,10 +23,10 @@ selector session의 `finish()`로 신규 쓰기 접수를 닫고 기존 쓰기�
 기존 current opening/manual/selector 회귀 통과다. 최신 main 정상 통합 후 다시 검사한다.
 전체 merge gate와 exact 공개 head의 독립 코드·보안 검토 및 보호조건은 별도 확인한다.
 
-## Independent review follow-up
+## 독립 검토 후속 보완
 
-Both manual and selector session admissions close and their writes drain before the publication snapshot lease expires. All drains settle even when another drain fails. A consumer failure remains the primary cause and every drain failure remains accessible through AggregateError.errors; a lone consumer error retains its identity.
+publication snapshot lease가 만료되기 전에 manual과 selector session 모두 신규 쓰기 접수를 닫고 기존 쓰기를 끝까지 처리한다. 다른 쓰기 종료 처리가 실패하더라도 모든 종료 처리가 완료될 때까지 기다린다. consumer 오류는 주된 원인으로 유지하며, 모든 쓰기 종료 오류는 AggregateError.errors에서 확인할 수 있다. consumer 오류만 발생한 경우에는 그 오류의 동일성을 유지한다.
 
-The independent 100 ms pending-file gate reproduces the unawaited manual lease failure and leftover barrier on tree 7392a1f2. Its awaited control passes. The same assertions pass after the repair. The caught selector validation error plus consumer sentinel reproduces error loss on that tree and preserves both errors after repair. Regression coverage also exercises all eight consumer/manual/selector error combinations, plus existing awaited/unawaited selector restart and retry cases.
+독립적인 100 ms pending-file gate는 tree 7392a1f2에서 await하지 않은 manual 쓰기의 lease 실패와 잔여 barrier를 재현한다. await한 대조군은 통과한다. 수정 후에는 동일한 검증 조건이 통과한다. 잡아서 처리한 selector 검증 오류와 consumer sentinel의 조합도 해당 tree에서 오류 유실을 재현하며, 수정 후에는 두 오류를 모두 보존한다. 회귀 검증은 consumer/manual/selector 오류의 여덟 조합과 기존 await/unawaited selector 재시작 및 재시도 사례도 포함한다.
 
-Windows full merge gate remains blocked by recorded failures; focused checks do not authorize publication or merge.
+Windows의 전체 merge gate는 기록된 실패로 여전히 막혀 있다. 제한된 검증의 통과만으로 게시나 병합을 승인하지 않는다.
