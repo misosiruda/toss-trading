@@ -3,6 +3,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 
 import { createPaperCostModel } from "../paper/costModel.js";
+import { historicalReplayRunConfigurationSchema } from "../replay/historicalReplayAuditLog.js";
 import { normalizePaperExitPolicy, type PaperExitPolicy } from "../paper/exitPolicy.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import { resolvePaperRiskProfile } from "../paper/riskProfile.js";
@@ -15,6 +16,9 @@ const MAX_DECISION_CALLS = 100;
 const MAX_CODEX_CALLS_PER_RUN = 31;
 const DEFAULT_DASHBOARD_TICK_DELAY_MS = 0;
 const MAX_DASHBOARD_TICK_DELAY_MS = 5_000;
+
+const executionCostsSchema = historicalReplayRunConfigurationSchema.shape.executionPolicy
+  .unwrap().pick({ feeBps: true, taxBps: true, slippageBps: true }).strict();
 
 const paperSimulationConfigSchema = z.object({
   mode: z.literal("paper_only"),
@@ -53,6 +57,7 @@ const paperSimulationConfigSchema = z.object({
   riskProfile: z.enum(["conservative", "balanced", "aggressive_paper"]),
   paperExitPolicy: z.enum(["none", "take_profit_stop_loss", "rebalance_threshold"]),
   costModel: z.enum(["standard", "high_cost"]),
+  executionCosts: executionCostsSchema.optional(),
   benchmarkPolicy: z.enum(["cash_equal_weight_initial_hold", "cash_only"])
 });
 
@@ -119,7 +124,7 @@ function formatSimulationConfigIssue(issue: {
 function validateSimulationConfig(config: PaperSimulationRunConfig): void {
   assertSafeDataDir(config.sourceDataDir);
   const unsupported = [
-    [config.costModel !== "standard", "costModel", "only standard (existing workflow execution defaults) is supported", "cost_model"],
+    [config.costModel !== "standard", "costModel", "only standard (existing paper execution model) is supported", "cost_model"],
     [config.benchmarkPolicy !== "cash_equal_weight_initial_hold", "benchmarkPolicy", "reports always compute cash, equal-weight and initial-portfolio benchmarks", "benchmark_policy"]
   ] as const;
   for (const [rejected, field, reason, code] of unsupported) {
@@ -381,7 +386,7 @@ export function resolvePaperSimulationConfig(
       market: config.universe.market
     }),
     paperExitPolicy: normalizePaperExitPolicy(paperExitPolicyFromConfig(config.paperExitPolicy)),
-    costModel: createPaperCostModel(undefined),
+    costModel: createPaperCostModel(config.executionCosts),
     benchmarkPolicy: {
       mode: "fixed_report_benchmarks" as const,
       names: ["cashOnly", "equalWeightBuyAndHold", "initialPortfolioBuyAndHold"] as const,
@@ -393,7 +398,9 @@ export function resolvePaperSimulationConfig(
   const notices: PaperSimulationConfigNotice[] = [
     { field: "universe.preset", code: "preset_not_applied", message: "The preset is retained request metadata; source snapshots determine the available symbols, without preset filtering." },
     { field: "universe.market", code: "allocation_only", message: "Market changes allocation targets only: mixed_global splits KR/US targets; kr and us retain risk-profile defaults. No market symbol filter is applied." },
-    { field: "costModel", code: "workflow_execution_defaults", message: "standard means the existing workflow execution defaults shown in effectiveConfig.costModel, not a separate commission/slippage preset." },
+    config.executionCosts === undefined
+      ? { field: "costModel", code: "workflow_execution_defaults", message: "standard means the existing workflow execution defaults shown in effectiveConfig.costModel, not a separate commission/slippage preset." }
+      : { field: "executionCosts", code: "explicit_execution_costs", message: "Explicit fee, sell-tax and slippage bps are applied by the existing paper execution model; remaining execution settings retain their existing defaults. These values are not live fees or AI usage charges." },
     { field: "benchmarkPolicy", code: "fixed_report_benchmarks", message: "Reports compute cash, equal-weight and initial-portfolio benchmarks; equal-weight can be unavailable without a priced replay packet." }
   ];
   if (!useCodexAi) {

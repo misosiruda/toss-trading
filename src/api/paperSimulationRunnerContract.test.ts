@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import test from "node:test";
 
-import type { MarketPacket } from "../domain/schemas.js";
+import { virtualTradeSchema, type MarketPacket } from "../domain/schemas.js";
 import { historicalReplayRunMetadataSchema } from "../replay/historicalReplayAuditLog.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
@@ -32,8 +32,13 @@ test("default runner persists the validated effective contract on synthetic fixe
     });
   }
   try {
-    for (const mode of ["fixed_range", "random_month"] as const) {
+    for (const [caseName, mode, executionCosts] of [
+      ["fixed-default", "fixed_range", undefined],
+      ["random-default", "random_month", undefined],
+      ["fixed-explicit-costs", "fixed_range", { feeBps: 12.5, taxBps: 25, slippageBps: 5.5 }]
+    ] as const) {
       const config = simulationConfig();
+      if (executionCosts !== undefined) config.executionCosts = executionCosts;
       config.sourceDataDir = relative(process.cwd(), source) || source;
       config.universe.market = mode === "fixed_range" ? "kr" : "mixed_global";
       config.riskProfile = "balanced";
@@ -43,7 +48,7 @@ test("default runner persists the validated effective contract on synthetic fixe
       config.samplingPolicy.maxDecisionCalls = 2;
       const validated = validatePaperSimulationCandidate(config, {});
       const accepted = await createPaperSimulationRun(config, {
-        storageBaseDir: join(root, mode, "paper"), env: {},
+        storageBaseDir: join(root, caseName, "paper"), env: {},
         now: () => new Date("2026-10-02T00:00:00.000Z")
       });
       assert.deepEqual(accepted.effectiveConfig, validated.effectiveConfig);
@@ -53,7 +58,7 @@ test("default runner persists the validated effective contract on synthetic fixe
       assert.equal(manifest.status, "completed");
       assert.equal(manifest.completedCount, 1);
       assert.equal(manifest.batchId, accepted.simulationRunId);
-      const observation = await readPaperSimulationObservation(join(root, mode, "paper"), accepted.simulationRunId);
+      const observation = await readPaperSimulationObservation(join(root, caseName, "paper"), accepted.simulationRunId);
       assert.equal(observation.status, "available");
       assert.equal(observation.status === "available" && observation.outcome, "unknown");
       assert.equal(manifest.sourceDataDir, config.sourceDataDir);
@@ -86,7 +91,17 @@ test("default runner persists the validated effective contract on synthetic fixe
       assert.ok(report.benchmarks.cashOnly);
       assert.ok(report.benchmarks.equalWeightBuyAndHold);
       assert.ok(report.benchmarks.initialPortfolioBuyAndHold);
-      assert.equal(report.costSummary.totalCostKrw, 0);
+      if (executionCosts === undefined) {
+        assert.equal(report.costSummary.totalCostKrw, 0);
+      } else {
+        const trades = (await readFile(runPaths.historicalReplayTradeLogPath, "utf8")).trim().split("\n")
+          .map(line => virtualTradeSchema.parse(JSON.parse(line)));
+        assert.ok(report.costSummary.feeKrw > 0);
+        assert.ok(report.costSummary.slippageKrw > 0);
+        assert.equal(report.costSummary.totalCostKrw, trades.reduce((total, trade) => total + (trade.totalCostKrw ?? 0), 0));
+        assert.equal(report.costSummary.spreadCostKrw, 0);
+        assert.equal(report.costSummary.impactCostKrw, 0);
+      }
       const packets = (await readFile(runPaths.historicalReplayPacketLogPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as MarketPacket);
       assert.deepEqual([...new Set(packets.flatMap((packet) => packet.candidates.map((candidate) => candidate.market)))].sort(), ["KR", "US"]);
     }
