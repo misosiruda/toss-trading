@@ -91,10 +91,11 @@ test("the dashboard performs one server read and renders the experiment workspac
   runInNewContext(outputText, {
     exports,
     require(specifier) {
-      if (specifier === "react/jsx-runtime") return { jsx: (type, props) => ({ type, props }) };
+      if (specifier === "react/jsx-runtime") return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
       if (specifier === "@/lib/dashboardViewModels") return {
         readExperimentListPageData: async () => { reads += 1; return pageData; }
       };
+      if (specifier === "@/lib/listDocumentNavigation") return { listDocumentNavigationBootstrap: "synthetic-bootstrap" };
       assert.equal(specifier, "./ExperimentList");
       return { ExperimentList };
     }
@@ -103,8 +104,11 @@ test("the dashboard performs one server read and renders the experiment workspac
   assert.equal(exports.dynamic, "force-dynamic");
   assert.equal(exports.revalidate, 0);
   assert.equal(reads, 1);
-  assert.equal(page.type, ExperimentList);
-  assert.equal(page.props.pageData, pageData);
+  const [bootstrap, list] = page.props.children;
+  assert.equal(bootstrap.type, "script");
+  assert.equal(bootstrap.props.dangerouslySetInnerHTML.__html, "synthetic-bootstrap");
+  assert.equal(list.type, ExperimentList);
+  assert.equal(list.props.pageData, pageData);
   assert.doesNotMatch(source, /["']use client["']/);
 });
 
@@ -146,6 +150,7 @@ test("mobile navigation closes on focus exit and links while preserving internal
   class HTMLAnchorElement extends Element {
     constructor(href) { super(); this.href = href; }
     closest() { return this; }
+    hasAttribute(name) { return name === "download" && this.download === true; }
   }
   const exports = {};
   runInNewContext(outputText, {
@@ -160,6 +165,7 @@ test("mobile navigation closes on focus exit and links while preserving internal
       if (specifier === "react") return { useEffect() {}, useState: (initial) => [initial, () => {}], useRef: (initial) => refs.shift() ?? { current: initial } };
       if (specifier === "next/navigation") return { useSearchParams: () => new URLSearchParams() };
       if (specifier === "next/link") return { default: () => {} };
+      if (specifier === "@/lib/listDocumentNavigation") return { installListDocumentNavigation() {} };
       assert.equal(specifier, "./ExperimentList.module.css");
       return { default: {} };
     }
@@ -189,9 +195,18 @@ test("mobile navigation closes on focus exit and links while preserving internal
   details.open = true;
   mobileNav.props.onClick({ ...click, ctrlKey: true });
   assert.equal(details.open, true, "modified clicks keep native new-tab behavior");
+  const separateTab = new HTMLAnchorElement("http://localhost:3000/dashboard/operations");
+  separateTab.target = "_blank";
+  const download = new HTMLAnchorElement("http://localhost:3000/dashboard/operations");
+  download.download = true;
+  for (const target of [separateTab, download]) {
+    mobileNav.props.onClick({ ...click, target });
+    assert.equal(details.open, true, "separate native actions keep the originating menu");
+    assert.equal(mainFocusCount, 1, "separate native actions keep originating focus");
+  }
   mobileNav.props.onClick({ ...click, target: new HTMLAnchorElement("http://localhost:3000/dashboard/operations") });
   assert.equal(details.open, false, "other destinations also close the menu");
-  assert.equal(mainFocusCount, 1, "other-page navigation owns its next focus destination");
+  assert.equal(mainFocusCount, 2, "a slow replacement never retains focus inside the closed menu; its committed document owns subsequent focus");
 
   details.open = true;
   mobileMenu.props.onBlur({ currentTarget: details, relatedTarget: insideTarget });
@@ -203,7 +218,7 @@ test("mobile navigation closes on focus exit and links while preserving internal
   assert.equal(details.open, false, "leaving the document also dismisses the overlay");
   mobileMenu.props.onBlur({ currentTarget: details, relatedTarget: {} });
   assert.equal(details.open, false, "an already closed menu stays closed");
-  assert.equal(mainFocusCount, 1, "focus exit never redirects focus to the main container");
+  assert.equal(mainFocusCount, 2, "focus exit never redirects focus to the main container");
   assert.equal(summaryFocusCount, 1, "only Escape explicitly restores the trigger focus");
 });
 
@@ -372,6 +387,7 @@ async function experimentFilterHarness(search = "", pageData = null) {
       if (specifier === "react") return { useEffect: (effect) => effects.push(effect), useState: (initial) => [initial, (ready) => readiness.push(ready)], useRef: (initial) => refs.shift() ?? { current: initial } };
       if (specifier === "next/navigation") return { useSearchParams: () => new URLSearchParams(search) };
       if (specifier === "next/link") return { default: () => {} };
+      if (specifier === "@/lib/listDocumentNavigation") return { installListDocumentNavigation() {} };
       assert.equal(specifier, "./ExperimentList.module.css");
       return { default: {} };
     }

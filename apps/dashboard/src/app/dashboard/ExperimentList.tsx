@@ -10,6 +10,7 @@ import type {
   ExperimentListWarning
 } from "@/lib/dashboardViewModels";
 import styles from "./ExperimentList.module.css";
+import { installListDocumentNavigation } from "@/lib/listDocumentNavigation";
 
 const STATUS_OPTIONS = [
   ["all", "상태 전체"],
@@ -155,6 +156,8 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
     };
   }, []);
 
+  useEffect(() => { installListDocumentNavigation(); }, []);
+
   function commitFilters(nextQuery: string, nextStatus: StatusFilter) {
     if (window.location.pathname !== "/dashboard") return false;
     const cleanQuery = normalizedQuery(nextQuery);
@@ -196,7 +199,7 @@ export function ExperimentList({ pageData }: { pageData: ExperimentListPageData 
   }
 
   return (
-    <div className={styles.workspace}>
+    <div className={styles.workspace} data-list-native-boundary>
       <a className={styles.skipLink} href="#experiments-main">본문으로 건너뛰기</a>
       <WorkspaceNavigation />
       <main className={styles.main} id="experiments-main" tabIndex={-1}>
@@ -282,12 +285,12 @@ export function WorkspaceNavigation() {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
     if (!(link instanceof HTMLAnchorElement) || !event.currentTarget.contains(link)) return;
+    if (link.hasAttribute("download") || (link.target && link.target.toLowerCase() !== "_self")) return;
     if (mobileMenuRef.current) mobileMenuRef.current.open = false;
-    const destination = new URL(link.href);
-    if (destination.origin === window.location.origin && destination.pathname === window.location.pathname) {
-      // Same-page navigation can preserve this component; do not leave focus in the closed menu.
-      document.getElementById("experiments-main")?.focus({ preventScroll: true });
-    }
+    // Same-page and pending cross-page navigation can both retain this document.
+    // Never leave keyboard focus inside the menu we just closed. A replacement
+    // document takes its own focus when it eventually commits.
+    document.getElementById("experiments-main")?.focus({ preventScroll: true });
   }
 
   return (
@@ -406,7 +409,7 @@ function ExperimentTable({ rows }: { rows: ExperimentListRow[] }) {
     </tr></thead>
     <tbody role="rowgroup">{rows.map((row) => <tr key={row.runId} role="row" data-testid="experiment-row">
       <td className={styles.identityCell} role="cell">
-        <Link className={styles.runLink} href={row.detailHref} prefetch={false}>{row.runId}<Icon name="arrow" /></Link>
+        <a className={styles.runLink} href={row.detailHref} data-native-list-document>{row.runId}<Icon name="arrow" /></a>
         <span className={styles.provenance}>{row.provenance === "unbound_stored" ? "저장 행 · batch 연결 미확인" : `개별 실행${row.runIndex === null ? "" : ` · index ${row.runIndex}`}`}</span>
       </td>
       <td className={styles.statusCell} role="cell"><span className={`${styles.status} ${styles[`status_${row.status}`]}`}><span aria-hidden="true" />{STATUS_LABELS[row.status]}</span></td>
