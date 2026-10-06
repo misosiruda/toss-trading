@@ -354,3 +354,28 @@ test("HTTP route is GET-only, no-store, rejects missing ID and never invokes run
   assert.equal((await fetch(base)).status,400);const response=await fetch(base+"?runId=child");assert.equal(response.status,200);assert.equal(response.headers.get("cache-control"),"no-store");assert.equal((await response.json() as {status:string}).status,"partial");assert.equal(runs,0);
   const exhausted=await fetch(base+"?runId=child",{headers:{"x-provenance-budget-ms":"0"}});assert.equal(exhausted.status,200);assert.equal((await exhausted.json() as {status:string}).status,"limit");assert.equal(runs,0);
 });
+
+test("real HTTP missing and limit provenance never echo account or token shaped query IDs",async t=>{
+  const f=await fixture();const server=createLocalOperationsServer({storageBaseDir:f.storage});
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  t.after(()=>new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve())));
+  const base="http://127.0.0.1:"+String((server.address() as AddressInfo).port)+REPLAY_PROVENANCE_ROUTE;
+  for(const [id,masked] of [["123-456-789","****-****-****"],["aaaaaaaaaaaaaaaa.bbbbbbbb.cccccccc","***.***.***"]]){
+    for(const exhausted of [false,true]){
+      const r=await fetch(base+"?"+new URLSearchParams({runId:id!}),{headers:exhausted?{"x-provenance-budget-ms":"0"}:{}});
+      assert.equal(r.status,200);const body=await r.json() as {status:string;requestedRunId:string};
+      assert.equal(body.status,exhausted?"limit":"missing");assert.equal(body.requestedRunId,masked);
+      assert.ok(!JSON.stringify(body).includes(id!));
+    }
+  }
+});
+
+test("index physical line cap allows only the trailing newline sentinel",async()=>{
+  const f=await fixture();const row=JSON.stringify(f.run);
+  for(const ending of ["","\n","\r\n"]){
+    await writeFile(f.paths.runs,"\n".repeat(REPLAY_PROVENANCE_LIMITS.lines-1)+row+ending);
+    assert.equal((await readReplayProvenance(f.storage,"child")).status,"partial");
+    await writeFile(f.paths.runs,"\n".repeat(REPLAY_PROVENANCE_LIMITS.lines)+row+ending);
+    assert.equal((await readReplayProvenance(f.storage,"child")).status,"limit");
+  }
+});

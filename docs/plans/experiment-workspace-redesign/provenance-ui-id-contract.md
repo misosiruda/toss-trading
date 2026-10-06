@@ -8,7 +8,7 @@ UI writer integration은 실제 현재 writer16개/child32개와 역사적 순�
 
 production browser의 별도 합성 HTTP fixture는 현재/legacy leading-hyphen ID3개의 목록→상세→reload→Back 및 comparison form validity→exact query→양쪽 provenance→상세→Back을 검증한다. 이 시험과 실제 writer integration은 서로 다른 증거이며 완료 결과는 로컬 handoff에 기록한다.
 
-root build 후 node --test apps/dashboard/tests/provenance-contract/writer-ui.test.mjs를 실행한다. integration은 dashboard unit glob과 분리한다. 합성 자료만 사용하며 유료 AI·실거래·운영 계정은 사용하지 않는다. 공개 bb90fdd/118ba60/faf9560은 보존한다. Linux full·Security·독립 리뷰·게시 승인은 별도다.
+root build 후 node --test apps/dashboard/tests/provenance-contract/writer-ui.test.mjs를 실행한다. 현재 dashboard test:unit glob은 provenance-contract/writer-ui.test.mjs를 포함한다. 위 별도 실행과 unit 결과의 중복 집계를 하지 않는다. 합성 자료만 사용하며 유료 AI·실거래·운영 계정은 사용하지 않는다. 공개 bb90fdd/118ba60/faf9560은 보존한다. Linux full·Security·독립 리뷰·게시 승인은 별도다.
 
 ## 별도 기존 PR 소유 변경
 
