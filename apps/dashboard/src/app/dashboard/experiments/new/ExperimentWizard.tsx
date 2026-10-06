@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { acceptedSimulationId, emptySimulationDraft, restoreSimulationDraft, readValidation, typedCandidate, type SimulationDraft, type SimulationValidation } from "@/lib/simulationCandidate";
+import { CLONE_DRAFT_KEY, cloneDraftEnvelope, exactSimulationId, faithfulCloneDraft, readCloneSource, restoreCloneDraft, type SimulationCloneSource } from "@/lib/simulationClone";
 import { WorkspaceNavigation } from "../../ExperimentList";
 import shell from "../../ExperimentList.module.css";
 import styles from "./ExperimentWizard.module.css";
@@ -16,6 +17,15 @@ type Phase = "idle" | "validating" | "submitting" | "unknown" | "accepted";
 
 export function ExperimentWizard() {
   const search = useSearchParams();
+  const cloneValues = search.getAll("cloneFrom");
+  const cloneRequested = cloneValues.length > 0;
+  const initialCloneRequested = useRef(cloneRequested);
+  const cloneFrom = cloneValues.length === 1 ? cloneValues[0]! : "";
+  const [cloneSource, setCloneSource] = useState<SimulationCloneSource | null>(null);
+  const [cloneRead, setCloneRead] = useState(0);
+  const [cloneObservation, setCloneObservation] = useState({ id: "", status: "loading" as "loading" | "available" | "unavailable" });
+  const sourceTag = useRef<string | null>(null);
+  const boundClone = cloneRequested && cloneSource?.simulationRunId === cloneFrom ? cloneSource : null;
   const step = search.get("step") === "2" ? 2 : search.get("step") === "3" ? 3 : 1;
   const [draft, setDraft] = useState<SimulationDraft>(emptySimulationDraft);
   const [ready, setReady] = useState(false);
@@ -32,8 +42,10 @@ export function ExperimentWizard() {
   const knownAcceptedId = useRef<string | null>(null);
   const nativeDocumentPending = useRef(false);
   const controller = useRef<AbortController | null>(null);
+  const createController = useRef<AbortController | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  const candidate = typedCandidate(draft);
+  const inputsReady = ready && (!cloneRequested || boundClone !== null);
+  const candidate = cloneRequested && !boundClone ? null : typedCandidate(draft, boundClone?.requestedConfig);
   const body = candidate ? JSON.stringify(candidate) : "";
   const currentReceipt = receipt?.version === version.current && receipt.body === body ? receipt : null;
 
@@ -54,22 +66,60 @@ export function ExperimentWizard() {
       }
     };
     synchronizeAdmission();
-    const onPageShow = () => { nativeDocumentPending.current = false; synchronizeAdmission(); };
+    const onPageShow = () => { nativeDocumentPending.current = false; synchronizeAdmission(); if (sourceTag.current !== null) setCloneRead(count => count + 1); };
     window.addEventListener("pageshow", onPageShow);
     try {
       const saved = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "null");
       const restored = restoreSimulationDraft(saved);
-      if (restored) setDraft(restored);
+      if (restored && !initialCloneRequested.current) setDraft(restored);
     } catch { /* Input remains usable when storage is unavailable. Admission fails closed below. */ }
     setReady(true);
-    return () => { window.removeEventListener("pageshow", onPageShow); alive.current = false; version.current += 1; controller.current?.abort(); };
+    return () => { window.removeEventListener("pageshow", onPageShow); alive.current = false; version.current += 1; controller.current?.abort(); createController.current?.abort(); };
   }, []);
+
+  useEffect(() => {
+    if (!cloneRequested) {
+      if (sourceTag.current !== null) {
+        sourceTag.current = null; version.current += 1; navigationIntent.current += 1;
+        controller.current?.abort(); validating.current = false; setReceipt(null); setToken(""); setCloneSource(null);
+        try { setDraft(restoreSimulationDraft(JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "null")) ?? emptySimulationDraft); }
+        catch { setDraft(emptySimulationDraft); }
+        if (!submitted.current) { setPhase("idle"); setMessage("현재 입력 · 다시 검증하세요."); }
+      }
+      return;
+    }
+    sourceTag.current = cloneFrom;
+    version.current += 1; navigationIntent.current += 1; controller.current?.abort(); validating.current = false;
+    setReceipt(null); setToken(""); setCloneSource(null); setCloneObservation({ id: cloneFrom, status: "loading" });
+    if (!submitted.current) setPhase("idle");
+    if (!exactSimulationId(cloneFrom)) { setCloneObservation({ id: cloneFrom, status: "unavailable" }); return; }
+    const abort = new AbortController();
+    const timeout = setTimeout(() => abort.abort(), 15000);
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch("/dashboard/experiments/clone?simulationRunId=" + encodeURIComponent(cloneFrom), { method: "GET", cache: "no-store", signal: abort.signal, headers: { accept: "application/json" } });
+        const value: unknown = await response.json();
+        if (!active || !alive.current || sourceTag.current !== cloneFrom || abort.signal.aborted) return;
+        const source = response.ok ? readCloneSource(value, cloneFrom) : null;
+        const original = source && faithfulCloneDraft(source);
+        if (!source || !original) { setCloneObservation({ id: cloneFrom, status: "unavailable" }); return; }
+        let restored: SimulationDraft | null = null;
+        try { restored = restoreCloneDraft(JSON.parse(sessionStorage.getItem(CLONE_DRAFT_KEY) ?? "null"), source); } catch { /* Fresh original request remains usable; no receipt or credential restoration. */ }
+        setDraft(restored ?? original); setCloneSource(source); setCloneObservation({ id: cloneFrom, status: "available" });
+        if (!submitted.current) setMessage("원래 실험 전체 요청을 불러왔습니다. 현재 입력을 다시 검증하세요.");
+      } catch { if (active && alive.current && sourceTag.current === cloneFrom) setCloneObservation({ id: cloneFrom, status: "unavailable" }); }
+      finally { clearTimeout(timeout); }
+    })();
+    return () => { active = false; clearTimeout(timeout); abort.abort(); };
+  }, [cloneRequested, cloneFrom, cloneRead]);
 
   useEffect(() => { heading.current?.focus({ preventScroll: false }); }, [step]);
 
   useEffect(() => {
     const { origin, pathname } = window.location;
     const onPopState = () => {
+      if (cloneRequested) { navigationIntent.current += 1; version.current += 1; controller.current?.abort(); validating.current = false; setReceipt(null); setToken(""); setCloneRead(count => count + 1); if (!submitted.current) setPhase("idle"); }
       if (nativeDocumentPending.current) {
         navigationIntent.current += 1;
         window.stop(); window.location.replace(window.location.href); return;
@@ -78,7 +128,7 @@ export function ExperimentWizard() {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [cloneRequested]);
 
   function rememberNavigation(event: MouseEvent<HTMLDivElement>) {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -101,7 +151,7 @@ export function ExperimentWizard() {
   }
 
   function edit<K extends keyof SimulationDraft>(key: K, value: SimulationDraft[K]) {
-    if (submitted.current) return;
+    if (submitted.current || (cloneRequested && !boundClone)) return;
     version.current += 1;
     controller.current?.abort();
     validating.current = false;
@@ -109,9 +159,10 @@ export function ExperimentWizard() {
     if (!submitted.current) { setPhase("idle"); setMessage("입력 변경됨 · 다시 검증하세요."); }
     const next = { ...draft, [key]: value };
     setDraft(next);
-    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(next)); } catch { /* No credentials in draft. */ }
+    try { sessionStorage.setItem(boundClone ? CLONE_DRAFT_KEY : DRAFT_KEY, JSON.stringify(boundClone ? cloneDraftEnvelope(boundClone, next) : next)); } catch { /* No credentials in draft. */ }
   }
   function go(next: number) {
+    if (cloneRequested && phase === "submitting") navigationIntent.current += 1;
     const url = new URL(window.location.href);
     url.searchParams.set("step", String(next));
     if (nativeDocumentPending.current) {
@@ -163,7 +214,7 @@ export function ExperimentWizard() {
     submitted.current = true;
     const requestNavigationIntent = navigationIntent.current;
     setPhase("submitting"); setMessage("한 번의 생성 요청을 보냈습니다. 접수 응답을 기다려 주세요.");
-    const abort = new AbortController(); controller.current = abort;
+    const abort = new AbortController(); createController.current = abort;
     const timeout = setTimeout(() => abort.abort(), 20_000);
     try {
       const response = await fetch("/dashboard/lab/policies/simulations/create", {
@@ -177,7 +228,7 @@ export function ExperimentWizard() {
         setPhase("idle"); setReceipt(null); setMessage(`${errorMessage(response.status, true)} 입력을 유지했어요. 다시 검증한 뒤 명시적으로 실행하세요.`); return;
       }
       const id = response.status === 202 ? acceptedSimulationId(payload, currentReceipt.validation) : null;
-      if (!id) throw new Error("uncertain");
+      if (!id || (cloneRequested && id === cloneFrom)) throw new Error("uncertain");
       knownAcceptedId.current = id;
       setAcceptedId(id); setPhase("accepted"); setToken(""); setReceipt(null);
       try { sessionStorage.setItem(ADMISSION_KEY, id); } catch {
@@ -186,7 +237,7 @@ export function ExperimentWizard() {
       // Keep a no-retry barrier and the exact accepted ID on Back/reload, without the token.
       setMessage("접수됐습니다. 완료 여부는 같은 ID의 상세에서 조회합니다.");
       // A newer user navigation wins even while its destination is still loading.
-      if (navigationIntent.current === requestNavigationIntent) {
+      if (navigationIntent.current === requestNavigationIntent && (!cloneRequested || new URL(window.location.href).searchParams.get("cloneFrom") === cloneFrom)) {
         nativeDocumentPending.current = true;
         try { window.location.assign(`/dashboard/lab/runs/${encodeURIComponent(id)}`); }
         catch { nativeDocumentPending.current = false; setMessage("접수됐지만 상세 조회 이동을 시작하지 못했습니다. 같은 ID 상태 조회 링크로 다시 조회하세요. POST는 재전송하지 않습니다."); }
@@ -196,13 +247,20 @@ export function ExperimentWizard() {
     } finally { clearTimeout(timeout); }
   }
   const locked = phase === "submitting" || phase === "accepted" || phase === "unknown";
-  const input = (key: keyof SimulationDraft, label: string, type = "text", hint?: string) => <label className={styles.field}>{label}<input type={type} step={["feeBps", "taxBps", "slippageBps"].includes(key) ? "any" : undefined} min={["feeBps", "taxBps", "slippageBps"].includes(key) ? 0 : undefined} value={draft[key]} onChange={e => edit(key, e.target.value)} disabled={!ready || locked} autoComplete="off" aria-describedby={hint ? `hint-${key}` : undefined} />{hint && <small id={`hint-${key}`}>{hint}</small>}</label>;
-  const select = <K extends keyof SimulationDraft>(key: K, label: string, options: Array<[SimulationDraft[K], string]>) => <label className={styles.field}>{label}<select value={draft[key]} onChange={e => edit(key, e.target.value as SimulationDraft[K])} disabled={!ready || locked}>{options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>;
+  const input = (key: keyof SimulationDraft, label: string, type = "text", hint?: string) => <label className={styles.field}>{label}<input type={type} step={["feeBps", "taxBps", "slippageBps"].includes(key) ? "any" : undefined} min={["feeBps", "taxBps", "slippageBps"].includes(key) ? 0 : undefined} value={draft[key]} onChange={e => edit(key, e.target.value)} disabled={!inputsReady || locked} autoComplete="off" aria-describedby={hint ? `hint-${key}` : undefined} />{hint && <small id={`hint-${key}`}>{hint}</small>}</label>;
+  const select = <K extends keyof SimulationDraft>(key: K, label: string, options: Array<[SimulationDraft[K], string]>) => <label className={styles.field}>{label}<select value={draft[key]} onChange={e => edit(key, e.target.value as SimulationDraft[K])} disabled={!inputsReady || locked}>{options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></label>;
 
   return <div className={shell.workspace} onClickCapture={rememberNavigation}>
     <a className={shell.skipLink} href="#experiments-main">본문으로 건너뛰기</a><WorkspaceNavigation />
     <main className={`${shell.main} ${styles.wizard}`} id="experiments-main" tabIndex={-1}>
       <Link href="/dashboard">← 실험 목록</Link><h1>새 실험</h1><p className={styles.muted}>Historical paper replay · 실제 주문 없음</p>
+      {cloneRequested && <section className={styles.notice} aria-label="원래 실험 전체 조건 복제">
+        <h2>원래 실험 전체 조건 복제</h2>
+        {boundClone ? <><p>원래 요청 ID: {boundClone.simulationRunId}</p><p>child의 추출 window가 아닌 전체 요청을 불러왔습니다. 현재 검증과 실행 확인 후 별도의 새 ID를 생성하며 원래 실행은 변경하지 않습니다.</p>
+          <details><summary>그대로 유지하는 원래 요청 조건</summary><p>preset: {boundClone.requestedConfig.universe.preset} · provider: {boundClone.requestedConfig.decisionProvider.mode} · model: {boundClone.requestedConfig.decisionProvider.modelId}</p><p>schema: {boundClone.requestedConfig.decisionProvider.outputSchema} · 요청 Codex 상한: {boundClone.requestedConfig.samplingPolicy.maxCodexCallsPerRun}</p><p>실행 횟수 {boundClone.requestedConfig.runCount === undefined ? "생략됨" : "명시됨"} · 비용 {boundClone.requestedConfig.executionCosts === undefined ? "생략됨" : "명시됨"}. 생략된 값은 기본값으로 채우지 않고 현재 서버 검증에서 적용 조건을 확인합니다. provider 권한을 활성화하지 않습니다.</p></details></>
+          : <p role="status">{cloneObservation.id === cloneFrom && cloneObservation.status === "unavailable" ? "원래 요청을 완전히 확인할 수 없어 복제할 수 없습니다. 과거·마스킹·손상·부족한 기록은 기본값으로 복원하지 않습니다." : "원래 exact ID의 요청을 읽기 전용으로 조회하고 있습니다."}</p>}
+        {!boundClone && cloneObservation.id === cloneFrom && cloneObservation.status === "unavailable" && <button type="button" onClick={() => setCloneRead(count => count + 1)}>원래 요청 다시 조회 (GET)</button>}
+      </section>}
       <ol className={styles.steps} aria-label="새 실험 단계">{STEPS.map((label, index) => <li key={label} aria-current={step === index + 1 ? "step" : undefined}>{index + 1}. {label}</li>)}</ol>
       <div className={step === 3 ? undefined : styles.layout}>
         <section className={styles.panel} aria-labelledby="wizard-heading">
@@ -219,7 +277,7 @@ export function ExperimentWizard() {
           {step === 2 && <div className={styles.fields}>
             {input("sourceDataDir", "Source 자료 경로", "text", "프로젝트 data 아래 상대 경로 · 존재와 coverage 미확인")}
             {select("windowMode", "기간 방식", [["fixed_range", "고정 기간"], ["random_month", "범위 내 월 추출"]])}
-            {input("startAt", "시작 날짜", "date")}{input("endAt", "종료 날짜", "date")}
+            {input("startAt", "시작 날짜", cloneRequested ? "text" : "date")}{input("endAt", "종료 날짜", cloneRequested ? "text" : "date")}
             {input("windowMonths", "추출 월 수", "number", "1–12 · 고정 기간에서는 metadata만 유지")}{input("seed", "추출 seed")}
             {select("decisionFrequency", "판단 빈도", [["every_tick", "매 tick"], ["once_per_day", "하루 한 번"], ["once_per_week", "일주일 한 번"]])}
             {input("stepSeconds", "Replay 간격 (초)", "number", "60–2,592,000")}{input("maxDecisionCalls", "판단 호출 상한", "number", "1–100")}
@@ -227,28 +285,32 @@ export function ExperimentWizard() {
             {input("taxBps", "매도세 (bps)", "number", "매도 금액에만 적용")}
             {input("slippageBps", "슬리피지 (bps)", "number", "기존 paper 체결 가격 모델에 적용")}
             <p className={`${styles.notice} ${styles.wide}`}>비용은 0 이상 유한한 숫자로 직접 입력합니다. 소수와 명시한 0을 보존합니다. 나머지 체결 설정은 기존 standard 모델이며 실제 거래 비용이나 AI 사용료를 보장하지 않습니다.</p>
-            <p className={`${styles.notice} ${styles.wide}`}>판단 provider: dry_run_fixture · 외부 AI 호출 0. 자료 종류는 별도이며 미확인입니다. 날짜는 서버에서 +09:00 기준으로 해석합니다.</p>
+            <p className={`${styles.notice} ${styles.wide}`}>{boundClone ? `판단 provider: ${boundClone.requestedConfig.decisionProvider.mode} · 원래 요청 조건 유지, 현재 서버 권한과 guard로 다시 검증합니다.` : "판단 provider: dry_run_fixture · 외부 AI 호출 0."} 자료 종류는 별도이며 미확인입니다. 날짜는 서버에서 +09:00 기준으로 해석합니다.</p>
           </div>}
           {step === 3 && <>
             <p className={styles.notice}>자료 종류 미확인 · 가용성 미검증. 검증은 입력만 확인하며 파일·coverage·실행 슬롯·성공 여부를 확인하지 않습니다.</p>
             {currentReceipt ? <Confirmation validation={currentReceipt.validation} /> : <p>현재 입력의 서버 검증이 필요합니다. 입력 변경 후에는 이전 결과를 사용할 수 없습니다.</p>}
-            <div className={styles.actions}><button type="button" onClick={validate} disabled={!ready || !candidate || phase !== "idle"}>{phase === "validating" ? "검증 중…" : "현재 입력 검증"}</button></div>
+            <div className={styles.actions}><button type="button" onClick={validate} disabled={!inputsReady || !candidate || phase !== "idle"}>{phase === "validating" ? "검증 중…" : "현재 입력 검증"}</button></div>
             {!candidate && <p className={styles.muted}>앞 단계의 자료 경로·기간·seed·자본과 정수 입력을 채우고 비용 3개를 0 이상 유한한 숫자로 입력해 주세요.</p>}
             <form onSubmit={create}>
-              <label className={styles.field}>실행 승인 토큰<input type="password" value={token} autoComplete="off" disabled={!ready || locked} onChange={e => setToken(e.target.value)} aria-describedby="token-help" /></label>
+              <label className={styles.field}>실행 승인 토큰<input type="password" value={token} autoComplete="off" disabled={!inputsReady || locked} onChange={e => setToken(e.target.value)} aria-describedby="token-help" /></label>
               <p id="token-help" className={styles.muted}>현재 화면에서만 사용하며 URL·저장소·로그에 기록하지 않습니다.</p>
-              <div className={styles.actions}><button className={styles.primary} type="submit" disabled={!currentReceipt || phase !== "idle" || !token.trim()}>paper 실행 시작</button></div>
+              <div className={styles.actions}><button className={styles.primary} type="submit" disabled={!inputsReady || !currentReceipt || phase !== "idle" || !token.trim()}>paper 실행 시작</button></div>
             </form>
           </>}
           <p role="status" aria-live="polite" className={styles.notice}>{message || "현재 입력 · 미검증"}</p>
           {(phase === "unknown" || phase === "accepted") && <a data-native-document className={styles.link} href={acceptedId ? `/dashboard/lab/runs/${encodeURIComponent(acceptedId)}` : "/dashboard"}>{acceptedId ? "같은 ID 상태 조회" : "실험 목록에서 상태 조회"}</a>}
           {phase === "accepted" && <div className={styles.actions}><button type="button" onClick={() => {
-            try { sessionStorage.removeItem(ADMISSION_KEY); } catch { return; }
+            try {
+              const admission = sessionStorage.getItem(ADMISSION_KEY);
+              if (cloneRequested && admission && !exactSimulationId(admission)) { setPhase("unknown"); setMessage("이 탭의 이전 요청이 미확인입니다. 복제 진입으로 재전송 방지 상태를 지우지 않습니다."); return; }
+              sessionStorage.removeItem(ADMISSION_KEY);
+            } catch { return; }
             submitted.current = false; knownAcceptedId.current = null; version.current += 1; setReceipt(null); setAcceptedId(null); setToken(""); setPhase("idle"); setMessage("새 요청은 다시 검증해야 합니다."); go(1);
-          }}>별도의 새 실험 준비</button></div>}
-          <div className={styles.actions}>{step > 1 && <button type="button" onClick={() => go(step - 1)}>이전</button>}{step < 3 && <button className={styles.primary} type="button" disabled={!ready} onClick={() => go(step + 1)}>다음</button>}</div>
+          }}>{cloneRequested ? "원래 조건으로 별도의 새 실험 준비" : "별도의 새 실험 준비"}</button></div>}
+          <div className={styles.actions}>{step > 1 && <button type="button" onClick={() => go(step - 1)}>이전</button>}{step < 3 && <button className={styles.primary} type="button" disabled={!inputsReady} onClick={() => go(step + 1)}>다음</button>}</div>
         </section>
-        {step < 3 && <aside className={styles.panel} aria-label="입력 요약"><h2>입력 요약</h2><p>{draft.riskProfile} · {draft.runType}</p><p>{draft.initialCashKrw || "자본 미입력"} KRW</p><p>{draft.startAt || "시작 미입력"} → {draft.endAt || "종료 미입력"}</p><p className={styles.muted}>Source 자료 종류 미확인<br />판단 provider dry_run_fixture<br />비용 (bps): 수수료 {draft.feeBps || "미입력"} / 매도세 {draft.taxBps || "미입력"} / 슬리피지 {draft.slippageBps || "미입력"}<br />standard 체결 모델 · 고정 benchmark 3종<br />서버 검증 후 실제 적용 조건을 확인합니다.</p></aside>}
+        {step < 3 && <aside className={styles.panel} aria-label="입력 요약"><h2>입력 요약</h2><p>{draft.riskProfile} · {draft.runType}</p><p>{draft.initialCashKrw || "자본 미입력"} KRW</p><p>{draft.startAt || "시작 미입력"} → {draft.endAt || "종료 미입력"}</p><p className={styles.muted}>Source 자료 종류 미확인<br />판단 provider {boundClone?.requestedConfig.decisionProvider.mode ?? "dry_run_fixture"}<br />비용 (bps): 수수료 {draft.feeBps || "미입력"} / 매도세 {draft.taxBps || "미입력"} / 슬리피지 {draft.slippageBps || "미입력"}<br />standard 체결 모델 · 고정 benchmark 3종<br />서버 검증 후 실제 적용 조건을 확인합니다.</p></aside>}
       </div>
     </main>
   </div>;
@@ -267,12 +329,12 @@ function Confirmation({ validation: v }: { validation: SimulationValidation }) {
   const cost = e.costModel.executionPolicy as Record<string, unknown>;
   const groups = [
     ["전략·자본", `${e.riskProfile} · ${e.capital.initialCashKrw.toLocaleString("ko-KR")} KRW · PortfolioPolicy 미적용`],
-    ["실행·범위", `${e.runType} · 요청 ${r.runCount} → 실제 ${e.runCount}회 · ${r.universe.market}: ${e.universe.allocationMode} · 종목 필터 없음`],
+    ["실행·범위", `${e.runType} · 요청 ${r.runCount ?? "생략"} → 실제 ${e.runCount}회 · ${r.universe.market}: ${e.universe.allocationMode} · 종목 필터 없음`],
     ["자료·기간", `${e.sourceDataDir} · ${e.window.rangeStartAt} → ${e.window.rangeEndAt} · UTC+${e.window.timezoneOffsetMinutes / 60} · ${e.window.mode} · seed ${e.window.seed}`],
     ["샘플링·속도", `${e.samplingPolicy.decisionFrequency} · ${e.samplingPolicy.stepSeconds}초 · 판단 상한 ${e.samplingPolicy.maxDecisionCalls} · tick 지연 ${e.tickDelayMs}ms`],
-    ["판단 provider", `${e.decisionProvider.mode} · Codex 요청 ${r.samplingPolicy.maxCodexCallsPerRun} → 실제 ${e.samplingPolicy.maxCodexCallsPerRun} · model/schema 요청값은 미사용(null)`],
+    ["판단 provider", `${e.decisionProvider.mode} · Codex 요청 ${r.samplingPolicy.maxCodexCallsPerRun} → 실제 ${e.samplingPolicy.maxCodexCallsPerRun} · model/schema ${e.decisionProvider.mode === "dry_run_fixture" ? "요청값은 미사용(null)" : `${e.decisionProvider.modelId} / ${e.decisionProvider.outputSchema}`}`],
     ["Risk·청산", `신규 상한 ${e.constraints.maxNewPositions}종목 · 종목 예산 ${e.constraints.maxBudgetPerSymbolKrw} KRW · 목표 노출 ${e.allocationPolicy.targetExposureRatio} · 청산 ${r.paperExitPolicy} · constraints/riskPolicy/allocationPolicy 전체 값 아래`],
-    ["비용·benchmark", `요청 → 실효 (bps): 수수료 ${r.executionCosts.feeBps} → ${cost.feeBps} / 매도세 ${r.executionCosts.taxBps} → ${cost.taxBps} / 슬리피지 ${r.executionCosts.slippageBps} → ${cost.slippageBps} · 나머지 standard 체결 설정 (현실 비용·AI 사용료 보장 아님) · ${e.benchmarkPolicy.names.join(" / ")} · equal-weight는 가격 packet 필요`]
+    ["비용·benchmark", `요청 → 실효 (bps): 수수료 ${r.executionCosts?.feeBps ?? "생략"} → ${cost.feeBps} / 매도세 ${r.executionCosts?.taxBps ?? "생략"} → ${cost.taxBps} / 슬리피지 ${r.executionCosts?.slippageBps ?? "생략"} → ${cost.slippageBps} · 나머지 standard 체결 설정 (현실 비용·AI 사용료 보장 아님) · ${e.benchmarkPolicy.names.join(" / ")} · equal-weight는 가격 packet 필요`]
   ];
   return <>
     <dl className={styles.summary}>{groups.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>

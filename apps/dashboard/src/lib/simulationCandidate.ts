@@ -1,3 +1,4 @@
+import type { PaperSimulationRunConfig } from "../../../../src/api/paperSimulationConfig.js";
 // Request serialization only. Effective values are exclusively supplied by the server.
 export interface SimulationDraft {
   riskProfile: "conservative" | "balanced" | "aggressive_paper";
@@ -46,30 +47,33 @@ function costValue(raw: string): number | null {
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-export function typedCandidate(draft: SimulationDraft) {
+export function typedCandidate(draft: SimulationDraft, original?: SimulationCandidate): SimulationCandidate | null {
+  if (original && (original.mode !== "paper_only" || original.costModel !== "standard" || original.benchmarkPolicy !== "cash_equal_weight_initial_hold")) return null;
   if (!["conservative", "balanced", "aggressive_paper"].includes(draft.riskProfile) ||
       !["mixed_global", "kr", "us"].includes(draft.market) || !["single_replay", "batch_replay"].includes(draft.runType) ||
       !["fixed_range", "random_month"].includes(draft.windowMode) || !["every_tick", "once_per_day", "once_per_week"].includes(draft.decisionFrequency) ||
       !["none", "take_profit_stop_loss", "rebalance_threshold"].includes(draft.paperExitPolicy)) return null;
+  const omittedCosts = original !== undefined && original.executionCosts === undefined && costKeys.every(key => draft[key] === "");
+  const omittedCount = original !== undefined && original.runCount === undefined && draft.runCount === "";
   const costs = costKeys.map(key => costValue(draft[key]));
-  if (costs.some(value => value === null)) return null;
-  const integers = [draft.runCount, draft.windowMonths, draft.initialCashKrw, draft.stepSeconds, draft.maxDecisionCalls];
+  if (!omittedCosts && costs.some(value => value === null)) return null;
+  const integers = [...(omittedCount ? [] : [draft.runCount]), draft.windowMonths, draft.initialCashKrw, draft.stepSeconds, draft.maxDecisionCalls];
   if (integers.some((value) => !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return null;
   if (!draft.sourceDataDir || !draft.startAt || !draft.endAt || !draft.seed) return null;
   return {
-    mode: "paper_only" as const, runType: draft.runType, runCount: Number(draft.runCount),
+    mode: "paper_only" as const, runType: draft.runType, ...(omittedCount ? {} : { runCount: Number(draft.runCount) }),
     sourceDataDir: draft.sourceDataDir,
-    universe: { preset: "source_snapshots", market: draft.market },
+    universe: { preset: original?.universe.preset ?? "source_snapshots", market: draft.market },
     window: { mode: draft.windowMode, seed: draft.seed, startAt: draft.startAt, endAt: draft.endAt, windowMonths: Number(draft.windowMonths) },
-    samplingPolicy: { decisionFrequency: draft.decisionFrequency, stepSeconds: Number(draft.stepSeconds), maxDecisionCalls: Number(draft.maxDecisionCalls), maxCodexCallsPerRun: 0 },
+    samplingPolicy: { decisionFrequency: draft.decisionFrequency, stepSeconds: Number(draft.stepSeconds), maxDecisionCalls: Number(draft.maxDecisionCalls), maxCodexCallsPerRun: original?.samplingPolicy.maxCodexCallsPerRun ?? 0 },
     capital: { initialCashKrw: Number(draft.initialCashKrw) },
-    decisionProvider: { mode: "dry_run_fixture" as const, modelId: "fixture", outputSchema: "schemas/virtual-decision.schema.json" as const },
+    decisionProvider: original ? { ...original.decisionProvider } : { mode: "dry_run_fixture" as const, modelId: "fixture", outputSchema: "schemas/virtual-decision.schema.json" as const },
     riskProfile: draft.riskProfile, paperExitPolicy: draft.paperExitPolicy,
-    executionCosts: { feeBps: costs[0] as number, taxBps: costs[1] as number, slippageBps: costs[2] as number },
+    ...(omittedCosts ? {} : { executionCosts: { feeBps: costs[0] as number, taxBps: costs[1] as number, slippageBps: costs[2] as number } }),
     costModel: "standard" as const, benchmarkPolicy: "cash_equal_weight_initial_hold" as const
   };
 }
-export type SimulationCandidate = NonNullable<ReturnType<typeof typedCandidate>>;
+export type SimulationCandidate = PaperSimulationRunConfig;
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type JsonObject = { [key: string]: Json };
 export interface SimulationValidation {
@@ -82,7 +86,7 @@ export interface SimulationValidation {
     window: { mode: string; seed: string; rangeStartAt: string; rangeEndAt: string; windowMonths: number | null; fixedWindow: JsonObject | null; timezoneOffsetMinutes: number };
     samplingPolicy: SimulationCandidate["samplingPolicy"];
     capital: SimulationCandidate["capital"];
-    decisionProvider: { mode: "dry_run_fixture"; modelId: null; outputSchema: null };
+    decisionProvider: { mode: "dry_run_fixture" | "codex_paper_only"; modelId: string | null; outputSchema: string | null };
     riskProfile: string; constraints: JsonObject; riskPolicy: JsonObject; allocationPolicy: JsonObject;
     paperExitPolicy: JsonObject | null; costModel: JsonObject;
     benchmarkPolicy: { mode: "fixed_report_benchmarks"; names: string[]; equalWeightAvailability: string };
@@ -121,8 +125,8 @@ export function readValidation(value: unknown, candidate: SimulationCandidate): 
       (w.mode === "random_month" ? !finite(w.windowMonths) || w.fixedWindow !== null : w.windowMonths !== null ||
         !stringFields(w.fixedWindow, ["seed", "rangeStart", "rangeEnd", "selectedMonth", "localStartDate", "localEndDate", "startAt", "endAt"]) ||
         !numericFields(w.fixedWindow, ["windowMonths", "timezoneOffsetMinutes", "candidateCount", "selectedCandidateIndex"])) ||
-      !isObject(s) || s.decisionFrequency !== candidate.samplingPolicy.decisionFrequency || !finite(s.stepSeconds) || !finite(s.maxDecisionCalls) || s.maxCodexCallsPerRun !== 0 ||
-      !isObject(c) || !finite(c.initialCashKrw) || !isObject(p) || p.mode !== "dry_run_fixture" || p.modelId !== null || p.outputSchema !== null ||
+      !isObject(s) || s.decisionFrequency !== candidate.samplingPolicy.decisionFrequency || !finite(s.stepSeconds) || !finite(s.maxDecisionCalls) || (candidate.decisionProvider.mode === "dry_run_fixture" ? s.maxCodexCallsPerRun !== 0 : !Number.isSafeInteger(s.maxCodexCallsPerRun) || Number(s.maxCodexCallsPerRun) < 1 || Number(s.maxCodexCallsPerRun) > 31) ||
+      !isObject(c) || !finite(c.initialCashKrw) || !isObject(p) || p.mode !== candidate.decisionProvider.mode || (p.mode === "dry_run_fixture" ? p.modelId !== null || p.outputSchema !== null : p.modelId !== candidate.decisionProvider.modelId || p.outputSchema !== candidate.decisionProvider.outputSchema) ||
       !isObject(b) || b.mode !== "fixed_report_benchmarks" || !Array.isArray(b.names) || !b.names.every(n => typeof n === "string") || typeof b.equalWeightAvailability !== "string") return null;
   if (![e.constraints, e.riskPolicy, e.allocationPolicy, e.costModel].every(isObject) || !(e.paperExitPolicy === null || isObject(e.paperExitPolicy))) return null;
   const constraints = e.constraints as Record<string, unknown>, allocation = e.allocationPolicy as Record<string, unknown>, cost = e.costModel as Record<string, unknown>;
@@ -136,7 +140,8 @@ export function readValidation(value: unknown, candidate: SimulationCandidate): 
       !isObject(cost.executionPolicy) || typeof cost.executionPolicy.fillPriceRule !== "string" ||
       typeof cost.executionPolicy.allowFractionalShares !== "boolean" || typeof cost.executionPolicy.rejectStaleLiquidity !== "boolean") return null;
   const executionPolicy = cost.executionPolicy;
-  if (!costKeys.every(key => candidate.executionCosts[key] >= 0 && executionPolicy[key] === candidate.executionCosts[key])) return null;
+  if (!costKeys.every(key => typeof executionPolicy[key] === "number" && executionPolicy[key] >= 0)) return null;
+  if (candidate.executionCosts && !costKeys.every(key => candidate.executionCosts![key] >= 0 && executionPolicy[key] === candidate.executionCosts![key])) return null;
   if (candidate.universe.market === "mixed_global" && !numericFields(allocation.marketTargetExposureRatios, ["KR", "US"])) return null;
   if (candidate.riskProfile === "aggressive_paper" && !numericFields(allocation, ["deploymentRampDays", "maxInitialDeploymentRatio", "maxDailyGrossBuyRatio", "maxInitialOpenPositions", "maxNewPositionsPerDay", "maxConcurrentPositions", "positionSlotRampDays"])) return null;
   if (candidate.paperExitPolicy === "none" ? e.paperExitPolicy !== null :

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type {ReactNode} from 'react';
 import type { RunWorkspacePageData } from "@/lib/runEvidenceReader";
+import { exactSimulationId } from "@/lib/simulationClone";
 import { RunBenchmarkCoverage } from "./RunBenchmarkCoverage";
 import { RunEvidenceWorkspace } from "./RunEvidenceWorkspace";
 import { createRunRefresh, isRunSnapshot, readRunWorkspaceTab, runWorkspaceState, type RunRefreshState } from "@/lib/runWorkspace";
@@ -73,6 +74,7 @@ export function RunWorkspace({ requestedId, initial, provenance }: { requestedId
       <header className={styles.header}>
         <Link href="/dashboard" className={styles.back}>실험 목록</Link>
         <h1>Run Detail</h1>
+        {exactSimulationId(requestedId) && <Link href={`/dashboard/experiments/new?cloneFrom=${encodeURIComponent(requestedId)}`} className={styles.back}>원래 실험 전체 조건 복제</Link>}
         <p>Paper-only run detail · 저장된 paper 실행과 산출물을 읽기 전용으로 확인합니다.</p>
         <dl className={styles.identity}>
           <div><dt>요청 ID</dt><dd>{requestedId}</dd></div>
