@@ -140,3 +140,37 @@ test("exact-ID observations remain independent of missing index, child outcome a
   status = 503; payload = base;
   assert.equal((await view()).status, "offline");
 });
+
+test("direct costs and additive raw draft migration bind effective costs", async () => {
+  const { emptySimulationDraft, typedCandidate, restoreSimulationDraft, readValidation } = await load("lib/simulationCandidate.ts");
+  const draft = { ...emptySimulationDraft, sourceDataDir: "data/synthetic", startAt: "2026-01-01", endAt: "2026-01-02", seed: "cost-unit", initialCashKrw: "500000", feeBps: "12.5", taxBps: "0", slippageBps: ".55" };
+  const candidate = clone(typedCandidate(draft));
+  assert.deepEqual(candidate.executionCosts, { feeBps: 12.5, taxBps: 0, slippageBps: 0.55 });
+  assert.equal(typedCandidate({ ...draft, feeBps: "1e2" }).executionCosts.feeBps, 100);
+  for (const key of ["feeBps", "taxBps", "slippageBps"]) {
+    for (const raw of ["", " ", "-1", "NaN", "Infinity", "1e309", "0x10", "12junk"])
+      assert.equal(typedCandidate({ ...draft, [key]: raw }), null, `${key}:${raw}`);
+  }
+  const legacy = clone(draft);
+  for (const key of ["feeBps", "taxBps", "slippageBps"]) delete legacy[key];
+  legacy.token = "must-not-restore"; legacy.receipt = {};
+  const restored = clone(restoreSimulationDraft(legacy));
+  assert.equal(restored.seed, draft.seed);
+  assert.deepEqual(clone(typedCandidate(restored).executionCosts), { feeBps: 0, taxBps: 0, slippageBps: 0 });
+  assert.equal(Object.hasOwn(restored, "token"), false);
+  assert.equal(Object.hasOwn(restored, "receipt"), false);
+  assert.equal(restoreSimulationDraft({ ...legacy, feeBps: "1" }), null);
+  assert.equal(restoreSimulationDraft({ ...draft, taxBps: 0 }), null);
+  assert.equal(restoreSimulationDraft({ ...draft, taxBps: "" }).taxBps, "");
+  const response = JSON.parse(await readFile(new URL("../../../docs/plans/experiment-workspace-redesign/validation-response.example.json", import.meta.url), "utf8"));
+  response.requestedConfig = candidate;
+  response.effectiveConfig.sourceDataDir = candidate.sourceDataDir;
+  response.effectiveConfig.window.seed = candidate.window.seed;
+  response.effectiveConfig.paperExitPolicy = null;
+  Object.assign(response.effectiveConfig.costModel.executionPolicy, candidate.executionCosts);
+  assert.ok(readValidation(response, candidate));
+  for (const key of ["feeBps", "taxBps", "slippageBps"]) {
+    const bad = clone(response); bad.effectiveConfig.costModel.executionPolicy[key] += 1;
+    assert.equal(readValidation(bad, candidate), null, `reject ignored ${key}`);
+  }
+});
