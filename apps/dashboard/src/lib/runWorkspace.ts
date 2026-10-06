@@ -1,4 +1,4 @@
-import { isRunEvidence } from './runEvidence';
+import { isRunEvidence, isRunReportContext } from './runEvidence';
 import type { RunWorkspacePageData } from './runEvidenceReader';
 import type { RunDetailPageData, RunDetailView, ViewModelResult } from "./dashboardViewModels";
 
@@ -34,6 +34,7 @@ export function isRunSnapshot(value: unknown, requestedId: string): value is Run
   if (typeof page.apiBaseLabel !== "string" || typeof page.fetchedAt !== "string" || !Number.isFinite(Date.parse(page.fetchedAt))) return false;
   const result = page.runDetail;
   if (!result || typeof result.endpoint !== "string" || typeof result.fetchedAt !== "string" || !Number.isFinite(Date.parse(result.fetchedAt))) return false;
+  if (page.reportContext !== undefined && !isRunReportContext(page.reportContext, result.status === "ok" ? result.data?.run?.runId ?? null : null)) return false;
   if (page.evidence !== undefined && !isRunEvidence(page.evidence, result.status === "ok" ? result.data?.run?.runId ?? null : null)) return false;
   if (result.status === "offline" || result.status === "invalid") return result.data === null && typeof result.message === "string";
   if (result.status !== "ok") return false;
