@@ -40,6 +40,20 @@ const server=createServer((request,response)=>{
   if(replacementFailures.get(id)==='offline')return send(response,503,{error:'synthetic_replacement_offline'});
   if(id==='fixture_offline')return send(response,503,{error:'fixture_offline'});
   const data=payload(id);
+  if(id.startsWith('fixture_benchmark_')) {
+    const raw=data.latestRunArtifacts;
+    raw.report={title:'Synthetic benchmark report',mode:'paper_only',simulatedRange:{startAt:start,endAt:end,tickCount:2},benchmarks:{
+      cashOnly:{initialNetWorthKrw:500000,finalNetWorthKrw:500000,totalReturnRatio:0},
+      equalWeightBuyAndHold:{initialNetWorthKrw:500000,finalNetWorthKrw:510000,totalReturnRatio:0.02},
+      initialPortfolioBuyAndHold:{initialNetWorthKrw:500000,finalNetWorthKrw:490000,totalReturnRatio:-0.02}}};
+    raw.packetsStatus='ok';raw.packetCount=2;raw.totalPacketCount=2;raw.packetCorruptLineCount=0;
+    raw.packets=[{packetId:'fixture_packet_kr',mode:'paper_only',generatedAt:start,expiresAt:end,candidates:[{market:'KR',symbol:'005930',lastPriceKrw:70000}]},{packetId:'fixture_packet_us',mode:'paper_only',generatedAt:start,expiresAt:end,candidates:[{market:'US',symbol:'AAPL',lastPriceKrw:70000}]}];
+    if(id.endsWith('_unavailable'))raw.report.benchmarks.equalWeightBuyAndHold=null;
+    if(id.endsWith('_missing')){delete raw.report.benchmarks.cashOnly;delete raw.report.simulatedRange;raw.packetsStatus='missing';raw.packets=[];raw.packetCount=0;raw.totalPacketCount=0;}
+    if(id.endsWith('_invalid'))raw.report.benchmarks.initialPortfolioBuyAndHold.totalReturnRatio='0.02';
+    if(id.endsWith('_mismatch'))raw.runId='other-child';
+    if(id.endsWith('_degraded')){raw.packetsStatus='degraded';raw.totalPacketCount=5;raw.packetCorruptLineCount=1;}
+  }
   if(data.activeRun !== null){data.runs=[];data.selectedRun={...data.activeRun};}
   if(id.startsWith('fixture_source_bad_')||id.startsWith('fixture_source_mixed_')){
     const status=id.includes('_running_')?'running':id.includes('_queued_')?'queued':'active';

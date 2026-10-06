@@ -129,3 +129,65 @@ export function isRunEvidence(value: unknown, selectedChildId: string | null): v
     return b.rows.every(r=>object(r) && r.kind===b.kind && id(r.id) && id(r.packetId) && (r.at===null||time(r.at)) && typeof r.duplicate==='boolean' && object(r.details) && (()=>{const parsed=project(r.kind as EvidenceKind,r.details);return parsed?.id===r.id && parsed.packetId===r.packetId && parsed.at===r.at && JSON.stringify(parsed.details)===JSON.stringify(r.details);})());
   });
 }
+
+export const BENCHMARK_NAMES = ['cashOnly', 'equalWeightBuyAndHold', 'initialPortfolioBuyAndHold'] as const;
+export type BenchmarkName = typeof BENCHMARK_NAMES[number];
+export type BenchmarkMetric = { initialNetWorthKrw: number; finalNetWorthKrw: number; totalReturnRatio: number | null };
+export type BenchmarkDisplay = { name: BenchmarkName; status: 'available'; metric: BenchmarkMetric } | { name: BenchmarkName; status: 'missing' | 'unavailable' | 'invalid'; metric: null };
+export interface RunReportContext {
+  runId: string | null;
+  source: 'bound' | 'missing' | 'mismatch' | 'blocked' | 'invalid';
+  reportStatus: EvidenceReadStatus;
+  range: { startAt: string; endAt: string; tickCount: number } | null;
+  benchmarks: BenchmarkDisplay[];
+}
+const reportTime = (value: unknown): value is string => typeof value === 'string' && value.length <= 64 && time(value);
+const finiteMetric = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const benchmarkMetric = (value: unknown): BenchmarkMetric | null => object(value) &&
+  finiteMetric(value.initialNetWorthKrw) && finiteMetric(value.finalNetWorthKrw) &&
+  (value.totalReturnRatio === null || finiteMetric(value.totalReturnRatio))
+  ? { initialNetWorthKrw: value.initialNetWorthKrw, finalNetWorthKrw: value.finalNetWorthKrw, totalReturnRatio: value.totalReturnRatio } : null;
+
+/** Same selected-child artifact read as evidence. No extra read or calculation. */
+export function buildRunReportContext(raw: unknown, selectedChildId: string | null): RunReportContext {
+  const empty = (source: RunReportContext['source'], reportStatus: EvidenceReadStatus): RunReportContext => ({runId:selectedChildId,source,reportStatus,range:null,benchmarks:BENCHMARK_NAMES.map(name=>({name,status:'unavailable',metric:null}))});
+  if (!selectedChildId || raw === null || raw === undefined) return empty('missing','missing');
+  if (!object(raw) || !id(selectedChildId)) return empty('invalid','invalid');
+  if (raw.runId !== selectedChildId) return empty('mismatch','invalid');
+  if (raw.status === 'blocked' || raw.status === 'invalid') return empty(raw.status,raw.status);
+  if (raw.status !== 'ok' && raw.status !== 'missing') return empty('invalid','invalid');
+  if (!readStatus(raw.reportStatus)) return empty('invalid','invalid');
+  if (raw.status==='missing' && raw.reportStatus==='ok') return empty('invalid','invalid');
+  const unavailable = empty('bound',raw.reportStatus);
+  if (raw.reportStatus !== 'ok') return unavailable;
+  const report = raw.report;
+  if (!object(report) || report.mode !== 'paper_only' || (Object.hasOwn(report,'runId') && report.runId !== selectedChildId)) return empty('invalid','invalid');
+  const range = report.simulatedRange;
+  if (object(range) && reportTime(range.startAt) && reportTime(range.endAt) && Date.parse(range.startAt)<=Date.parse(range.endAt) && count(range.tickCount)!==null)
+    unavailable.range = {startAt:range.startAt,endAt:range.endAt,tickCount:range.tickCount as number};
+  const benchmarks = object(report.benchmarks) ? report.benchmarks : null;
+  unavailable.benchmarks = BENCHMARK_NAMES.map(name=>{
+    if (!benchmarks || !Object.hasOwn(benchmarks,name)) return {name,status:'missing',metric:null};
+    if (benchmarks[name] === null) return {name,status:'unavailable',metric:null};
+    const metric = benchmarkMetric(benchmarks[name]);
+    return metric ? {name,status:'available',metric} : {name,status:'invalid',metric:null};
+  });
+  return unavailable;
+}
+export function isRunReportContext(value: unknown, selectedChildId: string | null): value is RunReportContext {
+  if (!object(value) || value.runId!==selectedChildId || (value.source==='bound'&&!id(selectedChildId)) || !member(value.source,['bound','missing','mismatch','blocked','invalid']) || !readStatus(value.reportStatus) || !Array.isArray(value.benchmarks) || value.benchmarks.length!==3) return false;
+  if (value.range!==null && (!object(value.range) || !reportTime(value.range.startAt) || !reportTime(value.range.endAt) || Date.parse(value.range.startAt)>Date.parse(value.range.endAt) || count(value.range.tickCount)===null)) return false;
+  if ((value.source!=='bound' || value.reportStatus!=='ok') && value.range!==null) return false;
+  return value.benchmarks.every((row,index)=>{
+    if (!object(row) || row.name!==BENCHMARK_NAMES[index]) return false;
+    if (row.status==='available') return value.source==='bound' && value.reportStatus==='ok' && benchmarkMetric(row.metric)!==null && object(row.metric) && Object.keys(row.metric).length===3;
+    return member(row.status,['missing','unavailable','invalid']) && row.metric===null && ((value.source==='bound' && value.reportStatus==='ok') || row.status==='unavailable');
+  });
+}
+export function readBenchmarkSelection(value: string | null): BenchmarkName[] | null {
+  if (value===null) return [...BENCHMARK_NAMES];
+  if (value==='none') return [];
+  const parts=value.split(',');
+  if (parts.length>3 || new Set(parts).size!==parts.length || !parts.every(part=>BENCHMARK_NAMES.includes(part as BenchmarkName))) return null;
+  return BENCHMARK_NAMES.filter(name=>parts.includes(name));
+}

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type {ReactNode} from 'react';
 import type { RunWorkspacePageData } from "@/lib/runEvidenceReader";
+import { RunBenchmarkCoverage } from "./RunBenchmarkCoverage";
 import { RunEvidenceWorkspace } from "./RunEvidenceWorkspace";
 import { createRunRefresh, isRunSnapshot, readRunWorkspaceTab, runWorkspaceState, type RunRefreshState } from "@/lib/runWorkspace";
 import { WorkspaceNavigation } from "../../../ExperimentList";
@@ -104,6 +105,7 @@ export function RunWorkspace({ requestedId, initial, provenance }: { requestedId
       {data && (tab === "summary" || tab === "record") && (data.run ? <>
         {tab === "summary" ? <>
           <RunSummary run={data.run} />
+          <RunBenchmarkCoverage context={display.reportContext} evidence={display.evidence} selectedChildId={data.run.runId} />
           <ArtifactStatusGrid artifacts={data.artifacts} run={data.run} />
           <ProgressPanel artifacts={data.artifacts} />
           <EvidencePanel artifacts={data.artifacts} />
