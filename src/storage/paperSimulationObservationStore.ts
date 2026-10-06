@@ -1,3 +1,4 @@
+import { persistPaperSimulationRequest, type CanonicalRequestInput } from "./paperSimulationRequestStore.js";
 import type { Stats } from "node:fs";
 import { lstat, mkdir, open } from "node:fs/promises";
 import { dirname, join, parse, resolve } from "node:path";
@@ -23,7 +24,7 @@ export function paperSimulationObservationPath(storageBaseDir: string, simulatio
 /** Exclusive directory reservation is the cross-process same-ID boundary, not a scheduler.
  * A failed admission deliberately leaves its directory/log barrier; never delete or reuse it.
  */
-export async function acceptPaperSimulation(storageBaseDir: string, simulationRunId: string, acceptedAt: string): Promise<void> {
+export async function acceptPaperSimulation(storageBaseDir: string, simulationRunId: string, acceptedAt: string, canonicalInput?: CanonicalRequestInput): Promise<void> {
   const event = paperSimulationObservationEventSchema.parse({
     schemaVersion: "paper_simulation_observation.v1", event: "accepted",
     simulationRunId, batchId: simulationRunId, acceptedAt
@@ -40,7 +41,10 @@ export async function acceptPaperSimulation(storageBaseDir: string, simulationRu
   }
   // appendDurably syncs outputDir; reservation also needs its parent's entry persisted.
   await syncDirectory(dirname(outputDir));
-  await new JsonlStore(path, paperSimulationObservationEventSchema, "paper simulation observation").appendDurably(event);
+  const canonicalRequestHash = canonicalInput === undefined ? undefined
+    : await persistPaperSimulationRequest(storageBaseDir, simulationRunId, acceptedAt, canonicalInput);
+  const boundEvent = canonicalRequestHash === undefined ? event : { ...event, canonicalRequestHash };
+  await new JsonlStore(path, paperSimulationObservationEventSchema, "paper simulation observation").appendDurably(boundEvent);
 }
 
 export async function recordPaperSimulationRunnerFailure(

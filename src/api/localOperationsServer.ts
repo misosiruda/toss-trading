@@ -14,6 +14,7 @@ import {
 import { writeJson, writeReplayProvenanceJson } from "./localOperationsResponse.js";
 import { REPLAY_PROVENANCE_ROUTE, REPLAY_PROVENANCE_BUDGET_HEADER, readReplayProvenanceRequest } from "./replayProvenanceReader.js";
 import { emptyReplayProvenance } from "./replayProvenanceProjection.js";
+import { PAPER_SIMULATION_REQUEST_ROUTE, readPaperSimulationRequestQuery } from "./paperSimulationRequest.js";
 import { routeRequest } from "./localOperationsRouting.js";
 import {
   isPaperPolicyValidationApiRoutePath,
@@ -104,6 +105,11 @@ async function handleRequest(
 ): Promise<void> {
   try {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === PAPER_SIMULATION_REQUEST_ROUTE) {
+      if (request.method !== "GET") { writeJson(response, 405, { error: "method_not_allowed", readOnly: true }); return; }
+      const result = await readPaperSimulationRequestQuery(url, options.storageBaseDir);
+      writeJson(response, result.statusCode, result.payload); return;
+    }
     if (url.pathname === REPLAY_PROVENANCE_ROUTE) {
       if (request.method !== "GET") { writeJson(response,405,{error:"method_not_allowed",readOnly:true});return; }
       try {
