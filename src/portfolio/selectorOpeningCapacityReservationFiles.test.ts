@@ -328,6 +328,86 @@ test("selector append session reuses actual source leases and expires after call
   });
 });
 
+test("selector append session drains an unawaited write and rejects overlap", async (context) => {
+  await fixture(context, async ({ dir, record }) => {
+    const repo = new Repository(dir, { lockTimeoutMs: 70, lockRetryDelayMs: 3 });
+    let pending!: Promise<unknown>;
+    await new BucketSelectionRequestFileRepository(dir).withDurableVerifiedHistory(async (requests) => {
+      await new PortfolioSizingSnapshotFileRepository(dir).withDurableVerifiedHistory(async (snapshots) => {
+        await new CandidateSizingInputFileRepository(dir).withDurableVerifiedHistoryFromSources(requests, snapshots, async (inputs) => {
+          await new CandidateAssignmentFileRepository(dir).withDurableVerifiedHistoryFromSources(inputs, requests, snapshots, async (assignments) => {
+            await repo.withAppendSessionFromSources(assignments, inputs, requests, snapshots, async (session) => {
+              pending = session.append(record);
+              await assert.rejects(session.append(record), /in-flight write/);
+            });
+          });
+        });
+      });
+    });
+    await pending;
+    assert.equal((await repo.readAll()).length, 1);
+  });
+});
+
+for (const awaited of [false, true]) for (const appendFails of [false, true]) for (const consumerFails of [false, true]) {
+  test(`selector cleanup preserves delayed errors awaited=${awaited} append=${appendFails} consumer=${consumerFails}`, async context => {
+    await fixture(context, async ({ dir, record }) => {
+      const repo = new Repository(dir), originalOpen = fs.open;
+      const consumerError = new Error("selector consumer sentinel"), appendError = new Error("selector delayed append sentinel");
+      let hit!: () => void, release!: () => void;
+      const started = new Promise<void>(resolve => { hit = resolve; });
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const mocked = context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+        const handle = await originalOpen(...args);
+        if (args[0] === paths(dir).pendingPath && args[1] === "wx") {
+          const sync = handle.sync;
+          context.mock.method(handle, "sync", async () => {
+            hit(); await gate;
+            if (appendFails) throw appendError;
+            await sync.call(handle);
+          });
+        }
+        return handle;
+      });
+      syncBuiltinESMExports();
+      let pending!: Promise<unknown>, failure: unknown;
+      try {
+        try {
+          await new BucketSelectionRequestFileRepository(dir).withDurableVerifiedHistory(requests =>
+            new PortfolioSizingSnapshotFileRepository(dir).withDurableVerifiedHistory(snapshots =>
+              new CandidateSizingInputFileRepository(dir).withDurableVerifiedHistoryFromSources(requests, snapshots, inputs =>
+                new CandidateAssignmentFileRepository(dir).withDurableVerifiedHistoryFromSources(inputs, requests, snapshots, assignments =>
+                  repo.withAppendSessionFromSources(assignments, inputs, requests, snapshots, async session => {
+                    pending = session.append(record); void pending.catch(() => {});
+                    await started; setTimeout(release, 10);
+                    if (awaited) await pending.catch(() => {});
+                    if (consumerFails) throw consumerError;
+                  })))));
+        } catch (error) { failure = error; }
+        await pending.catch(() => {});
+        function contains(error: unknown, expected: unknown): boolean {
+          return error === expected || (error instanceof Error &&
+            ((error.cause !== undefined && contains(error.cause, expected)) ||
+             (error instanceof AggregateError && error.errors.some(item => contains(item, expected)))));
+        }
+        if (consumerFails) assert.ok(contains(failure, consumerError), "cleanup must preserve the consumer sentinel");
+        if (appendFails) assert.ok(contains(failure, appendError), "cleanup must preserve the delayed append sentinel");
+        if (consumerFails && !appendFails) assert.equal(failure, consumerError);
+        if (!consumerFails && !appendFails) assert.equal(failure, undefined);
+        if (appendFails) {
+          const barrier = await readFile(paths(dir).pendingPath);
+          await assert.rejects(repo.readAll(), /pending/);
+          assert.deepEqual(await readFile(paths(dir).pendingPath), barrier);
+        } else {
+          assert.equal((await repo.readAll()).length, 1);
+          await assert.rejects(readFile(paths(dir).pendingPath), { code: "ENOENT" });
+        }
+        for (const lock of locks(dir)) await assert.rejects(readFile(lock), { code: "ENOENT" });
+      } finally { release(); mocked.mock.restore(); syncBuiltinESMExports(); }
+    });
+  });
+}
+
 async function fixture(context: TestContext, operation: (input: { dir: string; record: SelectorOpeningCapacityReservationRecord;
   request: Awaited<ReturnType<BucketSelectionRequestFileRepository["resolveById"]>> }) => Promise<void>) {
   await storedFixture(context, { count: 0, storeSelectorIssuance: false }, async (state) => {
