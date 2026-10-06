@@ -261,3 +261,23 @@ test("byte-identical canonical replacement during a read is unavailable", async 
   try { assert.equal((await readPaperSimulationRequest(storage, id)).status, "unavailable"); assert.equal(replaced, true); }
   finally { mocked.mock.restore(); syncBuiltinESMExports(); }
 });
+
+test("HTTP exact canonical DTO preserves a valid UUID that resembles an account number", async t => {
+  const { root, storage } = await fixture(t);
+  const batchRoot = dirname(dirname(paperSimulationRequestPath(storage, id)));
+  await fs.mkdir(batchRoot, { recursive: true });
+  const uuid = "aaaaaaaa-1234-4567-8123-abcdefabcdef";
+  await fs.writeFile(join(batchRoot, PAPER_SIMULATION_RUNTIME_FILE), JSON.stringify({ schemaVersion: "paper_simulation_runtime_namespace.v1", sourceRuntimeId: uuid }));
+  await acceptPaperSimulation(storage, id, time, { requestedConfig: simulationConfig() });
+  const direct = await readPaperSimulationRequest(storage, id);
+  assert.equal(direct.status, "available");
+  if (direct.status !== "available") return;
+  assert.equal(direct.sourceRuntime.sourceRuntimeId, uuid);
+  const server = await simulationServer({ storageBaseDir: storage, env: {} }); t.after(server.close);
+  const before = await snapshot(root);
+  for (let count = 0; count < 3; count++) {
+    const response = await fetch(server.baseUrl + "/paper/simulations/request?simulationRunId=" + id);
+    assert.equal(response.status, 200); assert.deepEqual(await response.json(), direct);
+  }
+  assert.deepEqual(await snapshot(root), before);
+});

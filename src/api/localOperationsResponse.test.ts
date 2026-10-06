@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {ServerResponse} from "node:http";
-import {writeJson,writeReplayProvenanceJson} from "./localOperationsResponse.js";
+import type { PaperSimulationRequestRead } from "./paperSimulationRequest.js";
+import {writeJson,writeReplayProvenanceJson,writePaperSimulationRequestJson} from "./localOperationsResponse.js";
 import {emptyReplayProvenance,type ReplayProvenance} from "./replayProvenanceProjection.js";
 function responseCapture(){
   let body="",status=0,headers:unknown;
@@ -34,4 +35,41 @@ test("provenance identity exception retains account and token masking in every D
       }
     }
   }
+});
+
+function canonicalResponseFixture(): PaperSimulationRequestRead {
+  return {
+    mode: "paper_only", readOnly: true, status: "available", schemaVersion: "paper_simulation_canonical_request.v1",
+    simulationRunId: "paper_sim_20261006120000000_fixture", batchId: "paper_sim_20261006120000000_fixture", acceptedAt: "2026-10-06T12:00:00.000Z",
+    sourceRuntime: { schemaVersion: "paper_simulation_source_runtime.v1", sourceRuntimeId: "aaaaaaaa-1234-4567-8123-abcdefabcdef", nodeVersion: "v24.19.0", executionModelVersion: "execution_simulator.v4" },
+    canonicalRequestHash: "sha256:" + "a".repeat(64), requestedConfig: { modelId: "abcdefghijklmnop.abcdefgh.ijklmnop", accountNumber: "123-456-789" },
+    accountNumber: "123-456-789", token: "private", nested: { sourceRuntimeId: "aaaaaaaa-1234-4567-8123-abcdefabcdef", accountText: "123-456-789", jwtText: "abcdefghijklmnop.abcdefgh.ijklmnop" }
+  } as unknown as PaperSimulationRequestRead;
+}
+test("canonical response preserves only its exact valid runtime UUID while generic, account and JWT masking remain", () => {
+  const payload = canonicalResponseFixture(); const c = responseCapture();
+  writePaperSimulationRequestJson(c.response, 200, payload); const read = c.read();
+  assert.equal(read.body.sourceRuntime.sourceRuntimeId, "aaaaaaaa-1234-4567-8123-abcdefabcdef");
+  assert.equal(read.body.canonicalRequestHash, "sha256:" + "a".repeat(64));
+  assert.equal(read.body.nested.sourceRuntimeId, "aaaaaaaa-****-****-****-abcdefabcdef");
+  assert.equal(read.body.accountNumber, "****"); assert.equal(read.body.token, "****");
+  assert.equal(read.body.nested.accountText, "****"); assert.equal(read.body.nested.jwtText, "***.***.***");
+  assert.equal(read.body.requestedConfig.modelId, "***.***.***"); assert.equal(read.body.requestedConfig.accountNumber, "****");
+  const generic = responseCapture(); writeJson(generic.response, 200, payload);
+  assert.equal(generic.read().body.sourceRuntime.sourceRuntimeId, "aaaaaaaa-****-****-****-abcdefabcdef");
+});
+test("malformed canonical DTOs and non-UUID credentials never receive identity preservation", () => {
+  const fixture = canonicalResponseFixture();
+  const changes = [ { mode: "live" }, { readOnly: false }, { status: "unavailable" }, { schemaVersion: "future" },
+    { sourceRuntime: { ...(fixture.status === "available" ? fixture.sourceRuntime : {}), schemaVersion: "future" } },
+    { sourceRuntime: { ...(fixture.status === "available" ? fixture.sourceRuntime : {}), sourceRuntimeId: "123-456-789" } },
+    { sourceRuntime: { ...(fixture.status === "available" ? fixture.sourceRuntime : {}), sourceRuntimeId: "abcdefghijklmnop.abcdefgh.ijklmnop" } } ];
+  for (const change of changes) {
+    const payload = { ...fixture, ...change } as PaperSimulationRequestRead; const c = responseCapture();
+    writePaperSimulationRequestJson(c.response, 200, payload);
+    const original = (payload as { sourceRuntime: { sourceRuntimeId: string } }).sourceRuntime.sourceRuntimeId;
+    assert.notEqual(c.read().body.sourceRuntime.sourceRuntimeId, original);
+  }
+  const c = responseCapture(); writePaperSimulationRequestJson(c.response, 400, fixture);
+  assert.equal(c.read().body.sourceRuntime.sourceRuntimeId, "aaaaaaaa-****-****-****-abcdefabcdef");
 });

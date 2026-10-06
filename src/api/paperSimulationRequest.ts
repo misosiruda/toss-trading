@@ -8,3 +8,5 @@ export async function readPaperSimulationRequestQuery(url: URL, storageBaseDir: 
   }
   return { statusCode: 200, payload: await readPaperSimulationRequest(storageBaseDir, ids[0]!) };
 }
+
+export type { PaperSimulationRequestRead } from "../storage/paperSimulationRequestStore.js";

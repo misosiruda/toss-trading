@@ -25,3 +25,8 @@ GET 전용 `/paper/simulations/request?simulationRunId=<exact batch ID>`는 type
 합성 fixture로 HTTP create→durable request→runner1, original omission/decimal, GET side effects0, canonical fsync 선후와 failure503/runner0, legacy/masked/cross-runtime/ID/hash/unknown/version/oversized/torn/UTF8/barrier/hardlink/budget negatives를 검증한다. 기존 관측 테스트의 디렉터리 구성 기대값만 canonical 파일 추가에 맞춘다. Backend 변경이므로 이전 Linux 전체 통과를 새 head의 통과로 재사용하지 않는다. Draft의 고정 head에 대해 독립 Linux full 및 보안 검토가 필요하다.
 
 기존 soft-navigation 간헐 정체의 원인 미확정 상태와 별도 late202 수정은 이 범위와 분리한다. PR814의 benchmark 표시 query가 다른 detail 탭 이동 후 기본3개로 초기화되는 UX는 후속 대상이며, 표시 상태를 business requestedConfig에 섞지 않는다.
+## Exact runtime UUID의 HTTP 응답 보존
+
+독립 검토에서 정상 UUID `aaaaaaaa-1234-4567-8123-abcdefabcdef`의 숫자 구간이 기존 계좌 패턴에 맞아 generic HTTP writer가 UUID를 변경하면서 canonical hash는 유지하는 P2를 재현했다. 저장·direct read는 정상인데 GET DTO만 identity 계약을 깨는 응답 경계 결함이다.
+
+canonical GET 전용 writer는 먼저 기존 maskObject를 적용한 후200 available DTO의 mode/readOnly/record version/runtime version과 UUID 형식을 검증하여 정확한 `sourceRuntime.sourceRuntimeId` 필드만 원본으로 보존한다. 일반 writeJson과 계좌·JWT·token·nested 동명 필드 마스킹은 그대로 유지한다. 정상 UUID의 실제 GET 반복 응답과 direct read 전체 DTO 일치를 검증하며 malformed DTO·잘못된 UUID·다른 status code에는 보존 예외를 적용하지 않는다.
