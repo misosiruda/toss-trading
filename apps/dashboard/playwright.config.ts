@@ -24,6 +24,7 @@ export default defineConfig({
         DASHBOARD_OPS_API_BASE_URL: "",
         DASHBOARD_MUTATION_TOKEN: "playwright-dashboard-mutation-token",
         OPS_API_BASE_URL: "http://127.0.0.1:8789",
+        DASHBOARD_LEGACY_ORIGIN: "http://127.0.0.1:8789",
       },
       url: "http://127.0.0.1:3002/dashboard",
       reuseExistingServer: !process.env.CI,

@@ -1,3 +1,5 @@
+> 현재 상태(2026-10-06): main66f7b3ca에서 역할 index·origin 검증 및 목록 native가 병합됐다. 아래의 미존재/merge hold 문장은 명시된 옛 baseline audit 이력이며 현재 보류 지시가 아니다. 최신 경로 대조와 남은 결정은 [현재 원장](implementation-ledger-20261006.md)을 따른다.
+
 > Historical preimplementation audit of initial PR807 baseline `764829e8b143c2ae327fc0e52e1ebc01c85d4da3`. Statements below that data/settings routes or the origin parser do not exist describe that earlier source.
 
 # UX07 이전 및 UX02c 확장 범위 audit

@@ -1,3 +1,5 @@
+> 현재 상태(2026-10-06): PR803/806/807은 병합됐고 main66f7b3ca에 반영됐다. 아래 본문 정정 대기·merge hold·로컬 후보 문구는 이전 검토 이력이다. 전체 입력 저장·clone 단위와 UX02c 사용자 결정은 아직 남으며 [현재 원장](implementation-ledger-20261006.md)에 구분한다.
+
 # 저장 조건 조회의 상세·비교 화면 연결
 
 별도 frontend 후보이며 provenance API `97ed6a13`의 조회 DTO를 type-only로 참조한다. backend reviewer 수정은 API branch에서 처리하고 화면 adapter `runProvenance.ts`에서 독립적으로 반영한다. 원격 API/compare branch는 변경하지 않는다.

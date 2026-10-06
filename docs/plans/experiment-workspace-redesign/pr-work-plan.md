@@ -3,7 +3,7 @@
 기준: 2026-10-02 / `main d954915` · 구현 전 범위 고정
 
 문서→실행 계약→UI 연결을 작은 PR로 진행한다. 각 단계는 목적·비범위·완료 조건을
-확정한 뒤 구현하며 범위가 커지면 새 기능 PR로 분리한다. 기존 #788은 계속 보류한다.
+확정한 뒤 구현하며 범위가 커지면 새 기능 PR로 분리한다. 이 문장의 #788 보류는 설계 시작 시점의 이력이다. 현재 #788은 병합됐으며 최신 상태는 아래 진행 증거와 [현재 원장](implementation-ledger-20261006.md)을 따른다.
 
 이번 작업의 최신 사용자 지시(2026-10-02)는 branch 보존과 자동 review 사용, 수동 Codex review/Actions
 중복 실행 금지다. 이 절차상 차이는 기존 maintenance runbook의 branch cleanup·수동 review 요청보다
@@ -137,9 +137,13 @@ manifest 선택 진단 없는 응답에 최신 label 금지, legacy route 보존
 | UX-01 | 구현·병합 | [PR #801](https://github.com/misosiruda/toss-trading/pull/801), main `8a33ef4`, tree `127b490` (검증 head `8a56807`과 동일); 목록 activeRun/source 분리·기존 경로 보존·mobile focus 회귀 포함. Linux 전체 4,462 tests 중 4,429 pass/33 platform skip/0 fail; 브라우저 174 pass, main smoke 39 pass |
 | UX-02a | 구현·병합 | [PR #797](https://github.com/misosiruda/toss-trading/pull/797), main `492afe9`; 전체 4,381 tests 중 4,348 pass/33 skip/0 fail |
 | UX-02b | 구현·병합 | [PR #798](https://github.com/misosiruda/toss-trading/pull/798), main `9235ab7`; 전체 4,462 tests 중 4,429 pass/33 skip/0 fail |
-| UX-03 | 이 PR의 구현 범위 | [구현·검증 경계](ux03-implementation.md); 최종 head 검증 및 자동 review 결과는 PR 기록에서 확인 |
-| UX-04 | 별도 후보 구현 · 병합 전 | [구현 계약](ux04-implementation.md); #802 위 stacked 후보이며 #802의 navigation merge hold를 해소하지 않음. 현재 검증/PR 상태는 해당 PR에서 확인 |
-| UX-05 | 로컬 구현·검증 후보 | [구현 기록](ux05-implementation.md); UX-04 local379fae 위 별도 branch. 원격 PR·독립 review·root full 통과를 뜻하지 않으며 기존 merge hold 유지 |
-| UX-02c, UX-06~07 | 미구현 | PR별 완료 조건을 통과한 뒤 갱신 |
+| UX-03 | 구현·병합; 원래 soft-navigation 원인 규명과 구분 | [PR #802](https://github.com/misosiruda/toss-trading/pull/802), merge a9a40ae7; native 생성 설계 이력과 현재 목록 native는 별도 범위 |
+| UX-04 | 구현·병합 | [PR #803](https://github.com/misosiruda/toss-trading/pull/803), merge96d8995b; 상세 요약·진행·기록의 읽기 경계 |
+| UX-05 | bounded evidence 구현·병합 | [PR #804](https://github.com/misosiruda/toss-trading/pull/804), merge66b66bec; 저장된 explicit reference와 exact source를 대조하며 전체 payload/시계열을 발명하지 않음 |
+| UX-06 | 관측 MVP 병합; 전체 카드 미완료 | [PR #805](https://github.com/misosiruda/toss-trading/pull/805)·[806](https://github.com/misosiruda/toss-trading/pull/806)·[807](https://github.com/misosiruda/toss-trading/pull/807); exact pair·부분 provenance, comparability/clone unavailable. 후보1–3·complete input/version·복제 새 ID는 남음 |
+| UX-07 | 역할 index·호환 안내 및 목록 native 병합; 전체 이전표 검증은 별도 | [PR #808](https://github.com/misosiruda/toss-trading/pull/808), mergef694c3cf·[809](https://github.com/misosiruda/toss-trading/pull/809), merged main66f7b3ca; legacy 전체 payload 이관을 뜻하지 않음 |
+| UX-02c | 미지원 guard 유지; 사용자 결정 대기 | 비용 수치/단위, cash_only 의미, universe membership/시점/누락 정책이 정본에 없음. 결정 없이 guard를 해제하지 않음 |
 
 설계 시안을 구현 완료로, accepted를 실행 완료로, review 대기를 승인으로 표시하지 않는다.
+
+현재 확인 기준: main66f7b3ca6a536f60a67459772d6939b2ca9f0e17 / tree3cbe1bd679c1cdb3323c0537d48d681fe5e0ec62. 자동 CodeReview는808/809에서 사용량 한도로 미실행이며 통과로 표시하지 않는다. 최초 Ready Security는 각각 원래 head에서 Completed/finding0. 실제 Home browser와 Cloud EPERM 차단을 구분한다. 전체 ROADMAP_COMPLETE는 아니다.
