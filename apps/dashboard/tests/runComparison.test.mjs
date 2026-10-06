@@ -5,8 +5,9 @@ import {stripTypeScriptTypes} from 'node:module';
 import {evidencePayload} from './run-evidence/fixtures.mjs';
 const moduleUrl=async path=>'data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(await readFile(new URL(path,import.meta.url),'utf8')));
 const vmUrl=await moduleUrl('../src/lib/dashboardViewModels.ts'), evidenceUrl=await moduleUrl('../src/lib/runEvidence.ts');
+const childLookupUrl='data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(await readFile(new URL('../src/lib/childLookupId.ts',import.meta.url),'utf8')));
 let source=await readFile(new URL('../src/lib/runComparison.ts',import.meta.url),'utf8');
-source=source.replace("'./dashboardViewModels'",JSON.stringify(vmUrl)).replace("'./runEvidence'",JSON.stringify(evidenceUrl));
+source=source.replace("'./childLookupId'",JSON.stringify(childLookupUrl)).replace("'./dashboardViewModels'",JSON.stringify(vmUrl)).replace("'./runEvidence'",JSON.stringify(evidenceUrl));
 const {readComparisonSelection,projectComparisonObservation,readComparisonObservation,readComparisonPage}=await import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(source)));
 const at='2026-10-04T01:00:00.000Z';
 const project=(value)=>projectComparisonObservation(value,'child',at);
@@ -115,4 +116,8 @@ test('bound terminal accepts matching legacy raw batch labels and rejects contra
   const raw=evidencePayload('child');raw.batchId='legacy raw batch ID';raw.runs[0].batchId=raw.batchId;assert.equal(project(raw).status,'available');
   raw.runs[0].batchId='other batch';assert.equal(project(raw).status,'invalid');
   raw.batchId={private:'bad'};assert.equal(project(raw).status,'invalid');
+});
+test('comparison selection accepts current and legacy hyphen children with the shared guard',()=>{
+  for(const candidate of ['--_run_000000_202601','--_run_000000_2026-01'])assert.equal(readComparisonSelection({baseline:'-synthetic_run_000000_2026-01',candidate}).status,'valid');
+  for(const candidate of ['../escape','a%2Fescape','a'+String.fromCharCode(10),'a'.repeat(257),''])assert.equal(readComparisonSelection({baseline:'-synthetic_run_000000_202601',candidate}).status,'invalid');
 });

@@ -145,7 +145,7 @@ test('running GET updates exact child to terminal and stops automatic reads',asy
   expect(reads).toEqual(['GET']);
   const count=reads.length;await page.clock.fastForward(20_000);expect(reads.length).toBe(count);
 });
-test('hidden document pauses running reads and route departure cleans up the timer',async({page})=>{
+test('hidden document pauses running reads and route departure cleans up the timer',async({page},info)=>{
   await page.clock.install();await observeRunTimer(page);
   const reads:string[]=[];page.on('request',r=>{if(r.url().endsWith('/snapshot'))reads.push(r.method());});
   await page.goto(root+'fixture_running');
@@ -162,6 +162,7 @@ test('hidden document pauses running reads and route departure cleans up the tim
   await page.getByRole('link',{name:'실험 목록',exact:true}).click();await expect(page).toHaveURL('/dashboard');
   await expect(page.locator('html')).toHaveAttribute('data-test-run-timer-active','0');
   const count=reads.length;await page.clock.fastForward(20_000);expect(reads.length).toBe(count);
+  await info.attach('visibility-timer-order',{body:JSON.stringify(await page.evaluate(()=>(window as unknown as {runTimerProbe:unknown[]}).runTimerProbe),null,2),contentType:'application/json'});
 });
 test('rendered detail is accessible, responsive and free of app errors',async({page},info)=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.name));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});

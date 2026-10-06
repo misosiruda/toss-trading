@@ -1,3 +1,4 @@
+import {heldComparisonNavigation} from '../held-comparison-navigation';
 import {test,expect} from '@playwright/test';
 import path from 'node:path';
 import {createRequire} from 'node:module';
@@ -67,9 +68,7 @@ test('invalid selections do not query runs or silently select a default',async({
   }
 });
 
-test('a newer document selection wins over an unfinished prior GET',async({page,request})=>{
-  await page.goto(url());const before=(await (await request.get('http://127.0.0.1:8795/__calls')).json()).filter((c:{id:string})=>c.id==='fixture_slow').length;
-  let settled=false;const old=page.goto(url('fixture_slow','fixture_candidate')).catch(()=>null).finally(()=>{settled=true;});
-  await expect.poll(async()=>(await (await request.get('http://127.0.0.1:8795/__calls')).json()).filter((c:{id:string})=>c.id==='fixture_slow').length).toBeGreaterThan(before);expect(settled).toBe(false);
-  await page.goto(url('fixture_base','fixture_partial'));await old;await expect(page.getByTestId('comparison-baseline')).toContainText('fixture_base');await expect(page.getByTestId('comparison-candidate')).toContainText('fixture_partial');await expect(page).toHaveURL(/baseline=fixture_base&candidate=fixture_partial$/);
+test('a committed newer document selection survives an exact held backend response',async({page,request},info)=>{
+  await heldComparisonNavigation(page,request,{api:'http://127.0.0.1:8795',project:info.project.name,baseline:'fixture_base',candidate:'fixture_partial',provenance:false});
+  await expect(page.getByTestId('comparison-candidate')).toContainText('부분 실패');
 });
