@@ -889,8 +889,15 @@ th.numeric {
   gap: 14px;
 }
 
+#batch-run-source {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .batch-run-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
