@@ -20,11 +20,15 @@ import { getHeldRebalancePlanEventObservation } from "./rebalancePlanEventFiles.
 import type { OpeningCapacityMandateSources } from "./openingCapacityMandateBinding.js";
 import type { bindHeldSnapshotOpeningBudget } from "./heldSnapshotOpeningBudget.js";
 
-type CapacityRootSources = Omit<OpeningCapacityMandateSources, "mandates" | "events">;
+type CapacityRootSources = Omit<OpeningCapacityMandateSources, "mandates" | "events"> & {
+  manualSession: import("./manualOpeningCapacityReservationFiles.js").ManualCapacityAppendSession;
+  selectorSession: import("./selectorOpeningCapacityReservationFiles.js").SelectorCapacityAppendSession;
+};
 export type OpeningBudgetBoundSizingPublication = Readonly<{ snapshot: PortfolioSizingSnapshot;
   openingBudget: ReturnType<typeof bindHeldSnapshotOpeningBudget> }>;
 type OpeningBudgetConsumer<T> = (publication: OpeningBudgetBoundSizingPublication,
-  snapshots: VerifiedPortfolioSizingSnapshotHistory) => Promise<T>;
+  snapshots: VerifiedPortfolioSizingSnapshotHistory,
+  sessions?: Pick<CapacityRootSources, "manualSession" | "selectorSession">) => Promise<T>;
 
 export const PORTFOLIO_SIZING_SNAPSHOTS_FILE_NAME =
   "portfolio-sizing-snapshots.jsonl";
@@ -250,7 +254,7 @@ export class PortfolioSizingSnapshotFileRepository {
                   if (openingBudget === null) return snapshot;
                   const publication = Object.freeze({ snapshot, openingBudget });
                   if (!operation) return publication;
-                  return this.withPublishedSnapshotSource(publication, previousSnapshots, operation, verifyDependencies);
+                  return this.withPublishedSnapshotSource(publication, previousSnapshots, operation, verifyDependencies, sources);
                 });
               });
             });
@@ -263,7 +267,8 @@ export class PortfolioSizingSnapshotFileRepository {
 
   /** The original source remains a private prefix for existing issuance receipts. Only a newly flushed full generation escapes. */
   private async withPublishedSnapshotSource<T>(publication: OpeningBudgetBoundSizingPublication,
-    previous: VerifiedPortfolioSizingSnapshotHistory, operation: OpeningBudgetConsumer<T>, verifyDependencies: () => Promise<void>): Promise<T> {
+    previous: VerifiedPortfolioSizingSnapshotHistory, operation: OpeningBudgetConsumer<T>, verifyDependencies: () => Promise<void>,
+    sources: CapacityRootSources): Promise<T> {
     const expected = previous.snapshots.some((item) => item.portfolioSnapshotId === publication.snapshot.portfolioSnapshotId)
       ? previous.snapshots : [...previous.snapshots, publication.snapshot];
     return this.withDurableHistoryUnderLock(async (snapshots) => {
@@ -272,10 +277,31 @@ export class PortfolioSizingSnapshotFileRepository {
       if (observedAt < Date.parse(publication.openingBudget.occupancy.assessment.observedAt) || Date.now() < observedAt) {
         throw new Error("published snapshot source observation clock moved backwards");
       }
-      const result = await operation(publication, snapshots);
+      let result: T | undefined;
+      let consumerFailed = false, consumerError: unknown;
+      try {
+        result = await operation(publication, snapshots, {
+          manualSession: sources.manualSession,
+          selectorSession: sources.selectorSession
+        });
+      } catch (error) {
+        consumerFailed = true; consumerError = error;
+      }
+      // Close both admissions immediately and wait for every started write while
+      // this publication lease remains live, even if either finish rejects.
+      const settled = await Promise.allSettled([sources.manualSession.finish(), sources.selectorSession.finish()]);
+      const drainErrors = settled.flatMap(outcome => outcome.status === "rejected" ? [outcome.reason as unknown] : []);
+      if (consumerFailed) {
+        if (drainErrors.length) throw new AggregateError([consumerError, ...drainErrors],
+          consumerError instanceof Error ? consumerError.message : "opening budget consumer failed during session drain",
+          { cause: consumerError });
+        throw consumerError;
+      }
+      if (drainErrors.length === 1) throw drainErrors[0];
+      if (drainErrors.length > 1) throw new AggregateError(drainErrors, "opening budget session drains failed");
       await verifyDependencies();
       if (Date.now() < observedAt) throw new Error("published snapshot source observation clock moved backwards");
-      return result;
+      return result as T;
     });
   }
 
@@ -296,9 +322,9 @@ export class PortfolioSizingSnapshotFileRepository {
         this.withLock(() => this.withDurableHistoryUnderLock((snapshots) =>
           new CandidateSizingInputFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(requests, snapshots, (inputs) =>
             new CandidateAssignmentFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(inputs, requests, snapshots, (assignments) =>
-              new ManualOpeningCapacityReservationFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(manual, snapshots, (manualReservations) =>
-                new SelectorOpeningCapacityReservationFileRepository(baseDir, options).withDurableVerifiedHistoryFromSources(assignments, inputs, requests, snapshots,
-                  (selectorReservations) => operation({ manual, requests, inputs, assignments, manualReservations, selectorReservations }, snapshots)))))))));
+              new ManualOpeningCapacityReservationFileRepository(baseDir, options).withAppendSessionFromSources(manual, snapshots, (manualSession, manualReservations) =>
+                new SelectorOpeningCapacityReservationFileRepository(baseDir, options).withAppendSessionFromSources(assignments, inputs, requests, snapshots,
+                  (selectorSession, selectorReservations) => operation({ manual, requests, inputs, assignments, manualReservations, selectorReservations, manualSession, selectorSession }, snapshots)))))))));
   }
 
   private async appendUnderLock(candidate: PortfolioSizingSnapshot): Promise<PortfolioSizingSnapshot> {
