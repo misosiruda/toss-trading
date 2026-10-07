@@ -141,6 +141,16 @@ version을 검증해야 한다. 서로 다른 version·범위·source 및 full p
 동등 비교하지 않는다. 알려진 차이는 차이로, unknown은 불가 이유로 표시한다. 기존 provenance v1의
 comparability=unavailable은 새 producer·reader·검증이 실제 연결되기 전까지 유지한다.
 
+`codex_paper_only`는 외부 `codex exec`를 호출하며 현재 provider에 결정 재현성을 보장하는
+seed/decision-stream 재생 계약이 없다. source·초기 portfolio·prompt·model ID·runtime이 같아도
+결정이 달라질 수 있으므로 현재 AI-backed 실행은 통제된 성과 비교 unavailable로 유지한다.
+입력 provenance 완전성이나 저장된 decision hash 일치만으로 이 제한을 해제하거나 결과 차이를
+candidate 설정의 효과로 귀속하지 않는다. 관측 결과를 나란히 보이는 것과 통제된 비교를 구분한다.
+후속 deterministic provider 또는 captured decision-stream 재생을 허용하려면 별도 계약에서
+실제 소비된 결정 순서·packet/input 결속·누락 없는 재생과 비교 양쪽의 통제 조건을 검증해야 한다.
+기존 로그가 있다는 사실만으로 재현 가능하다고 표시하지 않으며, 이 문서는 raw provider/prompt
+출력의 신규 저장·공개나 유료 AI 재실행을 승인하지 않는다.
+
 baseline1/candidate1–3 UI는 이 계약 뒤 별도 PR이다. 후보 열별 실패를 격리하고 unknown끼리 같다고
 표시하지 않는다. 자동 순위·최적화·투자 추천은 추가하지 않는다.
 
@@ -154,10 +164,12 @@ baseline1/candidate1–3 UI는 이 계약 뒤 별도 PR이다. 후보 열별 실
    실제 합성 replay를 검증한다. 같은 요청/source/runtime에서 초기 현금만 다른 경우, 보유 수량·원가·
    평가/Risk 필드가 다른 경우, 저장 portfolio가 요청 initialCash보다 우선하는 경우를 포함한다.
    초기 상태 누락/redaction/변경은 complete와 입력 동일 판정을 막고, 관측된 현금0·빈 보유는
-   unknown과 구분하는 negative/positive 회귀를 둔다. EXP CLI 증거를 가져오지 않는다.
+   unknown과 구분하는 negative/positive 회귀를 둔다. 동일 입력·model/runtime의 합성 AI provider가
+   서로 다른 결정을 반환해도 통제된 비교로 승격되지 않는 producer 회귀를 포함한다. EXP CLI 증거를 가져오지 않는다.
 3. **bounded historical read:** exact ID, versioned parsing, hash와 acceptance/child binding,
    masking·path/file 변경·bytes/deadline·GET mutation0, legacy unavailable 및 현재 version과 다른
-   과거 기록의 관측/clone 구분을 검증한다. API와 UI parser가 같은 계약을 받는 composition test를 둔다.
+   과거 기록의 관측/clone 구분을 검증한다. AI-backed 실행의 입력·version 일치만으로 비교가 가능해지지
+   않는 negative와 unavailable 이유를 포함한다. API와 UI parser가 같은 계약을 받는 composition test를 둔다.
 4. **비교 UI:** 위 producer/read 계약을 소비해 1+1–3 선택·URL/history/reload, duplicate/self compare,
    불완전 열 격리와 조건 차이를 3viewport/keyboard/axe/console에서 확인한다.
 
