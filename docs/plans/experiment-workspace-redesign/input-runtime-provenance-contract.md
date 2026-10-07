@@ -19,7 +19,7 @@ reader, 새 endpoint, 비교 가능성 또는 화면 기능이 구현됐다고 �
 | `historicalReplayWorkflow.ts` / `historicalReplayWorkflowPlan.ts` | 저장 portfolio가 있으면 요청 initialCash보다 우선하고 실제 initialPortfolio를 replayInput과 research configHash에 포함 | configHash만으로 실제 초기 현금·보유 상태를 복원하거나 소비 시점 결속을 재검증할 수 없음 |
 | `replayProvenanceProjection.ts` | field별 partial/stored observation | requested/effective/runtime 일부는 항상 not_persisted |
 | `historicalReplayReport.ts` / `historicalReplayWorkflowArtifacts.ts` / `localOperationsReaders.ts` | replay 결과에서 report를 생성·저장하고 허용 경로의 JSON을 조회 | report에 exact child identity·결과 내용 hash 결속이 없으며 입력 hash 참조만으로 report/metric 무결성을 검증할 수 없음 |
-| `paperExperimentRuntime.ts` | 별도 EXP CLI 계열의 source/build receipt 검증 | historical batch/API 실행의 증거로 가져올 수 없음 |
+| `paperExperimentRuntime.ts` | 별도 EXP CLI 계열의 source/build 및 lock digest receipt 검증 | 설치·로드된 의존성 내용은 검증하지 않으며 historical batch/API 실행의 증거로 가져올 수 없음 |
 
 PR816의 whole-batch clone은 canonical 원래 요청 → 현재 validation → 새 ID를 소유한다.
 PR817의 benchmark 선택은 URL 표시 상태다. 어느 쪽도 complete execution provenance를 증명하지 않는다.
@@ -85,11 +85,26 @@ hash를 acceptance에 결속할 때는 해당 accepted schema의 명시적 확�
 
 ## Runtime과 입력 fingerprint의 의미
 
-runtime complete에는 실행한 구현 revision, source/build 결속, dependency lock digest, 실제 Node와
-execution model version이 필요하다. Git HEAD와 디스크 파일을 관측한 것만으로 이미 로드된 코드의
+runtime complete에는 실행한 구현 revision, source/build 결속, dependency lock digest와 실제 소비한
+의존성 증거, 실제 Node와 execution model version이 필요하다. Git HEAD와 디스크 파일을 관측한 것만으로 이미 로드된 코드의
 동일성을 주장하지 않는다. producer/launcher는 실행 전 검증한 receipt와 실제 process/runner를 결속해야 한다.
 source dirty, receipt missing/mismatch, compiled 파일 변경, 다른 runner 또는 unknown version이면
 해당 runtime은 unavailable이다. 단순 UUID·version 문자열 일치로 complete가 되지 않는다.
+
+lock digest는 의도한 의존성 해석의 증거이며 설치·실행된 package 내용의 증명이 아니다. launcher는
+실제 process가 소비한 설치 의존성의 versioned content inventory/hash와 lock 일치 여부를 검증하고
+receipt에 결속해야 한다. 전이 package, 실제 사용한 native/generated runtime asset과 module resolution/
+loader 경로도 검증 범위에 포함한다. 설치 후 변경된 `node_modules`, stale 설치, 외부 경로 대체,
+검증 전에 이미 로드된 module/cache 또는 검증 후 소비 시점까지의 변경을 배제하지 못하면 unavailable이다.
+실행 전 디렉터리 hash나 `npm ci` 성공만으로 실제 로드된 내용의 동일성을 주장하지 않는다.
+실제 Node 실행 artifact·platform/architecture와 결과에 영향을 주는 runtime 설정도 receipt의 명시적
+검증 범위여야 한다. 지원하지 않는 동적 의존성·설정·주입은 추정하지 않고 runtime unavailable로 둔다.
+이 검증은 허용된 digest/상태만 공개하며 env 전체, raw path 또는 package 내용을 DTO에 내보내지 않는다.
+
+완전성 판정은 source → 접수/소비 입력 → 초기 상태 → 실행 runtime/의존성 → 결과의 실제 소비·생성
+연결을 exact child별로 검증한 경우에만 성립한다. 각 producer의 versioned 계약은 필수 관측 범위와
+지원하지 않는 입력·상태를 명시해야 하며, 한 경계의 hash나 complete가 다른 경계의 누락을 메우지 않는다.
+지원 범위 밖의 결과 영향 요소나 연결을 확인하지 못하면 해당 완전성과 통제된 metric 비교는 unavailable이다.
 
 input fingerprint는 계약 version과 정규화 규칙, 실제 소비된 source 내용·범위, 적용 설정 및
 실제 초기 portfolio 내용의 결속을 필수로 포함한다. 초기 상태의 versioned snapshot과 그 내용을
@@ -175,7 +190,10 @@ baseline1/candidate1–3 UI는 이 계약 뒤 별도 PR이다. 후보 열별 실
    durable acceptance 결속과 실제 합성 HTTP create. schema/default/omission/비용·환경 변경 회귀 및
    write/fsync/accepted 실패503·runner0, legacy canonical clone 보존을 검증한다.
 2. **실제 소비 입력·runtime producer:** process/build receipt, source 및 초기 portfolio snapshot의 소비 결속,
-   child identity 및 완료성. dirty/stale build, 다른 runner, source 변경·중단·누락 negatives와
+   child identity 및 완료성. 같은 revision/build/lock/Node version에서 설치 package 변조·stale 설치·
+   다른 resolution/사전 로드·검증 후 변경 시 runtime unavailable인 의존성 회귀를 포함한다.
+   실제 소비 의존성·Node artifact/설정 결속이 확인된 positive와 지원 밖 native/loader 경로의 거절도 검증한다.
+   dirty/stale build, 다른 runner, source 변경·중단·누락 negatives와
    실제 합성 replay를 검증한다. 같은 요청/source/runtime에서 초기 현금만 다른 경우, 보유 수량·원가·
    평가/Risk 필드가 다른 경우, 저장 portfolio가 요청 initialCash보다 우선하는 경우를 포함한다.
    초기 상태 누락/redaction/변경은 complete와 입력 동일 판정을 막고, 관측된 현금0·빈 보유는
