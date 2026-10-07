@@ -10,6 +10,7 @@ import { historicalReplayRunMetadataSchema } from "../replay/historicalReplayAud
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import type { HistoricalReplayReport } from "../reports/historicalReplayReport.js";
 import { readPaperSimulationRequest } from "../storage/paperSimulationRequestStore.js";
+import { readPaperSimulationInput } from "../storage/paperSimulationInputStore.js";
 import { readPaperSimulationObservation } from "../storage/paperSimulationObservationStore.js";
 import { createBatchReplayArtifactPaths } from "../storage/artifactPaths.js";
 import { createStoragePaths, FileHistoricalMarketSnapshotStore } from "../storage/repositories.js";
@@ -57,6 +58,11 @@ test("default runner persists the validated effective contract on synthetic fixe
       const canonical = await readPaperSimulationRequest(join(root, caseName, "paper"), accepted.batchId);
       assert.equal(canonical.status, "available");
       assert.deepEqual(canonical.status === "available" && canonical.requestedConfig, config);
+      const admission = await readPaperSimulationInput(join(root, caseName, "paper"), accepted.batchId);
+      assert.equal(admission.status, "available");
+      assert.deepEqual(admission.status === "available" && admission.snapshot,
+        { requestedConfig: validated.requestedConfig, effectiveConfig: validated.effectiveConfig, notices: validated.notices });
+      assert.equal(admission.comparability, "unavailable");
       const paths = createBatchReplayArtifactPaths(accepted.outputBaseDir, accepted.batchId);
       const manifest = await waitForManifest(paths.manifestPath);
       assert.equal(manifest.status, "completed");
