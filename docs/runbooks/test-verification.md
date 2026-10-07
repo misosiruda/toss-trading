@@ -54,6 +54,25 @@ node scripts/verificationRunner.mjs review --plan
 
 ## 시간과 결과 해석
 
+### Windows 파일 동일성 검사와 검증 런타임
+
+Windows에서 provenance가 `partial` 대신 `blocked`를 반환하면 먼저 실제 Node 버전과
+`lstat(path)` / 열린 파일의 `handle.stat()` 결과를 함께 확인한다. 2026-10-07 노트북의
+Node v22.15.0에서는 같은 일반 파일의 inode와 단일 링크 수가 일치해도 경로 조회의
+`dev`는 0, 열린 파일의 `dev`는 실제 volume 값으로 달랐다. 이 경우
+`readExperimentFile`의 dev/inode 동일성 검사가 `PATH_UNSAFE`로 거절한다.
+
+동일한 파일·소스·assertion을 Node v24.19.0으로 실행하면 두 조회의 dev/inode가 일치했다.
+PR815 기준선과 PR816 모두에서 writer HTTP 시험의 실패→통과를 확인했으며 PR816의
+clone 회귀로 판정하지 않았다. 이 환경에서는 검증된 Node v24.19.0으로 root를 다시
+빌드하고 관련 시험을 실행한다. 시스템 설치를 변경할 필요 없이 작업 전용 런타임을
+명시해 사용할 수 있다. 모든 Node 22 버전이나 다른 Windows 환경이 같은 결과라고
+일반화하지 않는다.
+
+이 진단을 이유로 `opened.dev === before.dev`, inode, hardlink, symlink 검사나
+`partial` assertion을 생략하지 않는다. 런타임을 바꾼 결과는 이전 실행과 별도로 기록하며,
+단독 시험 통과로 기존 전체 검증의 실패·중단 기록을 통과로 바꾸지 않는다.
+
 Runner는 한 번의 호출에서 build → quality → tooling-tests → affected-tests/full-tests를
 각각 한 번 실행한다. 모든 subprocess는 동일 Node runtime과 저장소 root를 사용하며 shell을 사용하지
 않는다. 종료코드 실패, signal 종료 또는 spawn 오류가 발생하면 이후 단계를 실행하지 않는다.
