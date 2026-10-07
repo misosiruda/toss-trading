@@ -3,6 +3,8 @@
 기준: PR817 병합 main `55ba85ba8a72b71636f34e1d2a57b93bbdee5fa6`.
 이 문서는 승인된 UX06의 선행 저장·조회 계약과 구현 순서를 정한다. 문서 추가만으로 producer,
 reader, 새 endpoint, 비교 가능성 또는 화면 기능이 구현됐다고 표시하지 않는다.
+이후 첫 구현 범위는 [접수 입력 보존](admission-input-preservation.md)이다. 아래 접수 snapshot
+저장·내부 reader만 연결되며 child 실행 증거와 공개 조회/비교 UI의 완료를 뜻하지 않는다.
 
 ## 목적과 현재 근거
 
@@ -15,6 +17,7 @@ reader, 새 endpoint, 비교 가능성 또는 화면 기능이 구현됐다고 �
 | `paperSimulationConfig.ts` | 순수 resolver가 requested/effective/notices를 생성 | 저장된 과거 입력을 현재 resolver로 복원할 수 없음 |
 | `paperSimulationRuns.ts` | 같은 effectiveConfig를 runner에 전달하고 응답 | 응답 자체는 durable 입력 증거가 아님 |
 | `paperSimulationRequestStore.ts` | canonical 요청, acceptance hash, durable runtime UUID, Node/model version | 전체 effectiveConfig/notices와 Git/source/build/lock 결속 없음 |
+| `paperSimulationInputStore.ts` | requested/effective/notices v1 snapshot, canonical·accepted hash 결속, exact batch bounded 내부 read | 실제 source/initialPortfolio/runtime/dependency/result 증거와 공개 DTO는 없으며 비교는 unavailable |
 | `historicalBatchReplayWorkflow` 및 child metadata/research manifest | child identity, 선택 window, configuration 및 저장 hash | 모든 원래 batch 입력·실제 runtime을 복원하거나 현재 자료와 hash를 검증한 것은 아님 |
 | `historicalReplayWorkflow.ts` / `historicalReplayWorkflowPlan.ts` | 저장 portfolio가 있으면 요청 initialCash보다 우선하고 실제 initialPortfolio를 replayInput과 research configHash에 포함 | configHash만으로 실제 초기 현금·보유 상태를 복원하거나 소비 시점 결속을 재검증할 수 없음 |
 | `replayProvenanceProjection.ts` | field별 partial/stored observation | requested/effective/runtime 일부는 항상 not_persisted |
@@ -47,7 +50,8 @@ runtime 변경이 있으면 API Node version을 child 실행 version으로 복�
 
 ## Version과 저장 단위
 
-다음 이름은 후속 구현이 사용할 계약 식별자이며 현재 지원 endpoint/파일 목록이 아니다.
+접수 입력 식별자는 `paper-simulation-input.json` 저장과 내부 reader에서 사용한다. 나머지는
+후속 구현용이며 현재 지원 endpoint/child evidence 목록이 아니다.
 
 | 단위 | 식별자 | 결속 |
 | --- | --- | --- |

@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { JsonlStore } from "../storage/jsonlStore.js";
+import { readPaperSimulationInput } from "../storage/paperSimulationInputStore.js";
 import { acceptPaperSimulation, paperSimulationObservationPath, readPaperSimulationObservation } from "../storage/paperSimulationObservationStore.js";
 import type { LocalOperationsServerOptions } from "./localOperationsTypes.js";
 import { readBatchReplayRuns } from "./localOperationsReaders.js";
@@ -61,7 +62,8 @@ for (const failure of ["sync", "async"] as const) {
       const bytes = await readFile(paperSimulationObservationPath(storageBaseDir, expectedId), "utf8");
       assert.equal(bytes.trim().split("\n").length, 2);
       assert.doesNotMatch(bytes + JSON.stringify(body) + JSON.stringify(accepted), /DO-NOT-PERSIST|private\/provider|secret\.env|stack|cause/);
-      assert.deepEqual(await readdir(dirname(paperSimulationObservationPath(storageBaseDir, expectedId))), ["paper-simulation-observations.jsonl", "paper-simulation-request.json"]);
+      assert.deepEqual(await readdir(dirname(paperSimulationObservationPath(storageBaseDir, expectedId))), ["paper-simulation-input.json", "paper-simulation-observations.jsonl", "paper-simulation-request.json"]);
+      assert.equal((await readPaperSimulationInput(storageBaseDir, expectedId)).status, "available");
       assert.equal(calls, 1);
     } finally { await server.close(); await rm(root, { recursive: true, force: true }); }
   });
@@ -126,7 +128,8 @@ test("accepted persistence failure returns no 202, starts no runner, and preserv
     assert.match(body, /paper_simulation_admission_failed/);
     assert.doesNotMatch(body, /DO-NOT-PERSIST|secret\.env/);
     assert.equal(calls, 0);
-    assert.deepEqual(await readdir(dirname(paperSimulationObservationPath(storageBaseDir, expectedId))), ["paper-simulation-request.json"]);
+    assert.deepEqual(await readdir(dirname(paperSimulationObservationPath(storageBaseDir, expectedId))), ["paper-simulation-input.json", "paper-simulation-request.json"]);
+    assert.equal((await readPaperSimulationInput(storageBaseDir, expectedId)).status, "unavailable");
     append.mock.restore();
     await assert.rejects(createPaperSimulationRun(simulationConfig(), options), requestCode("paper_simulation_id_conflict"));
     assert.equal(calls, 0);
@@ -236,7 +239,9 @@ test("runner failure record rejection is contained without retries or unhandled 
   };
   try {
     await createPaperSimulationRun(simulationConfig(), options);
-    await waitFor(async () => failureWrites === 1 && (await readdir(dirname(paperSimulationObservationPath(storageBaseDir, expectedId)))).length === 2);
+    await waitFor(async () => failureWrites === 1 &&
+      (await readdir(dirname(paperSimulationObservationPath(storageBaseDir, expectedId)))).sort().join("|") ===
+      ["paper-simulation-input.json", "paper-simulation-observations.jsonl", "paper-simulation-request.json"].join("|"));
     const observed = await readPaperSimulationObservation(storageBaseDir, expectedId);
     assert.equal(observed.status === "available" && observed.outcome, "unknown");
     const config = simulationConfig(); config.window.seed = "next-token";

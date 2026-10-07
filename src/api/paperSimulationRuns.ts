@@ -135,7 +135,10 @@ export async function createPaperSimulationRun(
   };
   const acceptedAt = createdAt.toISOString();
   try {
-    await acceptPaperSimulation(runnerInput.storageBaseDir, simulationRunId, acceptedAt, { requestedConfig: config });
+    await acceptPaperSimulation(runnerInput.storageBaseDir, simulationRunId, acceptedAt, {
+      requestedConfig: config,
+      inputSnapshot: { requestedConfig: runnerInput.config, effectiveConfig: runnerInput.effectiveConfig, notices }
+    });
   } catch (error) {
     release();
     if (error instanceof PaperSimulationObservationConflict) {

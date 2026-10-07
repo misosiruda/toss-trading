@@ -17,7 +17,7 @@ export const PAPER_SIMULATION_REQUEST_FILE = "paper-simulation-request.json";
 export const PAPER_SIMULATION_RUNTIME_FILE = "paper-simulation-runtime.json";
 const OBSERVATIONS_FILE = "paper-simulation-observations.jsonl";
 const MAX_REQUEST_BYTES = 16_384;
-const namespaceSchema = z.object({
+export const paperSimulationRuntimeNamespaceSchema = z.object({
   schemaVersion: z.literal("paper_simulation_runtime_namespace.v1"), sourceRuntimeId: z.uuid()
 }).strict();
 const runtimeSchema = z.object({
@@ -25,12 +25,14 @@ const runtimeSchema = z.object({
   sourceRuntimeId: z.uuid(), nodeVersion: z.string().min(1).max(80),
   executionModelVersion: z.string().min(1).max(80)
 }).strict();
-const recordSchema = z.object({
+export const paperSimulationCanonicalRecordSchema = z.object({
   schemaVersion: z.literal("paper_simulation_canonical_request.v1"),
   simulationRunId: z.string().regex(PAPER_SIMULATION_ID_PATTERN),
   batchId: z.string().regex(PAPER_SIMULATION_ID_PATTERN), acceptedAt: z.iso.datetime(),
   sourceRuntime: runtimeSchema, requestedConfig: z.unknown(), redacted: z.boolean()
 }).strict();
+const namespaceSchema = paperSimulationRuntimeNamespaceSchema;
+const recordSchema = paperSimulationCanonicalRecordSchema;
 export interface CanonicalRequestInput { requestedConfig: PaperSimulationRunConfig }
 export type PaperSimulationRequestRead = {
   mode: "paper_only"; readOnly: true; status: "available";
