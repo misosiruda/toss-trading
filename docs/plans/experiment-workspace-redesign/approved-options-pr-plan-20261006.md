@@ -31,5 +31,6 @@ UX06 baseline1/candidate1–3, 완전 input/runtime/version 비교 가능성은 
 후속 입력·runtime/version은 [별도 계약](input-runtime-provenance-contract.md)에서 현재 저장 근거와
 부족한 근거를 구분한다. 계약 문서 자체는 새 producer/reader 구현 또는 complete provenance의
 완료가 아니다. 접수 당시 실효 입력 보존 → 실제 child 소비 입력·runtime 결속 → bounded historical
-read → baseline1/candidate1–3 UI 순서로 진행한다. 원래 요청과 child 실효 window를 혼동하지 않으며
+read → baseline1/candidate1–3 UI 순서로 진행한다. child의 실제 초기 현금·보유 portfolio도 소비 입력과
+fingerprint/완전성 판정의 필수 근거다. 원래 요청과 child 실효 window·초기 상태를 혼동하지 않으며
 runtime UUID나 현재 조회 DTO version을 실행 구현 version으로 사용하지 않는다.

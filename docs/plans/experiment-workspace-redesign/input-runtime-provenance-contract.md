@@ -16,6 +16,7 @@ reader, 새 endpoint, 비교 가능성 또는 화면 기능이 구현됐다고 �
 | `paperSimulationRuns.ts` | 같은 effectiveConfig를 runner에 전달하고 응답 | 응답 자체는 durable 입력 증거가 아님 |
 | `paperSimulationRequestStore.ts` | canonical 요청, acceptance hash, durable runtime UUID, Node/model version | 전체 effectiveConfig/notices와 Git/source/build/lock 결속 없음 |
 | `historicalBatchReplayWorkflow` 및 child metadata/research manifest | child identity, 선택 window, configuration 및 저장 hash | 모든 원래 batch 입력·실제 runtime을 복원하거나 현재 자료와 hash를 검증한 것은 아님 |
+| `historicalReplayWorkflow.ts` / `historicalReplayWorkflowPlan.ts` | 저장 portfolio가 있으면 요청 initialCash보다 우선하고 실제 initialPortfolio를 replayInput과 research configHash에 포함 | configHash만으로 실제 초기 현금·보유 상태를 복원하거나 소비 시점 결속을 재검증할 수 없음 |
 | `replayProvenanceProjection.ts` | field별 partial/stored observation | requested/effective/runtime 일부는 항상 not_persisted |
 | `paperExperimentRuntime.ts` | 별도 EXP CLI 계열의 source/build receipt 검증 | historical batch/API 실행의 증거로 가져올 수 없음 |
 
@@ -30,8 +31,14 @@ PR817의 benchmark 선택은 URL 표시 상태다. 어느 쪽도 complete execut
    같은 관측 단위로 기록한다. 요청을 다시 resolve하거나 현재 환경·기본값으로 채우지 않는다.
    비용, sampling, risk/allocation/exit, universe의 무필터 의미, provider와 benchmark 정책을 포함한다.
 3. **child 소비 입력:** exact child의 선택 window, 실제 읽은 source snapshot, 적용 configuration,
-   scope 및 실제 실행 runtime과 연결한다. batch 요청의 source 경로나 manifest hash만으로
+   실제 `replayInput.initialPortfolio`, scope 및 실제 실행 runtime과 연결한다. batch 요청의 source 경로나 manifest hash만으로
    전체 source를 읽었거나 그 자료를 해당 child가 소비했다고 단정하지 않는다.
+
+초기 상태는 요청 `capital.initialCashKrw`와 구분한다. historical/legacy/주입 경로에서는 저장
+portfolio 또는 주입한 상태가 실제 초기 상태가 될 수 있다. 신규 ID 경로에서도 빈 보유·요청 현금으로
+추정하지 않고 runner가 소비한 상태를 확인한다. 그 version의 실제 소비 필드 전체(현금, 보유 목록과
+수량·원가, 평가 가격/금액·시각·staleness, Risk에 쓰이는 분류 등)를 누락 없이 결속한다.
+완료 후 portfolio 파일이나 집계 자산 금액으로 실행 전 상태를 역산하지 않는다.
 
 접수 API runtime과 실제 replay runtime은 별도 관측이다. 주입 runner, 다른 프로세스 또는
 runtime 변경이 있으면 API Node version을 child 실행 version으로 복사하지 않는다.
@@ -44,7 +51,7 @@ runtime 변경이 있으면 API Node version을 child 실행 version으로 복�
 | 단위 | 식별자 | 결속 |
 | --- | --- | --- |
 | 접수 입력 기록 | `paper_simulation_input_provenance.v1` | exact simulationRunId=batchId, acceptedAt, 기존 canonicalRequestHash, requested/effective 계약 version |
-| child 실행 기록 | `replay_input_runtime_provenance.v1` | exact child/batch/runIndex, 접수 기록 hash 또는 명시적 legacy unavailable, 실제 소비 입력·runtime 관측 |
+| child 실행 기록 | `replay_input_runtime_provenance.v1` | exact child/batch/runIndex, 접수 기록 hash 또는 명시적 legacy unavailable, 실제 초기 portfolio의 versioned snapshot·내용 hash를 포함한 소비 입력·runtime 관측 |
 | 조회 DTO | `replay_input_runtime_read.v1` | exact requested child와 검증된 저장 evidence version, field별 판독 상태 |
 
 조회 DTO version, 저장 evidence version, configuration version 및 runtime implementation version은
@@ -67,8 +74,11 @@ hash를 acceptance에 결속할 때는 해당 accepted schema의 명시적 확�
   기록이나 원본 실행은 삭제·재사용하지 않는다. validation/GET은 파일을 생성하거나 복구하지 않는다.
 - 관측할 수 없는 runtime은 typed unavailable과 이유로 저장할 수 있다. 이는 파일 쓰기 실패를
   무시한다는 뜻이 아니며, create 접수 성공을 complete provenance 성공으로 승격하지 않는다.
-- child 증거는 실제 runner의 소비 경계에서 작성한다. source snapshot/설정은 실행 전 고정한
+- child 증거는 실제 runner의 소비 경계에서 작성한다. source snapshot/설정/초기 portfolio는 실행 전 고정한
   내용과 실제 소비 내용을 결속한다. 실행 뒤 현재 파일만 hash해 과거 실행 입력이라고 표시하지 않는다.
+- 초기 portfolio의 출처(저장 상태·신규 생성·주입)와 exact child 결속을 기록하고, 첫 상태 변경 전에
+  실제 소비 객체의 versioned snapshot과 내용 hash를 고정한다. 상태가 교체·변경되면 기존 fingerprint를
+  재사용하지 않는다. 내용 또는 결속을 관측할 수 없으면 초기 상태 unavailable이며 complete input도 불가하다.
 - 완료 전 손상·누락·중단·범위 초과가 있으면 complete child evidence를 발행하지 않는다.
   이 상태는 실행의 completed/failed와 별도다. 실행 결과를 새 증거 부재 때문에 다시 실행하지 않는다.
 
@@ -80,8 +90,16 @@ execution model version이 필요하다. Git HEAD와 디스크 파일을 관측�
 source dirty, receipt missing/mismatch, compiled 파일 변경, 다른 runner 또는 unknown version이면
 해당 runtime은 unavailable이다. 단순 UUID·version 문자열 일치로 complete가 되지 않는다.
 
-input fingerprint는 계약 version과 정규화 규칙, 실제 소비된 source 내용·범위, 적용 설정의
-결속을 포함한다. path/preset 이름, 파일 mtime, 보고서 숫자 일치 또는 저장된 hash 하나만으로
+input fingerprint는 계약 version과 정규화 규칙, 실제 소비된 source 내용·범위, 적용 설정 및
+실제 초기 portfolio 내용의 결속을 필수로 포함한다. 초기 상태의 versioned snapshot과 그 내용을
+hash한 digest가 모두 있어야 완전성·결속을 검증할 수 있다. 요청/source/runtime이 같아도 실제
+초기 현금·보유 상태가 다르면 다른 입력이다. 누락·unknown·redaction·손상·범위 초과로 초기 상태를
+완전히 확인할 수 없으면 complete/input-equivalent로 판정하지 않는다. raw identity·민감 자료의
+공개를 허용하는 조건은 아니며 아래 whitelist/masking 경계를 계속 적용한다.
+
+기존 research `configHash`는 window/configuration뿐 아니라 정규화된 initialPortfolio도 포함한다.
+이는 보존할 기존 관측 의미이며, 그 hash만으로 원본 초기 상태와 실제 소비 결속이 확인됐다고
+승격하지 않는다. path/preset 이름, 파일 mtime, 보고서 숫자 일치 또는 저장된 hash 하나만으로
 같은 source를 증명하지 않는다. 기존 research hash는 재검증 전까지 stored observation이다.
 source kind, universe/membership와 scope를 이름에서 추론하지 않고 producer의 검증 가능한 근거만 쓴다.
 membership filtering이나 외부 자료 수집 정책은 추가하지 않는다.
@@ -118,7 +136,7 @@ field별로 recorded/stored_observation, 검증된 내용 결속, unavailable(re
 ambiguous, identity_mismatch, unsupported_version 및 runtime 미검증의 이유를 유지한다.
 
 입력과 runtime이 complete라는 사실만으로 비교 가능한 성과가 되지 않는다. 같은 evidence class,
-source·소비 범위, 기간/timezone, universe, scope, provider, 비용, benchmark, policy/implementation
+source·소비 범위, 실제 초기 portfolio, 기간/timezone, universe, scope, provider, 비용, benchmark, policy/implementation
 version을 검증해야 한다. 서로 다른 version·범위·source 및 full portfolio/단일 bucket은 자동
 동등 비교하지 않는다. 알려진 차이는 차이로, unknown은 불가 이유로 표시한다. 기존 provenance v1의
 comparability=unavailable은 새 producer·reader·검증이 실제 연결되기 전까지 유지한다.
@@ -131,9 +149,12 @@ baseline1/candidate1–3 UI는 이 계약 뒤 별도 PR이다. 후보 열별 실
 1. **접수 입력 보존:** versioned requested/effective/notices snapshot, actual runnerInput 동일성,
    durable acceptance 결속과 실제 합성 HTTP create. schema/default/omission/비용·환경 변경 회귀 및
    write/fsync/accepted 실패503·runner0, legacy canonical clone 보존을 검증한다.
-2. **실제 소비 입력·runtime producer:** process/build receipt와 source snapshot의 소비 결속,
+2. **실제 소비 입력·runtime producer:** process/build receipt, source 및 초기 portfolio snapshot의 소비 결속,
    child identity 및 완료성. dirty/stale build, 다른 runner, source 변경·중단·누락 negatives와
-   실제 합성 replay를 검증한다. EXP CLI를 그대로 연결하거나 증거를 가져오지 않는다.
+   실제 합성 replay를 검증한다. 같은 요청/source/runtime에서 초기 현금만 다른 경우, 보유 수량·원가·
+   평가/Risk 필드가 다른 경우, 저장 portfolio가 요청 initialCash보다 우선하는 경우를 포함한다.
+   초기 상태 누락/redaction/변경은 complete와 입력 동일 판정을 막고, 관측된 현금0·빈 보유는
+   unknown과 구분하는 negative/positive 회귀를 둔다. EXP CLI 증거를 가져오지 않는다.
 3. **bounded historical read:** exact ID, versioned parsing, hash와 acceptance/child binding,
    masking·path/file 변경·bytes/deadline·GET mutation0, legacy unavailable 및 현재 version과 다른
    과거 기록의 관측/clone 구분을 검증한다. API와 UI parser가 같은 계약을 받는 composition test를 둔다.
