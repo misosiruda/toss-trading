@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { buildRunEvidence, EVIDENCE_KINDS, evidenceReference, evidenceReferences, readEvidenceSelection, type EvidenceKind, type EvidenceRow, type RunEvidenceView } from '@/lib/runEvidence';
+import { runWorkspaceHref } from '@/lib/runWorkspace';
 import styles from './RunEvidenceWorkspace.module.css';
 const LABEL: Record<EvidenceKind,string>={packet:'Packet',decision:'Provider 판단',risk:'Deterministic Risk',trade:'모의 체결'};
 const STATE={linked:'명시적 참조 확인',missing:'연결 대상 없음',outside_loaded_range:'표시 범위 밖일 수 있음',ambiguous:'중복 ID · 연결 모호',unavailable:'자료 판독 불가',mismatch:'Packet 참조 불일치'};
@@ -26,7 +27,8 @@ export function RunEvidenceWorkspace({model,requestedId,tab}:{model:RunEvidenceV
   },[view]);
   const kindFilter=tab==='replay'?'packet':EVIDENCE_KINDS.includes(query.get('kind') as EvidenceKind)?query.get('kind') as EvidenceKind:null;
   const buckets=view.buckets.filter(b=>kindFilter===null||b.kind===kindFilter);
-  const href=(kind:EvidenceKind,id:string)=>`/dashboard/lab/runs/${encodeURIComponent(requestedId)}?tab=${tab}${tab==='evidence'&&kindFilter?`&kind=${kindFilter}`:''}&event=${encodeURIComponent(kind+':'+id)}`;
+  const benchmarks=query.get('benchmarks');
+  const href=(kind:EvidenceKind,id:string)=>runWorkspaceHref(requestedId,tab,benchmarks,{...(kindFilter?{kind:kindFilter}:{}),event:kind+':'+id});
   const reference=selection?evidenceReference(view,selection.kind,selection.id):null;
   const outOfScope=tab==='replay' && selection?.kind!=='packet';
   const row=selection && reference?.state==='linked' && !outOfScope ? view.buckets.find(b=>b.kind===selection.kind)?.rows.find(r=>r.id===selection.id):undefined;
@@ -47,8 +49,8 @@ export function RunEvidenceWorkspace({model,requestedId,tab}:{model:RunEvidenceV
       </li>)}
     </ul>
     {tab==='evidence'&&<nav className={styles.filters} aria-label="근거 자료 종류">
-      <Link href={`/dashboard/lab/runs/${encodeURIComponent(requestedId)}?tab=evidence`} aria-current={kindFilter===null?'page':undefined}>모두</Link>
-      {EVIDENCE_KINDS.map(kind=><Link key={kind} href={`/dashboard/lab/runs/${encodeURIComponent(requestedId)}?tab=evidence&kind=${kind}`} aria-current={kindFilter===kind?'page':undefined}>{LABEL[kind]}</Link>)}
+      <Link href={runWorkspaceHref(requestedId,'evidence',benchmarks)} aria-current={kindFilter===null?'page':undefined}>모두</Link>
+      {EVIDENCE_KINDS.map(kind=><Link key={kind} href={runWorkspaceHref(requestedId,'evidence',benchmarks,{kind})} aria-current={kindFilter===kind?'page':undefined}>{LABEL[kind]}</Link>)}
     </nav>}
     <div className={styles.split}>
       <section className={styles.events} aria-label="근거 사건 목록">

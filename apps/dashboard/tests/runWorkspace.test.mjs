@@ -5,10 +5,26 @@ import { test } from 'node:test';
 const evidenceSource=await readFile(new URL('../src/lib/runEvidence.ts',import.meta.url),'utf8');
 const evidenceUrl='data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(evidenceSource));
 const source=await readFile(new URL('../src/lib/runWorkspace.ts',import.meta.url),'utf8');
-const {runWorkspaceState,readRunWorkspaceTab,isRunSnapshot,validRunLookupId,createRunRefresh}=await import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(source.replace("'./runEvidence'",JSON.stringify(evidenceUrl)))));
+const {runWorkspaceState,readRunWorkspaceTab,runWorkspaceHref,isRunSnapshot,validRunLookupId,createRunRefresh}=await import('data:text/javascript,'+encodeURIComponent(stripTypeScriptTypes(source.replace("'./runEvidence'",JSON.stringify(evidenceUrl)))));
 const stamp='2026-10-04T00:00:00.000Z';
 function fixture(status='running') { return {apiBaseLabel:'fixture',fetchedAt:stamp,runDetail:{status:'ok',endpoint:'/batch/replay/runs',fetchedAt:stamp,data:{mode:'paper_only',readOnly:true,requestedId:'batch-fixture',runId:'child-fixture',batchId:'batch-fixture',batchStatus:status,endpointStatus:'ok',sourceRunsPath:null,latestArtifactsRunId:'child-fixture',warnings:[],status:'ok',runSource:status==='active'?'legacy_active':status==='running'?'active_manifest':'persisted',simulationObservation:{status:'not_requested'},run:{runId:'child-fixture',batchId:'batch-fixture',status,startedAt:stamp,completedAt:null,failedAt:null,skippedAt:null,marketRegimeLabel:null,storageBaseDir:null,reportPath:null,error:null,skipReason:null,runIndex:0,totalReturnRatio:0,finalVirtualNetWorthKrw:0,tradeCount:0,rejectedCount:0,aiDecisionFailureCount:0},artifacts:{runId:'child-fixture',status:'ok',runStatus:status,reportTitle:null,progressStatusLabel:null,simulatedAt:null,completedTickCount:0,tickCount:0,rejectedCount:0,currentVirtualNetWorthKrw:0,currentCashKrw:0,currentPositionCount:0,decisionCount:0,totalDecisionCount:0,riskDecisionCount:0,totalRiskDecisionCount:0,tradeCount:0,totalTradeCount:0,reportStatus:'ok',progressStatus:'ok',decisionsStatus:'ok',riskDecisionsStatus:'ok',tradesStatus:'ok'}}}}; }
 test('URL view accepts record and safely defaults unsupported tabs',()=>{ assert.equal(readRunWorkspaceTab('record'),'record');for(const tab of ['replay','evidence'])assert.equal(readRunWorkspaceTab(tab),tab);for(const value of ['bogus',null])assert.equal(readRunWorkspaceTab(value),'summary'); });
+
+test('detail links preserve benchmark display semantics without carrying evidence selection into other tabs',()=>{
+  for(const tab of ['summary','record','replay','evidence'])for(const value of [null,'cashOnly','equalWeightBuyAndHold,initialPortfolioBuyAndHold','none','unknown','','bad&tab=record#fragment']){
+    const url=new URL(runWorkspaceHref('exact ID&?#',tab,value,{kind:'risk',event:'risk:ID ?&+#'}),'http://localhost');
+    assert.equal(url.pathname,'/dashboard/lab/runs/exact%20ID%26%3F%23');
+    assert.equal(url.searchParams.get('tab'),tab);
+    assert.equal(url.searchParams.get('benchmarks'),value);
+    assert.equal(url.searchParams.get('kind'),tab==='evidence'?'risk':null);
+    assert.equal(url.searchParams.get('event'),['replay','evidence'].includes(tab)?'risk:ID ?&+#':null);
+    assert.equal(url.hash,'');
+  }
+  assert.equal(runWorkspaceHref('run','record',null),'/dashboard/lab/runs/run?tab=record');
+  const filter=new URL(runWorkspaceHref('run','evidence','none',{kind:'packet'}),'http://localhost');
+  assert.equal(filter.searchParams.get('event'),null);
+  assert.equal(filter.searchParams.get('benchmarks'),'none');
+});
 test('terminal child results stop polling without equating completion and success',()=>{for(const status of ['completed','completed_with_failures','failed','skipped'])assert.deepEqual(runWorkspaceState(fixture(status).runDetail),{poll:false,completeness:'complete',execution:status});});
 test('running is observed separately from batch and endpoint source',()=>{const p=fixture();p.runDetail.data.batchStatus='completed_with_failures';p.runDetail.data.endpointStatus='degraded';assert.equal(runWorkspaceState(p.runDetail).execution,'running');assert.equal(runWorkspaceState(p.runDetail).poll,true);});
 test('accepted-only unknown polls but runner failure or missing observation does not',()=>{const p=fixture();p.runDetail.data.run=null;p.runDetail.data.artifacts=null;p.runDetail.data.simulationObservation={status:'available',outcome:'unknown'};assert.deepEqual(runWorkspaceState(p.runDetail),{poll:true,completeness:'missing',execution:'unknown'});p.runDetail.data.simulationObservation.outcome='runner_failed';assert.equal(runWorkspaceState(p.runDetail).poll,false);p.runDetail.data.simulationObservation={status:'missing'};assert.equal(runWorkspaceState(p.runDetail).poll,false);});

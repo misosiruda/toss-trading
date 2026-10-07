@@ -1,4 +1,5 @@
 import { isRunEvidence, isRunReportContext } from './runEvidence';
+import type { EvidenceKind } from './runEvidence';
 import type { RunWorkspacePageData } from './runEvidenceReader';
 import type { RunDetailPageData, RunDetailView, ViewModelResult } from "./dashboardViewModels";
 
@@ -9,6 +10,20 @@ const TERMINAL = new Set(["completed", "completed_with_failures", "failed", "ski
 
 export function readRunWorkspaceTab(value: string | null): RunWorkspaceTab {
   return value === "record" || value === "replay" || value === "evidence" ? value : "summary";
+}
+
+export function runWorkspaceHref(
+  requestedId: string,
+  tab: RunWorkspaceTab,
+  benchmarks: string | null,
+  evidence: { kind?: EvidenceKind; event?: string } = {}
+): string {
+  const query = new URLSearchParams({ tab });
+  if (tab === "evidence" && evidence.kind !== undefined) query.set("kind", evidence.kind);
+  if ((tab === "evidence" || tab === "replay") && evidence.event !== undefined) query.set("event", evidence.event);
+  // Preserve invalid/empty selections so navigation cannot silently clear their warning.
+  if (benchmarks !== null) query.set("benchmarks", benchmarks);
+  return `/dashboard/lab/runs/${encodeURIComponent(requestedId)}?${query}`;
 }
 
 export function runWorkspaceState(result: ViewModelResult<RunDetailView>) {

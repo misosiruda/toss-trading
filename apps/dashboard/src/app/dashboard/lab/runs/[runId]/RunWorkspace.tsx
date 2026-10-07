@@ -8,7 +8,7 @@ import type { RunWorkspacePageData } from "@/lib/runEvidenceReader";
 import { exactSimulationId } from "@/lib/simulationClone";
 import { RunBenchmarkCoverage } from "./RunBenchmarkCoverage";
 import { RunEvidenceWorkspace } from "./RunEvidenceWorkspace";
-import { createRunRefresh, isRunSnapshot, readRunWorkspaceTab, runWorkspaceState, type RunRefreshState } from "@/lib/runWorkspace";
+import { createRunRefresh, isRunSnapshot, readRunWorkspaceTab, runWorkspaceHref, runWorkspaceState, type RunRefreshState } from "@/lib/runWorkspace";
 import { WorkspaceNavigation } from "../../../ExperimentList";
 import { ArtifactStatusGrid, EvidencePanel, ProgressPanel, RunSummary, SimulationObservationPanel, SourcePanel, UnavailablePanel } from "./RunDetailPanels";
 import shell from "../../../ExperimentList.module.css";
@@ -61,7 +61,7 @@ export function RunWorkspace({ requestedId, initial, provenance }: { requestedId
   const data = result.status === "ok" ? result.data : null;
   const state = runWorkspaceState(result);
   const stale = (unavailable || state.poll) && lastGood !== null && now - Date.parse(lastGood.fetchedAt) >= 15_000;
-  const href = `/dashboard/lab/runs/${encodeURIComponent(requestedId)}`;
+  const benchmarks = query.get("benchmarks");
   useEffect(() => {
     if ((!unavailable && !state.poll) || !lastGood) return;
     const clock = window.setInterval(() => setNow(Date.now()), 5_000);
@@ -83,10 +83,10 @@ export function RunWorkspace({ requestedId, initial, provenance }: { requestedId
         </dl>
       </header>
       <nav aria-label="실행 상세 보기" className={styles.tabs}>
-        <Link href={`${href}?tab=summary`} aria-current={tab === "summary" ? "page" : undefined}>요약</Link>
-        <Link href={`${href}?tab=replay`} aria-current={tab === "replay" ? "page" : undefined}>리플레이</Link>
-        <Link href={`${href}?tab=evidence`} aria-current={tab === "evidence" ? "page" : undefined}>판단 근거</Link>
-        <Link href={`${href}?tab=record`} aria-current={tab === "record" ? "page" : undefined}>기록</Link>
+        <Link href={runWorkspaceHref(requestedId,"summary",benchmarks)} aria-current={tab === "summary" ? "page" : undefined}>요약</Link>
+        <Link href={runWorkspaceHref(requestedId,"replay",benchmarks)} aria-current={tab === "replay" ? "page" : undefined}>리플레이</Link>
+        <Link href={runWorkspaceHref(requestedId,"evidence",benchmarks)} aria-current={tab === "evidence" ? "page" : undefined}>판단 근거</Link>
+        <Link href={runWorkspaceHref(requestedId,"record",benchmarks)} aria-current={tab === "record" ? "page" : undefined}>기록</Link>
       </nav>
       <p id="run-unsupported" className={styles.note}>저장된 근거는 같은 child의 명시적 참조만 연결합니다. 검증된 자산 시계열·재생은 제공하지 않습니다.</p>
       <section aria-label="조회 상태" className={styles.observation}>

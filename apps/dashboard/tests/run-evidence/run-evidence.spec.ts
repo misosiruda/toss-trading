@@ -5,6 +5,22 @@ const selected=(id:string,kind:string,event:string,tab='evidence')=>root+id+'?ta
 const inspector=(page:import('@playwright/test').Page)=>page.getByRole('article',{name:'선택 근거 상세'});
 test.afterEach(async({request})=>{const response=await request.get('http://127.0.0.1:8794/__requests',{headers:{'x-ux04-test-runner':'ux05-fixture-v1'}});expect(response.status()).toBe(200);const {requests}=await response.json();expect(requests.every((r:{method:string})=>r.method==='GET')).toBe(true);});
 
+test('benchmark selection survives explicit trade, risk and packet reference navigation',async({page})=>{
+  await page.goto(normal+'?tab=evidence&benchmarks=cashOnly');
+  await page.getByRole('region',{name:'근거 사건 목록'}).getByRole('link',{name:/^trade_1/}).click();
+  await expect(inspector(page).getByRole('heading',{name:'모의 체결 · trade_1'})).toBeVisible();
+  for(const [id,label]of [['risk_1','Deterministic Risk · risk_1'],['packet_1','Packet · packet_1']]){
+    await inspector(page).getByRole('link',{name:id,exact:true}).click();
+    await expect(inspector(page).getByRole('heading',{name:label,exact:true})).toBeVisible();
+    expect(new URL(page.url()).searchParams.get('benchmarks')).toBe('cashOnly');
+  }
+  await page.getByRole('navigation',{name:'실행 상세 보기'}).getByRole('link',{name:'요약',exact:true}).click();
+  const panel=page.getByRole('region',{name:'저장된 benchmark'});
+  await expect(panel.getByRole('checkbox',{name:'현금 보유',exact:true})).toBeChecked();
+  await expect(panel.locator('input:checked')).toHaveCount(1);
+  expect(new URL(page.url()).searchParams.has('event')).toBe(false);
+});
+
 test('bound packet and trade reference the exact Risk while provider causality remains unavailable',async({page})=>{
   await page.goto(normal+'?tab=evidence');await expect(page.getByRole('heading',{name:'판단 근거',exact:true})).toBeVisible();
   await page.locator('a[href$="event=trade%3Atrade_1"]').click();await expect(page).toHaveURL(selected('fixture_evidence_normal','trade','trade_1'));
