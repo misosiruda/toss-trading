@@ -9,14 +9,18 @@ const identity = {
 };
 
 export const paperSimulationObservationEventSchema = z.discriminatedUnion("event", [
-  z.object({ ...identity, event: z.literal("accepted"), canonicalRequestHash: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional() }).strict(),
+  z.object({ ...identity, event: z.literal("accepted"),
+    canonicalRequestHash: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
+    inputProvenanceHash: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional() }).strict(),
   z.object({
     ...identity,
     event: z.literal("runner_failed"),
     observedAt: z.iso.datetime(),
     reasonCode: z.literal("runner_rejected")
   }).strict()
-]).refine((event) => event.simulationRunId === event.batchId, "simulation identity mismatch");
+]).refine((event) => event.simulationRunId === event.batchId, "simulation identity mismatch")
+  .refine(event => event.event !== "accepted" || event.inputProvenanceHash === undefined
+    || event.canonicalRequestHash !== undefined, "input evidence requires canonical binding");
 
 export type PaperSimulationObservationEvent = z.infer<typeof paperSimulationObservationEventSchema>;
 export type PaperSimulationObservation = {
