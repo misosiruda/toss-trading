@@ -24,3 +24,12 @@
 ## 남은 기존 범위
 
 UX06 baseline1/candidate1–3, 완전 input/runtime/version 비교 가능성은 현재 exact-pair MVP와 별도의 미완료 범위다. 이번 clone은 원래 batch 생성 요청과 새 실험 생성만 소유한다. 모든 legacy payload의 Next 재구현이나 원래 soft-navigation 원인 규명 완료를 선언하지 않는다. 전체 ROADMAP_COMPLETE는 아직 아니다.
+
+## PR817 이후 선행 계약
+
+2026-10-07 PR816 whole-batch clone과 PR817 상세 탐색의 benchmark 표시 선택 보존이 병합됐다.
+후속 입력·runtime/version은 [별도 계약](input-runtime-provenance-contract.md)에서 현재 저장 근거와
+부족한 근거를 구분한다. 계약 문서 자체는 새 producer/reader 구현 또는 complete provenance의
+완료가 아니다. 접수 당시 실효 입력 보존 → 실제 child 소비 입력·runtime 결속 → bounded historical
+read → baseline1/candidate1–3 UI 순서로 진행한다. 원래 요청과 child 실효 window를 혼동하지 않으며
+runtime UUID나 현재 조회 DTO version을 실행 구현 version으로 사용하지 않는다.
