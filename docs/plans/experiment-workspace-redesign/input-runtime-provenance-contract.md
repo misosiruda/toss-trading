@@ -18,6 +18,7 @@ reader, 새 endpoint, 비교 가능성 또는 화면 기능이 구현됐다고 �
 | `historicalBatchReplayWorkflow` 및 child metadata/research manifest | child identity, 선택 window, configuration 및 저장 hash | 모든 원래 batch 입력·실제 runtime을 복원하거나 현재 자료와 hash를 검증한 것은 아님 |
 | `historicalReplayWorkflow.ts` / `historicalReplayWorkflowPlan.ts` | 저장 portfolio가 있으면 요청 initialCash보다 우선하고 실제 initialPortfolio를 replayInput과 research configHash에 포함 | configHash만으로 실제 초기 현금·보유 상태를 복원하거나 소비 시점 결속을 재검증할 수 없음 |
 | `replayProvenanceProjection.ts` | field별 partial/stored observation | requested/effective/runtime 일부는 항상 not_persisted |
+| `historicalReplayReport.ts` / `historicalReplayWorkflowArtifacts.ts` / `localOperationsReaders.ts` | replay 결과에서 report를 생성·저장하고 허용 경로의 JSON을 조회 | report에 exact child identity·결과 내용 hash 결속이 없으며 입력 hash 참조만으로 report/metric 무결성을 검증할 수 없음 |
 | `paperExperimentRuntime.ts` | 별도 EXP CLI 계열의 source/build receipt 검증 | historical batch/API 실행의 증거로 가져올 수 없음 |
 
 PR816의 whole-batch clone은 canonical 원래 요청 → 현재 validation → 새 ID를 소유한다.
@@ -141,6 +142,20 @@ version을 검증해야 한다. 서로 다른 version·범위·source 및 full p
 동등 비교하지 않는다. 알려진 차이는 차이로, unknown은 불가 이유로 표시한다. 기존 provenance v1의
 comparability=unavailable은 새 producer·reader·검증이 실제 연결되기 전까지 유지한다.
 
+**결과·metric 결속도 비교의 선행 조건이다.** 결과 producer는 실제 완료한 exact child/batch/runIndex,
+검증된 소비 입력·runtime evidence의 version/hash, 해당 실행에서 생성한 report의 schema version과
+내용 hash를 하나의 versioned 결과 기록에 결속한다. report 저장 완료와 결과 기록의 durable 결속을
+확인한 뒤에만 비교용 결과를 발행한다. 사후에 현재 파일을 hash하거나 reportPath·generatedAt·입력
+hash 참조가 같다는 사실만으로 과거 실행 결과의 결속을 보충하지 않는다. 결과 파일을 읽은 뒤
+내용 hash·identity·입력/runtime 참조·완료 상태와 반환 직전 파일 동일성을 다시 검증한다.
+
+공통 관측 범위의 metric에는 실제 관측 기간/timezone·scope·coverage, 계산 version·단위·비용 및
+benchmark 기준을 확인한다. 전체 기간의 집계값을 공통 부분 기간의 metric으로 이름만 바꾸거나
+비례 환산하지 않는다. 부분 기간을 계산한다면 원래 결과에 결속된 timeline/필요 원자료의 내용 hash와
+정확한 관측 구간·계산 규칙까지 검증해야 한다. 이러한 producer/read가 연결되기 전이나 legacy,
+stale/다른 child/교체·변조 report, 누락·미완료 결과, 공통 관측 범위 불일치이면 해당 열의 metric
+비교는 unavailable이다. 입력/runtime이 complete여도 이 gate를 대체하지 않는다.
+
 `codex_paper_only`는 외부 `codex exec`를 호출하며 현재 provider에 결정 재현성을 보장하는
 seed/decision-stream 재생 계약이 없다. source·초기 portfolio·prompt·model ID·runtime이 같아도
 결정이 달라질 수 있으므로 현재 AI-backed 실행은 통제된 성과 비교 unavailable로 유지한다.
@@ -165,13 +180,17 @@ baseline1/candidate1–3 UI는 이 계약 뒤 별도 PR이다. 후보 열별 실
    평가/Risk 필드가 다른 경우, 저장 portfolio가 요청 initialCash보다 우선하는 경우를 포함한다.
    초기 상태 누락/redaction/변경은 complete와 입력 동일 판정을 막고, 관측된 현금0·빈 보유는
    unknown과 구분하는 negative/positive 회귀를 둔다. 동일 입력·model/runtime의 합성 AI provider가
-   서로 다른 결정을 반환해도 통제된 비교로 승격되지 않는 producer 회귀를 포함한다. EXP CLI 증거를 가져오지 않는다.
+   서로 다른 결정을 반환해도 통제된 비교로 승격되지 않는 producer 회귀를 포함한다. 실제 완료 child의
+   report 내용 hash·입력/runtime 결속과 결과 기록의 durable 발행도 비교 전에 검증한다. EXP CLI 증거를 가져오지 않는다.
 3. **bounded historical read:** exact ID, versioned parsing, hash와 acceptance/child binding,
    masking·path/file 변경·bytes/deadline·GET mutation0, legacy unavailable 및 현재 version과 다른
    과거 기록의 관측/clone 구분을 검증한다. AI-backed 실행의 입력·version 일치만으로 비교가 가능해지지
-   않는 negative와 unavailable 이유를 포함한다. API와 UI parser가 같은 계약을 받는 composition test를 둔다.
+   않는 negative와 unavailable 이유를 포함한다. 같은 입력을 가진 다른 child의 report, 같은 경로의
+   stale/교체 report, metric 변조, 누락·미완료 결과, 기간/coverage 불일치를 거부하고 정확한 결과 결속은
+   판독하는 회귀를 둔다. API와 UI parser가 같은 계약을 받는 composition test를 둔다.
 4. **비교 UI:** 위 producer/read 계약을 소비해 1+1–3 선택·URL/history/reload, duplicate/self compare,
-   불완전 열 격리와 조건 차이를 3viewport/keyboard/axe/console에서 확인한다.
+   결과 결속·공통 관측 범위를 통과한 metric만 비교하고, 불완전 열 격리와 조건 차이를
+   3viewport/keyboard/axe/console에서 확인한다.
 
 각 기능 PR은 별도 scope와 책임 commit, 한국어 Draft 및 독립 검토 후 최초 Ready 자동 review를
 따른다. backend 입력이 바뀌면 PR816의 full4530/0/33을 새 후보로 재사용하지 않는다. 새로운
