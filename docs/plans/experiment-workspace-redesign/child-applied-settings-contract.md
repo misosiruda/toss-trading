@@ -63,12 +63,14 @@ JSON object key order만 canonical hash의 기존 정렬 규칙을 따른다.
 runner options 전체를 clone하지 않는다. clock, samplingPolicy, decisionProvider, performanceClock,
 tickDelay와 observer/progress callback은 원래 객체·state·호출 시점을 유지한다. 선택 field만 descriptor로
 검사하며 opaque getter를 미리 읽지 않는다. 선택 field getter/proxy/상속 값은 실행하지 않고 inspection_unavailable로 안전 정지한다.
-명시 제외한 runtime 객체와 callback의 원래 소비는 유지한다.
+명시 제외한 runtime 객체와 callback의 원래 소비는 유지한다. callback property 조회·사용자 callback 자체의
+임의 예외/출력은 선택 데이터 검사가 검증한 영역이 아니다.
 
 Risk의 `now`와 `dynamicCashReserveMarketRegime`은 알려진 제외 field다. 전자는 tick now로 덮어쓰고
 후자는 dynamic policy가 있을 때 다시 계산하며 없을 때 쓰지 않는다. 해당 field가 plain data property면
-값을 순회/clone/hash하지 않고 생략한다. accessor면 기존 spread 시점의 getter 효과를 바꾸지 않도록 전체
-settings 관측을 unsupported로 처리한다. 알려지지 않은 Risk field를 같은 방식으로 버리지 않는다.
+값을 순회/clone/hash하지 않고 생략한다. 다만 enumerable accessor는 Risk root의 실제 spread가 실행하므로
+inspection_unavailable로 차단한다. 이것은 기존 getter 효과를 유지하던 unsupported 예외의 보안상 변경이다.
+알려지지 않은 Risk plain-data field를 같은 방식으로 버리지 않는다.
 
 universe는 lifecycle consumer용 projection만 만든다. 알려진 비소비 manifest field `mode`, `universeId`,
 `snapshotDate`, `description`, `disclaimer`와 member field `sourceSymbol`, `name`, `assetType`,
@@ -158,7 +160,8 @@ raw exact4MiB이며 escaped maximal child identity를 사용했다. source 원�
 기록용 shape/문자열/count/byte 판정 전에 선택된 실제 소비 field의 읽을 수 있는 own data descriptor를
 별도로 검사한다. earlier unknown field, accessor, own undefined 또는 recording cap이 뒤쪽의 credential
 검사를 중단시키지 않는다. non-enumerable selected data와 예상 numeric/boolean field에 들어온 문자열도
-검사한다. unknown field/명시 제외 label/opaque root field 자체를 새로운 관측 대상으로 확대하지 않는다.
+검사한다. unknown field/명시 제외 label/opaque root field 자체를 새로운 관측 대상으로 확대하지 않는다. 다만 아래 실제
+whole-object 출력 소비 범위는 unknown enumerable key/value도 별도 보안 검사에 포함한다.
 선택 getter/proxy/상속 값은 실행하거나 강제 해제하지 않고 inspection_unavailable로 분류한다.
 명시 제외한 runtime 객체·field의 내용까지 검사했다는 보장은 하지 않는다.
 
@@ -194,7 +197,7 @@ workflow plan/metadata는 runner 관측 이전에도 설정을 읽는다. 따라
 유한 descriptor-only 구조 검사를 수행한다. 이 판정은 문자열 credential 발견 여부와 독립이며 앞선
 redacted 값 때문에 뒤쪽 getter 검사가 생략되지 않는다. 입력 파일 읽기의 await 뒤에도 같은 검사를 반복해
 대기 중 caller mutation을 planning 전에 차단한다. 알려진 선택 field만 검사하며 문자열 내용이나
-명시 제외한 clock/sampler/provider/callback/Risk now·regime/universe labels를 실행·탐색하지 않는다.
+명시 제외한 clock/sampler/provider/callback 및 Risk now·regime의 data 값과 universe labels를 실행·탐색하지 않는다.
 
 선택 accessor/proxy/revoked proxy, 상속된 선택 값, nonplain container, object/function scalar와 구조
 검사 예산 소진은 준비 실패다. 실제 소비 array method/iterator/constructor·species와 serialization의
@@ -202,7 +205,46 @@ toJSON 같은 실행 hook override도 고정 descriptor 목록으로 확인하�
 plain-data unknown property를 credential로 분류하지 않는다. getter/proxy를 실행하거나 prototype 값을 실제 소비하지 않는다. 허용한
 Object/Array prototype에 missing own field/index가 상속된 경우도 omission으로 합치지 않는다.
 
-이 준비 실패는 고정 오류 `settings credential inspection unavailable`로 끝나고 기존 입력 외 출력은
+관측 field 목록 외에도 실제 whole-object 소비가 있는 곳은 enumerable descriptor를 검사한다.
+`historicalReplayWorkflowPlan`의 configuration → `createWorkflowResearchManifest` →
+`replayRunManifest.canonicalPlainObject`는 constraints/allocationPolicy/marketRegimeAllocationPolicy와
+Risk의 4개 bucket map·dynamicCashReservePolicy·hedgePolicy를 재귀적으로 읽는다. 이 경로의 unknown
+중첩 accessor/proxy도 실행 없이 검사 불가로 분류한다. `replayRiskPolicy`의 root spread는 값의 재귀
+탐색 없이 enumerable accessor만 검사하며, 제외 data 값을 열어 보지 않는다. execution/exit와 universe의
+선택식 normalizer가 읽지 않는 unknown field는 이 whole-object 검사에 추가하지 않는다.
+
+일반 unknown plain data는 기존 unsupported/metadata 검증 의미를 유지한다. allocation의 unknown 값은
+workflow metadata에서 거절되지만 observed direct runner는 summary에 원문을 반환한다. Risk의 4개 bucket
+map은 unknown key도 실제 run-metadata에 남고, 나머지 raw metadata object는 unknown key를 거절하는
+오류에 그 이름을 포함한다. 이 실제 저장·반환·오류 소비 범위의 enumerable plain-data key/value와
+credential key/value 연관을 기존 유한 detector로 검사한다. 명백한 credential은 redacted이며 일반 token_count,
+public URL·unknown data는 유지한다. unknown throwing getter/proxy는 inspection_unavailable이다.
+관측 schema나 기록 필드 수를 늘리지 않는다.
+
+Whole-object 구조 검사와 실제 출력의 unknown-content 순회는 각각 기존 선택 필드 pass와 별도 예산이다. 객체당 own key10만개, 배열당
+10만index, 누적 descriptor50만회·값50만개, 각 실제 소비 root부터 container depth32를 사용한다.
+Sibling 사이에서 예산을 리셋하지 않으며 공유 alias는 각 소비 경로에서 검사하되 현재 ancestor의 순환은
+검사 불가로 거절한다. 이 추가 예산 초과도 inspection_unavailable 안전 정지다. native own-key 열거는
+먼저 key 배열을 할당하므로 이 수치를 입력 전체의 메모리 상한이나 임의 JS 객체의 할당 비용 보장으로
+표현하지 않는다. descriptor/value 순회의 한도이며 일반 지원 범위의 plain-data 의미는 유지한다.
+추가 unknown-content 순회는 기존 선택 leaf를 다시 검사·과금하지 않고, unknown key/subtree만 검사한다.
+문자열 누적16,777,216 units는 선택 검사와 추가 검사 전체가 공유한다. key/value 연관은 값의 coercion이나
+JSON 변환 없이 bounded `key=` 형태로 확인하므로 framing까지4096 units여야 한다. key4095 units까지
+완전 검사할 수 있고 그 이상은 기존 per-leaf 예산 안에서 내용 검출 후 검사 불가로 분류한다.
+
+universe metadata는 별도 경계다. `normalizeUniverseManifestForResearch`가 읽는 manifest의 mode,
+universeId, snapshotDate, description, disclaimer와 member의 sourceSymbol/name/assetType/assetClass/region/
+riskTags/strategyBucket/sector/segment/required/tags는 workflow 준비에서 descriptor와 재귀 plain-data 구조만
+검사한다. 공유 whole-object 값 예산과 별도의50만 field descriptor 예산을 유지한다. 정상 label 내용은
+관측·credential 검사에 추가하지 않는다. 직접 runner의 lifecycle projection 제외 의미는 그대로이며,
+읽지 않는 unknown universe field와 runtime callback은 이 준비 검사에 포함하지 않는다.
+
+준비 직전에 기존 선택/실제 출력의 유한 보안 판정을 보존한다. plan/research가 credential-bearing unknown
+key의 invalid 값 때문에 runner 전에 실패하면, 이미 redacted 또는 inspection_unavailable인 입력의 오류만
+그에 맞는 고정 오류로 바꾼다. 안전한 입력의 기존 진단은 유지한다. 준비가 성공하면 기존 durable redacted
+경로를 계속 사용하므로 credential 발견만으로 정상 관측 결속을 생략하지 않는다.
+
+구조 검사 불가의 준비 실패는 고정 오류 `settings credential inspection unavailable`로 끝나고 기존 입력 외 출력은
 만들지 않는다. 아직 초기/source 관측이 없으므로 예약·관측 결속을 꾸며 쓰지 않는다. 이미 초기화된
 runner의 observed 경계에 도달한 동일 입력은 content-free inspection_unavailable을 callback에 전달하고
 실제 예약/initial/source/settings가 durable해진 뒤 ticks/provider 전에 정지한다.
@@ -254,3 +296,5 @@ mutation 격리, normalizer 의미, opaque getter/state, source reference·reser
 Risk fallback/explicit Risk budget/allocation cap을 서로 다른 값으로 두어 혼동 없는 실제 결과를 검증한다.
 기존 initial/source/research/API clone의 unavailable/completeInput=false 의미를 유지한다. 검증·리뷰·병합
 gate는 범위 문서와 기존 test-verification runbook을 따른다.
+
+실제 소비·원문 저장/반환·오류·제외의 구분은 [소비 경계 대조표](child-applied-settings-consumer-boundaries.md)를 따른다.

@@ -90,7 +90,10 @@ unsupported/limit은 내용·개별 hash 없는 unavailable이며 원래 실행 
 단어 token 등 정상 문맥을 보존한다. recording limit/unsupported보다 먼저 별도 유한 credential 검사를
 수행하고 검사 예산 자체가 소진되면 내용 없는 inspection_unavailable을 남긴 뒤 안전 정지한다.
 4096 UTF-16 units leaf/누적16,777,216 units/50만values/배열별10만index의 정확한 경계와 호환성은 frozen v1 계약을 따른다.
-선택 getter/proxy는 실행하지 않고 inspection_unavailable로 차단한다. 명시 제외한 runtime 객체·field까지
+선택 getter/proxy는 실행하지 않고 inspection_unavailable로 차단한다. 실제 raw metadata/summary로 소비되는
+object는 unknown enumerable accessor도 구조 검사하며 key/value의 명백한 credential도 유한 검사한다.
+일반 unknown data와 읽지 않는 object는 관측 범위를 늘리지 않는다. universe metadata의 명시 label은
+준비 단계에서 실행 가능한 descriptor만 차단하고 정상 내용은 계속 제외한다. 명시 제외한 runtime 객체·field까지
 secret-free라고 주장하지 않는다.
 
 ## 저장 단위·결속·내구성
@@ -145,3 +148,5 @@ random/fixed window, child index/seed, single runCount override, API/batch defau
 명시적으로 매핑한다. receipt 존재는 설정 동일성의 대체 증거가 아니며 A의 공유 field와 알려진 변환을
 검증해야 한다. legacy receipt omission은 admission unavailable이고 기존 실행/clone을 보존한다.
 clock/sampler/provider/runtime/dependencies/result 및 public reader/비교 UI는 각각 후속 경계다.
+
+실제 소비·원문 저장/반환·오류·제외의 구분은 [소비 경계 대조표](child-applied-settings-consumer-boundaries.md)를 따른다.
