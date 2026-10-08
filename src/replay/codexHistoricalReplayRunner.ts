@@ -10,7 +10,8 @@ import type {
 } from "../domain/schemas.js";
 import {
   HistoricalMarketPacketBuilder,
-  HistoricalMarketSnapshotIndex
+  HistoricalMarketSnapshotIndex,
+  type HistoricalUniverseLifecycleInput
 } from "../market/historicalPacketBuilder.js";
 import type { MarketPacketConstraints } from "../market/packetBuilder.js";
 import {
@@ -56,6 +57,7 @@ import {
 } from "./historicalReplayDecisionBoundary.js";
 import type { HistoricalUniverseManifest } from "./historicalUniverseCoverage.js";
 import { prepareReplaySourceSnapshot, type ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
+import { prepareReplaySettingsSnapshot, type ReplaySettingsSnapshotObservation } from "../domain/replaySettingsSnapshot.js";
 import type { SimulatedClock, SimulatedTick } from "./simulatedClock.js";
 import type {
   HistoricalPortfolioTimelineItem,
@@ -91,6 +93,7 @@ export interface CodexHistoricalReplayRunnerOptions {
   performanceClock?: () => number;
   tickDelayMs?: number;
   tickDelay?: (ms: number) => Promise<void>;
+  onSettings?: (settings: ReplaySettingsSnapshotObservation) => Promise<void> | void;
   onSourceSnapshots?: (source: ReplaySourceSnapshotObservation) => Promise<void> | void;
   onInitialPortfolio?: (portfolio: VirtualPortfolio) => Promise<void> | void;
   onProgress?: (
@@ -98,11 +101,20 @@ export interface CodexHistoricalReplayRunnerOptions {
   ) => Promise<void> | void;
 }
 
+type ReplayRunnerSettings = Pick<CodexHistoricalReplayRunnerOptions,
+  "packetIdPrefix" | "packetExpiresInSeconds" | "maxCandidates" | "maxSnapshotAgeSeconds" | "constraints" |
+  "riskPolicy" | "executionPolicy" | "allocationPolicy" | "marketRegimeAllocationPolicy" | "paperExitPolicy" |
+  "candidateStrategyBucket" | "tickDelayMs"> & { universeManifest?: HistoricalUniverseLifecycleInput };
+
 export async function runCodexHistoricalReplay(
   options: CodexHistoricalReplayRunnerOptions,
   input: HistoricalReplayInput
 ): Promise<HistoricalReplayResult> {
   // Only the bound observation path changes ownership; unsupported/legacy replay remains accepted as before.
+  const capturedSettings = options.onSettings === undefined ? undefined : prepareReplaySettingsSnapshot(options);
+  // The strict snapshot preflight excludes own undefined; no opaque runner field is copied here.
+  const settings: ReplayRunnerSettings = capturedSettings?.status === "recorded"
+    ? capturedSettings.snapshot : options;
   const source = options.onSourceSnapshots === undefined ? undefined : prepareReplaySourceSnapshot(input.snapshots);
   const snapshots = source?.status === "recorded" ? source.snapshot : input.snapshots;
   let currentPortfolio = structuredClone(input.initialPortfolio);
@@ -113,6 +125,13 @@ export async function runCodexHistoricalReplay(
     await options.onSourceSnapshots?.(structuredClone(source));
     if (source.status === "unavailable" && source.reason === "redacted") {
       throw Error("source input requires redaction");
+    }
+  }
+  if (capturedSettings !== undefined) {
+    await options.onSettings?.(structuredClone(capturedSettings));
+    if (capturedSettings.status === "unavailable") {
+      if (capturedSettings.reason === "redacted") throw Error("settings input requires redaction");
+      if (capturedSettings.reason === "inspection_unavailable") throw Error("settings credential inspection unavailable");
     }
   }
   const packets: MarketPacket[] = [];
@@ -130,10 +149,10 @@ export async function runCodexHistoricalReplay(
   const ticks = options.clock.ticks();
   const snapshotIndex = new HistoricalMarketSnapshotIndex(snapshots);
   const performanceClock = options.performanceClock ?? monotonicNowMs;
-  const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
+  const paperExitPolicy = normalizePaperExitPolicy(settings.paperExitPolicy);
   const paperExitPolicyState = createPaperExitPolicyState();
-  appendExitPolicyWarnings(warnings, options.riskPolicy, paperExitPolicy);
-  appendMarketRegimeAllocationWarnings(warnings, options);
+  appendExitPolicyWarnings(warnings, settings.riskPolicy, paperExitPolicy);
+  appendMarketRegimeAllocationWarnings(warnings, settings);
 
   const emitProgress = async (
     tick: SimulatedTick,
@@ -188,9 +207,9 @@ export async function runCodexHistoricalReplay(
     const pricePoints = pricePointsFromHistoricalSnapshots(
       snapshotIndex.latestFreshSnapshots({
         simulatedAt,
-        maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds
+        maxSnapshotAgeSeconds: settings.maxSnapshotAgeSeconds
       }),
-      options.maxSnapshotAgeSeconds
+      settings.maxSnapshotAgeSeconds
     );
     currentPortfolio = markPortfolioToMarket({
       portfolio: currentPortfolio,
@@ -198,29 +217,29 @@ export async function runCodexHistoricalReplay(
       asOf: simulatedAt
     });
     const allocationPolicy = allocationPolicyForTick({
-      basePolicy: options.allocationPolicy,
-      marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy,
+      basePolicy: settings.allocationPolicy,
+      marketRegimeAllocationPolicy: settings.marketRegimeAllocationPolicy,
       snapshots,
       simulatedAt,
       tick
     });
     const packetBuildStartedAtMs = performanceClock();
     const packetBuild = new HistoricalMarketPacketBuilder({
-      packetId: `${options.packetIdPrefix}_${tick.stepIndex}`,
+      packetId: `${settings.packetIdPrefix}_${tick.stepIndex}`,
       simulatedAt,
-      expiresInSeconds: options.packetExpiresInSeconds,
-      maxCandidates: options.maxCandidates,
-      maxSnapshotAgeSeconds: options.maxSnapshotAgeSeconds,
-      constraints: options.constraints,
+      expiresInSeconds: settings.packetExpiresInSeconds,
+      maxCandidates: settings.maxCandidates,
+      maxSnapshotAgeSeconds: settings.maxSnapshotAgeSeconds,
+      constraints: settings.constraints,
       ...(allocationPolicy === undefined
         ? {}
         : { allocationPolicy }),
-      ...(options.universeManifest === undefined
+      ...(settings.universeManifest === undefined
         ? {}
-        : { universeManifest: options.universeManifest }),
-      ...(options.candidateStrategyBucket === undefined
+        : { universeManifest: settings.universeManifest }),
+      ...(settings.candidateStrategyBucket === undefined
         ? {}
-        : { candidateStrategyBucket: options.candidateStrategyBucket })
+        : { candidateStrategyBucket: settings.candidateStrategyBucket })
     }).build({
       portfolio: currentPortfolio,
       snapshotIndex
@@ -250,7 +269,7 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
-      await waitForTickPacing(options);
+      await waitForTickPacing(options, settings);
       continue;
     }
 
@@ -291,15 +310,15 @@ export async function runCodexHistoricalReplay(
           decisionItem: item,
           engine,
           riskPolicy: riskPolicyForReplayTick({
-            policy: options.riskPolicy,
+            policy: settings.riskPolicy,
             now: simulatedAt,
             packet,
             snapshots,
             simulatedAt
           }),
-          ...(options.executionPolicy === undefined
+          ...(settings.executionPolicy === undefined
             ? {}
-            : { executionPolicy: options.executionPolicy }),
+            : { executionPolicy: settings.executionPolicy }),
           paperExitPolicyState,
           auditEvents,
           riskDecisions,
@@ -366,7 +385,7 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
-      await waitForTickPacing(options);
+      await waitForTickPacing(options, settings);
       continue;
     }
 
@@ -395,7 +414,7 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
-      await waitForTickPacing(options);
+      await waitForTickPacing(options, settings);
       continue;
     }
 
@@ -420,7 +439,7 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
-      await waitForTickPacing(options);
+      await waitForTickPacing(options, settings);
       continue;
     }
 
@@ -471,7 +490,7 @@ export async function runCodexHistoricalReplay(
           orderExecutionMs
         })
       );
-      await waitForTickPacing(options);
+      await waitForTickPacing(options, settings);
       continue;
     }
 
@@ -508,15 +527,15 @@ export async function runCodexHistoricalReplay(
         decisionItem: item,
         engine,
         riskPolicy: riskPolicyForReplayTick({
-          policy: options.riskPolicy,
+          policy: settings.riskPolicy,
           now: simulatedAt,
           packet,
           snapshots,
           simulatedAt
         }),
-        ...(options.executionPolicy === undefined
+        ...(settings.executionPolicy === undefined
           ? {}
-          : { executionPolicy: options.executionPolicy }),
+          : { executionPolicy: settings.executionPolicy }),
         paperExitPolicyState,
         auditEvents,
         riskDecisions,
@@ -562,7 +581,7 @@ export async function runCodexHistoricalReplay(
         orderExecutionMs
       })
     );
-    await waitForTickPacing(options);
+    await waitForTickPacing(options, settings);
   }
 
   return {
@@ -586,7 +605,8 @@ export async function runCodexHistoricalReplay(
     auditEvents,
     warnings,
     samplingPolicy: options.samplingPolicy?.metadata() ?? null,
-    allocationPolicy: options.allocationPolicy ?? null,
+    allocationPolicy: capturedSettings?.status === "recorded"
+      ? structuredClone(settings.allocationPolicy ?? null) : settings.allocationPolicy ?? null,
     paperExitPolicy,
     samplingDecisions,
     progressSummary: {
@@ -595,7 +615,7 @@ export async function runCodexHistoricalReplay(
       decisionsRequested: decisionProviderCallCount,
       decisionsSkipped: decisionSkippedCount,
       tradesCreated: trades.length,
-      maxCandidatesPerStep: options.maxCandidates
+      maxCandidatesPerStep: settings.maxCandidates
     },
     initialPortfolio,
     finalPortfolio: currentPortfolio,
@@ -604,9 +624,10 @@ export async function runCodexHistoricalReplay(
 }
 
 async function waitForTickPacing(
-  options: Pick<CodexHistoricalReplayRunnerOptions, "tickDelayMs" | "tickDelay">
+  options: Pick<CodexHistoricalReplayRunnerOptions, "tickDelay">,
+  settings: Pick<CodexHistoricalReplayRunnerOptions, "tickDelayMs">
 ): Promise<void> {
-  const delayMs = options.tickDelayMs ?? 0;
+  const delayMs = settings.tickDelayMs ?? 0;
   if (delayMs <= 0) {
     return;
   }

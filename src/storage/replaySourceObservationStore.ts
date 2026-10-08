@@ -4,6 +4,7 @@ import { replaySourceObservationSchema, initialPortfolioObservationReference,
   type ReplayInitialPortfolioObservation } from "../domain/replaySourceObservation.js";
 import type { ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
+import { durableSourceObservationReference, type ReplayDurableSourceReference } from "../domain/replaySettingsObservation.js";
 import { writeExclusiveExperimentFile } from "./paperExperimentFilesystem.js";
 
 export const REPLAY_SOURCE_OBSERVATION_FILE = "historical-replay-source-observation.json";
@@ -15,7 +16,7 @@ export async function writeReplaySourceObservation(input: {
   storageBaseDir: string;
   initialObservation: ReplayInitialPortfolioObservation;
   source: ReplaySourceSnapshotObservation;
-}): Promise<void> {
+}): Promise<ReplayDurableSourceReference> {
   try {
     const initial = input.initialObservation;
     const record = replaySourceObservationSchema.parse({
@@ -34,5 +35,6 @@ export async function writeReplaySourceObservation(input: {
     await writeExclusiveExperimentFile(join(input.storageBaseDir, REPLAY_SOURCE_OBSERVATION_FILE), text);
     const directory = await open(input.storageBaseDir, "r");
     try { await directory.sync(); } finally { await directory.close(); }
+    return durableSourceObservationReference(record);
   } catch { throw Error("source observation storage failed"); }
 }

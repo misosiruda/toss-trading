@@ -6,6 +6,9 @@ import type { VirtualPortfolio } from "../domain/schemas.js";
 import type { ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
 import type { ReplayInitialPortfolioObservation } from "../domain/replaySourceObservation.js";
 import { REPLAY_SOURCE_OBSERVATION_FILE, writeReplaySourceObservation } from "./replaySourceObservationStore.js";
+import { REPLAY_SETTINGS_OBSERVATION_FILE, writeReplaySettingsObservation } from "./replaySettingsObservationStore.js";
+import type { ReplaySettingsSnapshotObservation } from "../domain/replaySettingsSnapshot.js";
+import type { ReplayDurableSourceReference } from "../domain/replaySettingsObservation.js";
 import { maskReplayRunIdentity } from "../security/masking.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { assertExperimentPathSyntax, ensureExperimentDirectory, hasFsCode, writeExclusiveExperimentFile } from "./paperExperimentFilesystem.js";
@@ -15,7 +18,7 @@ import { HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAM
 
 export const REPLAY_INITIAL_PORTFOLIO_FILE = "historical-replay-initial-portfolio.json";
 export const REPLAY_INITIAL_PORTFOLIO_RESERVATION_FILE = "historical-replay-initial-portfolio.reserved.json";
-const replayOutputs = [REPLAY_INITIAL_PORTFOLIO_FILE, REPLAY_SOURCE_OBSERVATION_FILE, HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
+const replayOutputs = [REPLAY_INITIAL_PORTFOLIO_FILE, REPLAY_SOURCE_OBSERVATION_FILE, REPLAY_SETTINGS_OBSERVATION_FILE, HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
   HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME, HISTORICAL_REPLAY_PACKETS_FILE_NAME,
   HISTORICAL_REPLAY_DECISIONS_FILE_NAME, HISTORICAL_REPLAY_RISK_DECISIONS_FILE_NAME, HISTORICAL_REPLAY_TRADES_FILE_NAME,
   HISTORICAL_REPLAY_PORTFOLIO_TIMELINE_FILE_NAME];
@@ -28,6 +31,7 @@ export class ReplayInitialPortfolioDurabilityError extends Error {
 export interface ReplayChildObservationWriter {
   (portfolio: VirtualPortfolio): Promise<void>;
   observeSource(source: ReplaySourceSnapshotObservation): Promise<void>;
+  observeSettings(settings: ReplaySettingsSnapshotObservation): Promise<void>;
 }
 
 /** Reserve before rewriting existing replay artifacts. The immutable reservation is never removed or retried. */
@@ -51,6 +55,8 @@ export async function reserveReplayInitialPortfolioObservation(input: {
     await syncDirectoryChain(storageBaseDir);
     let invoked = false;
     let sourceInvoked = false;
+    let settingsInvoked = false;
+    let durableSourceReference: ReplayDurableSourceReference | undefined;
     let durableInitialObservation: ReplayInitialPortfolioObservation | undefined;
     const observeInitial = async (portfolio: VirtualPortfolio): Promise<void> => {
       if (invoked) throw Error("initial portfolio observation already attempted");
@@ -76,7 +82,16 @@ export async function reserveReplayInitialPortfolioObservation(input: {
         if (sourceInvoked) throw Error("source observation already attempted");
         sourceInvoked = true;
         if (durableInitialObservation === undefined) throw Error("source observation initial state unavailable");
-        await writeReplaySourceObservation({ storageBaseDir, initialObservation: durableInitialObservation, source });
+        durableSourceReference = await writeReplaySourceObservation({ storageBaseDir, initialObservation: durableInitialObservation, source });
+      },
+      observeSettings: async (settings: ReplaySettingsSnapshotObservation): Promise<void> => {
+        if (settingsInvoked) throw Error("settings observation already attempted");
+        settingsInvoked = true;
+        if (durableInitialObservation === undefined || durableSourceReference === undefined) {
+          throw Error("settings observation preceding state unavailable");
+        }
+        await writeReplaySettingsObservation({ storageBaseDir, initialObservation: durableInitialObservation,
+          sourceReference: durableSourceReference, settings });
       }
     });
   } catch (error) {

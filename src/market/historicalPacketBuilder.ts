@@ -13,9 +13,15 @@ import {
 } from "./packetBuilder.js";
 import type { PaperAllocationPolicy } from "../paper/allocationPolicy.js";
 import type {
-  HistoricalUniverseManifest,
   HistoricalUniverseMember
 } from "../replay/historicalUniverseCoverage.js";
+
+// Only lifecycle fields are consumed here; full manifests remain structurally compatible.
+export interface HistoricalUniverseLifecycleInput {
+  symbols: Array<Pick<HistoricalUniverseMember, "market" | "symbol"> &
+    Partial<Pick<HistoricalUniverseMember, "lifecycleStatus" | "lifecycleStatusSource">>>;
+}
+type LifecycleMember = HistoricalUniverseLifecycleInput["symbols"][number];
 
 export interface HistoricalMarketPacketBuilderOptions {
   packetId: string;
@@ -25,7 +31,7 @@ export interface HistoricalMarketPacketBuilderOptions {
   maxSnapshotAgeSeconds: number;
   constraints: MarketPacketConstraints;
   allocationPolicy?: PaperAllocationPolicy;
-  universeManifest?: HistoricalUniverseManifest;
+  universeManifest?: HistoricalUniverseLifecycleInput;
   candidateStrategyBucket?: StrategyBucket;
 }
 
@@ -360,8 +366,8 @@ function toCandidateDraft(
 }
 
 function lifecycleBySymbolFromUniverse(
-  universe: HistoricalUniverseManifest | undefined
-): Map<string, HistoricalUniverseMember> | undefined {
+  universe: HistoricalUniverseLifecycleInput | undefined
+): Map<string, LifecycleMember> | undefined {
   if (universe === undefined) {
     return undefined;
   }
@@ -374,7 +380,7 @@ function lifecycleBySymbolFromUniverse(
 function lifecycleMetadataForSnapshot(input: {
   snapshot: HistoricalMarketSnapshot;
   universeLifecycleBySymbol:
-    | Map<string, HistoricalUniverseMember>
+    | Map<string, LifecycleMember>
     | undefined;
 }): HistoricalCandidateLifecycleMetadata {
   if (input.universeLifecycleBySymbol === undefined) {

@@ -4,6 +4,10 @@ import type {
   VirtualPortfolio,
   VirtualPosition
 } from "../domain/schemas.js";
+import { hasUninspectableReplayResearchUniverse } from "./historicalReplaySettingsPreparation.js";
+import { inspectReplaySettingsCredentials } from "../domain/replaySettingsCredentialInspection.js";
+import { hasUninspectableReplaySettings } from "../domain/replaySettingsOpaqueInspection.js";
+import type { ReplaySettingsSnapshotObservation } from "../domain/replaySettingsSnapshot.js";
 import type { ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import {
@@ -62,6 +66,8 @@ export interface HistoricalReplayWorkflowResult {
 export async function runHistoricalReplayWorkflow(
   options: HistoricalReplayWorkflowOptions
 ): Promise<HistoricalReplayWorkflowResult> {
+  // Planning/metadata can read settings before the runner observation boundary. Never execute opaque settings there.
+  if (hasUninspectableReplaySettings(options) || hasUninspectableReplayResearchUniverse(options)) throw Error("settings credential inspection unavailable");
   const paths = createStoragePaths(options.storageBaseDir);
   const historicalMarketSnapshotsPath =
     options.historicalMarketSnapshotsPath ?? paths.historicalMarketSnapshotsPath;
@@ -69,25 +75,37 @@ export async function runHistoricalReplayWorkflow(
     new FileVirtualPortfolioStore(paths.virtualPortfolioPath).read(),
     new FileHistoricalMarketSnapshotStore(historicalMarketSnapshotsPath).readAll()
   ]);
+  // Input loading awaited caller-controlled time; recheck before any plan/metadata setting reads.
+  if (hasUninspectableReplaySettings(options) || hasUninspectableReplayResearchUniverse(options)) throw Error("settings credential inspection unavailable");
   const replayStartedAt = options.generatedAt ?? new Date();
   const decisionProvider =
     options.decisionProvider ?? new FirstPricedCodexHistoricalDecisionProvider();
-  const plan = createHistoricalReplayWorkflowPlan({
-    options,
-    storedPortfolio: portfolio,
-    snapshots: snapshots.records,
-    replayStartedAt,
-    decisionProvider
-  });
-  const researchManifest = createWorkflowResearchManifest({
-    plan,
-    snapshots: snapshots.records,
-    corruptLineCount: snapshots.corruptLineCount,
-    hasExplicitDecisionProvider: options.decisionProvider !== undefined,
-    decisionProviderMetadata: options.decisionProviderMetadata,
-    universeManifest: options.universeManifest,
-    createdAt: replayStartedAt
-  });
+  // Keep the bounded verdict before preparation can invoke any explicitly excluded runtime callback.
+  const preparationSecurity = inspectReplaySettingsCredentials(options);
+  let plan: HistoricalReplayWorkflowPlan;
+  let researchManifest: ReturnType<typeof createWorkflowResearchManifest>;
+  try {
+    plan = createHistoricalReplayWorkflowPlan({
+      options,
+      storedPortfolio: portfolio,
+      snapshots: snapshots.records,
+      replayStartedAt,
+      decisionProvider
+    });
+    researchManifest = createWorkflowResearchManifest({
+      plan,
+      snapshots: snapshots.records,
+      corruptLineCount: snapshots.corruptLineCount,
+      hasExplicitDecisionProvider: options.decisionProvider !== undefined,
+      decisionProviderMetadata: options.decisionProviderMetadata,
+      universeManifest: options.universeManifest,
+      createdAt: replayStartedAt
+    });
+  } catch (error) {
+    if (preparationSecurity === "redacted") throw Error("settings input requires redaction");
+    if (preparationSecurity === "inspection_unavailable") throw Error("settings credential inspection unavailable");
+    throw error;
+  }
   const researchManifestRef = replayResearchManifestReference({
     manifest: researchManifest,
     manifestPath: paths.historicalReplayResearchManifestPath
@@ -133,7 +151,7 @@ export async function runHistoricalReplayWorkflow(
         ...plan.runnerOptions,
         ...(!isBoundChild ? {} : {
           onInitialPortfolio: async (initialPortfolio: VirtualPortfolio) => {
-            // Runner captured source before entering this first asynchronous storage boundary.
+            // Runner captured source and settings before this first asynchronous storage boundary.
             if (identity.batchId === null || identity.runIndex === null) throw Error("child observation identity unavailable");
             observations = await reserveReplayInitialPortfolioObservation({
               storageBaseDir: options.storageBaseDir,
@@ -148,6 +166,14 @@ export async function runHistoricalReplayWorkflow(
             // Credential-bearing source must not flow into legacy packet/progress/audit outputs.
             if (source.status === "unavailable" && source.reason === "redacted") {
               throw Error("source input requires redaction");
+            }
+          },
+          onSettings: async (settings: ReplaySettingsSnapshotObservation) => {
+            if (observations === undefined) throw Error("child observation initial state unavailable");
+            await observations.observeSettings(settings);
+            if (settings.status === "unavailable") {
+              if (settings.reason === "redacted") throw Error("settings input requires redaction");
+              if (settings.reason === "inspection_unavailable") throw Error("settings credential inspection unavailable");
             }
             await startArtifacts();
           }

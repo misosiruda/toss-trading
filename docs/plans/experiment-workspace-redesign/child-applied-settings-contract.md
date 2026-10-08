@@ -1,0 +1,300 @@
+# Child 부분 설정 snapshot v1 계약
+
+[기능 A 범위](child-applied-settings-scope.md)의 frozen v1 구현 계약이다. 기준 runtime은 PR822의
+main `8191da85378deaeee335ea3601291d129fb9870c`다. 이 변경은 해당 부분 producer를 구현한다.
+관측 명칭은 **runner-boundary supplied settings**이며 normalized output·실행 성공·전체 configuration
+증명이 아니다. 아래 지원 shape를 첫 await 전에 고정하고 실제 소비에 연결한 경우에만 recorded다.
+
+## 표현과 presence
+
+snapshot은 아래 top-level 필드만 가진 strict object다. 필수는 `packetIdPrefix`,
+`packetExpiresInSeconds`, `maxCandidates`, `maxSnapshotAgeSeconds`, `constraints`다. 나머지는 optional이다.
+모든 숫자는 finite이며 `-0`는 지원하지 않는다. 기존 consumer의 validation·clamp·rounding을 여기서
+미리 실행하지 않으므로 finite 음수·0도 숫자 shape로 보존한다. boolean은 true/false만 지원한다.
+문자열은 well-formed Unicode이며 빈 문자열도 보존한다. time 문자열도 trim/Date.parse normalization을
+하지 않는다. 유효하지 않은 cooldown 시각을 inactive로 처리하는 기존 의미를 바꾸지 않는다.
+
+optional omission, `{}`, `[]`, 0, false와 제공된 값을 구분한다. own-property undefined, null,
+nonfinite, malformed Unicode, cycle, sparse/추가 property 배열, symbol key, non-enumerable data 등은
+기록용 unsupported_shape다. 선택된 accessor/proxy/상속 값/nonplain container와 object/function scalar는
+내용을 실행 없이 검사할 수 없어 inspection_unavailable이며 아래 안전 정지 경계를 따른다. 그 외 기록 지원 밖
+plain-data 입력은 settings 내용/hash 없이 unavailable이며 기존 replay 실행 경로를 보존한다. null/undefined를 omission으로 바꿔
+recorded하지 않는다. 속성 이름, 배열 순서와 중복을 보존하며 sort/dedup/default/coercion을 하지 않는다.
+JSON object key order만 canonical hash의 기존 정렬 규칙을 따른다.
+
+## 고정 enum
+
+- Market: `KR`, `US`
+- VirtualAction: `VIRTUAL_BUY`, `VIRTUAL_SELL`, `VIRTUAL_HOLD`
+- StrategyBucket: `long_term`, `swing`, `short_term`, `intraday`, `hedge`
+- Risk bucket map key: 위 5개와 `unknown`; 각 map 최대 6개
+- MarketRegimeLabel: `bull`, `bear`, `sideways`, `mixed`, `insufficient_data`; 각 map 최대 5개
+- InstrumentLifecycleStatus: `active`, `suspended`, `delisted`, `unknown`
+- lifecycleStatusSource: `explicit`, `defaulted`
+- fillPriceRule: `current_candidate_last_price`
+- TakeProfitMode: `full_exit`, `partial_then_trail`
+
+기존 Risk map 타입은 Record<string, number>다. 다른 key는 observer unsupported이며 실행 거절이
+아니다. `{}`도 missing metadata guard 활성화에 쓰이므로 absent로 합치지 않는다.
+
+## 정확한 필드
+
+다음 표에서 `?`는 optional이다. number/string/boolean은 앞 절의 표현 규칙을 따른다.
+각 strict object는 아래 열거한 field 외에는 unsupported다.
+
+| 경로 | 필드 |
+| --- | --- |
+| snapshot scalar | packetIdPrefix:string, packetExpiresInSeconds:number, maxCandidates:number, maxSnapshotAgeSeconds:number, candidateStrategyBucket?:StrategyBucket, tickDelayMs?:number |
+| constraints | maxNewPositions:number, maxBudgetPerSymbolKrw:number, allowedActions:VirtualAction[] |
+| executionPolicy? | fillPriceRule?:literal, slippageBps?:number, feeBps?:number, taxBps?:number, halfSpreadBps?:number, fillRatio?:number, allowFractionalShares?:boolean, maxVolumeParticipationRate?:number, minLiquidityFillRatio?:number, rejectStaleLiquidity?:boolean, marketImpactBpsPerParticipationRate?:number |
+| riskPolicy? scalar | maxBudgetPerDecisionKrw?, maxSymbolExposureKrw?, targetExposureRatio?, maxPositionWeightRatio?, maxSectorExposureKrw?, maxSectorExposureRatio?, maxCountryExposureKrw?, maxCountryExposureRatio?, maxCurrencyExposureKrw?, maxCurrencyExposureRatio?, maxUnknownMetadataExposureKrw?, maxUnknownMetadataExposureRatio?, minCashReserveRatio?, minCashReserveKrw?: 모두 number |
+| riskPolicy? maps | maxStrategyBucketExposureKrw?, maxStrategyBucketExposureRatio?, maxBucketTurnoverKrw?, maxBucketTurnoverRatio?: Risk bucket key의 partial number map |
+| riskPolicy.cooldownEntries?[] | market?:Market, symbol:string, action?:VirtualAction, activeUntil:string, reason?:string |
+| riskPolicy.dynamicCashReservePolicy? | lookbackDays:number, minSymbols?:number, minSnapshotsPerSymbol?:number, bullReturnThreshold?:number, bearReturnThreshold?:number, sidewaysAbsReturnThreshold?:number, breadthThreshold?:number, minimumCashReserveRatioFloor?:number, regimeCashReserveRatios?:partial regime number map, highVolatilityReturnThreshold?:number, highVolatilityCashReserveRatio?:number |
+| riskPolicy.hedgePolicy? | maxGrossExposureKrw?:number, maxGrossExposureRatio?:number, requireHedgeBucket?:boolean |
+| allocationPolicy? | policyName:string, targetExposureRatio:number, minCashReserveRatio:number, maxBudgetPerDecisionRatio:number, maxSymbolExposureRatio:number, deploymentRampDays?:number, rampDayIndex?:number, maxInitialDeploymentRatio?:number, maxDailyGrossBuyRatio?:number, maxInitialOpenPositions?:number, maxNewPositionsPerDay?:number, maxConcurrentPositions?:number, positionSlotRampDays?:number, marketTargetExposureRatios?:partial KR/US number map |
+| marketRegimeAllocationPolicy? | lookbackDays:number, policyNameSuffix?:string, minSymbols?:number, minSnapshotsPerSymbol?:number, bullReturnThreshold?:number, bearReturnThreshold?:number, sidewaysAbsReturnThreshold?:number, breadthThreshold?:number, regimeWeights?:partial regime number map |
+| paperExitPolicy? | takeProfitRatio?:number, stopLossRatio?:number, rebalanceMaxPositionWeightRatio?:number, takeProfitMode?:TakeProfitMode, takeProfitSellRatio?:number, trailingStopFromPeakRatio?:number |
+| universeManifest? | symbols: lifecycle member[] |
+| universeManifest.symbols[] | market:Market, symbol:string, lifecycleStatus?:InstrumentLifecycleStatus, lifecycleStatusSource?:literal |
+
+### 명시적으로 제외한 필드
+
+runner options 전체를 clone하지 않는다. clock, samplingPolicy, decisionProvider, performanceClock,
+tickDelay와 observer/progress callback은 원래 객체·state·호출 시점을 유지한다. 선택 field만 descriptor로
+검사하며 opaque getter를 미리 읽지 않는다. 선택 field getter/proxy/상속 값은 실행하지 않고 inspection_unavailable로 안전 정지한다.
+명시 제외한 runtime 객체와 callback의 원래 소비는 유지한다. callback property 조회·사용자 callback 자체의
+임의 예외/출력은 선택 데이터 검사가 검증한 영역이 아니다.
+
+Risk의 `now`와 `dynamicCashReserveMarketRegime`은 알려진 제외 field다. 전자는 tick now로 덮어쓰고
+후자는 dynamic policy가 있을 때 다시 계산하며 없을 때 쓰지 않는다. 해당 field가 plain data property면
+값을 순회/clone/hash하지 않고 생략한다. 다만 enumerable accessor는 Risk root의 실제 spread가 실행하므로
+inspection_unavailable로 차단한다. 이것은 기존 getter 효과를 유지하던 unsupported 예외의 보안상 변경이다.
+알려지지 않은 Risk plain-data field를 같은 방식으로 버리지 않는다.
+
+universe는 lifecycle consumer용 projection만 만든다. 알려진 비소비 manifest field `mode`, `universeId`,
+`snapshotDate`, `description`, `disclaimer`와 member field `sourceSymbol`, `name`, `assetType`,
+`assetClass`, `region`, `riskTags`, `strategyBucket`, `sector`, `segment`, `required`, `tags`는 data
+property일 때 순회/clone/hash하지 않는다. accessor는 unsupported다. labels의 전체 크기·안전성·자료
+정체성 증거가 아니며 미래 unknown field는 unsupported다. projection의 `{symbols:[]}`는 지원한다.
+
+### 소비 의미와 normalization
+
+- execution은 runner가 받은 supplied object를 기록한다. workflow는 upstream에서 이미 normalize할 수
+  있으므로 API 원래 field presence는 복원하지 않는다. private copy를 두 execution 경로에 전달하며
+  createPaperExecutionPolicy의 기존 fill 시점 defaults와 spread/impact clamp를 유지한다.
+- exit도 raw supplied object를 기록한다. direct runner는 관측 callbacks와 clock.ticks 뒤의 원래 위치에서
+  normalizePaperExitPolicy를 호출한다. workflow plan의 앞선 metadata validation도 그대로 둔다.
+  absent/empty/secondary-only가 normalized null이 되는 의미, finite invalid ratio의 throw 시점을 유지한다.
+  반환 paperExitPolicy는 기존처럼 normalized object/null이다.
+- Risk budget 두 개의 fallback은 각 packet.constraints.maxBudgetPerSymbolKrw다. allocation budget과
+  headroom은 별도 packet allocation/sizing 소비다. raw base를 미리 채우거나 이를 섞지 않는다.
+- Risk cooldown reason은 raw entry에 보존하되 실제 cooldown gate가 읽는 판단 근거라고 주장하지 않는다.
+  invalid activeUntil은 기존 Date.parse 결과대로 inactive이며 reduceOnly sell의 기존 예외도 유지한다.
+- allocation rampDayIndex는 deploymentRampDays가 있고 rampDayIndex가 없을 때만 tick.stepIndex+1로
+  파생한다. positionSlotRampDays만 있을 때 새 기본값을 만들지 않는다. regime policy는 base allocation이
+  없으면 종전처럼 무시하며 warning을 유지한다. source unavailable이면 source 파생까지 고정됐다고 하지 않는다.
+- universe의 absent/empty/member missing/status source omission을 구분한다. 동일 market:symbol의 마지막
+  member가 이기는 기존 순서를 유지한다. explicit source만 lifecycle gate로 사용하고 membership filtering,
+  symbol trim 또는 status default를 추가하지 않는다.
+- tickDelayMs는 고정 scalar를 사용하며 <=0/absent이면 tickDelay getter를 읽지 않는다. 양수인 기존 분기에서만
+  원래 callback을 읽어 호출한다. opaque callback을 미리 캡처하지 않는다.
+- warning, 두 Risk 경로, allocationPolicy 반환 summary와 progressSummary.maxCandidatesPerStep도 같은
+  private settings에 연결한다. callback에는 별도 copy만 전달하고 returned summary로 내부 copy를 노출하지 않는다.
+
+## 관측 지원 한도
+
+| 항목 | v1 한도 |
+| --- | --- |
+| raw selected snapshot JSON UTF-8 | 4,194,304 bytes |
+| 전체 envelope JSON + newline | 4,194,304 + 65,536 bytes |
+| universe members | 20,000 |
+| cooldown entries | 2,048 |
+| allowedActions | 128; 순서/중복 유지 |
+| Risk/regime/market maps | 각 6/5/2개의 위 고정 key |
+| 일반 string | 120 UTF-16 code units |
+| cooldown.activeUntil / cooldown.reason | 80 / 512 UTF-16 code units |
+
+관측 지원 한도이며 기존 replay 입력 제한이 아니다. allowedActions는 runtime에서 unique/max3을
+요구하지 않으므로 새 128개 observer cap을 입력 거절로 확대하지 않는다. selected shape의 container
+최대 depth는 root 포함 4다. frozen schema 자체가 더 깊은 shape를 unsupported로 거절한다. 임의 padding을
+허용하는 generic depth8 계약을 새로 만들지 않는다.
+
+2026-10-08 Node v24.19.0/Linux 합성 실험에서 raw exact 4MiB를 원본/private/callback copy로
+유지하고 기존 canonical hash를 계산한 process lifetime RSS는 171,810,816 bytes(163.85MiB)였다.
+baseline 55.44MiB, sampled heap 최대 75.74MiB, private/callback clone 14.60/16.92ms, hash
+129.42ms였다. 20,000 members와 2,048 ordinary cooldown은 2,387,639 bytes/RSS150.39MiB였다.
+raw +1byte 및 allowedActions129는 clone/hash 전에 검출했다. 별도 초기 wrapper 모델의 exact4MiB
+CJK/control RSS143.90/114.79MiB는 raw 모델과 구분한다.
+200,000개의 중복 allowedActions는 2.94MB 안에서도 큰 allocation을 만들 수 있어 별도 count cap을 둔다.
+측정은 탐색용 prototype이고 전체 프로세스 또는 병렬 child memory 보장이 아니다. 실제 parser/writer 구현
+완료 후 같은 입력의 bounded preflight, hash/envelope overhead 및 겹치는 copy lifetime을 다시 검증한다.
+위 측정은 parser clone, credential/proxy 검사, source/initial 자료와 index, file text/fsync 및 병렬 child를
+포함하지 않는다. 동일 bytes라도 객체 수·문자 escape에 따라 RAM이 달라지며 hard ceiling이 아니다.
+
+전체 입력을 먼저 clone/hash/JSON화하지 않는다. descriptor·key count·array length를 먼저 검사하고 bounded
+leaf/subobject 단위로 정확한 escaped UTF-8 bytes를 누적한다. 문자열 code units와 escaped bytes는 각각
+적용한다. source 배열 전체를 settings closure에 추가 보관하지 않는다.
+
+### 실제 구현의 bounded 측정
+
+같은 Node/Linux에서 actual runner capture, callback copy, strict parser, canonical hashes, exclusive file
+write/sync/close와 directory sync/close를 실행한 fresh process 3개를 순차 측정했다. 각 case의 settings는
+raw exact4MiB이며 escaped maximal child identity를 사용했다. source 원본·private copy와 index의 실제
+생성도 포함한다. tick은 빈 배열이고 provider0이다. 저장 파일을 읽어 schema/contentHash와 실제 source
+관측 record hash 결속을 대조했다.
+
+| source fixture | source bytes / records | process lifetime max RSS bytes | settings file / envelope bytes |
+| --- | ---: | ---: | ---: |
+| empty | 2 / 0 | 279,879,680 | 4,220,689 / 26,385 |
+| escaped byte maximum | 16,777,216 / 44 | 373,784,576 | 4,220,689 / 26,385 |
+| ordinary record maximum | 8,450,001 / 50,000 | 564,510,720 | 4,220,689 / 26,385 |
+
+세 경우 모두 exit0이며 file <=4MiB+64KiB였다. source 전체 payload는 settings 파일·writer reference에
+추가되지 않는다. 이 수치는 실제 저장·검증까지 포함한 단일 process high-water mark이며 병렬 child,
+긴 replay tick/portfolio growth, 임의 callback의 자료 보유와 운영 RSS 상한을 보장하지 않는다. 원본 입력의
+객체 수가 bytes와 별도로 비용을 만들므로 더 큰 관측 한도를 허용할 근거로 쓰지 않는다.
+
+## 기록 판정과 분리한 credential 검사 예산
+
+기록용 shape/문자열/count/byte 판정 전에 선택된 실제 소비 field의 읽을 수 있는 own data descriptor를
+별도로 검사한다. earlier unknown field, accessor, own undefined 또는 recording cap이 뒤쪽의 credential
+검사를 중단시키지 않는다. non-enumerable selected data와 예상 numeric/boolean field에 들어온 문자열도
+검사한다. unknown field/명시 제외 label/opaque root field 자체를 새로운 관측 대상으로 확대하지 않는다. 다만 아래 실제
+whole-object 출력 소비 범위는 unknown enumerable key/value도 별도 보안 검사에 포함한다.
+선택 getter/proxy/상속 값은 실행하거나 강제 해제하지 않고 inspection_unavailable로 분류한다.
+명시 제외한 runtime 객체·field의 내용까지 검사했다는 보장은 하지 않는다.
+
+| 보안 검사 예산 | 한도 |
+| --- | ---: |
+| 한 문자열의 UTF-16 units | 4,096 |
+| 모든 검사 문자열의 누적 UTF-16 units | 16,777,216 |
+| 방문한 선택 value | 500,000 |
+| 각 선택 배열의 index 검사 | 100,000 |
+
+이는 recording의 120/512자·128 actions·20,000 universe·4MiB 지원 한도와 다르다. 예를 들어121자 정상
+prefix, 긴 public URL,129 actions와4MiB+1byte 자료는 보안 예산 안에서 종전 limit/unsupported 실행을
+유지한다. 각 leaf/배열의 보안 한도를 넘으면 해당 범위는 검사하지 않고 incomplete를 표시하며 남은 전체
+예산 내의 선택 sibling 검사는 계속한다. 전역 text/value 예산을 다 쓰면 검사 예산을 리셋하지 않는다.
+
+검사한 값에서 credential을 찾으면 redacted가 recording unsupported/limit보다 우선한다. credential을
+확인하지 못했어도 보안 예산이 소진되면 새 typed reason `inspection_unavailable`이다. 민감 내용을
+발견했다고 오표기하지 않고 snapshot/hash 없는 설정 관측을 durable하게 남긴 뒤 legacy/ticks/provider
+전에 정지한다. 이것은 극단적인 입력에 대한 **새 실행 중단 경계**이며 관측 한도 초과 전부의 실행을
+차단하는 규칙이 아니다. 정상 plain-data의 recording overflow/unknown/undefined 실행 의미는 유지한다. 선택된 동적 설정의
+기존 실행 허용은 아래와 같이 보안상 변경되며, 이를 일반 plain-data 입력의 거절로 확대하지 않는다.
+
+문자열의 전체 clone/replace/decode에 임의 크기 값을 전달하지 않는다. 기존 credential guard는4096자
+이하 leaf에만 적용한다. 보안 pass는 알려진 field descriptor를 직접 읽으며 전체 object ownKeys/descriptor
+복제나 hash를 만들지 않는다. value/index 예산은 각 구조 또는 credential 검사 pass에 적용되며 한 pass의 sibling 사이에서 리셋하지
+않는다. 준비 전후 재검사와 writer schema 재검증은 별도 pass다. 이 유한 작업 예산은 운영 latency 또는
+병렬 RAM SLA를 보장하지 않는다.
+released initial/source 관측의 reason이나 안전 정지는 이 보완으로 바꾸지 않는다.
+
+### Selected opaque 설정의 준비 단계 차단
+
+workflow plan/metadata는 runner 관측 이전에도 설정을 읽는다. 따라서 workflow의 **첫 작업**에서 별도
+유한 descriptor-only 구조 검사를 수행한다. 이 판정은 문자열 credential 발견 여부와 독립이며 앞선
+redacted 값 때문에 뒤쪽 getter 검사가 생략되지 않는다. 입력 파일 읽기의 await 뒤에도 같은 검사를 반복해
+대기 중 caller mutation을 planning 전에 차단한다. 알려진 선택 field만 검사하며 문자열 내용이나
+명시 제외한 clock/sampler/provider/callback 및 Risk now·regime의 data 값과 universe labels를 실행·탐색하지 않는다.
+
+선택 accessor/proxy/revoked proxy, 상속된 선택 값, nonplain container, object/function scalar와 구조
+검사 예산 소진은 준비 실패다. 실제 소비 array method/iterator/constructor·species와 serialization의
+toJSON 같은 실행 hook override도 고정 descriptor 목록으로 확인하며 실행하지 않는다. 일반 비호출
+plain-data unknown property를 credential로 분류하지 않는다. getter/proxy를 실행하거나 prototype 값을 실제 소비하지 않는다. 허용한
+Object/Array prototype에 missing own field/index가 상속된 경우도 omission으로 합치지 않는다.
+
+관측 field 목록 외에도 실제 whole-object 소비가 있는 곳은 enumerable descriptor를 검사한다.
+`historicalReplayWorkflowPlan`의 configuration → `createWorkflowResearchManifest` →
+`replayRunManifest.canonicalPlainObject`는 constraints/allocationPolicy/marketRegimeAllocationPolicy와
+Risk의 4개 bucket map·dynamicCashReservePolicy·hedgePolicy를 재귀적으로 읽는다. 이 경로의 unknown
+중첩 accessor/proxy도 실행 없이 검사 불가로 분류한다. `replayRiskPolicy`의 root spread는 값의 재귀
+탐색 없이 enumerable accessor만 검사하며, 제외 data 값을 열어 보지 않는다. execution/exit와 universe의
+선택식 normalizer가 읽지 않는 unknown field는 이 whole-object 검사에 추가하지 않는다.
+
+일반 unknown plain data는 기존 unsupported/metadata 검증 의미를 유지한다. allocation의 unknown 값은
+workflow metadata에서 거절되지만 observed direct runner는 summary에 원문을 반환한다. Risk의 4개 bucket
+map은 unknown key도 실제 run-metadata에 남고, 나머지 raw metadata object는 unknown key를 거절하는
+오류에 그 이름을 포함한다. 이 실제 저장·반환·오류 소비 범위의 enumerable plain-data key/value와
+credential key/value 연관을 기존 유한 detector로 검사한다. 명백한 credential은 redacted이며 일반 token_count,
+public URL·unknown data는 유지한다. unknown throwing getter/proxy는 inspection_unavailable이다.
+관측 schema나 기록 필드 수를 늘리지 않는다.
+
+Whole-object 구조 검사와 실제 출력의 unknown-content 순회는 각각 기존 선택 필드 pass와 별도 예산이다. 객체당 own key10만개, 배열당
+10만index, 누적 descriptor50만회·값50만개, 각 실제 소비 root부터 container depth32를 사용한다.
+Sibling 사이에서 예산을 리셋하지 않으며 공유 alias는 각 소비 경로에서 검사하되 현재 ancestor의 순환은
+검사 불가로 거절한다. 이 추가 예산 초과도 inspection_unavailable 안전 정지다. native own-key 열거는
+먼저 key 배열을 할당하므로 이 수치를 입력 전체의 메모리 상한이나 임의 JS 객체의 할당 비용 보장으로
+표현하지 않는다. descriptor/value 순회의 한도이며 일반 지원 범위의 plain-data 의미는 유지한다.
+추가 unknown-content 순회는 기존 선택 leaf를 다시 검사·과금하지 않고, unknown key/subtree만 검사한다.
+문자열 누적16,777,216 units는 선택 검사와 추가 검사 전체가 공유한다. key/value 연관은 값의 coercion이나
+JSON 변환 없이 bounded `key=` 형태로 확인하므로 framing까지4096 units여야 한다. key4095 units까지
+완전 검사할 수 있고 그 이상은 기존 per-leaf 예산 안에서 내용 검출 후 검사 불가로 분류한다.
+
+universe metadata는 별도 경계다. `normalizeUniverseManifestForResearch`가 읽는 manifest의 mode,
+universeId, snapshotDate, description, disclaimer와 member의 sourceSymbol/name/assetType/assetClass/region/
+riskTags/strategyBucket/sector/segment/required/tags는 workflow 준비에서 descriptor와 재귀 plain-data 구조만
+검사한다. 공유 whole-object 값 예산과 별도의50만 field descriptor 예산을 유지한다. 정상 label 내용은
+관측·credential 검사에 추가하지 않는다. 직접 runner의 lifecycle projection 제외 의미는 그대로이며,
+읽지 않는 unknown universe field와 runtime callback은 이 준비 검사에 포함하지 않는다.
+
+준비 직전에 기존 선택/실제 출력의 유한 보안 판정을 보존한다. plan/research가 credential-bearing unknown
+key의 invalid 값 때문에 runner 전에 실패하면, 이미 redacted 또는 inspection_unavailable인 입력의 오류만
+그에 맞는 고정 오류로 바꾼다. 안전한 입력의 기존 진단은 유지한다. 준비가 성공하면 기존 durable redacted
+경로를 계속 사용하므로 credential 발견만으로 정상 관측 결속을 생략하지 않는다.
+
+구조 검사 불가의 준비 실패는 고정 오류 `settings credential inspection unavailable`로 끝나고 기존 입력 외 출력은
+만들지 않는다. 아직 초기/source 관측이 없으므로 예약·관측 결속을 꾸며 쓰지 않는다. 이미 초기화된
+runner의 observed 경계에 도달한 동일 입력은 content-free inspection_unavailable을 callback에 전달하고
+실제 예약/initial/source/settings가 durable해진 뒤 ticks/provider 전에 정지한다.
+
+이 변경은 이전 selected-getter/proxy의 unsupported fallback 호환성 예외를 폐기한다. 특히 예전 summary
+single-read 회귀는 observer 없는 direct legacy 경로에서 유지되지만, observed selected getter는 읽기0으로
+안전 정지한다. 정상 plain-data 및 명시 제외 runtime 객체의 기존 동작은 유지한다. getter/proxy 자체를
+credential이라고 오표기하지 않는다.
+
+## 저장 상태와 failure 순서
+
+snapshot version은 `replay_settings_snapshot.v1`, hash domain은 `{schemaVersion,snapshot}`다.
+관측은 `recorded`이면 snapshotVersion/snapshot/contentHash를 포함하고 `unavailable`이면
+reason `unsupported_shape`, `redacted`, `limit`, `inspection_unavailable`만 포함한다. 개별 입력 hash는 unavailable에 없다.
+
+file `historical-replay-settings-observation.json`의 strict envelope는
+schemaVersion `replay_settings_observation.v1`, mode `paper_only`, phase `runner_supplied_settings`,
+identity/startedAt/reservationHash, 실제 durable initial/source 관측의 작은 typed reference, settings를
+포함한다. 각 reference는 version/전체 observationHash와 recorded version/contentHash 또는 unavailable
+reason을 가진다. completeConfiguration=false, completeInput=false, comparability=unavailable이며
+admission/clock/sampler/provider/acquisition/sourceTrust/sourceFileIdentity/sourceReadCompleteness/runtime/
+dependencies/result는 unavailable이다. source reference 자체는 source 관측의 정확한 상태를 보존한다.
+
+| 분기 | durable 출력과 후속 동작 |
+| --- | --- |
+| workflow 준비 단계 selected opaque/구조 검사 불가 | 고정 오류, 기존 입력 외 출력 없음; 허위 초기/source 결속 없음 |
+| settings recorded / unsupported / limit | reservation → initial → source → settings → legacy artifacts → ticks/provider; unsupported/limit은 원래 settings 실행 참조 유지 |
+| source redacted | reservation → initial → 내용 없는 source 후 stop; settings 파일 없음, legacy/ticks/provider 없음 |
+| settings redacted 또는 inspection_unavailable + source 정상 | reservation → initial → source → 내용 없는 settings 후 stop; legacy/ticks/provider 없음 |
+| initial/source/settings write·file sync·close·directory open/sync/close 실패 | 해당 지점에서 stop, 이후 writer/legacy/ticks/provider 없음; 예약·부분 출력 보존 |
+
+내용 없는 typed redacted **record 전체 hash**는 참조할 수 있지만 민감 snapshot/문자열 hash는 만들지 않는다.
+같은 credential이 먼저 저장되는 initial/source에도 포함되면 기존 각 redaction guard로 내용/hash가 빠지는지
+합성 검증한다. source redacted의 기존 정지를 늦추지 않는다. source/settings callback mutation으로 stop
+조건을 무효화할 수 없도록 runner가 보유한 관측 상태도 확인한다. workflow는 onSettings callback 내부의
+legacy start 이전에도 redacted/inspection_unavailable을 확인한다.
+
+source writer는 실제 record를 durable하게 쓴 뒤 작은 immutable reference만 반환한다. settings writer는
+같은 예약 내부에서 전달된 reference를 사용하며 파일을 재조회/교체하지 않는다. source record payload를
+settings에 복제하지 않는다. initial/source/settings 각 writer는 attempt 시작과 durability 완료를 구분한다.
+중복·재진입, source 이전 settings, 실패한 source 뒤 settings와 identity/reservation/version/hash 혼합은
+거절한다. 새 settings orphan도 기존 예약 preflight 검사에 포함한다. retry/overwrite/repair는 하지 않는다.
+
+## 필수 회귀
+
+모든 field/presence와 arrays/maps의 순서·중복, representation unsupported와 cap -1/at/+1, 실제 consumer
+mutation 격리, normalizer 의미, opaque getter/state, source reference·reservation mismatch, 내구성 failure를
+시험한다. 합성 credential을 정상 public URL/ID/token 단어와 함께 검사하고 관측·legacy·error/log를 스캔한다.
+Risk fallback/explicit Risk budget/allocation cap을 서로 다른 값으로 두어 혼동 없는 실제 결과를 검증한다.
+기존 initial/source/research/API clone의 unavailable/completeInput=false 의미를 유지한다. 검증·리뷰·병합
+gate는 범위 문서와 기존 test-verification runbook을 따른다.
+
+실제 소비·원문 저장/반환·오류·제외의 구분은 [소비 경계 대조표](child-applied-settings-consumer-boundaries.md)를 따른다.

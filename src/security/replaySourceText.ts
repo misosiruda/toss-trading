@@ -7,7 +7,8 @@ const credentialKeys = new Set([
   "cookie", "setcookie", "sessionid", "sessionkey", "sessiontoken", "signature", "sig",
   "xamzcredential", "xamzsecuritytoken", "xamzsignature", "xgoogcredential", "xgoogsignature", "xgoogapikey"
 ]);
-const assignedKey = /(?<![A-Za-z0-9_])([A-Za-z0-9_.-]+)(?:\[\])?\s*["'\]]*\s*[:=]/g;
+// Start at a maximal key run; restarting inside dots/dashes only repeats failed scans.
+const assignedKey = /(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]+)(?:\[\])?\s*["'\]]*\s*[:=]/g;
 
 /** Conservative credential syntax guard for already length-bounded source fields; never returns secret text. */
 export function containsReplaySourceCredential(value: string): boolean {
@@ -34,6 +35,6 @@ function credentialSyntax(value: string): boolean {
       /(?:access|refresh|id|csrf|xsrf|auth|api|bearer|security)token$|apikey$|clientsecret$|password$/.test(key)) return true;
   }
   return /(?:^|[\r\n])\s*Bearer\s+\S+/i.test(value) ||
-    /(?:[a-z][a-z0-9+.-]*:)?\/\/[^\s/?#]*@/i.test(value) ||
+    /\/\/[^\s/?#]*@/i.test(value) ||
     /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----/.test(value);
 }
