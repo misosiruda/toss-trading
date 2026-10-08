@@ -44,8 +44,15 @@ reference는 복사 가능한 데이터이고 단독으로 검증 권한이 없�
 존재한다고 가정하거나 이번 B에서 추가하지 않는다. namespace/sourceRuntimeId는 기존 admission 저장의
 결속 의미만 가진다. 실제 child process/Node/runtime version 검증으로 표시하지 않는다.
 
-legacy input 부재와 실제 저장 redaction은 private state의 typed unavailable로 구분한다.
-그 경우 B에는 receipt의 원문 payload나 민감 field별 hash를 발행하지 않는다.
+legacy input 부재와 실제 저장 redaction 또는 더 강한 bounded credential 검출은 private state의 typed
+unavailable로 구분한다. 이 state에는 reason만 보관하며 ID/시각/hash/snapshot/원문·파생 secret을 넣지 않는다.
+발행 소유권은 먼저 확인하되 unavailable이면 identity/reference를 구성하기 전에 B 발행을 생략한다.
+
+실제 합성 접수에서 `password=SYNTH_B`와 저장 redacted=true인 JWT형 seed 모두 sanitized accepted ID와
+child ID에 민감 부분이 남았다. 기존 identity masking이나 원래 문자열용 detector로 sanitized ID의 안전성을
+다시 추측할 수 없다. 따라서 payload의 seed만 빼거나 그 ID를 hash해 unavailable 파일에 넣지 않는다.
+B 파일 없음은 verified 연결이 없다는 의미이며, 그 부재만으로 private unavailable reason을 추정하지 않는다.
+기존 accepted/ID/실행·A/source 보안 중단을 바꾸는 수정이 아니다.
 
 ## 2. 전달과 versioned mapping
 
@@ -113,7 +120,7 @@ unavailable이면 초기 관계도 unavailable이며 B의 matched claim은 발�
 - clock/sampler/provider/acquisition/sourceTrust/sourceFileIdentity/sourceReadCompleteness/runtime/dependencies/result는
   `unavailable`; completeConfiguration=false, completeInput=false, comparability=unavailable
 
-이 producer는 발행된 admission context가 있는 child에만 B 파일을 만든다. batchId는 그 context의
+이 producer는 손실 없는 available admission context가 있는 child에만 B 파일을 만든다. batchId는 그 context의
 PAPER_SIMULATION_ID_PATTERN과 같고 runId는 기존 child ID 한도256/ASCII를 따른다. context 없는 일반
 batch의 opaque batchId를 새 B file에 복사하거나 과거 실행을 backfill하지 않는다.
 
@@ -141,18 +148,22 @@ windowMonths는1–12이며 effective fixed top의null과 fixedWindow 안의 met
 unavailable로 강등하지 않는다. 기존 replay/API 허용을 유지하며 label을 padding·정규화해
 새로 발명하지 않는다. 이 두 합성 입력의 admission/sampler 수용 및 B unavailable 회귀를 포함한다.
 
-`lineage.status=unavailable`에는 reason만 둔다: `input_missing`, `redacted`, `unsupported_derivation`,
-`settings_unavailable`, `initial_unavailable`. receipt/snapshot/seed/window/기대 hash를 이 branch에 넣지 않는다.
+`lineage.status=unavailable`에는 reason만 둔다: `unsupported_derivation`, `settings_unavailable`,
+`initial_unavailable`. 이것은 available admission에 대응하는 child 관측/표현의 부분성이다.
+issuer의 input_missing/redacted는 이 artifact union이 아니라 앞선 private 분기이며 B 파일 자체가 없다. receipt/snapshot/seed/window/기대 hash를 이 branch에 넣지 않는다.
 누락·redaction·관측 불가를 mismatch나 verified로 바꾸지 않는다. 실제 지원된 context/recorded observation의
 명백한 위조·불일치는 이 union으로 숨기지 않고 발행 실패로 다룬다.
 
-새로 복사하는 reference/계획 문자열은 bounded plain data로 검사한다. 민감 credential로 판정되거나
-저장 당시 redacted였으면 원문/개별 hash 없이 unavailable:redacted이며 기존 실행 의미를 유지한다.
-이는 A/source의 기존 redacted stop을 해제한다는 뜻이 아니다.
+새로 소유할 원본 admission 문자열은 기존32KiB 경계의 parsed data에서 더 강한 bounded credential 검사를
+거친다. 저장 redacted 또는 positive credential이면 원문/파생값/개별 hash 없이 private unavailable로
+분기해 B를 생략한다. 검증된 안전 원본에서 생성한 seed suffix/ID는 exact derivation 관계로 확인한다.
+예를 들어 정상 seed `token`의 파생 `token:0`을 별도 사용자 credential assignment로 오인하지 않는다.
+안전한 원본과 다른 caller의 actual 문자열은 mismatch이며 redacted 생략으로 강등해 숨기지 않는다.
+이 과정은 기존 canonical/input 저장 bytes와 masking을 확대 변경하지 않으며 A/source의 기존 stop도 유지한다.
 
 전체 UTF-8 JSON+개행은 최대8,192bytes다. 기존 입력 한도를 확대하거나 그 크기의 임의 객체를 받는다는
 뜻이 아니다. Node 합성 직렬화에서 독립 field-max/최대 escaping recorded envelope는4,804bytes,
-unavailable5종은2,033–2,047bytes였다. 최대와 한도 사이의 여유는3,388bytes다. 이 fixture는 서로 동시에
+발행 가능한 unavailable3종은2,044–2,047bytes였다. 최대와 한도 사이의 여유는3,388bytes다. 이 fixture는 서로 동시에
 성립하지 않을 수 있는 field 상한을 합친 크기 대조이며, 실제 유효 window나 producer/schema 시험이 아니다.
 구현에서는 strict schema의 실제 최대 허용 fixture와 writer의 bounded UTF-8 검사를 다시 검증한다.
 초과/unknown version/unknown key/nonfinite/잘못된 presence를 버리거나 truncate해 성공으로 만들지 않는다.
@@ -170,9 +181,9 @@ open/sync/close를 완료한 뒤에만 다음 단계가 시작된다. attempted 
 
 | 경로 | 순서·결과 |
 | --- | --- |
-| context 없음 | 종전 initial/source/A 경로, B 파일 없음 |
+| context 없음 또는 private issuer unavailable(input_missing/redacted) | 종전 initial/source/A 경로, B 파일 없음; ID/reference 구성도 생략 |
 | 지원 context+recorded A/initial+관계 일치 | reservation → initial → source → A → B recorded durable → legacy → ticks/decide |
-| 진짜 legacy/redacted/관측 unsupported·limit | 같은 선행 기록 → 내용 없는 B unavailable durable → 기존 허용 실행 |
+| available admission과 관측 unsupported·limit/표현 불가 | 같은 선행 기록 → B unavailable durable → 기존 허용 실행 |
 | source redacted / settings redacted 또는 inspection_unavailable | 기존 단계에서 먼저 stop, B를 위해 후속 실행하지 않음 |
 | 준비 전 검사·planning 실패 | 기존 오류/안전 규칙, 아직 없는 A/B 결속 생성 없음 |
 | context 위조·지원된 ID/hash/reference/mapping 충돌 | 고정 오류, 이후 legacy/ticks/decide0, barrier 보존 |

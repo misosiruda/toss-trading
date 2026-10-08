@@ -9,7 +9,7 @@
 서버가 실제 durable accepted 뒤 발행한 내부 context를 API → batch → 실제 child로 전달하고,
 그 접수의 저장 입력과 child가 실제 캡처·저장한 A 설정 사이의 알려진 변환을 검증한다.
 별도 immutable B 기록이 receipt, exact child, 실제 A reference와 제한된 mapping 판정을 연결한다.
-receipt의 존재와 설정 일치는 다른 근거다. 요청 hash를 옆에 적는 것만으로 실제 소비가 검증되지 않는다.
+손실 없는 available context만 B 발행에 사용한다. receipt의 존재와 설정 일치는 다른 근거다. 요청 hash를 옆에 적는 것만으로 실제 소비가 검증되지 않는다.
 
 기존 initial/source/settings v1의 `admission: unavailable` 상수와 원래 bytes는 변경하지 않는다.
 B가 성공해도 completeConfiguration=false, completeInput=false, comparability=unavailable이다.
@@ -74,9 +74,11 @@ source acquisition/file identity/read completeness, 공개 reader/endpoint/UI와
 ## 실패·호환성
 
 - admission 저장 실패는 기존409/503·runner0, ID barrier 보존이다. context가 먼저 발행되지 않는다.
-- context 없는 legacy/standalone/batch는 B unavailable 의미이며 새 B 파일을 만들 필요가 없다.
-- canonical-only 또는 redacted admission에서 손실 없는 기대값이 없으면 typed unavailable이다.
-  과거 accepted나 clone을 새 실패로 바꾸거나 원문·민감 hash를 복원하지 않는다.
+- context 없는 legacy/standalone/batch와 issuer unavailable은 verified 연결이 없으며 B 파일을 만들지 않는다.
+  B 부재만으로 legacy/redaction/실패 원인을 추정하지 않는다.
+- canonical-only 또는 redacted admission에서 손실 없는 기대값이 없으면 private typed unavailable만 둔다.
+  이 상태에는 ID/시각/hash/snapshot도 보관하지 않고 B 파일을 만들지 않는다. sanitized seed가 accepted/child ID에
+  남을 수 있으므로 공통 identity/reference envelope도 복사하지 않는다. 과거 accepted·ID·clone·실행은 바꾸지 않는다.
 - 지원된 context 위조, ID/시각/hash/reference 또는 recorded A mapping 불일치는 고정 오류로
   ticks/decide 전에 멈춘다. 조용히 context omission으로 바꾸어 실행하지 않는다.
 - A unsupported/limit 또는 관측 불가 initial은 mapping unavailable이며 기존 허용 실행은 유지한다.
@@ -98,7 +100,8 @@ source acquisition/file identity/read completeness, 공개 reader/endpoint/UI와
 4. 요청과 다른 stored cash/보유 및 generated cash/빈 보유, unavailable 초기 상태를 구분한다.
 5. plain object/직렬화 clone/prototype 위조·proxy·accessor context를 먼저 실행하지 않고 거절하며, cross-batch/child/index/time/hash/version/reference,
    snapshot·callback·response mutation이 verified lineage로 승격되지 않는다.
-6. 모든 새 write/file-sync/close/directory-open/sync/close 실패, alias/orphan/경합/재시도에서
+6. redacted seed와 실제 저장 redacted seed의 파생 ID도 새 B에 재노출되지 않으며, 원문·파생 secret을 private context에 보관하지 않는다.
+   모든 새 write/file-sync/close/directory-open/sync/close 실패, alias/orphan/경합/재시도에서
    provider/tick0·원본/barrier 보존을 검증한다. 기존 early source/settings 중단도 유지한다.
 7. legacy/canonical-only/redacted/unsupported·limit·clone·validation/GET mutation0를 검증한다.
    일반 unsupported를 포괄적 실행 금지나 새 권한 요구로 바꾸지 않는다.
