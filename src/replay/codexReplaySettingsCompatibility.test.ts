@@ -178,3 +178,25 @@ test("pacing uses captured delay in every early-return branch and keeps the opaq
     assert.equal(result.tickCount, 1);
   }
 });
+
+
+test("zero-tick allocation summary preserves the legacy getter's single read", async () => {
+  for (const observe of [false, true]) {
+    let reads = 0;
+    const policy = { policyName: "synthetic_summary", targetExposureRatio: 0.8, minCashReserveRatio: 0.1,
+      maxBudgetPerDecisionRatio: 0.2, maxSymbolExposureRatio: 0.2 };
+    const options = sourceOptions({ ...(observe ? { onSettings: (observation: ReplaySettingsSnapshotObservation) => {
+      assert.deepEqual(observation, { status: "unavailable", reason: "unsupported_shape" });
+      assert.equal(reads, 0);
+    } } : {}) });
+    options.clock.ticks = () => [];
+    Object.defineProperty(options, "allocationPolicy", { enumerable: true, get() {
+      reads++;
+      if (reads > 1) throw Error("legacy summary must not re-read allocation getter");
+      return policy;
+    } });
+    const result = await runCodexHistoricalReplay(options, { initialPortfolio: sourcePortfolio(), snapshots: [] });
+    assert.equal(reads, 1);
+    assert.equal(result.allocationPolicy, policy);
+  }
+});

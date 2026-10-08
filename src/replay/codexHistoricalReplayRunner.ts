@@ -604,8 +604,8 @@ export async function runCodexHistoricalReplay(
     auditEvents,
     warnings,
     samplingPolicy: options.samplingPolicy?.metadata() ?? null,
-    allocationPolicy: settings.allocationPolicy === undefined ? null :
-      (capturedSettings?.status === "recorded" ? structuredClone(settings.allocationPolicy) : settings.allocationPolicy),
+    allocationPolicy: capturedSettings?.status === "recorded"
+      ? structuredClone(settings.allocationPolicy ?? null) : settings.allocationPolicy ?? null,
     paperExitPolicy,
     samplingDecisions,
     progressSummary: {
