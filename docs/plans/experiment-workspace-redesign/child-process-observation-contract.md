@@ -1,7 +1,7 @@
-# Child 실행 process 부분 관측 C1 — 계약 초안
+# Child 실행 process 부분 관측 C1 — v1 계약
 
 기준 main `aa344baafdc920c0ddaf56da2d241f7f512882cc`. [범위](child-process-observation-scope.md)의
-구현 전 독립 검토 대상이다. 새 file/schema 이름과 한도는 이 초안의 검토·합성 측정 후 동결한다.
+독립 설계 검토와 합성 크기 측정을 거친 부분 관측 계약이다. 실제 구현·전체 검증 결과를 이 문서만으로 선언하지 않는다.
 
 ## 관측과 소유권
 
@@ -65,7 +65,7 @@ C1 없음이다. direct bound workflow도 실제 B가 있으면 같은 경계를
 
 ## 별도 immutable 기록
 
-제안 파일 `historical-replay-process-observation.json`, schema `replay_child_process_observation.v1`,
+파일 `historical-replay-process-observation.json`, schema `replay_child_process_observation.v1`,
 phase `runner_process_observation`, mode `paper_only`.
 
 - identity/runIndex/startedAt/reservationHash: actual durable B와 정확히 일치
@@ -88,9 +88,11 @@ write/sync/close를 끝낸 실제 record에서 detached frozen reference를 반�
 보관한다. 새 C1 writer는 그 reference만 받으며 현재 파일 재hash나 caller reference를 대체 근거로 쓰지 않는다.
 C1 저장 record의 hash/ref가 있어도 result 완료/비교를 뜻하지 않는다.
 
-전체 UTF-8 JSON+개행 한도는4,096bytes로 제안한다. 실제 B reference shape와 독립 identity/scalar
+전체 UTF-8 JSON+개행 한도는4,096bytes다. 실제 B reference shape와 독립 identity/scalar
 상한을 결합한 설계 fixture에서 recorded2,448bytes, process unavailable2,329bytes였다.
-이것은 C1 production schema/producer 시험이 아니며, 구현의 strict schema-valid 최대를 다시 검증한다.
+이는 독립 field 상한의 설계 fixture이며 모든 값이 동시에 실제 producer에서 생긴다는 주장이 아니다.
+구현 strict schema에 대한 별도 합성 fixture도2,448/2,329bytes를 확인했다. 실제 pipeline·전체 검증은
+다른 증거이며 이 크기 측정으로 대체하지 않는다.
 한도를 맞추려고 의미 없는 padding field를 추가하지 않는다. UTF-8 byte guard -1/at/+1과 schema 유효성은
 별도 시험이다. 첫 구현에서 원본 file/환경/임의 package string을 새로 저장할 이유는 없다.
 
@@ -115,3 +117,10 @@ C1보다 먼저 중단된 child에 missing A/B reference를 만들어 채우지 
 C2는 실제 launcher→load/process→runner ownership을 별도 검증한다. 현재 source/build/lock hash와
 Node label이 같아도 loaded module cache/다른 resolution/설치변조/검증 후 변경을 배제하지 못한다.
 C1 scalar 파일의 존재는 그 proof를 대신하지 않는다. 새 공개 reader/UI와 결과/report 결속도 별도다.
+
+## 구현의 parser 실패 경계
+
+C1의 bounded descriptor 검사에서 거절한 객체는 Zod를 호출하기 전에 고정 실패로 반환한다.
+Zod의 오류 생성도 issue 직렬화를 수행하므로, inherited Object.prototype.toJSON을 감지한 뒤
+ZodError를 만들면 getter가 실행될 수 있다. module-local parse/safeParse 진입점에서 먼저 차단하고
+실패에 입력값·raw error를 담지 않는다. 이 변경은 C1 parser에 한정하며 기존 A/B parser를 바꾸지 않는다.

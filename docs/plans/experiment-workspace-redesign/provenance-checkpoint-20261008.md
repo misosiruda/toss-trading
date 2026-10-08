@@ -2,7 +2,7 @@
 
 확인 기준 main: `aa344baafdc920c0ddaf56da2d241f7f512882cc`,
 tree: `fa27a7ecb3960fe7603a26461283c2c96aec9695`.
-PR824는2026-10-08T11:29:35Z 병합됐다. 아래 B까지는 실제 병합 상태이며 C1은 아직 설계 단계다. 과거 원장의 당시 미구현 표시는 이력으로 유지한다.
+PR824는2026-10-08T11:29:35Z 병합됐다. 아래 B까지는 실제 병합 상태이며 C1은 별도 구현 후보다. 과거 원장의 당시 미구현 표시는 이력으로 유지한다.
 
 ## 완료와 남은 경계
 
@@ -45,8 +45,10 @@ source/configuration/runtime/dependencies/result/comparability의 unavailable �
 ownership을 고정했다. [Frozen v1 계약](child-applied-settings-contract.md)의 지원 입력만 recorded이며
 source/configuration 전체 완전성을 선언하지 않는다. [접수 lineage B](child-admission-lineage-scope.md)는
 PR824에서 실제 admission 소유 context→batch→child와 별도 immutable 관측으로 병합됐다.
-다음은 [실제 process 부분 관측 C1](child-process-observation-scope.md)의 [설계 초안](child-process-observation-contract.md)이다.
-C1 제품 구현·검증 완료는 아직 아니다. C1은 actual runner의 bounded scalar 관측이며, launcher/source/build/
+다음 [실제 process 부분 관측 C1](child-process-observation-scope.md)은 [v1 계약](child-process-observation-contract.md)에
+따라 actual runner→durable B→C1 연결과 합성 회귀를 구현한 후보다. 독립 구현 검토의 parser P2와
+시험 fixture2건을 수정해 격리 source focused90개·no-emit 타입 검사를 통과했으나, 새 공식 full/자동 리뷰/
+현재 GitHub gate는 별도 완료 기준이다. C1은 actual runner의 bounded scalar 관측이며, launcher/source/build/
 loaded dependency/Node artifact·영향 설정의 완전성은 별도 C2 근거가 필요하다.
 
 순서는 다음과 같다.

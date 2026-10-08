@@ -1,7 +1,7 @@
 # Child 실행 process 부분 관측 C1 — 범위
 
 기준 main `aa344baafdc920c0ddaf56da2d241f7f512882cc` ([PR824](https://github.com/misosiruda/toss-trading/pull/824)).
-이 문서는 다음 기능의 구현 전 설계다. 현재 producer/시험/병합 완료 주장이 아니다.
+이 문서는 C1 구현 범위와 완료 기준을 정한다. 실제 검증·병합 결과는 해당 후보의 증거로 별도 확인한다.
 
 ## 목적과 원래 계약
 
