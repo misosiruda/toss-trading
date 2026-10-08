@@ -36,6 +36,8 @@ recorded는 runner 초기화 시점의 값이며 child 실행 완료·전체 입
 - identity의 runId는 기존 저장 child 문자 규칙과 최대256자, batchId는 producer가 이미 정규화한
   비어 있지 않은 opaque text 최대4096자를 지원한다. 한글·공백·구두점을 파일명으로 바꾸지 않고
   metadata와 동일하게 보존한다. 관측 identity는 경로 생성에 사용하지 않으며 masking 검사는 유지한다.
+  검증된 runId/batchId 두 필드에만 기존 replay identity 전용 정책을 적용해 유효한 `ord_`/`exec_`
+  접두사를 보존한다. 계좌·token 패턴은 계속 거절하고 portfolio snapshot에는 일반 masking을 유지한다.
 - masking이 필요한 값, 미지원 shape 또는 상한 초과는 snapshot/hash를 남기지 않고 typed unavailable만 기록한다.
 - 최대512개 position, 문자열/배열 상한과 snapshot256KiB 한도를 적용한다. reservation hash는 child identity/시작 시각/출처와 결속한다.
 - source 파일 자체의 신뢰·읽기 history, complete 초기 상태의 공개 판독, 완료 결과 발행은 이 관측으로 승격하지 않는다.

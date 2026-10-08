@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { observeReplayInitialPortfolio, replayInitialPortfolioReservationSchema, replayInitialPortfolioObservationSchema,
   type ReplayInitialPortfolioIdentity, type ReplayInitialPortfolioOrigin } from "../domain/replayInitialPortfolioObservation.js";
 import type { VirtualPortfolio } from "../domain/schemas.js";
-import { maskObject } from "../security/masking.js";
+import { maskReplayRunIdentity } from "../security/masking.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { assertExperimentPathSyntax, ensureExperimentDirectory, hasFsCode, writeExclusiveExperimentFile } from "./paperExperimentFilesystem.js";
 import { HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAME, HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME,
@@ -32,7 +32,7 @@ export async function reserveReplayInitialPortfolioObservation(input: {
       identity: input.identity, startedAt: input.startedAt, origin: input.origin });
     const { identity, startedAt, origin } = reservation;
     const storageBaseDir = resolve(input.storageBaseDir);
-    if (createReplayResearchHash(maskObject(identity)) !== createReplayResearchHash(identity)) throw Error("redacted identity");
+    if ([identity.runId, identity.batchId].some(value => maskReplayRunIdentity(value) !== value)) throw Error("redacted identity");
     await ensureExperimentDirectory(storageBaseDir);
     // Inputs may already exist; any prior output (including an alias or partial file) rejects admission.
     await assertOutputsAbsent(storageBaseDir, [...replayOutputs, REPLAY_INITIAL_PORTFOLIO_RESERVATION_FILE]);

@@ -14,6 +14,8 @@ for (const identity of [
   { runId: "child_raw", batchId: "  terminal completed: / 한  " },
   { runId: "-child", batchId: "../synthetic:../outside" },
   { runId: "_stored_child", batchId: "batch.with.punctuation" },
+  { runId: "ord_abcdef_run_000001", batchId: "ord_abcdef" },
+  { runId: "exec_abcdef_run_000001", batchId: "exec_abcdef" },
   { runId: "a".repeat(220) + "_run_000001_2026-01", batchId: "a".repeat(220) },
   { runId: "child_unicode", batchId: "한".repeat(4096) }
 ]) {
@@ -60,3 +62,18 @@ test("opaque batch identity still rejects masking before any initial output or p
   assert.equal(calls, 0);
   assert.deepEqual(await readdir(root), before);
 });
+
+for (const field of ["runId", "batchId"] as const) for (const secret of ["123456-123-123456", "a".repeat(16) + "." + "b".repeat(8) + "." + "c".repeat(8)]) {
+  test(`replay ${field} still rejects ${secret.includes(".") ? "token" : "account"} patterns before output`, async t => {
+    const root = await mkdtemp(join(tmpdir(), "child-identity-sensitive-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    await seedInitialSnapshot(root);
+    const before = await readdir(root);
+    let calls = 0;
+    await assert.rejects(runHistoricalReplayWorkflow({ ...initialOptions(root), [field]: secret,
+      decisionProvider: { decide: async () => { calls++; throw Error("must not run"); } }
+    }), /observation reservation failed/);
+    assert.equal(calls, 0);
+    assert.deepEqual(await readdir(root), before);
+  });
+}

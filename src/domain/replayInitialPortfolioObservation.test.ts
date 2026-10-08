@@ -50,3 +50,11 @@ test("snapshot byte budget emits typed unavailable and frozen record rejects unk
   assert.deepEqual(observeReplayInitialPortfolio(value, "generated"), { status: "unavailable", origin: "generated", reason: "limit" });
   assert.equal(replayInitialPortfolioObservationSchema.safeParse({ schemaVersion: "replay_initial_portfolio_observation.v2" }).success, false);
 });
+
+test("replay identity exemption never exposes order or execution text in portfolio snapshots", () => {
+  for (const portfolioId of ["ord_abcdef", "exec_abcdef"]) {
+    const value = { ...initialPortfolio(), portfolioId };
+    assert.deepEqual(observeReplayInitialPortfolio(value, "stored_portfolio"),
+      { status: "unavailable", origin: "stored_portfolio", reason: "redacted" });
+  }
+});
