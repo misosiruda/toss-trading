@@ -4,6 +4,7 @@ import type {
   VirtualPortfolio,
   VirtualPosition
 } from "../domain/schemas.js";
+import type { ReplaySettingsSnapshotObservation } from "../domain/replaySettingsSnapshot.js";
 import type { ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import {
@@ -133,7 +134,7 @@ export async function runHistoricalReplayWorkflow(
         ...plan.runnerOptions,
         ...(!isBoundChild ? {} : {
           onInitialPortfolio: async (initialPortfolio: VirtualPortfolio) => {
-            // Runner captured source before entering this first asynchronous storage boundary.
+            // Runner captured source and settings before this first asynchronous storage boundary.
             if (identity.batchId === null || identity.runIndex === null) throw Error("child observation identity unavailable");
             observations = await reserveReplayInitialPortfolioObservation({
               storageBaseDir: options.storageBaseDir,
@@ -148,6 +149,13 @@ export async function runHistoricalReplayWorkflow(
             // Credential-bearing source must not flow into legacy packet/progress/audit outputs.
             if (source.status === "unavailable" && source.reason === "redacted") {
               throw Error("source input requires redaction");
+            }
+          },
+          onSettings: async (settings: ReplaySettingsSnapshotObservation) => {
+            if (observations === undefined) throw Error("child observation initial state unavailable");
+            await observations.observeSettings(settings);
+            if (settings.status === "unavailable" && settings.reason === "redacted") {
+              throw Error("settings input requires redaction");
             }
             await startArtifacts();
           }
