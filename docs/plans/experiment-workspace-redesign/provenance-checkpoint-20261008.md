@@ -43,7 +43,10 @@ source/configuration/runtime/dependencies/result/comparability의 unavailable �
 [적용 설정 부분 관측 A](child-applied-settings-scope.md)는 PR823에서 기존 plain-data 소비 의미와
 ownership을 고정했다. [Frozen v1 계약](child-applied-settings-contract.md)의 지원 입력만 recorded이며
 source/configuration 전체 완전성을 선언하지 않는다. 다음 별도 기능은 [접수 lineage B](child-admission-lineage-scope.md)이며
-[구현 전 계약](child-admission-lineage-contract.md)과 실제 코드 audit의 변환·소유권·실패 경계를 검토한다. B producer/검증 완료는 아직 아니다.
+[v1 계약](child-admission-lineage-contract.md)에 따라 실제 admission 소유 context → batch → child와
+별도 immutable B writer가 구현 후보에 들어갔다. 합성 중앙 focused140개와 build를 통과했고,
+독립 검토에서 calendar-filtered 경로의 잘못된 recorded 승격을 수정·회귀 확인했다.
+최종 공식 full과 자동 review·현재 GitHub 보호 gate는 별도로 충족해야 하며, 이 문서는 병합 완료 근거가 아니다.
 
 순서는 다음과 같다.
 

@@ -77,6 +77,16 @@ API v1 지원은 random_month/fixed_range의 기존 default adapter 경로다. v
 전달하고 검증한다. 검증 때문에 calendar/source를 추가 조회하거나 새로운 filtering을 수행하지 않는다.
 window 관계는 planned derivation이며 clock session/ticks나 sampler state·구현의 동일성을 증명하지 않는다.
 
+구현 경계는 available context의 실제 child identity/index/startedAt와12개 window data descriptor를
+입력 read 전후에 검사·분리한다. getter/proxy를 실행해 확인하지 않는다. planner에는 이 캡처 metadata만
+고정한 내부 data overlay를 사용하며, 다른 runtime 객체나 unknown option을 열거·복제하지 않는다.
+context 자체는 own data property만 허용하며 inherited/accessor/proxy handle을 receiptless로 낮추지 않는다.
+issuer unavailable에서는 이 B metadata를 구성하지 않는다.
+
+batch는 실제 selected mode와 대안 derivation(calendar-filtered random, validation split, role/regime)을
+구분해 전달한다. 필터가 우연히 같은 후보를 남겨도 API v1 matched로 표시하지 않는다. 지원 가능한
+identity/window/A 충돌 검사를 먼저 수행한 뒤, 대안 경로만 unsupported_derivation으로 남긴다.
+
 ### A 공유 field
 
 기대 projection은 아래 값/presence를 갖는다. 일치 판정은 versioned A snapshot의 동일한 hash domain을
@@ -166,6 +176,10 @@ issuer의 input_missing/redacted는 이 artifact union이 아니라 앞선 priva
 발행 가능한 unavailable3종은2,044–2,047bytes였다. 최대와 한도 사이의 여유는3,388bytes다. 이 fixture는 서로 동시에
 성립하지 않을 수 있는 field 상한을 합친 크기 대조이며, 실제 유효 window나 producer/schema 시험이 아니다.
 구현에서는 strict schema의 실제 최대 허용 fixture와 writer의 bounded UTF-8 검사를 다시 검증한다.
+구현의 strict schema-valid 최대 escaping fixture는4,687bytes(여유3,505bytes)다. schema field 상한을
+만족하는 합성 크기이며 모든 필드가 동시에 실제 producer에서 도출된다는 주장은 아니다. writer의 순수
+UTF-8 size guard는 유효 envelope와 별도로8,191/8,192/8,193bytes를 시험하며, 임의 padding record를
+유효 lineage로 받아들이지 않는다.
 초과/unknown version/unknown key/nonfinite/잘못된 presence를 버리거나 truncate해 성공으로 만들지 않는다.
 
 ## 4. 실제 durable reference와 순서
