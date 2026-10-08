@@ -2,7 +2,7 @@
 
 기준 main: `8191da85378deaeee335ea3601291d129fb9870c` (PR822).
 이 문서는 기존 [입력·runtime 계약](input-runtime-provenance-contract.md) 2단계 안에서 다음 기능 A의
-범위와 검증 기준을 정한다. 설정 producer는 아직 구현되지 않았다. 접수 lineage 연결 B는 별도 기능이다.
+범위와 검증 기준을 정한다. 부분 설정 producer는 이 변경에서 구현한다. 접수 lineage 연결 B는 별도 기능이다.
 
 ## 목적과 경계
 
@@ -15,7 +15,7 @@ clock, sampler, provider와 함수 callback의 상태·구현은 A에서 고정�
 부분 설정 hash가 같아도 전체 configuration/input 동일성 또는 통제된 비교를 판정할 수 없다.
 completeConfiguration=false, completeInput=false 및 comparability=unavailable을 유지한다.
 
-## 현재 코드에서 확인한 차이
+## 구현 전 기준선에서 확인한 차이
 
 - [workflow plan](../../../src/workflows/historicalReplayWorkflowPlan.ts)은 execution policy를 normalize하지만
   constraints/Risk/allocation/universe 등의 참조는 그대로 전달한다. runner는 초기/source 저장 await 뒤와
@@ -97,7 +97,8 @@ snapshot `replay_settings_snapshot.v1`이다. 이는 기존 input/runtime 계약
   version/전체 record hash/typed 상태를 참조하고 supported settings snapshot/hash를 결속한다.
 - snapshot hash domain은 `{ schemaVersion: "replay_settings_snapshot.v1", snapshot }`다. source·initial의
   기존 configuration=unavailable은 그대로 유지하고 별도 immutable 기록으로 연결한다.
-- source writer는 실제 저장한 record에서 작은 immutable reference를 만들어 같은 예약 writer에 전달한다.
+- source writer는 실제 저장한 record에서 identity/startedAt/reservationHash와 initial reference까지 포함한
+  작은 immutable reference를 만들어 같은 예약 writer에 전달하고 settings writer가 결속을 대조한다.
   전체 source 배열을 config 저장용으로 계속 붙잡거나 사후 파일을 다시 읽어 hash를 보충하지 않는다.
 - 정상/unsupported/limit settings 경로는 capture → reservation → initial durable → source durable →
   settings durable → 기존 research/progress/audit 초기화 → runner ticks/provider 순서다.

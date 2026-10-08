@@ -2,17 +2,18 @@
 
 확인 기준 main: `8191da85378deaeee335ea3601291d129fb9870c`,
 tree: `be381cf9a9e06eae50680bdb5fb6a40404fb8a05`.
-GitHub 병합 상태와 현재 소스를 대조한 기록이다. 과거 원장의 당시 미구현 표시는 이력으로 유지한다.
+위 main은 이 변경의 기준선이다. source까지의 GitHub 병합 상태와 이 변경의 설정 A 구현을 구분한다. 과거 원장의 당시 미구현 표시는 이력으로 유지한다.
 
 ## 완료와 남은 경계
 
-| 단위 | 현재 완료 | 아직 없는 근거 |
+| 단위 | 현재 구현 | 아직 없는 근거 |
 | --- | --- | --- |
 | 요청 비용 | [PR812](https://github.com/misosiruda/toss-trading/pull/812)의 명시 비용 실행·기록 계약, [PR813](https://github.com/misosiruda/toss-trading/pull/813)의 wizard 입력 | 새로운 비용 model이나 숫자 preset을 승인한 것은 아님 |
 | 표시·복제 | PR814 benchmark 표시, PR815 원래 batch 요청 저장·읽기, PR816 새 검증·새 ID 복제, PR817 상세 탐색 선택 보존 | 통제된 성과 비교, child 실효 입력 전체 복제, 모든 legacy payload 이전 |
 | 접수 입력 | [PR819](https://github.com/misosiruda/toss-trading/pull/819)의 requested/effective/notices와 acceptance hash 결속 | 실제 child source·적용 설정·runtime/dependency/result 결속 |
 | 초기 portfolio | [PR820](https://github.com/misosiruda/toss-trading/pull/820)의 실제 runner 초기 상태 snapshot·hash·immutable 예약과 provider 전 동기화 | 전체 source/input/runtime/result 완전성, 공개 reader, 비교 가능성 |
 | source | [PR822](https://github.com/misosiruda/toss-trading/pull/822)의 실제 runner 소비 배열 snapshot/hash·초기 상태 결속·민감 문자열 안전 정지 | 원본 file/acquisition 신뢰, 전체 configuration/runtime/result, 공개 reader·비교 |
+| 부분 설정 A | 이 변경의 supplied plain-data snapshot/private 소비·durable initial/source 결속과 redacted 안전 정지 | clock/sampler/provider·admission B·전체 configuration/runtime/result·공개 reader·비교 |
 
 PR820은 `replay_initial_portfolio_observation.v1` 부분 관측이다. `completeInput=false`,
 source/configuration/runtime/dependencies/result/comparability의 unavailable 의미를 유지한다.
@@ -39,8 +40,9 @@ source/configuration/runtime/dependencies/result/comparability의 unavailable �
 ## 다음 작은 기능
 
 [Child source 관측](child-source-observation-scope.md)은 PR822에서 부분 producer로 구현됐다.
-다음 [적용 설정 부분 관측 A](child-applied-settings-scope.md)는 기존 plain-data 소비 의미와 ownership을
-고정하는 범위이며 접수 lineage B와 구분한다. 이 문서 추가는 설정 producer 구현 완료가 아니다.
+[적용 설정 부분 관측 A](child-applied-settings-scope.md)는 이 변경에서 기존 plain-data 소비 의미와
+ownership을 고정한다. [Frozen v1 계약](child-applied-settings-contract.md)의 지원 입력만 recorded이며
+source/configuration 전체 완전성을 선언하지 않는다. 접수 lineage B는 다음 별도 기능이다.
 
 순서는 다음과 같다.
 

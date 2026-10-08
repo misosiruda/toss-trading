@@ -8,7 +8,7 @@ reader, 새 endpoint, 비교 가능성 또는 화면 기능이 구현됐다고 �
 PR820의 [child 초기 portfolio 관측](child-initial-portfolio-scope.md)은 실제 runner 초기 상태의
 부분 producer이며 전체 input/runtime/dependency/result 완전성과 2단계 전체 완료는 별도로 남는다.
 PR822의 [source 관측](child-source-observation-scope.md)은 실제 소비 배열을 고정하고 초기 관측에 결속한다.
-[최신 checkpoint](provenance-checkpoint-20261008.md)와 다음 [적용 설정 부분 관측](child-applied-settings-scope.md)을
+[최신 checkpoint](provenance-checkpoint-20261008.md)와 [적용 설정 부분 관측](child-applied-settings-scope.md)을
 따른다. source 부분 producer만으로 공개 reader·configuration/runtime 전체 완전성이 구현된 것은 아니다.
 
 ## 목적과 현재 근거

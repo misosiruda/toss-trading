@@ -1,7 +1,7 @@
 # Child 부분 설정 snapshot v1 계약
 
-[기능 A 범위](child-applied-settings-scope.md)의 구현 전 계약이다. 기준 runtime은 PR822의
-main `8191da85378deaeee335ea3601291d129fb9870c`다. producer는 아직 구현되지 않았다.
+[기능 A 범위](child-applied-settings-scope.md)의 frozen v1 구현 계약이다. 기준 runtime은 PR822의
+main `8191da85378deaeee335ea3601291d129fb9870c`다. 이 변경은 해당 부분 producer를 구현한다.
 관측 명칭은 **runner-boundary supplied settings**이며 normalized output·실행 성공·전체 configuration
 증명이 아니다. 아래 지원 shape를 첫 await 전에 고정하고 실제 소비에 연결한 경우에만 recorded다.
 
@@ -132,6 +132,25 @@ CJK/control RSS143.90/114.79MiB는 raw 모델과 구분한다.
 전체 입력을 먼저 clone/hash/JSON화하지 않는다. descriptor·key count·array length를 먼저 검사하고 bounded
 leaf/subobject 단위로 정확한 escaped UTF-8 bytes를 누적한다. 문자열 code units와 escaped bytes는 각각
 적용한다. source 배열 전체를 settings closure에 추가 보관하지 않는다.
+
+### 실제 구현의 bounded 측정
+
+같은 Node/Linux에서 actual runner capture, callback copy, strict parser, canonical hashes, exclusive file
+write/sync/close와 directory sync/close를 실행한 fresh process 3개를 순차 측정했다. 각 case의 settings는
+raw exact4MiB이며 escaped maximal child identity를 사용했다. source 원본·private copy와 index의 실제
+생성도 포함한다. tick은 빈 배열이고 provider0이다. 저장 파일을 읽어 schema/contentHash와 실제 source
+관측 record hash 결속을 대조했다.
+
+| source fixture | source bytes / records | process lifetime max RSS bytes | settings file / envelope bytes |
+| --- | ---: | ---: | ---: |
+| empty | 2 / 0 | 279,879,680 | 4,220,689 / 26,385 |
+| escaped byte maximum | 16,777,216 / 44 | 373,784,576 | 4,220,689 / 26,385 |
+| ordinary record maximum | 8,450,001 / 50,000 | 564,510,720 | 4,220,689 / 26,385 |
+
+세 경우 모두 exit0이며 file <=4MiB+64KiB였다. source 전체 payload는 settings 파일·writer reference에
+추가되지 않는다. 이 수치는 실제 저장·검증까지 포함한 단일 process high-water mark이며 병렬 child,
+긴 replay tick/portfolio growth, 임의 callback의 자료 보유와 운영 RSS 상한을 보장하지 않는다. 원본 입력의
+객체 수가 bytes와 별도로 비용을 만들므로 더 큰 관측 한도를 허용할 근거로 쓰지 않는다.
 
 ## 저장 상태와 failure 순서
 
