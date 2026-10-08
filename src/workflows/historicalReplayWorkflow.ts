@@ -4,6 +4,7 @@ import type {
   VirtualPortfolio,
   VirtualPosition
 } from "../domain/schemas.js";
+import { hasUninspectableReplaySettings } from "../domain/replaySettingsOpaqueInspection.js";
 import type { ReplaySettingsSnapshotObservation } from "../domain/replaySettingsSnapshot.js";
 import type { ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
@@ -63,6 +64,8 @@ export interface HistoricalReplayWorkflowResult {
 export async function runHistoricalReplayWorkflow(
   options: HistoricalReplayWorkflowOptions
 ): Promise<HistoricalReplayWorkflowResult> {
+  // Planning/metadata can read settings before the runner observation boundary. Never execute opaque settings there.
+  if (hasUninspectableReplaySettings(options)) throw Error("settings credential inspection unavailable");
   const paths = createStoragePaths(options.storageBaseDir);
   const historicalMarketSnapshotsPath =
     options.historicalMarketSnapshotsPath ?? paths.historicalMarketSnapshotsPath;
@@ -70,6 +73,8 @@ export async function runHistoricalReplayWorkflow(
     new FileVirtualPortfolioStore(paths.virtualPortfolioPath).read(),
     new FileHistoricalMarketSnapshotStore(historicalMarketSnapshotsPath).readAll()
   ]);
+  // Input loading awaited caller-controlled time; recheck before any plan/metadata setting reads.
+  if (hasUninspectableReplaySettings(options)) throw Error("settings credential inspection unavailable");
   const replayStartedAt = options.generatedAt ?? new Date();
   const decisionProvider =
     options.decisionProvider ?? new FirstPricedCodexHistoricalDecisionProvider();

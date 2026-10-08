@@ -6,7 +6,7 @@ import { ReplaySamplingPolicy } from "./replaySamplingPolicy.js";
 import { SimulatedClock } from "./simulatedClock.js";
 import { heldSourcePortfolio, sourceDecision, sourceOptions, sourcePortfolio, sourceSnapshot, sourceTime } from "./codexReplaySourceTestFixtures.js";
 
-test("unsupported selected getters, proxies, unknown fields and own undefined preserve legacy reads", async t => {
+test("selected opaque settings stop the observed runner while plain unsupported data preserves legacy reads", async t => {
   for (const kind of ["root getter", "nested getter", "nested proxy", "options proxy", "unknown field", "own undefined"] as const) {
     await t.test(kind, async () => {
       const run = async (observe: boolean) => {
@@ -48,16 +48,27 @@ test("unsupported selected getters, proxies, unknown fields and own undefined pr
         } else {
           options.executionPolicy = undefined;
         }
+        if (observe && ["root getter", "nested getter", "nested proxy", "options proxy"].includes(kind)) {
+          await assert.rejects(runCodexHistoricalReplay(runOptions, { initialPortfolio: sourcePortfolio(), snapshots: [sourceSnapshot()] }),
+            /^Error: settings credential inspection unavailable$/);
+          return { result: undefined, events, observation };
+        }
         const result = await runCodexHistoricalReplay(runOptions, { initialPortfolio: sourcePortfolio(), snapshots: [sourceSnapshot()] });
         return { result, events, observation };
       };
       const legacy = await run(false);
       const observed = await run(true);
-      assert.deepEqual(observed.observation, { status: "unavailable", reason: "unsupported_shape" });
-      assert.deepEqual(observed.result, legacy.result);
-      assert.deepEqual(observed.events, legacy.events);
-      assert.equal(observed.result.tradeCount, 1);
-      if (kind === "root getter") assert.equal(observed.result.packets[0]!.packetId, "after_initial_0");
+      if (["root getter", "nested getter", "nested proxy", "options proxy"].includes(kind)) {
+        assert.deepEqual(observed.observation, { status: "unavailable", reason: "inspection_unavailable" });
+        assert.deepEqual(observed.events, ["initial", "source"]);
+        assert.equal(observed.result, undefined);
+        assert.equal(legacy.result!.tradeCount, 1);
+      } else {
+        assert.deepEqual(observed.observation, { status: "unavailable", reason: "unsupported_shape" });
+        assert.deepEqual(observed.result, legacy.result);
+        assert.deepEqual(observed.events, legacy.events);
+        assert.equal(observed.result!.tradeCount, 1);
+      }
     });
   }
 });
@@ -180,23 +191,28 @@ test("pacing uses captured delay in every early-return branch and keeps the opaq
 });
 
 
-test("zero-tick allocation summary preserves the legacy getter's single read", async () => {
+test("legacy getter summary keeps one read but observed selected getters now stop before ticks", async () => {
   for (const observe of [false, true]) {
-    let reads = 0;
+    let reads = 0, ticks = 0;
     const policy = { policyName: "synthetic_summary", targetExposureRatio: 0.8, minCashReserveRatio: 0.1,
       maxBudgetPerDecisionRatio: 0.2, maxSymbolExposureRatio: 0.2 };
     const options = sourceOptions({ ...(observe ? { onSettings: (observation: ReplaySettingsSnapshotObservation) => {
-      assert.deepEqual(observation, { status: "unavailable", reason: "unsupported_shape" });
+      assert.deepEqual(observation, { status: "unavailable", reason: "inspection_unavailable" });
       assert.equal(reads, 0);
     } } : {}) });
-    options.clock.ticks = () => [];
+    options.clock.ticks = () => { ticks++; return []; };
     Object.defineProperty(options, "allocationPolicy", { enumerable: true, get() {
       reads++;
       if (reads > 1) throw Error("legacy summary must not re-read allocation getter");
       return policy;
     } });
-    const result = await runCodexHistoricalReplay(options, { initialPortfolio: sourcePortfolio(), snapshots: [] });
-    assert.equal(reads, 1);
-    assert.equal(result.allocationPolicy, policy);
+    if (observe) {
+      await assert.rejects(runCodexHistoricalReplay(options, { initialPortfolio: sourcePortfolio(), snapshots: [] }),
+        /^Error: settings credential inspection unavailable$/);
+      assert.equal(reads, 0); assert.equal(ticks, 0);
+    } else {
+      const result = await runCodexHistoricalReplay(options, { initialPortfolio: sourcePortfolio(), snapshots: [] });
+      assert.equal(reads, 1); assert.equal(ticks, 1); assert.equal(result.allocationPolicy, policy);
+    }
   }
 });
