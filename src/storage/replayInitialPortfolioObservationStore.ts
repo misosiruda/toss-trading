@@ -8,7 +8,10 @@ import type { ReplayInitialPortfolioObservation } from "../domain/replaySourceOb
 import { REPLAY_SOURCE_OBSERVATION_FILE, writeReplaySourceObservation } from "./replaySourceObservationStore.js";
 import { REPLAY_SETTINGS_OBSERVATION_FILE, writeReplaySettingsObservation } from "./replaySettingsObservationStore.js";
 import type { ReplaySettingsSnapshotObservation } from "../domain/replaySettingsSnapshot.js";
-import type { ReplayDurableSourceReference } from "../domain/replaySettingsObservation.js";
+import type { ReplayDurableSettingsReference, ReplayDurableSourceReference } from "../domain/replaySettingsObservation.js";
+import { REPLAY_ADMISSION_LINEAGE_FILE_NAME } from "../domain/replayAdmissionLineage.js";
+import { writeReplayAdmissionLineage } from "./replayAdmissionLineageStore.js";
+import { resolvePaperSimulationAdmissionContext, type PaperSimulationAdmissionContext } from "./paperSimulationObservationStore.js";
 import { maskReplayRunIdentity } from "../security/masking.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { assertExperimentPathSyntax, ensureExperimentDirectory, hasFsCode, writeExclusiveExperimentFile } from "./paperExperimentFilesystem.js";
@@ -18,7 +21,7 @@ import { HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAM
 
 export const REPLAY_INITIAL_PORTFOLIO_FILE = "historical-replay-initial-portfolio.json";
 export const REPLAY_INITIAL_PORTFOLIO_RESERVATION_FILE = "historical-replay-initial-portfolio.reserved.json";
-const replayOutputs = [REPLAY_INITIAL_PORTFOLIO_FILE, REPLAY_SOURCE_OBSERVATION_FILE, REPLAY_SETTINGS_OBSERVATION_FILE, HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
+const replayOutputs = [REPLAY_ADMISSION_LINEAGE_FILE_NAME, REPLAY_INITIAL_PORTFOLIO_FILE, REPLAY_SOURCE_OBSERVATION_FILE, REPLAY_SETTINGS_OBSERVATION_FILE, HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
   HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME, HISTORICAL_REPLAY_PACKETS_FILE_NAME,
   HISTORICAL_REPLAY_DECISIONS_FILE_NAME, HISTORICAL_REPLAY_RISK_DECISIONS_FILE_NAME, HISTORICAL_REPLAY_TRADES_FILE_NAME,
   HISTORICAL_REPLAY_PORTFOLIO_TIMELINE_FILE_NAME];
@@ -32,6 +35,7 @@ export interface ReplayChildObservationWriter {
   (portfolio: VirtualPortfolio): Promise<void>;
   observeSource(source: ReplaySourceSnapshotObservation): Promise<void>;
   observeSettings(settings: ReplaySettingsSnapshotObservation): Promise<void>;
+  observeAdmission(context: PaperSimulationAdmissionContext, actual: unknown): Promise<void>;
 }
 
 /** Reserve before rewriting existing replay artifacts. The immutable reservation is never removed or retried. */
@@ -56,6 +60,8 @@ export async function reserveReplayInitialPortfolioObservation(input: {
     let invoked = false;
     let sourceInvoked = false;
     let settingsInvoked = false;
+    let admissionInvoked = false;
+    let durableSettingsReference: ReplayDurableSettingsReference | undefined;
     let durableSourceReference: ReplayDurableSourceReference | undefined;
     let durableInitialObservation: ReplayInitialPortfolioObservation | undefined;
     const observeInitial = async (portfolio: VirtualPortfolio): Promise<void> => {
@@ -90,8 +96,19 @@ export async function reserveReplayInitialPortfolioObservation(input: {
         if (durableInitialObservation === undefined || durableSourceReference === undefined) {
           throw Error("settings observation preceding state unavailable");
         }
-        await writeReplaySettingsObservation({ storageBaseDir, initialObservation: durableInitialObservation,
+        durableSettingsReference = await writeReplaySettingsObservation({ storageBaseDir, initialObservation: durableInitialObservation,
           sourceReference: durableSourceReference, settings });
+      },
+      observeAdmission: async (context: PaperSimulationAdmissionContext, actual: unknown): Promise<void> => {
+        if (admissionInvoked) throw Error("admission lineage observation already attempted");
+        admissionInvoked = true;
+        const evidence = resolvePaperSimulationAdmissionContext(context);
+        if (evidence.status === "unavailable") return;
+        if (durableInitialObservation === undefined || durableSettingsReference === undefined) {
+          throw Error("admission lineage preceding state unavailable");
+        }
+        await writeReplayAdmissionLineage(context, { storageBaseDir, actual,
+          initialObservation: durableInitialObservation, settingsReference: durableSettingsReference });
       }
     });
   } catch (error) {
