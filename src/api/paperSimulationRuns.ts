@@ -11,9 +11,10 @@ import {
   safeArtifactPathPart
 } from "../storage/artifactPaths.js";
 import {
-  acceptPaperSimulation,
+  acceptPaperSimulationWithAdmissionContext,
   PaperSimulationObservationConflict,
-  recordPaperSimulationRunnerFailure
+  recordPaperSimulationRunnerFailure,
+  type PaperSimulationAdmissionContext
 } from "../storage/paperSimulationObservationStore.js";
 import {
   runHistoricalBatchReplay,
@@ -46,6 +47,7 @@ export interface PaperSimulationRunnerInput {
   tickDelayMs: number;
   config: PaperSimulationRunConfig;
   effectiveConfig: PaperSimulationEffectiveConfig;
+  admissionContext?: PaperSimulationAdmissionContext;
 }
 
 export interface PaperSimulationRunnerResult {
@@ -135,7 +137,7 @@ export async function createPaperSimulationRun(
   };
   const acceptedAt = createdAt.toISOString();
   try {
-    await acceptPaperSimulation(runnerInput.storageBaseDir, simulationRunId, acceptedAt, {
+    runnerInput.admissionContext = await acceptPaperSimulationWithAdmissionContext(runnerInput.storageBaseDir, simulationRunId, acceptedAt, {
       requestedConfig: config,
       inputSnapshot: { requestedConfig: runnerInput.config, effectiveConfig: runnerInput.effectiveConfig, notices }
     });
@@ -206,6 +208,7 @@ async function runPaperSimulationFromConfig(
     sourceDataDir: config.sourceDataDir,
     outputBaseDir: createBatchReplayRootDirForStorage(input.storageBaseDir),
     batchId: input.batchId,
+    ...(input.admissionContext === undefined ? {} : { admissionContext: input.admissionContext }),
     seed: config.window.seed,
     runCount: config.runCount,
     rangeStart: new Date(config.window.rangeStartAt),

@@ -1,3 +1,4 @@
+import type { PaperSimulationAdmissionContext } from "../storage/paperSimulationObservationStore.js";
 import {
   access,
   appendFile,
@@ -129,6 +130,7 @@ export type BatchReplayWindowSamplingMode =
   | "validation_role_regime_plan";
 
 export interface BatchReplayRunnerOptions {
+  admissionContext?: PaperSimulationAdmissionContext;
   sourceDataDir: string;
   outputBaseDir: string;
   batchId: string;
