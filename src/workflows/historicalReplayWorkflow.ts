@@ -4,6 +4,7 @@ import type {
   VirtualPortfolio,
   VirtualPosition
 } from "../domain/schemas.js";
+import type { ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
 import type { CodexCliDecisionResult } from "../ai/codexCliDecisionProvider.js";
 import {
   createPaperCostModel,
@@ -34,7 +35,7 @@ import {
 } from "../replay/codexHistoricalReplayRunner.js";
 import { HistoricalReplayAuditLogRecorder } from "../replay/historicalReplayAuditLog.js";
 import { HistoricalReplayProgressRecorder } from "../replay/historicalReplayProgress.js";
-import { reserveReplayInitialPortfolioObservation } from "../storage/replayInitialPortfolioObservationStore.js";
+import { reserveReplayInitialPortfolioObservation, type ReplayChildObservationWriter } from "../storage/replayInitialPortfolioObservationStore.js";
 import type { HistoricalUniverseManifest } from "../replay/historicalUniverseCoverage.js";
 import {
   createHistoricalReplayWorkflowPlan,
@@ -92,12 +93,8 @@ export async function runHistoricalReplayWorkflow(
     manifestPath: paths.historicalReplayResearchManifestPath
   });
   const identity = plan.metadataContext.identity;
-  const onInitialPortfolio = options.runId === undefined || identity.batchId === null || identity.runIndex === null
-    ? undefined : await reserveReplayInitialPortfolioObservation({
-      storageBaseDir: options.storageBaseDir,
-      identity: { runId: identity.runId, batchId: identity.batchId, runIndex: identity.runIndex },
-      startedAt: replayStartedAt.toISOString(), origin: portfolio === null ? "generated" : "stored_portfolio"
-    });
+  const isBoundChild = options.runId !== undefined && identity.batchId !== null && identity.runIndex !== null;
+  let observations: ReplayChildObservationWriter | undefined;
   const progressRecorder = new HistoricalReplayProgressRecorder({
     filePath: paths.historicalReplayProgressPath,
     startedAt: replayStartedAt,
@@ -120,17 +117,37 @@ export async function runHistoricalReplayWorkflow(
     researchManifest
   });
 
-  await writeReplayResearchManifestArtifact({
-    manifestPath: paths.historicalReplayResearchManifestPath,
-    manifest: researchManifest
-  });
-  await Promise.all([progressRecorder.start(), auditLogRecorder.start()]);
+  let artifactsStarted = false;
+  const startArtifacts = async (): Promise<void> => {
+    await writeReplayResearchManifestArtifact({
+      manifestPath: paths.historicalReplayResearchManifestPath, manifest: researchManifest
+    });
+    await Promise.all([progressRecorder.start(), auditLogRecorder.start()]);
+    artifactsStarted = true;
+  };
+  if (!isBoundChild) await startArtifacts();
 
   try {
     const replayResult = await runCodexHistoricalReplay(
       {
         ...plan.runnerOptions,
-        ...(onInitialPortfolio === undefined ? {} : { onInitialPortfolio }),
+        ...(!isBoundChild ? {} : {
+          onInitialPortfolio: async (initialPortfolio: VirtualPortfolio) => {
+            // Runner captured source before entering this first asynchronous storage boundary.
+            if (identity.batchId === null || identity.runIndex === null) throw Error("child observation identity unavailable");
+            observations = await reserveReplayInitialPortfolioObservation({
+              storageBaseDir: options.storageBaseDir,
+              identity: { runId: identity.runId, batchId: identity.batchId, runIndex: identity.runIndex },
+              startedAt: replayStartedAt.toISOString(), origin: portfolio === null ? "generated" : "stored_portfolio"
+            });
+            await observations(initialPortfolio);
+          },
+          onSourceSnapshots: async (source: ReplaySourceSnapshotObservation) => {
+            if (observations === undefined) throw Error("child observation initial state unavailable");
+            await observations.observeSource(source);
+            await startArtifacts();
+          }
+        }),
         onProgress: async (update) => {
           await progressRecorder.record(update);
           await auditLogRecorder.record(update);
@@ -166,8 +183,11 @@ export async function runHistoricalReplayWorkflow(
       replayResult
     };
   } catch (error) {
-    await progressRecorder.fail(error);
-    await auditLogRecorder.fail(error);
+    // A rejected reservation must not create failure artifacts over an existing child.
+    if (artifactsStarted) {
+      await progressRecorder.fail(error);
+      await auditLogRecorder.fail(error);
+    }
     throw error;
   }
 }

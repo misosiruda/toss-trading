@@ -3,6 +3,9 @@ import { dirname, join, resolve } from "node:path";
 import { observeReplayInitialPortfolio, replayInitialPortfolioReservationSchema, replayInitialPortfolioObservationSchema,
   type ReplayInitialPortfolioIdentity, type ReplayInitialPortfolioOrigin } from "../domain/replayInitialPortfolioObservation.js";
 import type { VirtualPortfolio } from "../domain/schemas.js";
+import type { ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
+import type { ReplayInitialPortfolioObservation } from "../domain/replaySourceObservation.js";
+import { REPLAY_SOURCE_OBSERVATION_FILE, writeReplaySourceObservation } from "./replaySourceObservationStore.js";
 import { maskReplayRunIdentity } from "../security/masking.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { assertExperimentPathSyntax, ensureExperimentDirectory, hasFsCode, writeExclusiveExperimentFile } from "./paperExperimentFilesystem.js";
@@ -12,7 +15,7 @@ import { HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAM
 
 export const REPLAY_INITIAL_PORTFOLIO_FILE = "historical-replay-initial-portfolio.json";
 export const REPLAY_INITIAL_PORTFOLIO_RESERVATION_FILE = "historical-replay-initial-portfolio.reserved.json";
-const replayOutputs = [REPLAY_INITIAL_PORTFOLIO_FILE, HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
+const replayOutputs = [REPLAY_INITIAL_PORTFOLIO_FILE, REPLAY_SOURCE_OBSERVATION_FILE, HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
   HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME, HISTORICAL_REPLAY_PACKETS_FILE_NAME,
   HISTORICAL_REPLAY_DECISIONS_FILE_NAME, HISTORICAL_REPLAY_RISK_DECISIONS_FILE_NAME, HISTORICAL_REPLAY_TRADES_FILE_NAME,
   HISTORICAL_REPLAY_PORTFOLIO_TIMELINE_FILE_NAME];
@@ -22,10 +25,15 @@ export class ReplayInitialPortfolioDurabilityError extends Error {
   constructor() { super("initial portfolio observation durability failed"); this.name = "ReplayInitialPortfolioDurabilityError"; }
 }
 
+export interface ReplayChildObservationWriter {
+  (portfolio: VirtualPortfolio): Promise<void>;
+  observeSource(source: ReplaySourceSnapshotObservation): Promise<void>;
+}
+
 /** Reserve before rewriting existing replay artifacts. The immutable reservation is never removed or retried. */
 export async function reserveReplayInitialPortfolioObservation(input: {
   storageBaseDir: string; identity: ReplayInitialPortfolioIdentity; startedAt: string; origin: ReplayInitialPortfolioOrigin;
-}): Promise<(portfolio: VirtualPortfolio) => Promise<void>> {
+}): Promise<ReplayChildObservationWriter> {
   try {
     assertExperimentPathSyntax(input.storageBaseDir);
     const reservation = replayInitialPortfolioReservationSchema.parse({ schemaVersion: "replay_initial_portfolio_reservation.v1",
@@ -42,7 +50,9 @@ export async function reserveReplayInitialPortfolioObservation(input: {
     // Callers may have recursively created the hierarchy before reservation; publish every ancestor entry.
     await syncDirectoryChain(storageBaseDir);
     let invoked = false;
-    return async portfolio => {
+    let sourceInvoked = false;
+    let durableInitialObservation: ReplayInitialPortfolioObservation | undefined;
+    const observeInitial = async (portfolio: VirtualPortfolio): Promise<void> => {
       if (invoked) throw Error("initial portfolio observation already attempted");
       invoked = true;
       try {
@@ -55,11 +65,20 @@ export async function reserveReplayInitialPortfolioObservation(input: {
         });
         await writeExclusiveExperimentFile(join(storageBaseDir, REPLAY_INITIAL_PORTFOLIO_FILE), JSON.stringify(record) + "\n");
         await syncDirectory(storageBaseDir);
+        durableInitialObservation = record;
       } catch (error) {
         if (error instanceof ReplayInitialPortfolioDurabilityError) throw error;
         throw Error("initial portfolio observation storage failed");
       }
     };
+    return Object.assign(observeInitial, {
+      observeSource: async (source: ReplaySourceSnapshotObservation): Promise<void> => {
+        if (sourceInvoked) throw Error("source observation already attempted");
+        sourceInvoked = true;
+        if (durableInitialObservation === undefined) throw Error("source observation initial state unavailable");
+        await writeReplaySourceObservation({ storageBaseDir, initialObservation: durableInitialObservation, source });
+      }
+    });
   } catch (error) {
     if (error instanceof ReplayInitialPortfolioDurabilityError) throw error;
     throw Error("initial portfolio observation reservation failed");

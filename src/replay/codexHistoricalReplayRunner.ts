@@ -55,6 +55,7 @@ import {
   suppressDecisionItemsForSymbols
 } from "./historicalReplayDecisionBoundary.js";
 import type { HistoricalUniverseManifest } from "./historicalUniverseCoverage.js";
+import { prepareReplaySourceSnapshot, type ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
 import type { SimulatedClock, SimulatedTick } from "./simulatedClock.js";
 import type {
   HistoricalPortfolioTimelineItem,
@@ -90,6 +91,7 @@ export interface CodexHistoricalReplayRunnerOptions {
   performanceClock?: () => number;
   tickDelayMs?: number;
   tickDelay?: (ms: number) => Promise<void>;
+  onSourceSnapshots?: (source: ReplaySourceSnapshotObservation) => Promise<void> | void;
   onInitialPortfolio?: (portfolio: VirtualPortfolio) => Promise<void> | void;
   onProgress?: (
     update: HistoricalReplayProgressUpdate
@@ -100,10 +102,14 @@ export async function runCodexHistoricalReplay(
   options: CodexHistoricalReplayRunnerOptions,
   input: HistoricalReplayInput
 ): Promise<HistoricalReplayResult> {
+  // Only the bound observation path changes ownership; unsupported/legacy replay remains accepted as before.
+  const source = options.onSourceSnapshots === undefined ? undefined : prepareReplaySourceSnapshot(input.snapshots);
+  const snapshots = source?.status === "recorded" ? source.snapshot : input.snapshots;
   let currentPortfolio = structuredClone(input.initialPortfolio);
   const initialPortfolio = structuredClone(currentPortfolio);
   // Persist the initialized state before any tick/mark-to-market/provider work. Observers own a separate copy.
   await options.onInitialPortfolio?.(structuredClone(currentPortfolio));
+  if (source !== undefined) await options.onSourceSnapshots?.(structuredClone(source));
   const packets: MarketPacket[] = [];
   const decisions: VirtualDecision[] = [];
   const riskDecisions: VirtualRiskDecision[] = [];
@@ -117,7 +123,7 @@ export async function runCodexHistoricalReplay(
   let rejectedCount = 0;
   const engine = new PaperOrderEngine();
   const ticks = options.clock.ticks();
-  const snapshotIndex = new HistoricalMarketSnapshotIndex(input.snapshots);
+  const snapshotIndex = new HistoricalMarketSnapshotIndex(snapshots);
   const performanceClock = options.performanceClock ?? monotonicNowMs;
   const paperExitPolicy = normalizePaperExitPolicy(options.paperExitPolicy);
   const paperExitPolicyState = createPaperExitPolicyState();
@@ -189,7 +195,7 @@ export async function runCodexHistoricalReplay(
     const allocationPolicy = allocationPolicyForTick({
       basePolicy: options.allocationPolicy,
       marketRegimeAllocationPolicy: options.marketRegimeAllocationPolicy,
-      snapshots: input.snapshots,
+      snapshots,
       simulatedAt,
       tick
     });
@@ -283,7 +289,7 @@ export async function runCodexHistoricalReplay(
             policy: options.riskPolicy,
             now: simulatedAt,
             packet,
-            snapshots: input.snapshots,
+            snapshots,
             simulatedAt
           }),
           ...(options.executionPolicy === undefined
@@ -500,7 +506,7 @@ export async function runCodexHistoricalReplay(
           policy: options.riskPolicy,
           now: simulatedAt,
           packet,
-          snapshots: input.snapshots,
+          snapshots,
           simulatedAt
         }),
         ...(options.executionPolicy === undefined
