@@ -1,8 +1,8 @@
 # Provenance 구현 checkpoint — 2026-10-08
 
-확인 기준 main: `8191da85378deaeee335ea3601291d129fb9870c`,
-tree: `be381cf9a9e06eae50680bdb5fb6a40404fb8a05`.
-위 main은 이 변경의 기준선이다. source까지의 GitHub 병합 상태와 이 변경의 설정 A 구현을 구분한다. 과거 원장의 당시 미구현 표시는 이력으로 유지한다.
+확인 기준 main: `e0c11bb710f085d16603618aa61baef90c5a4eed`,
+tree: `1aab1e56f3430d9c5acb7c0309b8db75018f8c29`.
+PR823은2026-10-08T09:29:33Z 병합됐다. 아래 A까지는 실제 병합 상태이며 B는 아직 설계 단계다. 과거 원장의 당시 미구현 표시는 이력으로 유지한다.
 
 ## 완료와 남은 경계
 
@@ -13,7 +13,7 @@ tree: `be381cf9a9e06eae50680bdb5fb6a40404fb8a05`.
 | 접수 입력 | [PR819](https://github.com/misosiruda/toss-trading/pull/819)의 requested/effective/notices와 acceptance hash 결속 | 실제 child source·적용 설정·runtime/dependency/result 결속 |
 | 초기 portfolio | [PR820](https://github.com/misosiruda/toss-trading/pull/820)의 실제 runner 초기 상태 snapshot·hash·immutable 예약과 provider 전 동기화 | 전체 source/input/runtime/result 완전성, 공개 reader, 비교 가능성 |
 | source | [PR822](https://github.com/misosiruda/toss-trading/pull/822)의 실제 runner 소비 배열 snapshot/hash·초기 상태 결속·민감 문자열 안전 정지 | 원본 file/acquisition 신뢰, 전체 configuration/runtime/result, 공개 reader·비교 |
-| 부분 설정 A | 이 변경의 supplied plain-data snapshot/private 소비·durable initial/source 결속과 redacted 안전 정지 | clock/sampler/provider·admission B·전체 configuration/runtime/result·공개 reader·비교 |
+| 부분 설정 A | [PR823](https://github.com/misosiruda/toss-trading/pull/823)의 supplied plain-data snapshot/private 소비·durable initial/source 결속과 실제 소비 경계 안전 정지 | clock/sampler/provider·admission B·전체 configuration/runtime/result·공개 reader·비교 |
 
 PR820은 `replay_initial_portfolio_observation.v1` 부분 관측이다. `completeInput=false`,
 source/configuration/runtime/dependencies/result/comparability의 unavailable 의미를 유지한다.
@@ -40,9 +40,10 @@ source/configuration/runtime/dependencies/result/comparability의 unavailable �
 ## 다음 작은 기능
 
 [Child source 관측](child-source-observation-scope.md)은 PR822에서 부분 producer로 구현됐다.
-[적용 설정 부분 관측 A](child-applied-settings-scope.md)는 이 변경에서 기존 plain-data 소비 의미와
-ownership을 고정한다. [Frozen v1 계약](child-applied-settings-contract.md)의 지원 입력만 recorded이며
-source/configuration 전체 완전성을 선언하지 않는다. 접수 lineage B는 다음 별도 기능이다.
+[적용 설정 부분 관측 A](child-applied-settings-scope.md)는 PR823에서 기존 plain-data 소비 의미와
+ownership을 고정했다. [Frozen v1 계약](child-applied-settings-contract.md)의 지원 입력만 recorded이며
+source/configuration 전체 완전성을 선언하지 않는다. 다음 별도 기능은 [접수 lineage B](child-admission-lineage-scope.md)이며
+[구현 전 계약](child-admission-lineage-contract.md)과 실제 코드 audit의 변환·소유권·실패 경계를 검토한다. B producer/검증 완료는 아직 아니다.
 
 순서는 다음과 같다.
 
@@ -65,3 +66,6 @@ calendar의 non-exporting evidence, AI 결정 재현성 및 metric 비교 조건
 - [작업 계획](pr-work-plan.md)의 branch 보존 지시와 수동 자동-review/Actions 중복 요청 금지를 유지한다.
 
 전체 `ROADMAP_COMPLETE` 또는 완전한 비교 가능성을 선언하지 않는다.
+
+PR823 검증은 최종 local b6e8c35와 public2e3edc9의 동일 tree/검증 bytes에서 Linux full4,966 tests/4,933 pass/0 fail/33 skip,
+독립 소비 재현36/36·durable/호환9/9, 최종 자동 Code Review/보호 gate를 확인했다. B backend 변경에는 새 검증이 필요하다.
