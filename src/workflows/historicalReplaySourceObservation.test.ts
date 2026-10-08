@@ -83,15 +83,14 @@ test("source reference binds an unavailable initial observation without leaking 
   assert.equal(observation.completeInput, false);
 });
 
-test("redacted source produces only unavailable and preserves accepted replay behavior", async t => {
+test("redacted source records unavailable and blocks legacy artifact publication", async t => {
   const root = await fs.mkdtemp(join(tmpdir(), "source-redacted-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await new FileHistoricalMarketSnapshotStore(createStoragePaths(root).historicalMarketSnapshotsPath).append({
     snapshotId: "snapshot_redacted", market: "KR", symbol: "005930", observedAt: initialTime,
     interval: "1m", lastPriceKrw: 110, sourceRefs: ["ord_sensitive12345"], createdAt: initialTime
   });
-  const result = await runHistoricalReplayWorkflow(initialOptions(root));
-  assert.equal(result.status, "completed");
+  await assert.rejects(runHistoricalReplayWorkflow(initialOptions(root)), /^Error: source input requires redaction$/);
   const raw = await fs.readFile(join(root, REPLAY_SOURCE_OBSERVATION_FILE), "utf8");
   const observation = JSON.parse(raw);
   assert.deepEqual(observation.source, { status: "unavailable", reason: "redacted" });

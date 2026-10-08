@@ -109,7 +109,12 @@ export async function runCodexHistoricalReplay(
   const initialPortfolio = structuredClone(currentPortfolio);
   // Persist the initialized state before any tick/mark-to-market/provider work. Observers own a separate copy.
   await options.onInitialPortfolio?.(structuredClone(currentPortfolio));
-  if (source !== undefined) await options.onSourceSnapshots?.(structuredClone(source));
+  if (source !== undefined) {
+    await options.onSourceSnapshots?.(structuredClone(source));
+    if (source.status === "unavailable" && source.reason === "redacted") {
+      throw Error("source input requires redaction");
+    }
+  }
   const packets: MarketPacket[] = [];
   const decisions: VirtualDecision[] = [];
   const riskDecisions: VirtualRiskDecision[] = [];

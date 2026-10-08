@@ -2,6 +2,7 @@ import { types } from "node:util";
 import { z } from "zod";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { maskSensitiveText } from "../security/masking.js";
+import { containsReplaySourceCredential } from "../security/replaySourceText.js";
 
 export const REPLAY_SOURCE_SNAPSHOT_VERSION = "replay_source_snapshot.v1";
 export const REPLAY_SOURCE_SNAPSHOT_LIMITS = Object.freeze({
@@ -155,5 +156,5 @@ function stringValue(value: unknown, maxLength: number): PreflightReason | undef
     } else if (code >= 0xdc00 && code <= 0xdfff) return "unsupported_shape";
   }
   // Source names/IDs do not confer trust or a replay-ID masking exemption.
-  return maskSensitiveText(value) === value ? undefined : "redacted";
+  return maskSensitiveText(value) !== value || containsReplaySourceCredential(value) ? "redacted" : undefined;
 }

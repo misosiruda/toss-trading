@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { maskObject } from "../security/masking.js";
+import { containsReplaySourceCredential } from "../security/replaySourceText.js";
 
 const text = (max: number) => z.string().min(1).max(max);
 const time = text(80).refine(value => Number.isFinite(Date.parse(value)));
@@ -54,10 +55,18 @@ export function observeReplayInitialPortfolio(value: unknown, origin: ReplayInit
   const parsed = replayInitialPortfolioSnapshotSchema.safeParse(value);
   if (!parsed.success) return { status: "unavailable", origin, reason: "unsupported_shape" };
   const snapshot = parsed.data;
-  if (createReplayResearchHash(maskObject(snapshot)) !== createReplayResearchHash(snapshot)) {
+  if (containsCredentialText(snapshot) || createReplayResearchHash(maskObject(snapshot)) !== createReplayResearchHash(snapshot)) {
     return { status: "unavailable", origin, reason: "redacted" };
   }
   if (Buffer.byteLength(JSON.stringify(snapshot)) > 262_144) return { status: "unavailable", origin, reason: "limit" };
   return { status: "recorded", origin, snapshotVersion: "replay_initial_portfolio_snapshot.v1", snapshot,
     contentHash: createReplayResearchHash({ schemaVersion: "replay_initial_portfolio_snapshot.v1", snapshot }) };
+}
+
+// This is already a bounded, parsed portfolio; source refs can also reach the earlier initial observation.
+function containsCredentialText(value: unknown): boolean {
+  if (typeof value === "string") return containsReplaySourceCredential(value);
+  if (Array.isArray(value)) return value.some(containsCredentialText);
+  if (value !== null && typeof value === "object") return Object.values(value).some(containsCredentialText);
+  return false;
 }

@@ -52,7 +52,8 @@ bounded snapshot/hash, immutable write와 첫 tick/provider 전 내구성, 합�
 4. 이후 caller 배열/record 교체, callback 내부 변경, source 파일 교체가 실행 중 private copy나
    관측 hash를 바꾸지 못함을 실제 packet/가격·allocation/Risk 소비 결과로 검사한다.
 5. 지원 밖 입력은 억지로 요약 snapshot을 만들지 않는다. `unavailable`과 이유만 기록하며
-   source가 고정됐다고 주장하지 않는다. 기존 replay 입력 허용 범위를 이 관측 상한으로 축소하지 않는다.
+   source가 고정됐다고 주장하지 않는다. `limit`/`unsupported_shape`는 기존 replay 입력 허용 범위를
+   이 관측 상한으로 축소하지 않는다. 민감 문자열을 실제 검출한 `redacted` source는 아래 안전 정지를 따른다.
 
 ## v1 snapshot에 보존할 필드
 
@@ -67,7 +68,9 @@ bounded snapshot/hash, immutable write와 첫 tick/provider 전 내구성, 합�
 - 참조: `sourceRefs`의 원래 배열과 순서
 
 필드별 변화와 optional omission/명시 0/빈 optional 배열을 fingerprint 회귀에 넣는다.
-snapshot identity나 sourceRefs에 replay-ID 전용 masking 예외를 확장하지 않는다.
+snapshot identity나 sourceRefs에 replay-ID 전용 masking 예외를 확장하지 않는다. 일반 account/JWT/
+order/exec 패턴 외에 URL credential query, Authorization/Bearer, API key, userinfo 등 명시적
+credential 문맥을 탐지한다. 단어 `token`, 공개 URL의 path/query 문서 표시는 그 자체로 credential이 아니다.
 JSON으로 값을 정확히 보존할 수 없는 명시 `undefined`, `-0`, nonfinite number, 잘못된 Unicode나
 지원하지 않는 객체는 `unsupported_shape`다. 직렬화가 값을 바꾼 뒤 recorded/hash를 만드는 대신
 사전 검사에서 구분한다. 이미 source parser가 정규화한 값과 파일의 원래 byte는 계속 별개다.
@@ -91,7 +94,13 @@ record/필드 상한을 먼저 검사하고 record 단위로 byte budget을 누�
 소비 상태다. 새로운 한도가 기존 API create/runner 입력 거절 조건을 암묵적으로 바꾸면 안 된다.
 
 `unsupported_shape`, `redacted`, `limit`, `retention_unavailable`은 snapshot과 개별 내용 hash 없이
-구분한다. masking이 필요한 내용은 전체 snapshot/hash를 만들지 않는다. 이 관측이 저장을 허용하는
+구분한다. masking이 필요한 내용은 전체 snapshot/hash를 만들지 않는다. `redacted` source는
+내용 없는 source 관측을 durable 기록한 직후 기존 packet/progress/audit 초기화와 tick/provider 전에
+일반 오류로 중단한다. 예약과 초기/source 관측은 보존하며 catch 경로도 실패 출력에 source를 쓰지 않는다.
+이는 검출된 민감 입력의 실행 경로를 강화하는 안전 수정이며 `limit`/`unsupported_shape` 입력은
+종전 실행 의미를 유지한다. 판정 전에 한도를 벗어나 관측하지 않은 입력 전체를 비밀정보 검사 완료로
+표시하지 않는다. 초기 portfolio에도 같은 credential ref가 있으면 기존 초기 관측 masking 검사에서
+내용 없는 redacted 상태로 남겨 먼저 쓰는 보조 관측에도 노출하지 않는다. 이 관측이 저장을 허용하는
 대상은 기존 계약상 허용된 stored market input뿐이다. 공식 calendar의 non-exporting handle/파생
 자료를 sourceRefs나 다른 DTO로 포장해 허용하지 않는다. 식별 문자열로 source kind나 보존 권한을
 추론하지 않는다.
@@ -143,7 +152,7 @@ recorded의 snapshotVersion/contentHash 또는 unavailable의 reason을 참조�
 
 기존 bound child workflow는 artifact 초기화를 runner의 관측 callback 안으로 옮긴다.
 runner가 source를 첫 await 전에 고정 → initial callback에서 예약 preflight·내구성·초기 관측 →
-source callback에서 초기 writer의 반환값으로 source 파일 저장·내구성 → 기존 research/progress/audit
+source callback에서 초기 writer가 보유한 값으로 source 파일 저장·내구성 → redacted 안전 정지 판정 → 기존 research/progress/audit
 초기화 → tick/provider 순서다. 예약 전 기존 report/metadata/log를 쓰지 않는다. artifact 초기화 전
 실패에서 catch 경로가 failed 기록을 새로 쓰거나 이전 기록을 덮지 않도록 시작 여부를 분리한다.
 standalone에는 새 callback·예약·source 파일을 추가하지 않고 기존 동작을 유지한다.

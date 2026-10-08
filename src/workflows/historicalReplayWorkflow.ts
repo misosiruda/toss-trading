@@ -145,6 +145,10 @@ export async function runHistoricalReplayWorkflow(
           onSourceSnapshots: async (source: ReplaySourceSnapshotObservation) => {
             if (observations === undefined) throw Error("child observation initial state unavailable");
             await observations.observeSource(source);
+            // Credential-bearing source must not flow into legacy packet/progress/audit outputs.
+            if (source.status === "unavailable" && source.reason === "redacted") {
+              throw Error("source input requires redaction");
+            }
             await startArtifacts();
           }
         }),

@@ -77,6 +77,7 @@ raw 배열 budget과 파일 전체 budget을 분리한다. 동일한 **예시** 
    durable write 후 provider 진입을 실제 합성 workflow에서 검증한다.
 5. unsupported/redacted/limit/unavailable 입력에 부분 snapshot/hash를 쓰지 않는다. 관측 불가가
    기존 replay 입력 크기의 자동 거절로 바뀌지 않으며 completeInput/comparability를 승격하지 않는다.
+   이후 보안 검토에서 발견한 명시적 credential 문맥은 source scope의 redacted 안전 정지로 처리한다.
 6. 최종 구현의 경계·mutation·failure·호환 회귀, 독립 검토, exact-candidate 공식 Linux full과
    자동 코드·보안 검토 및 GitHub 보호 조건을 충족한 뒤 병합한다.
 
