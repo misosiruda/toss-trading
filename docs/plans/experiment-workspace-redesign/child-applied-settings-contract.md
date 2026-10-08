@@ -117,11 +117,17 @@ property일 때 순회/clone/hash하지 않는다. accessor는 unsupported다. l
 최대 depth는 root 포함 4다. frozen schema 자체가 더 깊은 shape를 unsupported로 거절한다. 임의 padding을
 허용하는 generic depth8 계약을 새로 만들지 않는다.
 
-2026-10-08 Node/Linux 합성 실험에서 exact 4MiB의 대표 ASCII/CJK/control shape는 clone/callback/hash/
-serialization을 겹친 lifetime RSS 약115–173MB였다. raw +1byte와 count 초과는 clone/hash 전에 검출했다.
+2026-10-08 Node v24.19.0/Linux 합성 실험에서 raw exact 4MiB를 원본/private/callback copy로
+유지하고 기존 canonical hash를 계산한 process lifetime RSS는 171,810,816 bytes(163.85MiB)였다.
+baseline 55.44MiB, sampled heap 최대 75.74MiB, private/callback clone 14.60/16.92ms, hash
+129.42ms였다. 20,000 members와 2,048 ordinary cooldown은 2,387,639 bytes/RSS150.39MiB였다.
+raw +1byte 및 allowedActions129는 clone/hash 전에 검출했다. 별도 초기 wrapper 모델의 exact4MiB
+CJK/control RSS143.90/114.79MiB는 raw 모델과 구분한다.
 200,000개의 중복 allowedActions는 2.94MB 안에서도 큰 allocation을 만들 수 있어 별도 count cap을 둔다.
 측정은 탐색용 prototype이고 전체 프로세스 또는 병렬 child memory 보장이 아니다. 실제 parser/writer 구현
 완료 후 같은 입력의 bounded preflight, hash/envelope overhead 및 겹치는 copy lifetime을 다시 검증한다.
+위 측정은 parser clone, credential/proxy 검사, source/initial 자료와 index, file text/fsync 및 병렬 child를
+포함하지 않는다. 동일 bytes라도 객체 수·문자 escape에 따라 RAM이 달라지며 hard ceiling이 아니다.
 
 전체 입력을 먼저 clone/hash/JSON화하지 않는다. descriptor·key count·array length를 먼저 검사하고 bounded
 leaf/subobject 단위로 정확한 escaped UTF-8 bytes를 누적한다. 문자열 code units와 escaped bytes는 각각
