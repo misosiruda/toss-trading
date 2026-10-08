@@ -121,6 +121,9 @@ C1 scalar 파일의 존재는 그 proof를 대신하지 않는다. 새 공개 re
 ## 구현의 parser 실패 경계
 
 C1의 bounded descriptor 검사에서 거절한 객체는 Zod를 호출하기 전에 고정 실패로 반환한다.
-Zod의 오류 생성도 issue 직렬화를 수행하므로, inherited Object.prototype.toJSON을 감지한 뒤
-ZodError를 만들면 getter가 실행될 수 있다. module-local parse/safeParse 진입점에서 먼저 차단하고
+Zod의 오류 생성도 issue 배열과 그 객체를 직렬화하므로, Object.prototype뿐 아니라
+Array.prototype의 toJSON getter/callable도 실행될 수 있다. 두 표준 prototype의 직렬화 hook과
+Array.prototype→Object.prototype 연결을 Zod 호출 전에 유한 검사한다. inert non-callable data와
+실행 가능한 hook은 구분하며 일반 입력을 credential로 오인하지 않는다. module-local parse/safeParse
+진입점에서 먼저 차단하고
 실패에 입력값·raw error를 담지 않는다. 이 변경은 C1 parser에 한정하며 기존 A/B parser를 바꾸지 않는다.

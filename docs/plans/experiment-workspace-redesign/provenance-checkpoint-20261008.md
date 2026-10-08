@@ -47,8 +47,8 @@ source/configuration 전체 완전성을 선언하지 않는다. [접수 lineage
 PR824에서 실제 admission 소유 context→batch→child와 별도 immutable 관측으로 병합됐다.
 다음 [실제 process 부분 관측 C1](child-process-observation-scope.md)은 [v1 계약](child-process-observation-contract.md)에
 따라 actual runner→durable B→C1 연결과 합성 회귀를 구현한 후보다. 독립 구현 검토의 parser P2와
-시험 fixture2건을 수정해 격리 source focused90개·no-emit 타입 검사를 통과했으나, 새 공식 full/자동 리뷰/
-현재 GitHub gate는 별도 완료 기준이다. C1은 actual runner의 bounded scalar 관측이며, launcher/source/build/
+시험 fixture2건을 수정했다. 오류 생성의 Object/Array prototype 직렬화 경계도 별도 합성 회귀로
+검증한다. 후보별 새 공식 full/자동 리뷰/현재 GitHub gate는 별도 완료 기준이다. C1은 actual runner의 bounded scalar 관측이며, launcher/source/build/
 loaded dependency/Node artifact·영향 설정의 완전성은 별도 C2 근거가 필요하다.
 
 순서는 다음과 같다.

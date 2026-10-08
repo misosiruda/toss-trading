@@ -3,7 +3,7 @@ import test from "node:test";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { durableAdmissionLineageReference, replayAdmissionLineageSchema } from "./replayAdmissionLineage.js";
 import { createReplayProcessObservation, REPLAY_PROCESS_OBSERVATION_MAX_BYTES,
-  replayProcessObservationSchema, replayProcessScalarObservationSchema } from "./replayProcessObservation.js";
+  replayProcessObservationSchema, replayProcessScalarObservationSchema, replayProcessObservationBindingSchema } from "./replayProcessObservation.js";
 import { processObservationFixture } from "./replayProcessObservationTestFixtures.js";
 
 test("actual durable B reference is detached, deeply frozen and hashes the whole unchanged B record", () => {
@@ -135,4 +135,86 @@ test("an inherited serialization accessor is rejected without execution", () => 
     else Reflect.deleteProperty(Object.prototype, "toJSON");
   }
   assert.equal(accepted, false); assert.equal(calls, 0);
+});
+
+for (const kind of ["getter", "callable"] as const) {
+  for (const parserName of ["scalar", "binding", "record"] as const) {
+    test(`ordinary Array.prototype ${kind} is never executed by invalid ${parserName} parsing`, () => {
+      const f = processObservationFixture();
+      const cases = {
+        scalar: { parser: replayProcessScalarObservationSchema, value: { ...f.processEvidence.process, nodeVersion: "invalid" } },
+        binding: { parser: replayProcessObservationBindingSchema,
+          value: { ...f.processEvidence.binding, identity: { ...f.processEvidence.binding.identity, runIndex: 20 } } },
+        record: { parser: replayProcessObservationSchema, value: { ...f.record, mode: "live" } }
+      };
+      const { parser, value } = cases[parserName], previous = Object.getOwnPropertyDescriptor(Array.prototype, "toJSON");
+      let calls = 0, accepted = true, safeError: string | undefined, parseError: string | undefined;
+      const trap = () => { calls++; throw Error("synthetic serialization marker"); };
+      assert.strictEqual(Object.getPrototypeOf(Array.prototype), Object.prototype);
+      try {
+        Object.defineProperty(Array.prototype, "toJSON", kind === "getter"
+          ? { configurable: true, get: trap } : { configurable: true, value: trap });
+        const result = parser.safeParse(value);
+        accepted = result.success;
+        if (!result.success) safeError = result.error.message;
+        try { parser.parse(value); } catch (error) { parseError = (error as Error).message; }
+      } finally {
+        if (previous) Object.defineProperty(Array.prototype, "toJSON", previous);
+        else Reflect.deleteProperty(Array.prototype, "toJSON");
+      }
+      assert.equal(calls, 0); assert.equal(accepted, false);
+      assert.equal(safeError, "Unsupported process observation shape");
+      assert.equal(parseError, "Unsupported process observation shape");
+    });
+  }
+}
+
+test("inert non-callable toJSON data on standard prototypes preserves valid and invalid parsing", () => {
+  const f = processObservationFixture();
+  for (const prototype of [Object.prototype, Array.prototype]) {
+    const previous = Object.getOwnPropertyDescriptor(prototype, "toJSON");
+    let valid = false, invalid = true, failure: string | undefined;
+    try {
+      Object.defineProperty(prototype, "toJSON", { configurable: true, value: "inert synthetic value" });
+      valid = replayProcessObservationSchema.safeParse(f.record).success &&
+        replayProcessObservationBindingSchema.safeParse(f.processEvidence.binding).success &&
+        replayProcessScalarObservationSchema.safeParse(f.processEvidence.process).success;
+      const result = replayProcessScalarObservationSchema.safeParse({ ...f.processEvidence.process, nodeVersion: "invalid" });
+      invalid = result.success;
+      if (!result.success) failure = result.error.message;
+    } finally {
+      if (previous) Object.defineProperty(prototype, "toJSON", previous);
+      else Reflect.deleteProperty(prototype, "toJSON");
+    }
+    assert.equal(valid, true); assert.equal(invalid, false); assert.equal(failure, "Invalid process observation data");
+  }
+});
+
+test("pure producer rejects Array.prototype serialization hooks before Zod error construction", () => {
+  const f = processObservationFixture(), previous = Object.getOwnPropertyDescriptor(Array.prototype, "toJSON");
+  let calls = 0, message: string | undefined;
+  try {
+    Object.defineProperty(Array.prototype, "toJSON", { configurable: true, get: () => { calls++; throw Error("synthetic producer marker"); } });
+    try { createReplayProcessObservation({ admission: f.admission, evidence: f.processEvidence }); }
+    catch (error) { message = (error as Error).message; }
+  } finally {
+    if (previous) Object.defineProperty(Array.prototype, "toJSON", previous);
+    else Reflect.deleteProperty(Array.prototype, "toJSON");
+  }
+  assert.equal(calls, 0); assert.equal(message, "process observation admission binding mismatch");
+});
+
+test("unexpected Array prototype chain is rejected without inspecting its proxy or getter", () => {
+  const { record } = processObservationFixture(), previous = Object.getPrototypeOf(Array.prototype);
+  let calls = 0, accepted = true, message: string | undefined;
+  const trap = () => { calls++; throw Error("synthetic unexpected prototype marker"); };
+  const prototype = {}; Object.defineProperty(prototype, "toJSON", { get: trap });
+  const unexpected = new Proxy(prototype, { get: trap, getPrototypeOf: trap, getOwnPropertyDescriptor: trap, ownKeys: trap });
+  try {
+    Object.setPrototypeOf(Array.prototype, unexpected);
+    const result = replayProcessObservationSchema.safeParse(record);
+    accepted = result.success;
+    if (!result.success) message = result.error.message;
+  } finally { Object.setPrototypeOf(Array.prototype, previous); }
+  assert.equal(calls, 0); assert.equal(accepted, false); assert.equal(message, "Unsupported process observation shape");
 });

@@ -69,8 +69,8 @@ export function createReplayProcessObservation(input: {
 }
 
 function boundedProcessData(value: unknown, depth = 0, budget = { remaining: 128 }): boolean {
-  // Zod error construction can serialize issues through the global prototype even for null-prototype inputs.
-  if (depth === 0 && Object.getOwnPropertyDescriptor(Object.prototype, "toJSON") !== undefined) return false;
+  // Zod serializes an issues array and its objects even for invalid null-prototype inputs.
+  if (depth === 0 && unsafeProcessJsonPrototypes()) return false;
   if (--budget.remaining < 0 || depth > 5) return false;
   if (typeof value === "string") return value.length <= 256;
   if (typeof value === "number") return Number.isFinite(value);
@@ -78,7 +78,6 @@ function boundedProcessData(value: unknown, depth = 0, budget = { remaining: 128
   if (value === null || typeof value !== "object" || types.isProxy(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return false;
-  if (prototype !== null && Object.getOwnPropertyDescriptor(prototype, "toJSON") !== undefined) return false;
   const keys = Reflect.ownKeys(value);
   if (keys.length > 24) return false;
   return keys.every(key => {
@@ -86,6 +85,16 @@ function boundedProcessData(value: unknown, depth = 0, budget = { remaining: 128
     const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
     return descriptor.enumerable && Object.hasOwn(descriptor, "value") && boundedProcessData(descriptor.value, depth + 1, budget);
   });
+}
+
+function unsafeProcessJsonPrototypes(): boolean {
+  // Compare the standard chain before inspecting descriptors. Never walk an unexpected or proxy prototype.
+  if (Object.getPrototypeOf(Array.prototype) !== Object.prototype || Object.getPrototypeOf(Object.prototype) !== null) return true;
+  return executableToJSON(Object.getOwnPropertyDescriptor(Array.prototype, "toJSON")) ||
+    executableToJSON(Object.getOwnPropertyDescriptor(Object.prototype, "toJSON"));
+}
+function executableToJSON(descriptor: PropertyDescriptor | undefined): boolean {
+  return descriptor !== undefined && (!Object.hasOwn(descriptor, "value") || typeof descriptor.value === "function");
 }
 
 // Preflight must happen outside Zod: constructing a ZodError can itself invoke inherited serialization hooks.
