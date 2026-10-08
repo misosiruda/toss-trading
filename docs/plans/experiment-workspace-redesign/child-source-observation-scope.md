@@ -112,7 +112,9 @@ acquisition/source trust와 원본 파일·전체 provenance의 완전성은 별
 `replay_source_observation.v1`, `replay_source_snapshot.v1`이다. 현재 지원 artifact 목록이 아니다.
 
 - raw 배열 16 MiB와 envelope/file 전체 상한을 구분한다. 최종 strict schema의 bounded identity,
-  metadata, JSON escape 및 newline을 포함한 파일 상한을 구현에서 별도로 산출·검증한다.
+  metadata, JSON escape 및 newline을 포함한 파일 상한은 16 MiB + 64 KiB
+  (16,842,752 bytes)로 제안한다. 구현의 strict schema와 최대 identity로 충분성을 검증하며
+  쓰기 직전 정확한 전체 bytes도 검사한다.
   합성 예시의 overhead를 모든 파일에 적용하는 고정 reserve로 사용하지 않는다.
 - strict envelope는 exact runId/batchId/runIndex, 시작 시각, 동일 child reservation hash,
   실제 생성한 초기 portfolio observation의 version/content hash 및 source 관측 상태를 결속한다.
@@ -128,6 +130,22 @@ acquisition/source trust와 원본 파일·전체 provenance의 완전성은 별
   읽고 연결을 보충하거나 원래 research manifest hash로 대체하지 않는다.
 - typed unavailable 기록 자체의 write/sync 실패도 실행 차단이다. 파일만 남은 상태를 durable
   성공으로 읽지 않으며 새로운 complete/available reader를 이 기능에 추가하지 않는다.
+
+### 최소 구현의 hash domain과 lifecycle
+
+source `contentHash`는 `{ schemaVersion: "replay_source_snapshot.v1", snapshot }`의 기존 canonical
+SHA-256이며 배열 순서·중복·optional presence를 유지한다. envelope의 `initialObservation`은
+실제 durable 초기 observation 전체의 canonical hash와 version, 그리고 초기 상태의 status 및
+recorded의 snapshotVersion/contentHash 또는 unavailable의 reason을 참조한다. 초기 portfolio
+원문은 source 파일에 중복 저장하지 않는다. identity/startedAt/reservationHash는 그 초기 record와
+같아야 한다. 최상위 version은 `replay_source_observation.v1`이며 unknown field를 거절한다.
+
+기존 bound child workflow는 artifact 초기화를 runner의 관측 callback 안으로 옮긴다.
+runner가 source를 첫 await 전에 고정 → initial callback에서 예약 preflight·내구성·초기 관측 →
+source callback에서 초기 writer의 반환값으로 source 파일 저장·내구성 → 기존 research/progress/audit
+초기화 → tick/provider 순서다. 예약 전 기존 report/metadata/log를 쓰지 않는다. artifact 초기화 전
+실패에서 catch 경로가 failed 기록을 새로 쓰거나 이전 기록을 덮지 않도록 시작 여부를 분리한다.
+standalone에는 새 callback·예약·source 파일을 추가하지 않고 기존 동작을 유지한다.
 
 configuration, acquisition, file identity/read completeness, runtime, dependencies, result 및
 comparability는 계속 unavailable이고 `completeInput=false`다. source 배열의 recorded만으로
