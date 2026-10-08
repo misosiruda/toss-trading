@@ -87,6 +87,13 @@ test("default runner persists the validated effective contract on synthetic fixe
       const effective = validated.effectiveConfig;
       assert.equal(metadata.identity.runId, run.runId);
       assert.equal(metadata.identity.batchId, accepted.batchId);
+      const initial = JSON.parse(await readFile(join(run.storageBaseDir, "historical-replay-initial-portfolio.json"), "utf8"));
+      assert.deepEqual(initial.identity, metadata.identity);
+      assert.equal(initial.initialPortfolio.status, "recorded");
+      assert.equal(initial.initialPortfolio.snapshot.cashKrw, effective.capital.initialCashKrw);
+      assert.deepEqual(initial.initialPortfolio.snapshot.positions, []);
+      assert.equal(initial.completeInput, false);
+      assert.equal(initial.comparability, "unavailable");
       assert.equal(metadata.configuration.clock.stepSeconds, effective.samplingPolicy.stepSeconds);
       assert.equal(metadata.configuration.samplingPolicy?.decisionFrequency, effective.samplingPolicy.decisionFrequency);
       assert.equal(metadata.configuration.samplingPolicy?.maxDecisionCalls, effective.samplingPolicy.maxDecisionCalls);
