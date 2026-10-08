@@ -1,8 +1,8 @@
-# Child가 소비한 source 배열의 부분 관측 설계
+# Child가 소비한 source 배열의 부분 관측
 
-기준 main: `3cbd1ebc8bd959aed3ff3cdf53f1885ed887513a` (PR820).
+기준 main: `b2b86a51e0fdab5fc7e467117a4f43195737940f` (PR821).
 이 문서는 [입력·runtime 계약](input-runtime-provenance-contract.md) 2단계의 다음 작은 기능을
-설계한다. 아직 새 source producer, artifact, endpoint 또는 reader가 구현된 것은 아니다.
+구현한다. bound child의 source producer와 내부 artifact만 추가하며 공개 endpoint/reader는 포함하지 않는다.
 
 ## 목적·포함·비범위
 
@@ -52,7 +52,8 @@ bounded snapshot/hash, immutable write와 첫 tick/provider 전 내구성, 합�
 4. 이후 caller 배열/record 교체, callback 내부 변경, source 파일 교체가 실행 중 private copy나
    관측 hash를 바꾸지 못함을 실제 packet/가격·allocation/Risk 소비 결과로 검사한다.
 5. 지원 밖 입력은 억지로 요약 snapshot을 만들지 않는다. `unavailable`과 이유만 기록하며
-   source가 고정됐다고 주장하지 않는다. 기존 replay 입력 허용 범위를 이 관측 상한으로 축소하지 않는다.
+   source가 고정됐다고 주장하지 않는다. `limit`/`unsupported_shape`는 기존 replay 입력 허용 범위를
+   이 관측 상한으로 축소하지 않는다. 민감 문자열을 실제 검출한 `redacted` source는 아래 안전 정지를 따른다.
 
 ## v1 snapshot에 보존할 필드
 
@@ -67,22 +68,25 @@ bounded snapshot/hash, immutable write와 첫 tick/provider 전 내구성, 합�
 - 참조: `sourceRefs`의 원래 배열과 순서
 
 필드별 변화와 optional omission/명시 0/빈 optional 배열을 fingerprint 회귀에 넣는다.
-snapshot identity나 sourceRefs에 replay-ID 전용 masking 예외를 확장하지 않는다.
+snapshot identity나 sourceRefs에 replay-ID 전용 masking 예외를 확장하지 않는다. 일반 account/JWT/
+order/exec 패턴 외에 URL credential query, Authorization/Bearer, API key, userinfo 등 명시적
+credential 문맥을 탐지한다. 단어 `token`, 공개 URL의 path/query 문서 표시는 그 자체로 credential이 아니다.
 JSON으로 값을 정확히 보존할 수 없는 명시 `undefined`, `-0`, nonfinite number, 잘못된 Unicode나
 지원하지 않는 객체는 `unsupported_shape`다. 직렬화가 값을 바꾼 뒤 recorded/hash를 만드는 대신
 사전 검사에서 구분한다. 이미 source parser가 정규화한 값과 파일의 원래 byte는 계속 별개다.
 
-## 제안하는 관측 상한과 unavailable
+## 관측 상한과 unavailable
 
 아래 값은 새 관측 파일의 v1 engineering 한도다. 시장 coverage나 기존 replay의 지원 크기가 아니다.
-구현 PR에서 경계·메모리 검증 후 상수와 문서를 함께 고정하며, 변경하면 검증을 다시 수행한다.
+[합성 상한 측정](child-source-observation-bounds-20261008.md)은 한도 선택의 근거와 한계를 기록한다.
+상수와 문서를 함께 유지하며 변경하면 실제 producer의 경계·메모리 검증을 다시 수행한다.
 
-| 경계 | v1 제안 | 이유와 확인 |
+| 경계 | v1 관측 한도 | 이유와 확인 |
 | --- | --- | --- |
 | records | 50,000개 | 배열 전체 clone 전에 개수를 거절하고 CPU/메모리 사용을 유한하게 함 |
-| snapshot UTF-8 JSON | 16 MiB | 장기 원본 dataset 전체 복제를 보장하지 않는 bounded 관측. 정확한 byte 경계와 직렬화 메모리 측정 필요 |
-| 일반 식별/분류 문자열 | 120자, 시간 80자 | portfolio 관측의 bounded string 원칙과 맞추되 값은 잘라 저장하지 않음 |
-| record별 sourceRefs | 128개, 각 512자 | 원본 참조의 임의 확장을 제한. 한도 초과는 전부 unavailable |
+| raw snapshot 배열의 UTF-8 JSON | 16 MiB (16,777,216 bytes) | envelope와 파일 전체 크기는 별도. 실제 producer의 정확한 byte 경계와 직렬화 메모리 재검증 필요 |
+| 일반 식별/분류 문자열 | 120 UTF-16 code units, 시간 80 units | portfolio 관측의 bounded string 원칙과 맞추되 값은 잘라 저장하지 않음 |
+| record별 sourceRefs | 128개, 각 512 UTF-16 code units | 원본 참조의 임의 확장을 제한. 한도 초과는 전부 unavailable |
 | riskTags | 32개 | 기존 enum은 유지하고 중복 제거로 입력을 바꾸지 않음 |
 
 record/필드 상한을 먼저 검사하고 record 단위로 byte budget을 누적한다. 전체 입력을 무제한
@@ -90,16 +94,38 @@ record/필드 상한을 먼저 검사하고 record 단위로 byte budget을 누�
 소비 상태다. 새로운 한도가 기존 API create/runner 입력 거절 조건을 암묵적으로 바꾸면 안 된다.
 
 `unsupported_shape`, `redacted`, `limit`, `retention_unavailable`은 snapshot과 개별 내용 hash 없이
-구분한다. masking이 필요한 내용은 전체 snapshot/hash를 만들지 않는다. 이 관측이 저장을 허용하는
+구분한다. masking이 필요한 내용은 전체 snapshot/hash를 만들지 않는다. `redacted` source는
+내용 없는 source 관측을 durable 기록한 직후 기존 packet/progress/audit 초기화와 tick/provider 전에
+일반 오류로 중단한다. 예약과 초기/source 관측은 보존하며 catch 경로도 실패 출력에 source를 쓰지 않는다.
+이는 검출된 민감 입력의 실행 경로를 강화하는 안전 수정이며 `limit`/`unsupported_shape` 입력은
+종전 실행 의미를 유지한다. 판정 전에 한도를 벗어나 관측하지 않은 입력 전체를 비밀정보 검사 완료로
+표시하지 않는다. 초기 portfolio에도 같은 credential ref가 있으면 기존 초기 관측 masking 검사에서
+내용 없는 redacted 상태로 남겨 먼저 쓰는 보조 관측에도 노출하지 않는다. 이 관측이 저장을 허용하는
 대상은 기존 계약상 허용된 stored market input뿐이다. 공식 calendar의 non-exporting handle/파생
 자료를 sourceRefs나 다른 DTO로 포장해 허용하지 않는다. 식별 문자열로 source kind나 보존 권한을
-추론하지 않는다. 구현 시 허용된 저장 입력인지 확인할 수 없는 경로는 `retention_unavailable`이어야 한다.
+추론하지 않는다.
+
+원본 [PR818 계약](https://github.com/misosiruda/toss-trading/blob/14d8bc42b4d159faaaa75f22a875af332ffd1672/docs/plans/experiment-workspace-redesign/input-runtime-provenance-contract.md#L123-L128)이
+허용한 기존 stored-market 입력은 별도 origin/retention metadata가 없다는 사실만으로
+`retention_unavailable`이 되지 않는다. 해당 parsed 배열의 부분 소비 관측은 가능하며,
+acquisition/source trust와 원본 파일·전체 provenance의 완전성은 별도로 unavailable이다.
+`retention_unavailable`은 알려진 non-exporting 자료 또는 특정 입력의 보존 제한·기존 허용 범위가
+실제로 해결되지 않은 경우에 적용한다. 이때 구체적인 source와 용도를 식별하며 일반 입력 전체의
+새 권한 대기로 확대하지 않는다. 새 permission registry나 capability 발급은 필수 선행 조건이 아니다.
+내부 type/tag를 쓰더라도 관측한 코드 경계를 나타낼 뿐 법적 권리나 source 신뢰를 인증하지 않는다.
 
 ## 저장 단위·순서와 초기 상태 결속
 
-구현용 제안 이름은 `historical-replay-source-observation.json`,
-`replay_source_observation.v1`, `replay_source_snapshot.v1`이다. 현재 지원 artifact 목록이 아니다.
+내부 artifact는 `historical-replay-source-observation.json`, envelope는
+`replay_source_observation.v1`, snapshot은 `replay_source_snapshot.v1`이다. 공개 reader는 아직 없다.
 
+- raw 배열 16 MiB와 envelope/file 전체 상한을 구분한다. 최종 strict schema의 bounded identity,
+  metadata, JSON escape 및 newline을 포함한 파일 상한은 16 MiB + 64 KiB
+  (16,842,752 bytes)다. 실제 workflow의 `Date.toISOString()` 시작 시각과
+  strict identity의 최대 길이로 충분성을 검증하며
+  쓰기 직전 정확한 전체 bytes도 검사한다. direct 내부 호출의 더 긴 ISO 문자열까지
+  64 KiB envelope로 수용한다고 보장하지 않으며 전체 파일 cap 초과는 저장 실패다.
+  합성 예시의 overhead를 모든 파일에 적용하는 고정 reserve로 사용하지 않는다.
 - strict envelope는 exact runId/batchId/runIndex, 시작 시각, 동일 child reservation hash,
   실제 생성한 초기 portfolio observation의 version/content hash 및 source 관측 상태를 결속한다.
   초기 portfolio가 unavailable이면 그 정확한 상태를 결속하고 complete input을 만들지 않는다.
@@ -114,6 +140,22 @@ record/필드 상한을 먼저 검사하고 record 단위로 byte budget을 누�
   읽고 연결을 보충하거나 원래 research manifest hash로 대체하지 않는다.
 - typed unavailable 기록 자체의 write/sync 실패도 실행 차단이다. 파일만 남은 상태를 durable
   성공으로 읽지 않으며 새로운 complete/available reader를 이 기능에 추가하지 않는다.
+
+### 최소 구현의 hash domain과 lifecycle
+
+source `contentHash`는 `{ schemaVersion: "replay_source_snapshot.v1", snapshot }`의 기존 canonical
+SHA-256이며 배열 순서·중복·optional presence를 유지한다. envelope의 `initialObservation`은
+실제 durable 초기 observation 전체의 canonical hash와 version, 그리고 초기 상태의 status 및
+recorded의 snapshotVersion/contentHash 또는 unavailable의 reason을 참조한다. 초기 portfolio
+원문은 source 파일에 중복 저장하지 않는다. identity/startedAt/reservationHash는 그 초기 record와
+같아야 한다. 최상위 version은 `replay_source_observation.v1`이며 unknown field를 거절한다.
+
+기존 bound child workflow는 artifact 초기화를 runner의 관측 callback 안으로 옮긴다.
+runner가 source를 첫 await 전에 고정 → initial callback에서 예약 preflight·내구성·초기 관측 →
+source callback에서 초기 writer가 보유한 값으로 source 파일 저장·내구성 → redacted 안전 정지 판정 → 기존 research/progress/audit
+초기화 → tick/provider 순서다. 예약 전 기존 report/metadata/log를 쓰지 않는다. artifact 초기화 전
+실패에서 catch 경로가 failed 기록을 새로 쓰거나 이전 기록을 덮지 않도록 시작 여부를 분리한다.
+standalone에는 새 callback·예약·source 파일을 추가하지 않고 기존 동작을 유지한다.
 
 configuration, acquisition, file identity/read completeness, runtime, dependencies, result 및
 comparability는 계속 unavailable이고 `completeInput=false`다. source 배열의 recorded만으로
@@ -136,5 +178,24 @@ comparability는 계속 unavailable이고 `completeInput=false`다. source 배�
 7. scope/diff/안전/문서 자체 검토와 관련 시험, exact 후보의 독립 검토 및 공식 Linux full을
    완료한 뒤 Draft·자동 review·현재 보호 조건으로 게시/병합한다. 환경 실패는 별도 보존한다.
 
-이번 문서 PR의 완료는 실제 소스의 소비 경로·field·순서와 위 경계를 대조한 검토 가능한 설계다.
-retention 판정 경로와 한도 측정이 미정인 채 producer 구현을 완료했다고 표시하지 않는다.
+제품 구현의 완료는 위 검증표와 current-head 리뷰·보호 조건을 충족한 경우에만 선언한다.
+기존 허용 stored-market 경로, 명시적 제외와 구체적으로 미해결인 입력의 경계를 코드·시험에서
+확인해야 한다. 합성 한도 측정만으로 최종 producer·reader 성능이나 구현 완료를 주장하지 않는다.
+
+
+## 구현 위치
+
+- `src/domain/replaySourceSnapshot.ts`: frozen v1, getter/proxy 없는 plain-data preflight, masking,
+  정확한 byte budget, private frozen copy와 versioned content hash
+- `src/domain/replaySourceObservation.ts`: strict 부분 envelope와 실제 초기 record의 hash/status 참조
+- `src/storage/replayInitialPortfolioObservationStore.ts`: 기존 child 예약에 source 존재 검사 추가,
+  동일 writer가 내구성 완료한 초기 record를 closure에 보유한 one-shot source observer
+- `src/storage/replaySourceObservationStore.ts`: content hash 재검증, whole-file cap,
+  exclusive write/file sync/close 및 directory sync/close
+- `src/replay/codexHistoricalReplayRunner.ts`: 관측 callback이 있는 경로만 첫 await 전 source 고정,
+  별도 callback copy와 index/가격·allocation·두 Risk 경로의 동일 source 사용
+- `src/workflows/historicalReplayWorkflow.ts`: bound child의 저장 순서 및 기존 artifact 시작 전 실패 보존
+
+`retention_unavailable`은 내용 없는 상태 계약으로 지원한다. 현재 production wiring은 원래
+허용된 stored-market workflow에만 있고 새 calendar adapter는 없으므로, metadata 부재를 검사해
+일반 입력 전체를 이 상태로 바꾸는 분기는 추가하지 않는다. source refs의 label은 신뢰 증명이 아니다.
