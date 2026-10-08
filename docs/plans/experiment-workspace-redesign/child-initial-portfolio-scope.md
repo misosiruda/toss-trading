@@ -21,6 +21,9 @@ recorded는 runner 초기화 시점의 값이며 child 실행 완료·전체 입
   입력 portfolio/source는 허용하지만 report, progress, metadata, research manifest와 audit log 5개 중 하나라도
   있으면 예약 생성 전에 거절한다. 일반 파일·hardlink·symlink·dangling symlink·부분 파일을 구별하여 허용하지 않는다.
   예약은 exclusive 생성하고 기존 산출물을 재확인한다. 협조하는 child writer 간 경합을 막으며 악의적 동시 경로 교체 방어를 주장하지 않는다.
+  workflow 또는 batch가 미리 만든 중첩 디렉터리도 포함해 저장 위치부터 filesystem root까지
+  모든 디렉터리를 아래에서 위로 sync한 뒤 초기화에 진입한다. 어느 상위 경로라도 open/sync/close가
+  실패하면 provider0으로 거절하고 예약을 남긴다. 최초 디렉터리를 만든 호출자를 추정하지 않는다.
   상위 batch manifest의 legacy 재실행 동작까지 불변으로 바꾸는 범위는 아니다. API의 새 ID 접수 경계는 유지한다.
 - 실제 runner 초기화 callback에서 snapshot exclusive write/file sync/directory sync를 완료한 뒤 첫 tick/provider로 이동한다.
 - IO 실패는 실행을 실패시킨다. 생성된 예약/부분 자료는 삭제·재사용하지 않는다. 오류에는 raw path/입력을 포함하지 않는다.

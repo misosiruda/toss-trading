@@ -39,8 +39,8 @@ export async function reserveReplayInitialPortfolioObservation(input: {
     await writeExclusiveExperimentFile(join(storageBaseDir, REPLAY_INITIAL_PORTFOLIO_RESERVATION_FILE), JSON.stringify(reservation) + "\n");
     // The exclusive reservation serializes cooperating child writers. Recheck before initializing outputs.
     await assertOutputsAbsent(storageBaseDir, replayOutputs);
-    await syncDirectory(storageBaseDir);
-    await syncDirectory(dirname(storageBaseDir));
+    // Callers may have recursively created the hierarchy before reservation; publish every ancestor entry.
+    await syncDirectoryChain(storageBaseDir);
     let invoked = false;
     return async portfolio => {
       if (invoked) throw Error("initial portfolio observation already attempted");
@@ -77,4 +77,11 @@ async function syncDirectory(path: string): Promise<void> {
     const handle = await open(path, "r");
     try { await handle.sync(); } finally { await handle.close(); }
   } catch { throw new ReplayInitialPortfolioDurabilityError(); }
+}
+
+async function syncDirectoryChain(path: string): Promise<void> {
+  for (let current = path; ; current = dirname(current)) {
+    await syncDirectory(current);
+    if (dirname(current) === current) return;
+  }
 }
