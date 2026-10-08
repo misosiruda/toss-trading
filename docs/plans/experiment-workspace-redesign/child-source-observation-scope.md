@@ -1,6 +1,6 @@
 # Child가 소비한 source 배열의 부분 관측 설계
 
-기준 main: `3cbd1ebc8bd959aed3ff3cdf53f1885ed887513a` (PR820).
+기준 main: `b2b86a51e0fdab5fc7e467117a4f43195737940f` (PR821).
 이 문서는 [입력·runtime 계약](input-runtime-provenance-contract.md) 2단계의 다음 작은 기능을
 설계한다. 아직 새 source producer, artifact, endpoint 또는 reader가 구현된 것은 아니다.
 
@@ -75,14 +75,16 @@ JSON으로 값을 정확히 보존할 수 없는 명시 `undefined`, `-0`, nonfi
 ## 제안하는 관측 상한과 unavailable
 
 아래 값은 새 관측 파일의 v1 engineering 한도다. 시장 coverage나 기존 replay의 지원 크기가 아니다.
-구현 PR에서 경계·메모리 검증 후 상수와 문서를 함께 고정하며, 변경하면 검증을 다시 수행한다.
+[합성 상한 측정](child-source-observation-bounds-20261008.md)은 아래 제안을 잠정 유지할 근거와
+한계를 기록한다. 실제 producer의 경계·메모리 검증 후 상수와 문서를 함께 고정하며, 변경하면
+검증을 다시 수행한다.
 
 | 경계 | v1 제안 | 이유와 확인 |
 | --- | --- | --- |
 | records | 50,000개 | 배열 전체 clone 전에 개수를 거절하고 CPU/메모리 사용을 유한하게 함 |
-| snapshot UTF-8 JSON | 16 MiB | 장기 원본 dataset 전체 복제를 보장하지 않는 bounded 관측. 정확한 byte 경계와 직렬화 메모리 측정 필요 |
-| 일반 식별/분류 문자열 | 120자, 시간 80자 | portfolio 관측의 bounded string 원칙과 맞추되 값은 잘라 저장하지 않음 |
-| record별 sourceRefs | 128개, 각 512자 | 원본 참조의 임의 확장을 제한. 한도 초과는 전부 unavailable |
+| raw snapshot 배열의 UTF-8 JSON | 16 MiB (16,777,216 bytes) | envelope와 파일 전체 크기는 별도. 실제 producer의 정확한 byte 경계와 직렬화 메모리 재검증 필요 |
+| 일반 식별/분류 문자열 | 120 UTF-16 code units, 시간 80 units | portfolio 관측의 bounded string 원칙과 맞추되 값은 잘라 저장하지 않음 |
+| record별 sourceRefs | 128개, 각 512 UTF-16 code units | 원본 참조의 임의 확장을 제한. 한도 초과는 전부 unavailable |
 | riskTags | 32개 | 기존 enum은 유지하고 중복 제거로 입력을 바꾸지 않음 |
 
 record/필드 상한을 먼저 검사하고 record 단위로 byte budget을 누적한다. 전체 입력을 무제한
@@ -93,13 +95,25 @@ record/필드 상한을 먼저 검사하고 record 단위로 byte budget을 누�
 구분한다. masking이 필요한 내용은 전체 snapshot/hash를 만들지 않는다. 이 관측이 저장을 허용하는
 대상은 기존 계약상 허용된 stored market input뿐이다. 공식 calendar의 non-exporting handle/파생
 자료를 sourceRefs나 다른 DTO로 포장해 허용하지 않는다. 식별 문자열로 source kind나 보존 권한을
-추론하지 않는다. 구현 시 허용된 저장 입력인지 확인할 수 없는 경로는 `retention_unavailable`이어야 한다.
+추론하지 않는다.
+
+원본 [PR818 계약](https://github.com/misosiruda/toss-trading/blob/14d8bc42b4d159faaaa75f22a875af332ffd1672/docs/plans/experiment-workspace-redesign/input-runtime-provenance-contract.md#L123-L128)이
+허용한 기존 stored-market 입력은 별도 origin/retention metadata가 없다는 사실만으로
+`retention_unavailable`이 되지 않는다. 해당 parsed 배열의 부분 소비 관측은 가능하며,
+acquisition/source trust와 원본 파일·전체 provenance의 완전성은 별도로 unavailable이다.
+`retention_unavailable`은 알려진 non-exporting 자료 또는 특정 입력의 보존 제한·기존 허용 범위가
+실제로 해결되지 않은 경우에 적용한다. 이때 구체적인 source와 용도를 식별하며 일반 입력 전체의
+새 권한 대기로 확대하지 않는다. 새 permission registry나 capability 발급은 필수 선행 조건이 아니다.
+내부 type/tag를 쓰더라도 관측한 코드 경계를 나타낼 뿐 법적 권리나 source 신뢰를 인증하지 않는다.
 
 ## 저장 단위·순서와 초기 상태 결속
 
 구현용 제안 이름은 `historical-replay-source-observation.json`,
 `replay_source_observation.v1`, `replay_source_snapshot.v1`이다. 현재 지원 artifact 목록이 아니다.
 
+- raw 배열 16 MiB와 envelope/file 전체 상한을 구분한다. 최종 strict schema의 bounded identity,
+  metadata, JSON escape 및 newline을 포함한 파일 상한을 구현에서 별도로 산출·검증한다.
+  합성 예시의 overhead를 모든 파일에 적용하는 고정 reserve로 사용하지 않는다.
 - strict envelope는 exact runId/batchId/runIndex, 시작 시각, 동일 child reservation hash,
   실제 생성한 초기 portfolio observation의 version/content hash 및 source 관측 상태를 결속한다.
   초기 portfolio가 unavailable이면 그 정확한 상태를 결속하고 complete input을 만들지 않는다.
@@ -137,4 +151,5 @@ comparability는 계속 unavailable이고 `completeInput=false`다. source 배�
    완료한 뒤 Draft·자동 review·현재 보호 조건으로 게시/병합한다. 환경 실패는 별도 보존한다.
 
 이번 문서 PR의 완료는 실제 소스의 소비 경로·field·순서와 위 경계를 대조한 검토 가능한 설계다.
-retention 판정 경로와 한도 측정이 미정인 채 producer 구현을 완료했다고 표시하지 않는다.
+기존 허용 stored-market 경로, 명시적 제외와 구체적으로 미해결인 입력의 경계를 코드·시험에서
+확인해야 한다. 합성 한도 측정만으로 최종 producer·reader 성능이나 구현 완료를 주장하지 않는다.
