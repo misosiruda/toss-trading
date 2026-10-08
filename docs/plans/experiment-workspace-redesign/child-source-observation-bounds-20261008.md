@@ -101,7 +101,10 @@ clock은 zero-tick 합성 fixture로 provider 호출 0회이며 시장 tick 처�
 Node v24.19.0, `--max-old-space-size=1536 --expose-gc` 환경이다. 입력 준비 후 GC를 호출했으며
 표의 RSS high-water는 해당 process의 import·합성 JSONL 준비 비용도 포함한다. source artifact의
 사후 parse/hash 검증은 표의 workflow 시간과 RSS 관측 뒤 수행했다. 원본 배열/초기 record hash
-결속, 파일 상한, recorded 상태와 completeInput=false를 확인했다.
+결속, 파일 상한, recorded 상태와 completeInput=false를 확인했다. 측정 완료 뒤 보존한 세 원본
+fixture와 발행 snapshot의 모든 값·순서·presence를 deep equality로 직접 대조하고, 원본의
+versioned canonical hash와 발행 contentHash도 일치함을 별도로 확인했다. 이 후속 대조는
+위 측정 시간/RSS에 포함하지 않는다.
 
 약 4.1–8.2초의 producer 초기화 시간과 최대 504.7 MiB 관측은 앞의 raw-array hash microbenchmark와
 측정 범위가 다르다. 유한한 fixture 3개·1회 관측으로 전체 입력/동시 실행의 메모리 상한이나 SLA를

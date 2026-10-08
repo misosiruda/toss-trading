@@ -112,8 +112,10 @@ acquisition/source trust와 원본 파일·전체 provenance의 완전성은 별
 
 - raw 배열 16 MiB와 envelope/file 전체 상한을 구분한다. 최종 strict schema의 bounded identity,
   metadata, JSON escape 및 newline을 포함한 파일 상한은 16 MiB + 64 KiB
-  (16,842,752 bytes)다. strict schema와 최대 identity로 충분성을 검증하며
-  쓰기 직전 정확한 전체 bytes도 검사한다.
+  (16,842,752 bytes)다. 실제 workflow의 `Date.toISOString()` 시작 시각과
+  strict identity의 최대 길이로 충분성을 검증하며
+  쓰기 직전 정확한 전체 bytes도 검사한다. direct 내부 호출의 더 긴 ISO 문자열까지
+  64 KiB envelope로 수용한다고 보장하지 않으며 전체 파일 cap 초과는 저장 실패다.
   합성 예시의 overhead를 모든 파일에 적용하는 고정 reserve로 사용하지 않는다.
 - strict envelope는 exact runId/batchId/runIndex, 시작 시각, 동일 child reservation hash,
   실제 생성한 초기 portfolio observation의 version/content hash 및 source 관측 상태를 결속한다.
