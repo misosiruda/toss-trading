@@ -30,6 +30,9 @@ recorded는 runner 초기화 시점의 값이며 child 실행 완료·전체 입
   실패 후 남은 observation의 recorded는 값의 shape만 뜻하며 durable 완료·available 증거가 아니다. 공개 reader는 아직 없고,
   후속 reader는 잔존 파일만으로 완료·내구성·comparability를 승격해서는 안 된다. 저장 장치의 물리적 영속성을 증명하는 계약은 아니다.
 - versioned strict snapshot에는 default/coercion을 넣지 않는다. omission과 명시0/false/빈 배열을 보존한다.
+- identity의 runId는 기존 저장 child 문자 규칙과 최대256자, batchId는 producer가 이미 정규화한
+  비어 있지 않은 opaque text 최대4096자를 지원한다. 한글·공백·구두점을 파일명으로 바꾸지 않고
+  metadata와 동일하게 보존한다. 관측 identity는 경로 생성에 사용하지 않으며 masking 검사는 유지한다.
 - masking이 필요한 값, 미지원 shape 또는 상한 초과는 snapshot/hash를 남기지 않고 typed unavailable만 기록한다.
 - 최대512개 position, 문자열/배열 상한과 snapshot256KiB 한도를 적용한다. reservation hash는 child identity/시작 시각/출처와 결속한다.
 - source 파일 자체의 신뢰·읽기 history, complete 초기 상태의 공개 판독, 완료 결과 발행은 이 관측으로 승격하지 않는다.

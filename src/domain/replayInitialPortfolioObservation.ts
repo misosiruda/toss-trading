@@ -21,9 +21,11 @@ export const replayInitialPortfolioSnapshotSchema = z.object({
     priceSourceRefs: z.array(text(512)).max(128).optional(), isPriceStale: z.boolean().optional(), updatedAt: time
   }).strict()).max(512)
 }).strict();
-const identityText = text(120).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+// Stored identity is not a path input. Batch producers preserve opaque text separately from directory names.
+const childId = text(256).regex(/^[A-Za-z0-9_.-]+(?![\s\S])/).refine(value => value !== "." && value !== "..");
+const batchId = text(4096).refine(value => value === value.trim());
 export const replayInitialPortfolioIdentitySchema = z.object({
-  runId: identityText, batchId: identityText, runIndex: z.number().int().nonnegative()
+  runId: childId, batchId, runIndex: z.number().int().nonnegative()
 }).strict();
 const origin = z.enum(["stored_portfolio", "generated"]);
 export const replayInitialPortfolioReservationSchema = z.object({
