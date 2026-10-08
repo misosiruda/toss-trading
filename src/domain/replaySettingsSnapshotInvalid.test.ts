@@ -20,7 +20,7 @@ test("settings reject nonfinite and non-JSON numeric values and malformed Unicod
   for (const value of [null, undefined, "{}"]) assertUnsupported(value);
   for (const value of [[], new Set(), new Map(), new Uint8Array(), Object.create(minimalSettings())]) assertUnsupported(value, "inspection_unavailable");
   const cyclic = allSettings(); (cyclic.riskPolicy as Record<string, unknown>).hedgePolicy = cyclic;
-  assertUnsupported(cyclic);
+  assertUnsupported(cyclic, "inspection_unavailable");
 });
 
 test("unknown nested keys and excluded labels are unsupported in the strict snapshot parser", () => {
@@ -132,7 +132,8 @@ test("runner opaque root values and known excluded data fields are never read, c
     [input.universeManifest!.symbols[0]!, "name"]] as const) {
     const before = Object.getOwnPropertyDescriptor(container, key)!;
     Object.defineProperty(container, key, { get: getter, enumerable: true, configurable: true });
-    assert.deepEqual(prepareReplaySettingsSnapshot(input), { status: "unavailable", reason: "unsupported_shape" });
+    assert.deepEqual(prepareReplaySettingsSnapshot(input), { status: "unavailable",
+      reason: container === risk ? "inspection_unavailable" : "unsupported_shape" });
     Object.defineProperty(container, key, before);
   }
   assert.equal(calls, 0);

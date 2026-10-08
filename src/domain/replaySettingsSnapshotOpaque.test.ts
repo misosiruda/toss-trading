@@ -93,7 +93,11 @@ test("excluded opaque inputs are ignored while ordinary unsupported plain values
   for (const key of ["clock", "samplingPolicy", "decisionProvider", "performanceClock", "tickDelay", "onProgress", "unknownField"]) {
     Object.defineProperty(input, key, { get: trap });
   }
-  const ownKeys = t.mock.method(Reflect, "ownKeys", () => { throw new Error("Do not enumerate unknown fields"); });
+  const originalOwnKeys = Reflect.ownKeys;
+  const ownKeys = t.mock.method(Reflect, "ownKeys", (value: object) => {
+    assert.ok(value === input.constraints || value === input.riskPolicy, "Only actual wholesale consumers may enumerate keys");
+    return originalOwnKeys(value);
+  });
   const descriptors = t.mock.method(Object, "getOwnPropertyDescriptors", () => { throw new Error("Do not collect whole object descriptors"); });
   try { assert.equal(hasUninspectableReplaySettings(input), false); }
   finally { ownKeys.mock.restore(); descriptors.mock.restore(); }

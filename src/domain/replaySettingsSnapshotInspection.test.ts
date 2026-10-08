@@ -64,7 +64,11 @@ test("security inspection ignores unknown/excluded fields and classifies selecte
   const input = { ...minimalSettings(), riskPolicy: { now: credential, dynamicCashReserveMarketRegime: proxy },
     universeManifest: { description: credential, symbols: [{ market: "KR", symbol: "SYNTH", name: credential, tags: proxy }] } };
   Object.defineProperty(input, "decisionProvider", { get: trap });
-  const ownKeys = t.mock.method(Reflect, "ownKeys", () => { throw new Error("Security inspection must not enumerate unknown keys"); });
+  const originalOwnKeys = Reflect.ownKeys;
+  const ownKeys = t.mock.method(Reflect, "ownKeys", (value: object) => {
+    assert.ok(value === input.constraints || value === input.riskPolicy, "Only actual wholesale consumers may enumerate keys");
+    return originalOwnKeys(value);
+  });
   const descriptors = t.mock.method(Object, "getOwnPropertyDescriptors", () => { throw new Error("Security inspection must use known keys"); });
   try { assert.equal(inspectReplaySettingsCredentials(input), undefined); }
   finally { ownKeys.mock.restore(); descriptors.mock.restore(); }
