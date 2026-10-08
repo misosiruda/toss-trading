@@ -4,6 +4,8 @@ import type {
   VirtualPortfolio,
   VirtualPosition
 } from "../domain/schemas.js";
+import { hasUninspectableReplayResearchUniverse } from "./historicalReplaySettingsPreparation.js";
+import { inspectReplaySettingsCredentials } from "../domain/replaySettingsCredentialInspection.js";
 import { hasUninspectableReplaySettings } from "../domain/replaySettingsOpaqueInspection.js";
 import type { ReplaySettingsSnapshotObservation } from "../domain/replaySettingsSnapshot.js";
 import type { ReplaySourceSnapshotObservation } from "../domain/replaySourceSnapshot.js";
@@ -65,7 +67,7 @@ export async function runHistoricalReplayWorkflow(
   options: HistoricalReplayWorkflowOptions
 ): Promise<HistoricalReplayWorkflowResult> {
   // Planning/metadata can read settings before the runner observation boundary. Never execute opaque settings there.
-  if (hasUninspectableReplaySettings(options)) throw Error("settings credential inspection unavailable");
+  if (hasUninspectableReplaySettings(options) || hasUninspectableReplayResearchUniverse(options)) throw Error("settings credential inspection unavailable");
   const paths = createStoragePaths(options.storageBaseDir);
   const historicalMarketSnapshotsPath =
     options.historicalMarketSnapshotsPath ?? paths.historicalMarketSnapshotsPath;
@@ -74,26 +76,36 @@ export async function runHistoricalReplayWorkflow(
     new FileHistoricalMarketSnapshotStore(historicalMarketSnapshotsPath).readAll()
   ]);
   // Input loading awaited caller-controlled time; recheck before any plan/metadata setting reads.
-  if (hasUninspectableReplaySettings(options)) throw Error("settings credential inspection unavailable");
+  if (hasUninspectableReplaySettings(options) || hasUninspectableReplayResearchUniverse(options)) throw Error("settings credential inspection unavailable");
   const replayStartedAt = options.generatedAt ?? new Date();
   const decisionProvider =
     options.decisionProvider ?? new FirstPricedCodexHistoricalDecisionProvider();
-  const plan = createHistoricalReplayWorkflowPlan({
-    options,
-    storedPortfolio: portfolio,
-    snapshots: snapshots.records,
-    replayStartedAt,
-    decisionProvider
-  });
-  const researchManifest = createWorkflowResearchManifest({
-    plan,
-    snapshots: snapshots.records,
-    corruptLineCount: snapshots.corruptLineCount,
-    hasExplicitDecisionProvider: options.decisionProvider !== undefined,
-    decisionProviderMetadata: options.decisionProviderMetadata,
-    universeManifest: options.universeManifest,
-    createdAt: replayStartedAt
-  });
+  // Keep the bounded verdict before preparation can invoke any explicitly excluded runtime callback.
+  const preparationSecurity = inspectReplaySettingsCredentials(options);
+  let plan: HistoricalReplayWorkflowPlan;
+  let researchManifest: ReturnType<typeof createWorkflowResearchManifest>;
+  try {
+    plan = createHistoricalReplayWorkflowPlan({
+      options,
+      storedPortfolio: portfolio,
+      snapshots: snapshots.records,
+      replayStartedAt,
+      decisionProvider
+    });
+    researchManifest = createWorkflowResearchManifest({
+      plan,
+      snapshots: snapshots.records,
+      corruptLineCount: snapshots.corruptLineCount,
+      hasExplicitDecisionProvider: options.decisionProvider !== undefined,
+      decisionProviderMetadata: options.decisionProviderMetadata,
+      universeManifest: options.universeManifest,
+      createdAt: replayStartedAt
+    });
+  } catch (error) {
+    if (preparationSecurity === "redacted") throw Error("settings input requires redaction");
+    if (preparationSecurity === "inspection_unavailable") throw Error("settings credential inspection unavailable");
+    throw error;
+  }
   const researchManifestRef = replayResearchManifestReference({
     manifest: researchManifest,
     manifestPath: paths.historicalReplayResearchManifestPath
