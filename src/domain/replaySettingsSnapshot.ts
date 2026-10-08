@@ -4,6 +4,7 @@ import { REPLAY_SETTINGS_SNAPSHOT_VERSION, replaySettingsSnapshotDataSchema, typ
 import { cloneReplaySettingsProjection, freezeReplaySettingsSnapshot, plainSettingsObject, preflightReplaySettingsSnapshot } from "./replaySettingsSnapshotPreflight.js";
 
 export { REPLAY_SETTINGS_SNAPSHOT_VERSION, REPLAY_SETTINGS_SNAPSHOT_LIMITS, type ReplaySettingsSnapshot } from "./replaySettingsSnapshotFields.js";
+export { hasUninspectableReplaySettings } from "./replaySettingsOpaqueInspection.js";
 export { REPLAY_SETTINGS_CREDENTIAL_INSPECTION_LIMITS } from "./replaySettingsCredentialInspection.js";
 export type { ReplaySettingsSnapshotUnavailableReason } from "./replaySettingsSnapshotPreflight.js";
 

@@ -38,29 +38,28 @@ test("earlier unknown keys, accessors, own undefined and oversized arrays cannot
   assert.equal(calls, 0);
 });
 
-test("known data descriptors are inspected regardless of enumerability, wrong type or nonplain container", () => {
+test("known plain data descriptors are inspected regardless of enumerability or wrong scalar type", () => {
   const hidden = Object.defineProperty(minimalSettings(), "packetIdPrefix", { value: credential, enumerable: false });
-  class SuppliedRisk { maxBudgetPerDecisionKrw = credential; }
-  const functionRisk = Object.assign(() => 0, { maxBudgetPerDecisionKrw: credential });
   for (const input of [hidden, { ...minimalSettings(), maxCandidates: credential },
     { ...minimalSettings(), executionPolicy: { rejectStaleLiquidity: credential } },
-    { ...minimalSettings(), riskPolicy: new SuppliedRisk() }, { ...minimalSettings(), riskPolicy: functionRisk },
     { ...minimalSettings(), riskPolicy: Object.defineProperty({}, "maxSymbolExposureKrw", { value: credential }) },
     { ...minimalSettings(), constraints: credential }]) {
     assert.deepEqual(prepareReplaySettingsSnapshot(input), unavailable("redacted"));
   }
 });
 
-test("security inspection skips unknown/excluded fields and getters/proxies without changing their old unsupported classification", t => {
+test("security inspection ignores unknown/excluded fields and classifies selected getters/proxies as unavailable", t => {
   let calls = 0;
   const trap = () => { calls += 1; throw new Error("Do not execute opaque code"); };
   const proxy = new Proxy({ maxBudgetPerDecisionKrw: credential }, { get: trap, ownKeys: trap, getOwnPropertyDescriptor: trap, getPrototypeOf: trap });
   const revocable = Proxy.revocable({}, {}); revocable.revoke();
   const unknown = { ...minimalSettings(), riskPolicy: { futureField: credential } };
   const accessor = { ...minimalSettings(), riskPolicy: Object.defineProperty({}, "maxBudgetPerDecisionKrw", { get: trap }) };
-  for (const input of [unknown, accessor, { ...minimalSettings(), riskPolicy: proxy }, { ...minimalSettings(), riskPolicy: revocable.proxy }]) {
-    assert.equal(inspectReplaySettingsCredentials(input), undefined);
-    assert.deepEqual(prepareReplaySettingsSnapshot(input), unavailable("unsupported_shape"));
+  assert.equal(inspectReplaySettingsCredentials(unknown), undefined);
+  assert.deepEqual(prepareReplaySettingsSnapshot(unknown), unavailable("unsupported_shape"));
+  for (const input of [accessor, { ...minimalSettings(), riskPolicy: proxy }, { ...minimalSettings(), riskPolicy: revocable.proxy }]) {
+    assert.equal(inspectReplaySettingsCredentials(input), "inspection_unavailable");
+    assert.deepEqual(prepareReplaySettingsSnapshot(input), unavailable("inspection_unavailable"));
   }
   const input = { ...minimalSettings(), riskPolicy: { now: credential, dynamicCashReserveMarketRegime: proxy },
     universeManifest: { description: credential, symbols: [{ market: "KR", symbol: "SYNTH", name: credential, tags: proxy }] } };
@@ -137,15 +136,19 @@ test("security array cap scans beyond observer limits and keeps bounded later si
 test("maximal sparse arrays have bounded descriptor work and never inspect indices beyond the safety cap", t => {
   const sparse = new Array(0xffff_ffff);
   const input = { ...minimalSettings(), constraints: { ...minimalSettings().constraints, allowedActions: sparse } };
-  let entries = 0;
+  let entries = 0; let structuralProbes = 0;
   const descriptor = Object.getOwnPropertyDescriptor;
   const read = t.mock.method(Object, "getOwnPropertyDescriptor", (value: unknown, key: PropertyKey) => {
-    if (value === sparse && key !== "length") { assert.ok(Number(key) < limits.arrayEntries); entries += 1; }
+    if (value === sparse) {
+      if (typeof key === "string" && /^(0|[1-9][0-9]*)$/.test(key)) { assert.ok(Number(key) < limits.arrayEntries); entries += 1; }
+      else structuralProbes += 1;
+    }
     return descriptor(value, key);
   });
   try { assert.equal(inspectReplaySettingsCredentials(input), "inspection_unavailable"); }
   finally { read.mock.restore(); }
   assert.equal(entries, limits.arrayEntries);
+  assert.equal(structuralProbes, 9, "Two length reads and seven fixed executable-hook probes stay bounded");
 });
 
 test("valid maximum shape counts and normal four-MiB overflow remain within security budgets", () => {

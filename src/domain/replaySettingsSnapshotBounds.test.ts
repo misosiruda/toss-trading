@@ -90,7 +90,8 @@ test("count, text, bytes and redaction failures never reach whole-object seriali
   const hash = t.mock.method(crypto, "createHash", () => { throw new Error("Do not hash rejected settings"); });
   syncBuiltinESMExports();
   try {
-    for (const input of [byteOversize, countOversize, { ...minimalSettings(), packetIdPrefix: "X".repeat(limits.textUnits + 1) }]) expectLimit(input);
+    assert.deepEqual(prepareReplaySettingsSnapshot(countOversize), { status: "unavailable", reason: "inspection_unavailable" });
+    for (const input of [byteOversize, { ...minimalSettings(), packetIdPrefix: "X".repeat(limits.textUnits + 1) }]) expectLimit(input);
     assert.deepEqual(prepareReplaySettingsSnapshot({ ...minimalSettings(), packetIdPrefix: "token=SYNTHETIC_PRIVATE" }),
       { status: "unavailable", reason: "redacted" });
     assert.equal(getters, 0); assert.equal(clone.mock.callCount(), 0); assert.equal(hash.mock.callCount(), 0);

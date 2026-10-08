@@ -8,6 +8,10 @@ export const REPLAY_SETTINGS_SNAPSHOT_LIMITS = Object.freeze({
   allowedActions: 128, riskMapKeys: 6, regimeMapKeys: 5, marketMapKeys: 2,
   textUnits: 120, timeUnits: 80, reasonUnits: 512, depth: 4
 });
+// Separate inspection budgets do not expand the frozen recording contract.
+export const REPLAY_SETTINGS_CREDENTIAL_INSPECTION_LIMITS = Object.freeze({
+  perStringUnits: 4_096, totalStringUnits: 16_777_216, visitedValues: 500_000, arrayEntries: 100_000
+});
 const limits = REPLAY_SETTINGS_SNAPSHOT_LIMITS;
 const text = string(limits.textUnits);
 const market = enumeration(["KR", "US"]);

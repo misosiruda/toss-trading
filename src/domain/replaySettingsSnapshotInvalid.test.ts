@@ -8,7 +8,8 @@ test("settings reject nonfinite and non-JSON numeric values and malformed Unicod
   for (const path of leafPaths(allSettings())) {
     const original = atPath(allSettings(), path);
     if (typeof original === "number") {
-      for (const value of invalid) { const input = allSettings(); replacePath(input, path, value); assertUnsupported(input); }
+      for (const value of invalid) { const input = allSettings(); replacePath(input, path, value);
+        assertUnsupported(input, value !== null && (typeof value === "object" || typeof value === "function") ? "inspection_unavailable" : "unsupported_shape"); }
     }
     if (typeof original === "string") {
       for (const value of ["\ud800", "\udfff", "x\ud800x", "\ud800\ud800", "\udc00\ud800"]) {
@@ -16,7 +17,8 @@ test("settings reject nonfinite and non-JSON numeric values and malformed Unicod
       }
     }
   }
-  for (const value of [null, undefined, [], new Set(), new Map(), new Uint8Array(), "{}", Object.create(minimalSettings())]) assertUnsupported(value);
+  for (const value of [null, undefined, "{}"]) assertUnsupported(value);
+  for (const value of [[], new Set(), new Map(), new Uint8Array(), Object.create(minimalSettings())]) assertUnsupported(value, "inspection_unavailable");
   const cyclic = allSettings(); (cyclic.riskPolicy as Record<string, unknown>).hedgePolicy = cyclic;
   assertUnsupported(cyclic);
 });
@@ -68,7 +70,7 @@ test("all object levels reject accessor, proxy, symbol and non-enumerable input 
       const input = allSettings(); const container = atPath(input, path) as object;
       if (variation === "proxy") {
         const proxy = new Proxy(container, handler);
-        if (path.length) { replacePath(input, path, proxy); assertUnsupported(input); } else assertUnsupported(proxy);
+        if (path.length) { replacePath(input, path, proxy); assertUnsupported(input, "inspection_unavailable"); } else assertUnsupported(proxy, "inspection_unavailable");
       } else {
         // At root, only selected fields are inspected; opaque unrelated fields are intentionally ignored.
         const key = path.length ? Object.keys(container)[0]! : "packetIdPrefix";
@@ -79,11 +81,11 @@ test("all object levels reject accessor, proxy, symbol and non-enumerable input 
           Object.defineProperty(container, Symbol("unsupported"), { value: 1 });
         }
         if (variation === "prototype") Object.setPrototypeOf(container, { inherited: true });
-        assertUnsupported(input);
+        assertUnsupported(input, variation === "accessor" || variation === "prototype" ? "inspection_unavailable" : "unsupported_shape");
       }
     }
   }
-  const revocable = Proxy.revocable({}, {}); revocable.revoke(); assertUnsupported(revocable.proxy);
+  const revocable = Proxy.revocable({}, {}); revocable.revoke(); assertUnsupported(revocable.proxy, "inspection_unavailable");
   assert.equal(calls, 0);
 });
 
@@ -97,7 +99,10 @@ test("arrays reject sparse, own undefined, extra properties, accessors, subclass
       Object.defineProperty([...original], "0", { get: getter, enumerable: true }),
       Object.defineProperty([...original], "0", { value: original[0], enumerable: false }),
       Object.assign([...original], { [Symbol("unknown")]: true }), new Proxy(original, { get: getter, ownKeys: getter })];
-    for (const array of arrays) { const input = allSettings(); replacePath(input, path, array); assertUnsupported(input); }
+    for (const [index, array] of arrays.entries()) {
+      const input = allSettings(); replacePath(input, path, array);
+      assertUnsupported(input, [3, 4, 7].includes(index) ? "inspection_unavailable" : "unsupported_shape");
+    }
   }
   assert.equal(calls, 0);
 });
@@ -145,8 +150,8 @@ test("observation parser guards discriminant getters, hostile scalar values and 
   }
   assert.equal(calls, 0);
 });
-function assertUnsupported(value: unknown): void {
-  assert.deepEqual(prepareReplaySettingsSnapshot(value), { status: "unavailable", reason: "unsupported_shape" });
+function assertUnsupported(value: unknown, reason = "unsupported_shape"): void {
+  assert.deepEqual(prepareReplaySettingsSnapshot(value), { status: "unavailable", reason });
   assert.equal(replaySettingsSnapshotSchema.safeParse(value).success, false);
 }
 function containerPaths(value: unknown, prefix: (string | number)[] = []): (string | number)[][] {
