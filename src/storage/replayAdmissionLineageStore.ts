@@ -2,7 +2,8 @@ import { open } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReplayInitialPortfolioObservation } from "../domain/replaySourceObservation.js";
 import type { ReplayDurableSettingsReference } from "../domain/replaySettingsObservation.js";
-import { REPLAY_ADMISSION_LINEAGE_FILE_NAME, REPLAY_ADMISSION_LINEAGE_MAX_BYTES } from "../domain/replayAdmissionLineage.js";
+import { REPLAY_ADMISSION_LINEAGE_FILE_NAME, REPLAY_ADMISSION_LINEAGE_MAX_BYTES,
+  durableAdmissionLineageReference, type ReplayDurableAdmissionReference } from "../domain/replayAdmissionLineage.js";
 import { createReplayAdmissionLineage } from "../domain/replayAdmissionMapping.js";
 import { resolvePaperSimulationAdmissionContext } from "./paperSimulationObservationStore.js";
 import { writeExclusiveExperimentFile } from "./paperExperimentFilesystem.js";
@@ -11,7 +12,7 @@ import { writeExclusiveExperimentFile } from "./paperExperimentFilesystem.js";
 export async function writeReplayAdmissionLineage(context: unknown, input: {
   storageBaseDir: string; actual: unknown; initialObservation: ReplayInitialPortfolioObservation;
   settingsReference: ReplayDurableSettingsReference;
-}): Promise<void> {
+}): Promise<ReplayDurableAdmissionReference | undefined> {
   try {
     const evidence = resolvePaperSimulationAdmissionContext(context);
     // Even a sanitized child identity can retain a sensitive seed fragment. Do not construct an envelope.
@@ -22,6 +23,7 @@ export async function writeReplayAdmissionLineage(context: unknown, input: {
     await writeExclusiveExperimentFile(join(input.storageBaseDir, REPLAY_ADMISSION_LINEAGE_FILE_NAME), text);
     const directory = await open(input.storageBaseDir, "r");
     try { await directory.sync(); } finally { await directory.close(); }
+    return durableAdmissionLineageReference(record);
   } catch { throw Error("admission lineage observation storage failed"); }
 }
 
