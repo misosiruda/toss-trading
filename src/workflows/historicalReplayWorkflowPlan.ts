@@ -1,3 +1,4 @@
+import type { PaperSimulationAdmissionContext } from "../storage/paperSimulationObservationStore.js";
 import type {
   HistoricalMarketSnapshot,
   StrategyBucket,
@@ -30,6 +31,8 @@ import type { StrategyReplayPresetName } from "../replay/strategyReplayPreset.js
 
 export interface HistoricalReplayWorkflowOptions {
   storageBaseDir: string;
+  admissionContext?: PaperSimulationAdmissionContext;
+  admissionWindowSamplingMode?: string;
   historicalMarketSnapshotsPath?: string;
   clock: SimulatedClock;
   decisionProvider?: CodexHistoricalReplayDecisionProviderLike;

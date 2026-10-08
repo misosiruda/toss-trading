@@ -1,3 +1,4 @@
+import { captureReplayAdmissionContext, captureReplayWorkflowAdmission } from "./historicalReplayAdmission.js";
 import type {
   HistoricalMarketSnapshot,
   MarketPacket,
@@ -68,6 +69,8 @@ export async function runHistoricalReplayWorkflow(
 ): Promise<HistoricalReplayWorkflowResult> {
   // Planning/metadata can read settings before the runner observation boundary. Never execute opaque settings there.
   if (hasUninspectableReplaySettings(options) || hasUninspectableReplayResearchUniverse(options)) throw Error("settings credential inspection unavailable");
+  const admissionContext = captureReplayAdmissionContext(options);
+  const admissionActual = captureReplayWorkflowAdmission(options, admissionContext);
   const paths = createStoragePaths(options.storageBaseDir);
   const historicalMarketSnapshotsPath =
     options.historicalMarketSnapshotsPath ?? paths.historicalMarketSnapshotsPath;
@@ -77,7 +80,19 @@ export async function runHistoricalReplayWorkflow(
   ]);
   // Input loading awaited caller-controlled time; recheck before any plan/metadata setting reads.
   if (hasUninspectableReplaySettings(options) || hasUninspectableReplayResearchUniverse(options)) throw Error("settings credential inspection unavailable");
-  const replayStartedAt = options.generatedAt ?? new Date();
+  if (captureReplayAdmissionContext(options) !== admissionContext ||
+    JSON.stringify(captureReplayWorkflowAdmission(options, admissionContext)) !== JSON.stringify(admissionActual)) {
+    throw Error("replay admission mapping mismatch");
+  }
+  // An internal data overlay fixes only captured metadata. It does not enumerate unknown keys,
+  // evaluate unrelated accessors, or clone the excluded opaque runtime objects.
+  const planOptions = admissionActual === undefined ? options : Object.create(options, {
+    runId: { value: admissionActual.identity.runId, enumerable: true },
+    batchId: { value: admissionActual.identity.batchId, enumerable: true },
+    batchRunIndex: { value: admissionActual.identity.runIndex, enumerable: true },
+    windowSelection: { value: admissionActual.windowSelection, enumerable: true }
+  }) as HistoricalReplayWorkflowOptions;
+  const replayStartedAt = admissionActual === undefined ? options.generatedAt ?? new Date() : new Date(admissionActual.startedAt);
   const decisionProvider =
     options.decisionProvider ?? new FirstPricedCodexHistoricalDecisionProvider();
   // Keep the bounded verdict before preparation can invoke any explicitly excluded runtime callback.
@@ -86,7 +101,7 @@ export async function runHistoricalReplayWorkflow(
   let researchManifest: ReturnType<typeof createWorkflowResearchManifest>;
   try {
     plan = createHistoricalReplayWorkflowPlan({
-      options,
+      options: planOptions,
       storedPortfolio: portfolio,
       snapshots: snapshots.records,
       replayStartedAt,
@@ -112,6 +127,7 @@ export async function runHistoricalReplayWorkflow(
   });
   const identity = plan.metadataContext.identity;
   const isBoundChild = options.runId !== undefined && identity.batchId !== null && identity.runIndex !== null;
+  if (admissionActual !== undefined && !isBoundChild) throw Error("replay admission mapping mismatch");
   let observations: ReplayChildObservationWriter | undefined;
   const progressRecorder = new HistoricalReplayProgressRecorder({
     filePath: paths.historicalReplayProgressPath,
@@ -174,6 +190,9 @@ export async function runHistoricalReplayWorkflow(
             if (settings.status === "unavailable") {
               if (settings.reason === "redacted") throw Error("settings input requires redaction");
               if (settings.reason === "inspection_unavailable") throw Error("settings credential inspection unavailable");
+            }
+            if (admissionContext !== undefined && admissionActual !== undefined) {
+              await observations.observeAdmission(admissionContext, admissionActual);
             }
             await startArtifacts();
           }

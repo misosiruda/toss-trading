@@ -1,3 +1,5 @@
+import { captureReplayAdmissionContext } from "./historicalReplayAdmission.js";
+import type { PaperSimulationAdmissionContext } from "../storage/paperSimulationObservationStore.js";
 import {
   access,
   appendFile,
@@ -129,6 +131,7 @@ export type BatchReplayWindowSamplingMode =
   | "validation_role_regime_plan";
 
 export interface BatchReplayRunnerOptions {
+  admissionContext?: PaperSimulationAdmissionContext;
   sourceDataDir: string;
   outputBaseDir: string;
   batchId: string;
@@ -376,6 +379,7 @@ const DEFAULT_CONSTRAINTS: MarketPacketConstraints = {
 export async function runHistoricalBatchReplay(
   options: BatchReplayRunnerOptions
 ): Promise<BatchReplayResult> {
+  const admissionContext = captureReplayAdmissionContext(options);
   const validationRoleRegimePlan =
     options.validationRoleRegimePlan === undefined
       ? null
@@ -478,6 +482,12 @@ export async function runHistoricalBatchReplay(
 
   for (let runIndex = 0; runIndex < runCount; runIndex += 1) {
     const runSeed = `${seed}:${runIndex}`;
+    // Preserve the actual selection path even when an alternative happens to pick the same window.
+    const admissionAlternativeDerivation = admissionContext === undefined ? undefined
+      : validationRoleRegimePlan !== null ? "validation_role_regime_plan"
+      : validationSplitAssignments !== null ? "validation_split"
+      : options.fixedWindow === undefined && options.calendarValidation !== undefined ? "calendar_filtered"
+      : undefined;
     const windowSelection = selectBatchReplayWindow({
       options,
       snapshots: snapshotRead.records,
@@ -635,6 +645,8 @@ export async function runHistoricalBatchReplay(
         options.decisionProviderMetadata ??
         (decisionProvider === undefined ? decisionProviderMetadata : undefined);
       const result = await runHistoricalReplayWorkflow({
+        ...(admissionContext === undefined ? {} : { admissionContext,
+          admissionWindowSamplingMode: admissionAlternativeDerivation ?? windowSelection.runWindowSampling.mode }),
         storageBaseDir,
         historicalMarketSnapshotsPath: sourcePaths.historicalMarketSnapshotsPath,
         clock: new SimulatedClock({

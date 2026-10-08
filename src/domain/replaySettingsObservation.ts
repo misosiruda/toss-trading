@@ -57,6 +57,37 @@ export const replaySettingsObservationSchema = z.object({
 }).strict();
 export type ReplaySettingsObservation = z.infer<typeof replaySettingsObservationSchema>;
 
+const settingsState = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("recorded"), snapshotVersion: z.literal("replay_settings_snapshot.v1"), contentHash: hash }).strict(),
+  z.object({ status: z.literal("unavailable"), reason: z.enum(["unsupported_shape", "redacted", "limit", "inspection_unavailable"]) }).strict()
+]);
+// B retains only the actual durable A reference, never its potentially large snapshot.
+export const replayDurableSettingsReferenceSchema = replayDurableSourceReferenceSchema.extend({
+  settingsObservation: z.object({ schemaVersion: z.literal("replay_settings_observation.v1"),
+    observationHash: hash, settings: settingsState }).strict()
+}).strict();
+export type ReplayDurableSettingsReference = z.infer<typeof replayDurableSettingsReferenceSchema>;
+
+export function durableSettingsObservationReference(record: ReplaySettingsObservation): ReplayDurableSettingsReference {
+  const settings = record.settings;
+  const reference = replayDurableSettingsReferenceSchema.parse({
+    identity: record.identity, startedAt: record.startedAt, reservationHash: record.reservationHash,
+    initialObservation: record.initialObservation, sourceObservation: record.sourceObservation,
+    settingsObservation: { schemaVersion: record.schemaVersion, observationHash: createReplayResearchHash(record),
+      settings: settings.status === "recorded"
+        ? { status: settings.status, snapshotVersion: settings.snapshotVersion, contentHash: settings.contentHash }
+        : { status: settings.status, reason: settings.reason } }
+  });
+  Object.freeze(reference.identity);
+  Object.freeze(reference.initialObservation.initialPortfolio);
+  Object.freeze(reference.initialObservation);
+  Object.freeze(reference.sourceObservation.source);
+  Object.freeze(reference.sourceObservation);
+  Object.freeze(reference.settingsObservation.settings);
+  Object.freeze(reference.settingsObservation);
+  return Object.freeze(reference);
+}
+
 export function assertSettingsSourceBinding(initial: ReplayInitialPortfolioObservation, source: ReplayDurableSourceReference): void {
   if (initial.identity.runId !== source.identity.runId || initial.identity.batchId !== source.identity.batchId ||
     initial.identity.runIndex !== source.identity.runIndex || initial.startedAt !== source.startedAt ||

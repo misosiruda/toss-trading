@@ -1,5 +1,6 @@
 import { persistPaperSimulationRequest, type CanonicalRequestInput } from "./paperSimulationRequestStore.js";
-import { persistPaperSimulationInput } from "./paperSimulationInputStore.js";
+import { persistPaperSimulationInputWithEvidence } from "./paperSimulationInputStore.js";
+import type { PaperSimulationInputSnapshot } from "../domain/paperSimulationInputSnapshot.js";
 import type { PaperSimulationEffectiveConfig, PaperSimulationConfigNotice } from "../api/paperSimulationConfig.js";
 import type { Stats } from "node:fs";
 import { lstat, mkdir, open } from "node:fs/promises";
@@ -22,6 +23,32 @@ interface AdmissionRequestInput extends CanonicalRequestInput {
     effectiveConfig: PaperSimulationEffectiveConfig; notices: PaperSimulationConfigNotice[] };
 }
 
+declare const admissionContextBrand: unique symbol;
+/** Opaque TypeScript handle only. The private identity map, never this brand, owns issuance. */
+export interface PaperSimulationAdmissionContext { readonly [admissionContextBrand]: true }
+export interface PaperSimulationAdmissionReceipt {
+  readonly receiptVersion: "paper_simulation_admission_receipt.v1";
+  readonly simulationRunId: string;
+  readonly batchId: string;
+  readonly acceptedAt: string;
+  readonly canonicalVersion: "paper_simulation_canonical_request.v1";
+  readonly canonicalRequestHash: string;
+  readonly inputVersion: "paper_simulation_input_provenance.v1";
+  readonly inputProvenanceHash: string;
+}
+export type PaperSimulationAdmissionEvidence = Readonly<{
+  status: "available"; simulationRunId: string; batchId: string; acceptedAt: string;
+  receipt: PaperSimulationAdmissionReceipt; snapshot: PaperSimulationInputSnapshot;
+} | { status: "unavailable"; reason: "input_missing" | "redacted" }>;
+const issuedAdmissions = new WeakMap<object, PaperSimulationAdmissionEvidence>();
+
+/** Membership is checked without property reads, including on revoked proxies and accessor forgeries. */
+export function resolvePaperSimulationAdmissionContext(value: unknown): PaperSimulationAdmissionEvidence {
+  const evidence = value !== null && typeof value === "object" ? issuedAdmissions.get(value) : undefined;
+  if (evidence === undefined) throw new Error("paper simulation admission context is not issued");
+  return evidence;
+}
+
 export function paperSimulationObservationPath(storageBaseDir: string, simulationRunId: string): string {
   if (!PAPER_SIMULATION_ID_PATTERN.test(simulationRunId)) throw new Error("invalid paper simulation identity");
   return join(createBatchReplayRootDirForStorage(storageBaseDir), simulationRunId, PAPER_SIMULATION_OBSERVATIONS_FILE_NAME);
@@ -31,6 +58,20 @@ export function paperSimulationObservationPath(storageBaseDir: string, simulatio
  * A failed admission deliberately leaves its directory/log barrier; never delete or reuse it.
  */
 export async function acceptPaperSimulation(storageBaseDir: string, simulationRunId: string, acceptedAt: string, canonicalInput?: AdmissionRequestInput): Promise<void> {
+  await persistAcceptance(storageBaseDir, simulationRunId, acceptedAt, canonicalInput, false);
+}
+
+/** Only the real admission writer may issue a context, after accepted durability and lock release. */
+export async function acceptPaperSimulationWithAdmissionContext(storageBaseDir: string, simulationRunId: string,
+  acceptedAt: string, canonicalInput?: AdmissionRequestInput): Promise<PaperSimulationAdmissionContext> {
+  const evidence = await persistAcceptance(storageBaseDir, simulationRunId, acceptedAt, canonicalInput, true);
+  const context = Object.freeze(Object.create(null)) as PaperSimulationAdmissionContext;
+  issuedAdmissions.set(context, evidence);
+  return context;
+}
+
+async function persistAcceptance(storageBaseDir: string, simulationRunId: string, acceptedAt: string,
+  canonicalInput: AdmissionRequestInput | undefined, ownAppendBatch: boolean): Promise<PaperSimulationAdmissionEvidence> {
   const event = paperSimulationObservationEventSchema.parse({
     schemaVersion: "paper_simulation_observation.v1", event: "accepted",
     simulationRunId, batchId: simulationRunId, acceptedAt
@@ -49,11 +90,24 @@ export async function acceptPaperSimulation(storageBaseDir: string, simulationRu
   await syncDirectory(dirname(outputDir));
   const canonicalRequestHash = canonicalInput === undefined ? undefined
     : await persistPaperSimulationRequest(storageBaseDir, simulationRunId, acceptedAt, canonicalInput);
-  const inputProvenanceHash = canonicalInput?.inputSnapshot === undefined ? undefined
-    : await persistPaperSimulationInput(storageBaseDir, simulationRunId, acceptedAt, canonicalRequestHash!, canonicalInput.inputSnapshot);
+  const input = canonicalInput?.inputSnapshot === undefined ? undefined
+    : await persistPaperSimulationInputWithEvidence(storageBaseDir, simulationRunId, acceptedAt, canonicalRequestHash!, canonicalInput.inputSnapshot);
+  const inputProvenanceHash = input?.inputProvenanceHash;
   const boundEvent = { ...event, ...(canonicalRequestHash === undefined ? {} : { canonicalRequestHash }),
     ...(inputProvenanceHash === undefined ? {} : { inputProvenanceHash }) };
-  await new JsonlStore(path, paperSimulationObservationEventSchema, "paper simulation observation").appendDurably(boundEvent);
+  const identity = { simulationRunId: event.simulationRunId, batchId: event.batchId, acceptedAt: event.acceptedAt };
+  const evidence: PaperSimulationAdmissionEvidence = Object.freeze(
+    input?.status === "available" ? { ...identity, status: "available" as const, snapshot: input.snapshot,
+      receipt: Object.freeze({ ...identity, receiptVersion: "paper_simulation_admission_receipt.v1" as const,
+        canonicalVersion: "paper_simulation_canonical_request.v1" as const, canonicalRequestHash: canonicalRequestHash!,
+        inputVersion: input.schemaVersion, inputProvenanceHash: input.inputProvenanceHash }) }
+      : { status: "unavailable" as const, reason: input === undefined ? "input_missing" as const : input.reason });
+  const append = () => new JsonlStore(path, paperSimulationObservationEventSchema, "paper simulation observation").appendDurably(boundEvent);
+  // appendDurably alone can join an inherited batch and return before its release. An issuer owns
+  // the entire batch; nested admission is rejected instead of issuing while another scope holds it.
+  if (ownAppendBatch) await withPaperExecutionLogBatch([path], append);
+  else await append();
+  return evidence;
 }
 
 export async function recordPaperSimulationRunnerFailure(

@@ -2,6 +2,7 @@ import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { initialPortfolioObservationReference, type ReplayInitialPortfolioObservation } from "../domain/replaySourceObservation.js";
 import { assertSettingsSourceBinding, replayDurableSourceReferenceSchema, replaySettingsObservationSchema,
+  durableSettingsObservationReference, type ReplayDurableSettingsReference,
   type ReplayDurableSourceReference } from "../domain/replaySettingsObservation.js";
 import type { ReplaySettingsSnapshotObservation } from "../domain/replaySettingsSnapshot.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
@@ -14,7 +15,7 @@ export const REPLAY_SETTINGS_OBSERVATION_MAX_FILE_BYTES = 4_194_304 + 65_536;
 export async function writeReplaySettingsObservation(input: {
   storageBaseDir: string; initialObservation: ReplayInitialPortfolioObservation;
   sourceReference: ReplayDurableSourceReference; settings: ReplaySettingsSnapshotObservation;
-}): Promise<void> {
+}): Promise<ReplayDurableSettingsReference> {
   try {
     const initial = input.initialObservation;
     const source = replayDurableSourceReferenceSchema.parse(input.sourceReference);
@@ -36,5 +37,6 @@ export async function writeReplaySettingsObservation(input: {
     await writeExclusiveExperimentFile(join(input.storageBaseDir, REPLAY_SETTINGS_OBSERVATION_FILE), text);
     const directory = await open(input.storageBaseDir, "r");
     try { await directory.sync(); } finally { await directory.close(); }
+    return durableSettingsObservationReference(record);
   } catch { throw Error("settings observation storage failed"); }
 }
