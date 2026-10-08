@@ -2,6 +2,8 @@
 
 기준 main: `24cfe161562f8deb6e1af75ffdd299974c854ad2` (PR819).
 [입력·runtime 계약](input-runtime-provenance-contract.md) 2단계의 첫 기능 단위다.
+현재 구현은 PR820으로 병합됐다. 이후 source 등 남은 경계는
+[2026-10-08 checkpoint](provenance-checkpoint-20261008.md)를 따른다.
 
 ## 범위와 선행
 

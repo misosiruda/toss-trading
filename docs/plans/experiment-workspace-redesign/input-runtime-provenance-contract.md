@@ -5,8 +5,10 @@
 reader, 새 endpoint, 비교 가능성 또는 화면 기능이 구현됐다고 표시하지 않는다.
 이후 첫 구현 범위는 [접수 입력 보존](admission-input-preservation.md)이다. 아래 접수 snapshot
 저장·내부 reader만 연결되며 child 실행 증거와 공개 조회/비교 UI의 완료를 뜻하지 않는다.
-다음 기능 단위는 [child 초기 portfolio 관측](child-initial-portfolio-scope.md)이다. 실제 runner 초기 상태의
+PR820의 [child 초기 portfolio 관측](child-initial-portfolio-scope.md)은 실제 runner 초기 상태의
 부분 producer이며 source/runtime/dependency/result 연결과 2단계 전체 완료는 별도로 남는다.
+[최신 checkpoint](provenance-checkpoint-20261008.md)와 다음 [source 관측 설계](child-source-observation-scope.md)를
+따른다. source 문서 추가는 producer·공개 reader·완전성 구현 완료가 아니다.
 
 ## 목적과 현재 근거
 
