@@ -15,9 +15,10 @@ snapshot은 아래 top-level 필드만 가진 strict object다. 필수는 `packe
 하지 않는다. 유효하지 않은 cooldown 시각을 inactive로 처리하는 기존 의미를 바꾸지 않는다.
 
 optional omission, `{}`, `[]`, 0, false와 제공된 값을 구분한다. own-property undefined, null,
-nonfinite, malformed Unicode, accessor, proxy, cycle, sparse/추가 property 배열, symbol key,
-non-enumerable 또는 plain object가 아닌 선택 입력은 unsupported_shape다. 지원 밖 입력은 settings
-내용/hash 없이 unavailable이며 기존 replay 실행 경로를 보존한다. null/undefined를 omission으로 바꿔
+nonfinite, malformed Unicode, cycle, sparse/추가 property 배열, symbol key, non-enumerable data 등은
+기록용 unsupported_shape다. 선택된 accessor/proxy/상속 값/nonplain container와 object/function scalar는
+내용을 실행 없이 검사할 수 없어 inspection_unavailable이며 아래 안전 정지 경계를 따른다. 그 외 기록 지원 밖
+plain-data 입력은 settings 내용/hash 없이 unavailable이며 기존 replay 실행 경로를 보존한다. null/undefined를 omission으로 바꿔
 recorded하지 않는다. 속성 이름, 배열 순서와 중복을 보존하며 sort/dedup/default/coercion을 하지 않는다.
 JSON object key order만 canonical hash의 기존 정렬 규칙을 따른다.
 
@@ -61,8 +62,8 @@ JSON object key order만 canonical hash의 기존 정렬 규칙을 따른다.
 
 runner options 전체를 clone하지 않는다. clock, samplingPolicy, decisionProvider, performanceClock,
 tickDelay와 observer/progress callback은 원래 객체·state·호출 시점을 유지한다. 선택 field만 descriptor로
-검사하며 opaque getter를 미리 읽지 않는다. 선택 field getter/proxy가 있으면 실행하지 않고 unavailable로
-분기하며 기존 consumer의 나중 읽기/오류 시점을 유지한다.
+검사하며 opaque getter를 미리 읽지 않는다. 선택 field getter/proxy/상속 값은 실행하지 않고 inspection_unavailable로 안전 정지한다.
+명시 제외한 runtime 객체와 callback의 원래 소비는 유지한다.
 
 Risk의 `now`와 `dynamicCashReserveMarketRegime`은 알려진 제외 field다. 전자는 tick now로 덮어쓰고
 후자는 dynamic policy가 있을 때 다시 계산하며 없을 때 쓰지 않는다. 해당 field가 plain data property면
@@ -158,7 +159,8 @@ raw exact4MiB이며 escaped maximal child identity를 사용했다. source 원�
 별도로 검사한다. earlier unknown field, accessor, own undefined 또는 recording cap이 뒤쪽의 credential
 검사를 중단시키지 않는다. non-enumerable selected data와 예상 numeric/boolean field에 들어온 문자열도
 검사한다. unknown field/명시 제외 label/opaque root field 자체를 새로운 관측 대상으로 확대하지 않는다.
-getter/proxy는 실행하지 않으며 그 반환값·상속된 동적 값까지 검사했다는 보장은 하지 않는다.
+선택 getter/proxy/상속 값은 실행하거나 강제 해제하지 않고 inspection_unavailable로 분류한다.
+명시 제외한 runtime 객체·field의 내용까지 검사했다는 보장은 하지 않는다.
 
 | 보안 검사 예산 | 한도 |
 | --- | ---: |
@@ -176,12 +178,39 @@ prefix, 긴 public URL,129 actions와4MiB+1byte 자료는 보안 예산 안에�
 확인하지 못했어도 보안 예산이 소진되면 새 typed reason `inspection_unavailable`이다. 민감 내용을
 발견했다고 오표기하지 않고 snapshot/hash 없는 설정 관측을 durable하게 남긴 뒤 legacy/ticks/provider
 전에 정지한다. 이것은 극단적인 입력에 대한 **새 실행 중단 경계**이며 관측 한도 초과 전부의 실행을
-차단하는 규칙이 아니다. 정상 보안 예산 내 입력의 이전 실행 의미와 getter/proxy 호출 시점은 유지한다.
+차단하는 규칙이 아니다. 정상 plain-data의 recording overflow/unknown/undefined 실행 의미는 유지한다. 선택된 동적 설정의
+기존 실행 허용은 아래와 같이 보안상 변경되며, 이를 일반 plain-data 입력의 거절로 확대하지 않는다.
 
 문자열의 전체 clone/replace/decode에 임의 크기 값을 전달하지 않는다. 기존 credential guard는4096자
 이하 leaf에만 적용한다. 보안 pass는 알려진 field descriptor를 직접 읽으며 전체 object ownKeys/descriptor
-복제나 hash를 만들지 않는다. 이 유한 작업 예산은 운영 latency 또는 병렬 RAM SLA를 보장하지 않는다.
+복제나 hash를 만들지 않는다. value/index 예산은 각 구조 또는 credential 검사 pass에 적용되며 한 pass의 sibling 사이에서 리셋하지
+않는다. 준비 전후 재검사와 writer schema 재검증은 별도 pass다. 이 유한 작업 예산은 운영 latency 또는
+병렬 RAM SLA를 보장하지 않는다.
 released initial/source 관측의 reason이나 안전 정지는 이 보완으로 바꾸지 않는다.
+
+### Selected opaque 설정의 준비 단계 차단
+
+workflow plan/metadata는 runner 관측 이전에도 설정을 읽는다. 따라서 workflow의 **첫 작업**에서 별도
+유한 descriptor-only 구조 검사를 수행한다. 이 판정은 문자열 credential 발견 여부와 독립이며 앞선
+redacted 값 때문에 뒤쪽 getter 검사가 생략되지 않는다. 입력 파일 읽기의 await 뒤에도 같은 검사를 반복해
+대기 중 caller mutation을 planning 전에 차단한다. 알려진 선택 field만 검사하며 문자열 내용이나
+명시 제외한 clock/sampler/provider/callback/Risk now·regime/universe labels를 실행·탐색하지 않는다.
+
+선택 accessor/proxy/revoked proxy, 상속된 선택 값, nonplain container, object/function scalar와 구조
+검사 예산 소진은 준비 실패다. 실제 소비 array method/iterator/constructor·species와 serialization의
+toJSON 같은 실행 hook override도 고정 descriptor 목록으로 확인하며 실행하지 않는다. 일반 비호출
+plain-data unknown property를 credential로 분류하지 않는다. getter/proxy를 실행하거나 prototype 값을 실제 소비하지 않는다. 허용한
+Object/Array prototype에 missing own field/index가 상속된 경우도 omission으로 합치지 않는다.
+
+이 준비 실패는 고정 오류 `settings credential inspection unavailable`로 끝나고 기존 입력 외 출력은
+만들지 않는다. 아직 초기/source 관측이 없으므로 예약·관측 결속을 꾸며 쓰지 않는다. 이미 초기화된
+runner의 observed 경계에 도달한 동일 입력은 content-free inspection_unavailable을 callback에 전달하고
+실제 예약/initial/source/settings가 durable해진 뒤 ticks/provider 전에 정지한다.
+
+이 변경은 이전 selected-getter/proxy의 unsupported fallback 호환성 예외를 폐기한다. 특히 예전 summary
+single-read 회귀는 observer 없는 direct legacy 경로에서 유지되지만, observed selected getter는 읽기0으로
+안전 정지한다. 정상 plain-data 및 명시 제외 runtime 객체의 기존 동작은 유지한다. getter/proxy 자체를
+credential이라고 오표기하지 않는다.
 
 ## 저장 상태와 failure 순서
 
@@ -199,6 +228,7 @@ dependencies/result는 unavailable이다. source reference 자체는 source 관�
 
 | 분기 | durable 출력과 후속 동작 |
 | --- | --- |
+| workflow 준비 단계 selected opaque/구조 검사 불가 | 고정 오류, 기존 입력 외 출력 없음; 허위 초기/source 결속 없음 |
 | settings recorded / unsupported / limit | reservation → initial → source → settings → legacy artifacts → ticks/provider; unsupported/limit은 원래 settings 실행 참조 유지 |
 | source redacted | reservation → initial → 내용 없는 source 후 stop; settings 파일 없음, legacy/ticks/provider 없음 |
 | settings redacted 또는 inspection_unavailable + source 정상 | reservation → initial → source → 내용 없는 settings 후 stop; legacy/ticks/provider 없음 |

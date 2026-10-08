@@ -63,7 +63,9 @@ allocation budget/headroom cap은 별도 packet allocation·sizing 경로에 적
    options 전체를 spread/structuredClone해 opaque 객체를 새로 만들거나 getter를 일찍 읽지 않는다.
 2. 선택된 plain field의 모든 runner read를 같은 copy에 연결한다. packet/가격/Risk/exit/allocation/pacing뿐
    아니라 warning과 반환 summary도 확인한다. 원본 reference가 남아 있으면 recorded로 발행하지 않는다.
-3. clock/sampler/provider/performanceClock/tickDelay 및 progress callback은 원래 경로를 유지한다.
+3. 명시 제외 clock/sampler/provider/performanceClock/tickDelay 및 progress callback은 원래 경로를 유지한다.
+   선택된 실제 소비 field의 getter/proxy/상속/비표준 객체는 검사 불가 안전 정지다. workflow 준비 전에
+   별도 descriptor-only guard가 고정 오류로 거절하고 아직 없는 관측 결속은 만들지 않는다.
    관측을 위해 ticks를 미리 계산하거나 sampler를 reset하지 않는다. 초기 관측 실패 시 직접 runner의
    ticks0/provider0를 유지한다. workflow plan의 기존 metadata용 clock 읽기와 runner 진입을 구분한다.
 4. sampler가 이미 사용됐거나 외부에서 evaluate됐어도 기존 state를 유지한다. provider metadata를 actual
@@ -88,7 +90,8 @@ unsupported/limit은 내용·개별 hash 없는 unavailable이며 원래 실행 
 단어 token 등 정상 문맥을 보존한다. recording limit/unsupported보다 먼저 별도 유한 credential 검사를
 수행하고 검사 예산 자체가 소진되면 내용 없는 inspection_unavailable을 남긴 뒤 안전 정지한다.
 4096 UTF-16 units leaf/누적16,777,216 units/50만values/배열별10만index의 정확한 경계와 호환성은 frozen v1 계약을 따른다.
-opaque getter/proxy 반환값 및 제외 field까지 secret-free라고 주장하지 않는다.
+선택 getter/proxy는 실행하지 않고 inspection_unavailable로 차단한다. 명시 제외한 runtime 객체·field까지
+secret-free라고 주장하지 않는다.
 
 ## 저장 단위·결속·내구성
 
@@ -103,7 +106,9 @@ snapshot `replay_settings_snapshot.v1`이다. 이는 기존 input/runtime 계약
 - source writer는 실제 저장한 record에서 identity/startedAt/reservationHash와 initial reference까지 포함한
   작은 immutable reference를 만들어 같은 예약 writer에 전달하고 settings writer가 결속을 대조한다.
   전체 source 배열을 config 저장용으로 계속 붙잡거나 사후 파일을 다시 읽어 hash를 보충하지 않는다.
-- 정상/unsupported/limit settings 경로는 capture → reservation → initial durable → source durable →
+- workflow 준비 단계에서 선택 opaque 설정/구조 검사 불가를 찾으면 입력 외 출력 없이 고정 오류로
+  종료한다. 이미 runner에 도달한 검사 불가는 아래 실제 durable 관측 경로를 따른다.
+- 정상 plain-data/unsupported/limit settings 경로는 capture → reservation → initial durable → source durable →
   settings durable → 기존 research/progress/audit 초기화 → runner ticks/provider 순서다.
 - source redacted는 기존처럼 source durable 직후 중단하므로 settings 파일은 없다. settings redacted 또는 inspection_unavailable이며
   source가 안전하면 내용 없는 settings 관측까지 durable하게 쓰고 legacy artifacts 이전에 중단한다.
