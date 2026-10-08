@@ -1,8 +1,8 @@
-# Child가 소비한 source 배열의 부분 관측 설계
+# Child가 소비한 source 배열의 부분 관측
 
 기준 main: `b2b86a51e0fdab5fc7e467117a4f43195737940f` (PR821).
 이 문서는 [입력·runtime 계약](input-runtime-provenance-contract.md) 2단계의 다음 작은 기능을
-설계한다. 아직 새 source producer, artifact, endpoint 또는 reader가 구현된 것은 아니다.
+구현한다. bound child의 source producer와 내부 artifact만 추가하며 공개 endpoint/reader는 포함하지 않는다.
 
 ## 목적·포함·비범위
 
@@ -72,14 +72,13 @@ JSON으로 값을 정확히 보존할 수 없는 명시 `undefined`, `-0`, nonfi
 지원하지 않는 객체는 `unsupported_shape`다. 직렬화가 값을 바꾼 뒤 recorded/hash를 만드는 대신
 사전 검사에서 구분한다. 이미 source parser가 정규화한 값과 파일의 원래 byte는 계속 별개다.
 
-## 제안하는 관측 상한과 unavailable
+## 관측 상한과 unavailable
 
 아래 값은 새 관측 파일의 v1 engineering 한도다. 시장 coverage나 기존 replay의 지원 크기가 아니다.
-[합성 상한 측정](child-source-observation-bounds-20261008.md)은 아래 제안을 잠정 유지할 근거와
-한계를 기록한다. 실제 producer의 경계·메모리 검증 후 상수와 문서를 함께 고정하며, 변경하면
-검증을 다시 수행한다.
+[합성 상한 측정](child-source-observation-bounds-20261008.md)은 한도 선택의 근거와 한계를 기록한다.
+상수와 문서를 함께 유지하며 변경하면 실제 producer의 경계·메모리 검증을 다시 수행한다.
 
-| 경계 | v1 제안 | 이유와 확인 |
+| 경계 | v1 관측 한도 | 이유와 확인 |
 | --- | --- | --- |
 | records | 50,000개 | 배열 전체 clone 전에 개수를 거절하고 CPU/메모리 사용을 유한하게 함 |
 | raw snapshot 배열의 UTF-8 JSON | 16 MiB (16,777,216 bytes) | envelope와 파일 전체 크기는 별도. 실제 producer의 정확한 byte 경계와 직렬화 메모리 재검증 필요 |
@@ -108,12 +107,12 @@ acquisition/source trust와 원본 파일·전체 provenance의 완전성은 별
 
 ## 저장 단위·순서와 초기 상태 결속
 
-구현용 제안 이름은 `historical-replay-source-observation.json`,
-`replay_source_observation.v1`, `replay_source_snapshot.v1`이다. 현재 지원 artifact 목록이 아니다.
+내부 artifact는 `historical-replay-source-observation.json`, envelope는
+`replay_source_observation.v1`, snapshot은 `replay_source_snapshot.v1`이다. 공개 reader는 아직 없다.
 
 - raw 배열 16 MiB와 envelope/file 전체 상한을 구분한다. 최종 strict schema의 bounded identity,
   metadata, JSON escape 및 newline을 포함한 파일 상한은 16 MiB + 64 KiB
-  (16,842,752 bytes)로 제안한다. 구현의 strict schema와 최대 identity로 충분성을 검증하며
+  (16,842,752 bytes)다. strict schema와 최대 identity로 충분성을 검증하며
   쓰기 직전 정확한 전체 bytes도 검사한다.
   합성 예시의 overhead를 모든 파일에 적용하는 고정 reserve로 사용하지 않는다.
 - strict envelope는 exact runId/batchId/runIndex, 시작 시각, 동일 child reservation hash,
@@ -168,6 +167,24 @@ comparability는 계속 unavailable이고 `completeInput=false`다. source 배�
 7. scope/diff/안전/문서 자체 검토와 관련 시험, exact 후보의 독립 검토 및 공식 Linux full을
    완료한 뒤 Draft·자동 review·현재 보호 조건으로 게시/병합한다. 환경 실패는 별도 보존한다.
 
-이번 문서 PR의 완료는 실제 소스의 소비 경로·field·순서와 위 경계를 대조한 검토 가능한 설계다.
+제품 구현의 완료는 위 검증표와 current-head 리뷰·보호 조건을 충족한 경우에만 선언한다.
 기존 허용 stored-market 경로, 명시적 제외와 구체적으로 미해결인 입력의 경계를 코드·시험에서
 확인해야 한다. 합성 한도 측정만으로 최종 producer·reader 성능이나 구현 완료를 주장하지 않는다.
+
+
+## 구현 위치
+
+- `src/domain/replaySourceSnapshot.ts`: frozen v1, getter/proxy 없는 plain-data preflight, masking,
+  정확한 byte budget, private frozen copy와 versioned content hash
+- `src/domain/replaySourceObservation.ts`: strict 부분 envelope와 실제 초기 record의 hash/status 참조
+- `src/storage/replayInitialPortfolioObservationStore.ts`: 기존 child 예약에 source 존재 검사 추가,
+  동일 writer가 내구성 완료한 초기 record를 closure에 보유한 one-shot source observer
+- `src/storage/replaySourceObservationStore.ts`: content hash 재검증, whole-file cap,
+  exclusive write/file sync/close 및 directory sync/close
+- `src/replay/codexHistoricalReplayRunner.ts`: 관측 callback이 있는 경로만 첫 await 전 source 고정,
+  별도 callback copy와 index/가격·allocation·두 Risk 경로의 동일 source 사용
+- `src/workflows/historicalReplayWorkflow.ts`: bound child의 저장 순서 및 기존 artifact 시작 전 실패 보존
+
+`retention_unavailable`은 내용 없는 상태 계약으로 지원한다. 현재 production wiring은 원래
+허용된 stored-market workflow에만 있고 새 calendar adapter는 없으므로, metadata 부재를 검사해
+일반 입력 전체를 이 상태로 바꾸는 분기는 추가하지 않는다. source refs의 label은 신뢰 증명이 아니다.
