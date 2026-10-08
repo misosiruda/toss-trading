@@ -82,3 +82,27 @@ raw 배열 budget과 파일 전체 budget을 분리한다. 동일한 **예시** 
 
 합성 size 통과는 실제 source 권한 판정이 아니다. 이번 실험은 그 권한을 측정하지 않았으며,
 특정 실제 dataset의 permission blocker도 확인하지 않았다. 공개 reader/전체 provenance는 후속이다.
+
+
+## 실제 bound-child producer의 추가 측정
+
+구현 후보 `b58b548f68e0249a8a8bc582273751acbfec7743`에서 같은 합성 입력 3종을 각 fresh process
+1회로 순차 측정했다. 실제 workflow의 JSONL read/parse, research manifest, bounded source capture,
+masking·versioned hash, 초기/source 파일 write·fsync, 기존 artifact 초기화 및 source index를 포함한다.
+clock은 zero-tick 합성 fixture로 provider 호출 0회이며 시장 tick 처리량·reader SLA 시험이 아니다.
+새 provider/외부 데이터를 호출하지 않았다.
+
+| shape | records | raw 배열 bytes | 실제 source 파일 bytes | workflow(ms) | 관측 lifetime RSS(MiB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| bytes_16777216 | 50,000 | 16,777,216 | 16,778,386 | 4072.57 | 500.1 |
+| dense_short_refs | 23,865 | 16,777,096 | 16,778,266 | 8238.02 | 504.7 |
+| dense_all_fields | 43,129 | 16,777,182 | 16,778,352 | 6062.60 | 482.8 |
+
+Node v24.19.0, `--max-old-space-size=1536 --expose-gc` 환경이다. 입력 준비 후 GC를 호출했으며
+표의 RSS high-water는 해당 process의 import·합성 JSONL 준비 비용도 포함한다. source artifact의
+사후 parse/hash 검증은 표의 workflow 시간과 RSS 관측 뒤 수행했다. 원본 배열/초기 record hash
+결속, 파일 상한, recorded 상태와 completeInput=false를 확인했다.
+
+약 4.1–8.2초의 producer 초기화 시간과 최대 504.7 MiB 관측은 앞의 raw-array hash microbenchmark와
+측정 범위가 다르다. 유한한 fixture 3개·1회 관측으로 전체 입력/동시 실행의 메모리 상한이나 SLA를
+보장하지 않는다. 공개 reader와 동시 처리 예산은 여전히 후속 검증이며 새 endpoint는 없다.
