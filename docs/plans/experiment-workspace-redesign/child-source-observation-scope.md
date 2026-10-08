@@ -128,7 +128,8 @@ comparability는 계속 unavailable이고 `completeInput=false`다. source 배�
 3. 초기 상태와 source의 exact child/예약/hash 연결, 혼합 child·초기 상태 변경 negatives를 둔다.
 4. write/file sync/directory open/sync/close 실패의 provider0과 원본/barrier 보존을 검증한다.
    기존/orphan/alias/동시 요청·완료 후 재시도 거절도 유지한다.
-5. `readAll()`의 missing/empty/blank/corrupt 진단을 구분하되 내용이나 완전성을 발명하지 않는다.
+5. missing/empty/blank/corrupt 입력 상황을 각각 시험한다. 현재 `readAll()`이 앞의 세 경우를
+   같은 empty records/corruptLineCount 0으로 반환한다는 한계를 보존하고 내용이나 완전성을 발명하지 않는다.
    raw source 경로·오류·민감 값과 non-exporting evidence를 새 파일/공개 DTO로 내보내지 않는다.
 6. 초기 portfolio 관측, 기존 research manifest, 원래 batch clone/create 및 standalone/legacy의
    의미가 유지되는 회귀를 포함한다. 새 source 관측으로 완전성 또는 비교 status가 바뀌지 않는다.
