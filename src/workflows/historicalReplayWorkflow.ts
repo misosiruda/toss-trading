@@ -34,6 +34,7 @@ import {
 } from "../replay/codexHistoricalReplayRunner.js";
 import { HistoricalReplayAuditLogRecorder } from "../replay/historicalReplayAuditLog.js";
 import { HistoricalReplayProgressRecorder } from "../replay/historicalReplayProgress.js";
+import { reserveReplayInitialPortfolioObservation } from "../storage/replayInitialPortfolioObservationStore.js";
 import type { HistoricalUniverseManifest } from "../replay/historicalUniverseCoverage.js";
 import {
   createHistoricalReplayWorkflowPlan,
@@ -90,6 +91,13 @@ export async function runHistoricalReplayWorkflow(
     manifest: researchManifest,
     manifestPath: paths.historicalReplayResearchManifestPath
   });
+  const identity = plan.metadataContext.identity;
+  const onInitialPortfolio = options.runId === undefined || identity.batchId === null || identity.runIndex === null
+    ? undefined : await reserveReplayInitialPortfolioObservation({
+      storageBaseDir: options.storageBaseDir,
+      identity: { runId: identity.runId, batchId: identity.batchId, runIndex: identity.runIndex },
+      startedAt: replayStartedAt.toISOString(), origin: portfolio === null ? "generated" : "stored_portfolio"
+    });
   const progressRecorder = new HistoricalReplayProgressRecorder({
     filePath: paths.historicalReplayProgressPath,
     startedAt: replayStartedAt,
@@ -122,6 +130,7 @@ export async function runHistoricalReplayWorkflow(
     const replayResult = await runCodexHistoricalReplay(
       {
         ...plan.runnerOptions,
+        ...(onInitialPortfolio === undefined ? {} : { onInitialPortfolio }),
         onProgress: async (update) => {
           await progressRecorder.record(update);
           await auditLogRecorder.record(update);

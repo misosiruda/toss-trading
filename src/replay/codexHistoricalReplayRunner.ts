@@ -90,6 +90,7 @@ export interface CodexHistoricalReplayRunnerOptions {
   performanceClock?: () => number;
   tickDelayMs?: number;
   tickDelay?: (ms: number) => Promise<void>;
+  onInitialPortfolio?: (portfolio: VirtualPortfolio) => Promise<void> | void;
   onProgress?: (
     update: HistoricalReplayProgressUpdate
   ) => Promise<void> | void;
@@ -99,8 +100,10 @@ export async function runCodexHistoricalReplay(
   options: CodexHistoricalReplayRunnerOptions,
   input: HistoricalReplayInput
 ): Promise<HistoricalReplayResult> {
-  let currentPortfolio = clonePortfolio(input.initialPortfolio);
-  const initialPortfolio = clonePortfolio(currentPortfolio);
+  let currentPortfolio = structuredClone(input.initialPortfolio);
+  const initialPortfolio = structuredClone(currentPortfolio);
+  // Persist the initialized state before any tick/mark-to-market/provider work. Observers own a separate copy.
+  await options.onInitialPortfolio?.(structuredClone(currentPortfolio));
   const packets: MarketPacket[] = [];
   const decisions: VirtualDecision[] = [];
   const riskDecisions: VirtualRiskDecision[] = [];
