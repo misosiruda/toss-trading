@@ -55,6 +55,26 @@ Calendar/FX fixture를 replay input 정합성 검증에 연결하는 RH2 contrac
 
 Batch replay runner는 후속 단계에서 이 metadata를 각 실행 결과의 기본 manifest로 사용합니다.
 
+### Batch child 초기 portfolio 관측
+
+명시적 `runId`/`batchId`/`runIndex`가 있는 child는
+`historical-replay-initial-portfolio.reserved.json`으로 출력 위치를 예약하고,
+`historical-replay-initial-portfolio.json`에 runner가 실제 복제한 초기 portfolio를 보존한다.
+두 파일은 전용 `replayInitialPortfolioObservationStore`가 소유하며 공개 reader는 아직 없다.
+일반 standalone 실행에는 이 관측을 추가하지 않는다.
+
+기존 child 출력 또는 예약이 있으면 초기화 전에 거절한다. 예약 file sync와 저장 위치부터
+filesystem root까지의 directory sync, 실제 초기 snapshot의 file/directory sync가 끝나야
+첫 평가/provider로 진행한다. 실패한 예약·부분 관측은 삭제하거나 재사용하지 않는다.
+directory open/sync/close를 지원하지 않는 Windows 환경도 `DURABILITY_UNAVAILABLE`로
+child 실행을 차단한다. 권한이나 시간 서비스를 변경하는 복구 절차는 포함하지 않는다.
+
+관측 identity는 경로와 분리한다. runId는 저장 child 문자 규칙과 최대256자, batchId는
+producer가 정규화한 opaque text 최대4096자를 지원하며 기존 masking 검사를 유지한다.
+`recorded`는 초기 snapshot shape만 뜻한다. 잔존 파일만으로 durable 완료나 실행 성공을
+판정하지 않으며 source/runtime/dependency/result/비교 가능성은 unavailable이다.
+필드·상한·실패 경계는 [child 관측 범위](../plans/experiment-workspace-redesign/child-initial-portfolio-scope.md)를 따른다.
+
 ## Research Reproducibility Manifest
 
 `ReplayResearchManifest`는 research-grade replay 비교를 위한 최소 재현성 key contract입니다. Q1-2부터 single historical replay는 `historical-replay-research-manifest.json`을 저장하고, `historical-replay-run-metadata.json`, `historical-replay-report.json`, batch run record는 같은 manifest hash reference를 남깁니다. 현재 manifest는 normalized snapshot의 calendar/FX source ref를 `dataSnapshotHash`에 포함하지만, normalized calendar/FX fixture 파일과 stale policy 자체는 아직 별도 hash source로 저장하지 않습니다. 해당 입력이 replay 결과를 구분해야 하는 contract가 되면 [Replay Calendar And FX Contract](../research/protocols/replay-calendar-fx-contract.md)의 future `calendarHash`/`currencyConversionHash` 정책에 따라 manifest hash source를 확장합니다.

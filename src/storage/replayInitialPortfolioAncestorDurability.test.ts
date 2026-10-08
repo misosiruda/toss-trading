@@ -14,9 +14,11 @@ test("initial reservation publishes every directory ancestor before the first pr
   const storage = join(root, "grandparent", "parent", "child"), synced: string[] = [];
   await seedInitialSnapshot(storage);
   const original = fs.open;
+  let reserved = false;
   const mock = t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
     const handle = await original(...args);
-    if (args[1] === "r") {
+    if (String(args[0]).endsWith(REPLAY_INITIAL_PORTFOLIO_RESERVATION_FILE) && typeof args[1] === "number") reserved = true;
+    if (args[1] === "r" && reserved) {
       const sync = handle.sync.bind(handle);
       t.mock.method(handle, "sync", async () => { await sync(); synced.push(resolve(String(args[0]))); });
     }
