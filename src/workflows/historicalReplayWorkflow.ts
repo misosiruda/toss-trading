@@ -36,7 +36,8 @@ import {
 } from "../replay/historicalReplayRunner.js";
 import {
   runCodexHistoricalReplay,
-  type CodexHistoricalReplayDecisionProviderLike
+  type CodexHistoricalReplayDecisionProviderLike,
+  type ReplayProcessObservationContext
 } from "../replay/codexHistoricalReplayRunner.js";
 import { HistoricalReplayAuditLogRecorder } from "../replay/historicalReplayAuditLog.js";
 import { HistoricalReplayProgressRecorder } from "../replay/historicalReplayProgress.js";
@@ -165,6 +166,14 @@ export async function runHistoricalReplayWorkflow(
     const replayResult = await runCodexHistoricalReplay(
       {
         ...plan.runnerOptions,
+        ...(admissionActual === undefined ? {} : {
+          processObservationBinding: { identity: admissionActual.identity, startedAt: admissionActual.startedAt },
+          onProcessObservation: async (context: ReplayProcessObservationContext) => {
+            if (observations === undefined) throw Error("process observation preceding state unavailable");
+            await observations.observeProcess(context);
+            await startArtifacts();
+          }
+        }),
         ...(!isBoundChild ? {} : {
           onInitialPortfolio: async (initialPortfolio: VirtualPortfolio) => {
             // Runner captured source and settings before this first asynchronous storage boundary.
@@ -194,7 +203,7 @@ export async function runHistoricalReplayWorkflow(
             if (admissionContext !== undefined && admissionActual !== undefined) {
               await observations.observeAdmission(admissionContext, admissionActual);
             }
-            await startArtifacts();
+            if (admissionActual === undefined) await startArtifacts();
           }
         }),
         onProgress: async (update) => {
