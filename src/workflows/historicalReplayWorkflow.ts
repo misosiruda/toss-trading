@@ -154,8 +154,9 @@ export async function runHistoricalReplayWorkflow(
           onSettings: async (settings: ReplaySettingsSnapshotObservation) => {
             if (observations === undefined) throw Error("child observation initial state unavailable");
             await observations.observeSettings(settings);
-            if (settings.status === "unavailable" && settings.reason === "redacted") {
-              throw Error("settings input requires redaction");
+            if (settings.status === "unavailable") {
+              if (settings.reason === "redacted") throw Error("settings input requires redaction");
+              if (settings.reason === "inspection_unavailable") throw Error("settings credential inspection unavailable");
             }
             await startArtifacts();
           }

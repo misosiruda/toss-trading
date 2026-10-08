@@ -28,7 +28,7 @@ test("settings persistence is awaited after initial/source and before clock, pro
 });
 
 test("recorded and unavailable settings writer failures retain the zero-tick zero-provider barrier", async t => {
-  for (const status of ["recorded", "unsupported_shape", "limit", "redacted"] as const) {
+  for (const status of ["recorded", "unsupported_shape", "limit", "redacted", "inspection_unavailable"] as const) {
     await t.test(status, async subtest => {
       const events: string[] = [];
       const options = sourceOptions({
@@ -45,6 +45,7 @@ test("recorded and unavailable settings writer failures retain the zero-tick zer
       if (status === "unsupported_shape") options.executionPolicy = undefined;
       if (status === "limit") options.constraints.allowedActions = Array.from({ length: REPLAY_SETTINGS_SNAPSHOT_LIMITS.allowedActions + 1 }, () => "VIRTUAL_HOLD");
       if (status === "redacted") options.packetIdPrefix = "token=synthetic-settings-credential";
+      if (status === "inspection_unavailable") options.packetIdPrefix = "X".repeat(4097);
       subtest.mock.method(options.clock, "ticks", () => { events.push("ticks"); return []; });
       await assert.rejects(runCodexHistoricalReplay(options, {
         initialPortfolio: sourcePortfolio(), snapshots: [sourceSnapshot()]
@@ -119,4 +120,44 @@ test("an observation limit falls back to the original settings without freezing 
   assert.equal(result.packets[0]!.constraints.allowedActions.length, REPLAY_SETTINGS_SNAPSHOT_LIMITS.allowedActions + 2);
   assert.equal(Object.isFrozen(options.constraints.allowedActions), false);
   assert.equal(result.tradeCount, 1);
+});
+
+
+test("incomplete credential inspection cannot be downgraded by a callback before the safe stop", async t => {
+  const events: string[] = [];
+  const options = sourceOptions({ packetIdPrefix: "X".repeat(4097),
+    onInitialPortfolio: () => { events.push("initial"); options.packetIdPrefix = "safe_later"; },
+    onSourceSnapshots: () => { events.push("source"); },
+    onSettings: observation => {
+      assert.deepEqual(observation, { status: "unavailable", reason: "inspection_unavailable" });
+      Object.assign(observation, { reason: "limit" }); events.push("settings-durable");
+    }, onProgress: () => { events.push("progress"); },
+    decisionProvider: { decide: async packet => { events.push("provider"); return sourceDecision(packet); } }
+  });
+  t.mock.method(options.clock, "ticks", () => { events.push("ticks"); return []; });
+  await assert.rejects(runCodexHistoricalReplay(options, { initialPortfolio: sourcePortfolio(), snapshots: [sourceSnapshot()] }),
+    /^Error: settings credential inspection unavailable$/);
+  assert.deepEqual(events, ["initial", "source", "settings-durable"]);
+});
+
+test("earlier unsupported settings cannot hide a later credential before the runner barrier", async () => {
+  for (const earlier of ["accessor", "undefined", "unknown"] as const) {
+    const events: string[] = [];
+    let getters = 0;
+    const options = sourceOptions({
+      allocationPolicy: { policyName: "api_key=SYNTHETIC_LATE_SETTING", targetExposureRatio: 0.8,
+        minCashReserveRatio: 0.1, maxBudgetPerDecisionRatio: 0.2, maxSymbolExposureRatio: 0.2 },
+      onInitialPortfolio: () => { events.push("initial"); }, onSourceSnapshots: () => { events.push("source"); },
+      onSettings: observation => { assert.deepEqual(observation, { status: "unavailable", reason: "redacted" }); events.push("settings"); },
+      onProgress: () => { events.push("progress"); },
+      decisionProvider: { decide: async packet => { events.push("provider"); return sourceDecision(packet); } }
+    });
+    if (earlier === "accessor") Object.defineProperty(options, "maxCandidates", { enumerable: true, get() { getters++; return 10; } });
+    if (earlier === "undefined") options.executionPolicy = undefined;
+    if (earlier === "unknown") options.riskPolicy = Object.assign({ minCashReserveRatio: 0 }, { futureUnusedField: 1 });
+    options.clock.ticks = () => { events.push("ticks"); return []; };
+    await assert.rejects(runCodexHistoricalReplay(options, { initialPortfolio: sourcePortfolio(), snapshots: [sourceSnapshot()] }),
+      /^Error: settings input requires redaction$/);
+    assert.deepEqual(events, ["initial", "source", "settings"]); assert.equal(getters, 0);
+  }
 });

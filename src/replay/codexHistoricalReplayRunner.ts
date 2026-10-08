@@ -129,8 +129,9 @@ export async function runCodexHistoricalReplay(
   }
   if (capturedSettings !== undefined) {
     await options.onSettings?.(structuredClone(capturedSettings));
-    if (capturedSettings.status === "unavailable" && capturedSettings.reason === "redacted") {
-      throw Error("settings input requires redaction");
+    if (capturedSettings.status === "unavailable") {
+      if (capturedSettings.reason === "redacted") throw Error("settings input requires redaction");
+      if (capturedSettings.reason === "inspection_unavailable") throw Error("settings credential inspection unavailable");
     }
   }
   const packets: MarketPacket[] = [];

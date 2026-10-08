@@ -87,7 +87,7 @@ test("settings directory close is a barrier before legacy outputs and first prov
   } finally { release(); await run.catch(() => {}); mock.mock.restore(); syncBuiltinESMExports(); }
 });
 
-for (const reason of ["unsupported_shape", "redacted", "limit"] as const) {
+for (const reason of ["unsupported_shape", "redacted", "limit", "inspection_unavailable"] as const) {
   test(`settings typed ${reason} write failure is fatal and cannot be retried`, async t => {
     const root = await fs.mkdtemp(join(tmpdir(), "settings-unavailable-durable-"));
     t.after(() => fs.rm(root, { recursive: true, force: true }));

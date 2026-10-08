@@ -152,11 +152,42 @@ raw exact4MiB이며 escaped maximal child identity를 사용했다. source 원�
 긴 replay tick/portfolio growth, 임의 callback의 자료 보유와 운영 RSS 상한을 보장하지 않는다. 원본 입력의
 객체 수가 bytes와 별도로 비용을 만들므로 더 큰 관측 한도를 허용할 근거로 쓰지 않는다.
 
+## 기록 판정과 분리한 credential 검사 예산
+
+기록용 shape/문자열/count/byte 판정 전에 선택된 실제 소비 field의 읽을 수 있는 own data descriptor를
+별도로 검사한다. earlier unknown field, accessor, own undefined 또는 recording cap이 뒤쪽의 credential
+검사를 중단시키지 않는다. non-enumerable selected data와 예상 numeric/boolean field에 들어온 문자열도
+검사한다. unknown field/명시 제외 label/opaque root field 자체를 새로운 관측 대상으로 확대하지 않는다.
+getter/proxy는 실행하지 않으며 그 반환값·상속된 동적 값까지 검사했다는 보장은 하지 않는다.
+
+| 보안 검사 예산 | 한도 |
+| --- | ---: |
+| 한 문자열의 UTF-16 units | 4,096 |
+| 모든 검사 문자열의 누적 UTF-16 units | 16,777,216 |
+| 방문한 선택 value | 500,000 |
+| 각 선택 배열의 index 검사 | 100,000 |
+
+이는 recording의 120/512자·128 actions·20,000 universe·4MiB 지원 한도와 다르다. 예를 들어121자 정상
+prefix, 긴 public URL,129 actions와4MiB+1byte 자료는 보안 예산 안에서 종전 limit/unsupported 실행을
+유지한다. 각 leaf/배열의 보안 한도를 넘으면 해당 범위는 검사하지 않고 incomplete를 표시하며 남은 전체
+예산 내의 선택 sibling 검사는 계속한다. 전역 text/value 예산을 다 쓰면 검사 예산을 리셋하지 않는다.
+
+검사한 값에서 credential을 찾으면 redacted가 recording unsupported/limit보다 우선한다. credential을
+확인하지 못했어도 보안 예산이 소진되면 새 typed reason `inspection_unavailable`이다. 민감 내용을
+발견했다고 오표기하지 않고 snapshot/hash 없는 설정 관측을 durable하게 남긴 뒤 legacy/ticks/provider
+전에 정지한다. 이것은 극단적인 입력에 대한 **새 실행 중단 경계**이며 관측 한도 초과 전부의 실행을
+차단하는 규칙이 아니다. 정상 보안 예산 내 입력의 이전 실행 의미와 getter/proxy 호출 시점은 유지한다.
+
+문자열의 전체 clone/replace/decode에 임의 크기 값을 전달하지 않는다. 기존 credential guard는4096자
+이하 leaf에만 적용한다. 보안 pass는 알려진 field descriptor를 직접 읽으며 전체 object ownKeys/descriptor
+복제나 hash를 만들지 않는다. 이 유한 작업 예산은 운영 latency 또는 병렬 RAM SLA를 보장하지 않는다.
+released initial/source 관측의 reason이나 안전 정지는 이 보완으로 바꾸지 않는다.
+
 ## 저장 상태와 failure 순서
 
 snapshot version은 `replay_settings_snapshot.v1`, hash domain은 `{schemaVersion,snapshot}`다.
 관측은 `recorded`이면 snapshotVersion/snapshot/contentHash를 포함하고 `unavailable`이면
-reason `unsupported_shape`, `redacted`, `limit`만 포함한다. 개별 입력 hash는 unavailable에 없다.
+reason `unsupported_shape`, `redacted`, `limit`, `inspection_unavailable`만 포함한다. 개별 입력 hash는 unavailable에 없다.
 
 file `historical-replay-settings-observation.json`의 strict envelope는
 schemaVersion `replay_settings_observation.v1`, mode `paper_only`, phase `runner_supplied_settings`,
@@ -170,13 +201,14 @@ dependencies/result는 unavailable이다. source reference 자체는 source 관�
 | --- | --- |
 | settings recorded / unsupported / limit | reservation → initial → source → settings → legacy artifacts → ticks/provider; unsupported/limit은 원래 settings 실행 참조 유지 |
 | source redacted | reservation → initial → 내용 없는 source 후 stop; settings 파일 없음, legacy/ticks/provider 없음 |
-| settings redacted + source 정상 | reservation → initial → source → 내용 없는 settings 후 stop; legacy/ticks/provider 없음 |
+| settings redacted 또는 inspection_unavailable + source 정상 | reservation → initial → source → 내용 없는 settings 후 stop; legacy/ticks/provider 없음 |
 | initial/source/settings write·file sync·close·directory open/sync/close 실패 | 해당 지점에서 stop, 이후 writer/legacy/ticks/provider 없음; 예약·부분 출력 보존 |
 
 내용 없는 typed redacted **record 전체 hash**는 참조할 수 있지만 민감 snapshot/문자열 hash는 만들지 않는다.
 같은 credential이 먼저 저장되는 initial/source에도 포함되면 기존 각 redaction guard로 내용/hash가 빠지는지
 합성 검증한다. source redacted의 기존 정지를 늦추지 않는다. source/settings callback mutation으로 stop
-조건을 무효화할 수 없도록 runner가 보유한 관측 상태도 확인한다.
+조건을 무효화할 수 없도록 runner가 보유한 관측 상태도 확인한다. workflow는 onSettings callback 내부의
+legacy start 이전에도 redacted/inspection_unavailable을 확인한다.
 
 source writer는 실제 record를 durable하게 쓴 뒤 작은 immutable reference만 반환한다. settings writer는
 같은 예약 내부에서 전달된 reference를 사용하며 파일을 재조회/교체하지 않는다. source record payload를

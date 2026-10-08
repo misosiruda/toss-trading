@@ -85,7 +85,10 @@ undefined/-0/nonfinite/잘못된 Unicode, accessor/proxy/cycle 또는 지원 밖
 unsupported/limit은 내용·개별 hash 없는 unavailable이며 원래 실행 지원을 자동 축소하지 않는다.
 반면 관측 경계에서 credential-bearing 설정을 검출했다면 PR822의 redacted 안전 정지 원칙을 따른다.
 초기/source/configuration·legacy 출력과 오류에 값이 흐르지 않도록 실제 연결을 시험하고, 정상 ID/URL과
-단어 token 등 정상 문맥을 보존한다. cap 때문에 검사하지 않은 입력 전체를 secret-free라고 주장하지 않는다.
+단어 token 등 정상 문맥을 보존한다. recording limit/unsupported보다 먼저 별도 유한 credential 검사를
+수행하고 검사 예산 자체가 소진되면 내용 없는 inspection_unavailable을 남긴 뒤 안전 정지한다.
+4096 UTF-16 units leaf/누적16,777,216 units/50만values/배열별10만index의 정확한 경계와 호환성은 frozen v1 계약을 따른다.
+opaque getter/proxy 반환값 및 제외 field까지 secret-free라고 주장하지 않는다.
 
 ## 저장 단위·결속·내구성
 
@@ -102,7 +105,7 @@ snapshot `replay_settings_snapshot.v1`이다. 이는 기존 input/runtime 계약
   전체 source 배열을 config 저장용으로 계속 붙잡거나 사후 파일을 다시 읽어 hash를 보충하지 않는다.
 - 정상/unsupported/limit settings 경로는 capture → reservation → initial durable → source durable →
   settings durable → 기존 research/progress/audit 초기화 → runner ticks/provider 순서다.
-- source redacted는 기존처럼 source durable 직후 중단하므로 settings 파일은 없다. settings redacted이며
+- source redacted는 기존처럼 source durable 직후 중단하므로 settings 파일은 없다. settings redacted 또는 inspection_unavailable이며
   source가 안전하면 내용 없는 settings 관측까지 durable하게 쓰고 legacy artifacts 이전에 중단한다.
   같은 민감 문자열이 initial/source에도 있으면 해당 관측의 기존 redacted 상태로 내용/hash를 빼는지 시험한다.
 - 새 파일/orphan을 예약 preflight의 output 부재 검사에 포함한다. exclusive write/file sync/close와
@@ -120,7 +123,7 @@ snapshot `replay_settings_snapshot.v1`이다. 이는 기존 input/runtime 계약
 - fresh/reused/injected sampler, clock/session/provider의 원래 상태·호출 순서를 유지하고 그 관측은 unavailable이다.
   metadata가 같은 다른 provider 또는 session은 동일한 전체 input으로 판정하지 않는다.
 - initial/source/config/reservation 혼합·교체·hash mismatch·unknown version, alias/기존/orphan/경합/재시도 및
-  모든 내구성 실패에서 provider0·barrier 보존을 검증한다. 초과/unsupported는 기존 실행, redacted는 안전 정지다.
+  모든 내구성 실패에서 provider0·barrier 보존을 검증한다. 보안 예산 안의 recording 초과/unsupported는 기존 실행, redacted/inspection_unavailable은 안전 정지다.
 - credential 합성 negative에서 새 모든 관측·legacy artifacts·error/log의 비노출과 정상 URL/ID 허용을 함께 검사한다.
 - API 실제 fixture create, canonical clone, 기존 source/initial/research 의미와 completeInput=false 회귀를 유지한다.
 - 최종 구현은 자체 diff/안전/문서 검토, 필요한 공식 profile과 독립 검토, 최종 후보 Linux full 및 자동 review/

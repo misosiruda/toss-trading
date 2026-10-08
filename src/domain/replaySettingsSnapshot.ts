@@ -4,6 +4,7 @@ import { REPLAY_SETTINGS_SNAPSHOT_VERSION, replaySettingsSnapshotDataSchema, typ
 import { cloneReplaySettingsProjection, freezeReplaySettingsSnapshot, plainSettingsObject, preflightReplaySettingsSnapshot } from "./replaySettingsSnapshotPreflight.js";
 
 export { REPLAY_SETTINGS_SNAPSHOT_VERSION, REPLAY_SETTINGS_SNAPSHOT_LIMITS, type ReplaySettingsSnapshot } from "./replaySettingsSnapshotFields.js";
+export { REPLAY_SETTINGS_CREDENTIAL_INSPECTION_LIMITS } from "./replaySettingsCredentialInspection.js";
 export type { ReplaySettingsSnapshotUnavailableReason } from "./replaySettingsSnapshotPreflight.js";
 
 // Gate first: Zod must never inspect a proxy/getter or allocate a large clone before bounded preflight.
@@ -14,7 +15,7 @@ export const replaySettingsSnapshotSchema = z.unknown().superRefine((value, cont
 const observationDataSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("recorded"), snapshotVersion: z.literal(REPLAY_SETTINGS_SNAPSHOT_VERSION),
     snapshot: replaySettingsSnapshotSchema, contentHash: z.string().regex(/^sha256:[a-f0-9]{64}$/) }).strict(),
-  z.object({ status: z.literal("unavailable"), reason: z.enum(["unsupported_shape", "redacted", "limit"]) }).strict()
+  z.object({ status: z.literal("unavailable"), reason: z.enum(["unsupported_shape", "redacted", "limit", "inspection_unavailable"]) }).strict()
 ]);
 export const replaySettingsSnapshotObservationSchema = z.unknown().superRefine((value, context) => {
   if (!plainObservation(value)) context.addIssue({ code: "custom", message: "Unsupported settings observation shape" });

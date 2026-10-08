@@ -1,10 +1,11 @@
 import { types } from "node:util";
+import { inspectReplaySettingsCredentials } from "./replaySettingsCredentialInspection.js";
 import { maskSensitiveText } from "../security/masking.js";
 import { containsReplaySourceCredential } from "../security/replaySourceText.js";
 import { REPLAY_SETTINGS_SNAPSHOT_LIMITS as limits, replaySettingsSnapshotDataSchema, type ReplaySettingsSnapshot } from "./replaySettingsSnapshotFields.js";
 import { settingsShape, type SettingsShape } from "./replaySettingsSnapshotShape.js";
 
-export type ReplaySettingsSnapshotUnavailableReason = "unsupported_shape" | "redacted" | "limit";
+export type ReplaySettingsSnapshotUnavailableReason = "unsupported_shape" | "redacted" | "limit" | "inspection_unavailable";
 type Reason = ReplaySettingsSnapshotUnavailableReason | undefined;
 type ObjectShape = Extract<SettingsShape, { kind: "object" }>;
 const rootShape = settingsShape(replaySettingsSnapshotDataSchema) as ObjectShape;
@@ -12,6 +13,8 @@ interface Context { bytes: number; project: boolean; ancestors: Set<object> }
 
 /** Inspect descriptors and bounded leaves only; no whole input clone, JSON, or hash before this gate. */
 export function preflightReplaySettingsSnapshot(value: unknown, project: boolean): Reason {
+  const securityDecision = inspectReplaySettingsCredentials(value);
+  if (securityDecision) return securityDecision;
   return visit(value, rootShape, { bytes: 0, project, ancestors: new Set() }, true);
 }
 function addBytes(context: Context, bytes: number): Reason {
