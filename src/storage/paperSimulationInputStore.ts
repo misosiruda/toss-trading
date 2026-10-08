@@ -7,6 +7,7 @@ import { paperSimulationInputSnapshotSchema, type PaperSimulationInputSnapshot }
 import { PAPER_SIMULATION_ID_PATTERN, paperSimulationObservationEventSchema, parsePaperSimulationObservation } from "../domain/paperSimulationObservation.js";
 import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 import { maskObject } from "../security/masking.js";
+import { containsReplaySourceCredential } from "../security/replaySourceText.js";
 import { assertExperimentPath, hasFsCode, readExperimentFile, writeExclusiveExperimentFile } from "./paperExperimentFilesystem.js";
 import { PAPER_SIMULATION_RUNTIME_FILE, paperSimulationCanonicalRecordSchema,
   paperSimulationRequestPath, paperSimulationRuntimeNamespaceSchema } from "./paperSimulationRequestStore.js";
@@ -32,6 +33,13 @@ export type PaperSimulationInputRead = typeof flags & ({ status: "available"; si
   inputProvenanceHash: string; canonicalRequestHash: string; snapshot: PaperSimulationInputSnapshot;
 } | { status: "unavailable"; simulationRunId: string; reasonCode: "admission_input_unavailable" });
 
+/** Writer-owned result, not an admission receipt or a public JSON-to-context constructor. */
+export type PaperSimulationPersistedInput = Readonly<{
+  schemaVersion: "paper_simulation_input_provenance.v1";
+  inputProvenanceHash: string;
+} & ({ status: "available"; snapshot: PaperSimulationInputSnapshot }
+  | { status: "unavailable"; reason: "redacted" })>;
+
 export function paperSimulationInputPath(storage: string, id: string): string {
   return join(dirname(paperSimulationRequestPath(storage, id)), PAPER_SIMULATION_INPUT_FILE);
 }
@@ -39,6 +47,12 @@ export function paperSimulationInputPath(storage: string, id: string): string {
 /** Only admission calls this, after exclusive ID reservation and durable canonical request. */
 export async function persistPaperSimulationInput(storage: string, id: string, acceptedAt: string,
   canonicalRequestHash: string, value: unknown): Promise<string> {
+  return (await persistPaperSimulationInputWithEvidence(storage, id, acceptedAt, canonicalRequestHash, value)).inputProvenanceHash;
+}
+
+/** Return only evidence from this actual write; never reread accepted history to issue a context. */
+export async function persistPaperSimulationInputWithEvidence(storage: string, id: string, acceptedAt: string,
+  canonicalRequestHash: string, value: unknown): Promise<PaperSimulationPersistedInput> {
   const snapshot = paperSimulationInputSnapshotSchema.parse(value);
   const masked = maskObject(snapshot);
   const canonical = paperSimulationCanonicalRecordSchema.parse(JSON.parse(
@@ -54,10 +68,30 @@ export async function persistPaperSimulationInput(storage: string, id: string, a
     redacted: canonical.redacted || createReplayResearchHash(masked) !== createReplayResearchHash(snapshot) });
   const text = JSON.stringify(record) + "\n";
   if (Buffer.byteLength(text) > MAX_BYTES) throw new Error("admission input exceeds limit");
+  // The frozen v1 grammar bounds all strings/containers before credential inspection. The legacy
+  // stored bytes stay unchanged; credentials its masker misses still must never enter new context state.
+  const evidence: PaperSimulationPersistedInput = Object.freeze({ schemaVersion: record.schemaVersion,
+    inputProvenanceHash: createReplayResearchHash(record),
+    ...(record.redacted || containsStoredCredential(masked)
+      ? { status: "unavailable" as const, reason: "redacted" as const }
+      : { status: "available" as const, snapshot: freezeStoredSnapshot(paperSimulationInputSnapshotSchema.parse(record.snapshot)) }) });
   const path = paperSimulationInputPath(storage, id);
   await writeExclusiveExperimentFile(path, text);
   await syncDirectory(dirname(path));
-  return createReplayResearchHash(record);
+  return evidence;
+}
+
+function containsStoredCredential(value: unknown): boolean {
+  if (typeof value === "string") return containsReplaySourceCredential(value);
+  return value !== null && typeof value === "object" && Object.values(value).some(containsStoredCredential);
+}
+
+function freezeStoredSnapshot<T>(value: T): T {
+  if (value !== null && typeof value === "object") {
+    for (const child of Object.values(value)) freezeStoredSnapshot(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 /** Internal stored admission evidence, not a public DTO or child/runtime completeness claim. */
