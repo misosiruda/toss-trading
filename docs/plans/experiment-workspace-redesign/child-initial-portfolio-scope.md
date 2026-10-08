@@ -18,9 +18,17 @@ recorded는 runner 초기화 시점의 값이며 child 실행 완료·전체 입
 - 대상은 명시적 runId/batchId/runIndex가 있는 historical workflow child다. standalone/legacy 및 별도 동기 runner는 비대상이다.
 - initial state는 runner 진입 시 deep copy하고 관측 callback에는 별도 복사본을 전달한다. 호출자·callback 변경이 실제 초기 상태를 바꾸지 않는다.
 - child workflow의 기존 산출물을 쓰기 전에 전용 immutable 예약 파일을 생성한다. 동일 child 저장 위치 재사용/덮어쓰기는 거절한다.
+  입력 portfolio/source는 허용하지만 report, progress, metadata, research manifest와 audit log 5개 중 하나라도
+  있으면 예약 생성 전에 거절한다. 일반 파일·hardlink·symlink·dangling symlink·부분 파일을 구별하여 허용하지 않는다.
+  예약은 exclusive 생성하고 기존 산출물을 재확인한다. 협조하는 child writer 간 경합을 막으며 악의적 동시 경로 교체 방어를 주장하지 않는다.
   상위 batch manifest의 legacy 재실행 동작까지 불변으로 바꾸는 범위는 아니다. API의 새 ID 접수 경계는 유지한다.
 - 실제 runner 초기화 callback에서 snapshot exclusive write/file sync/directory sync를 완료한 뒤 첫 tick/provider로 이동한다.
 - IO 실패는 실행을 실패시킨다. 생성된 예약/부분 자료는 삭제·재사용하지 않는다. 오류에는 raw path/입력을 포함하지 않는다.
+  directory open/sync/close 실패는 `DURABILITY_UNAVAILABLE`로 거절한다. Windows의 `EPERM`도 성공으로 바꾸지 않는다.
+  이 producer는 file/directory sync를 지원하는 파일 시스템에서만 실행을 허용한다. 지원하지 않는 Windows 환경에서는
+  child 실행 자체가 차단되며 standalone에는 이 producer를 적용하지 않는다. 시스템 권한이나 설정으로 우회하지 않는다.
+  실패 후 남은 observation의 recorded는 값의 shape만 뜻하며 durable 완료·available 증거가 아니다. 공개 reader는 아직 없고,
+  후속 reader는 잔존 파일만으로 완료·내구성·comparability를 승격해서는 안 된다. 저장 장치의 물리적 영속성을 증명하는 계약은 아니다.
 - versioned strict snapshot에는 default/coercion을 넣지 않는다. omission과 명시0/false/빈 배열을 보존한다.
 - masking이 필요한 값, 미지원 shape 또는 상한 초과는 snapshot/hash를 남기지 않고 typed unavailable만 기록한다.
 - 최대512개 position, 문자열/배열 상한과 snapshot256KiB 한도를 적용한다. reservation hash는 child identity/시작 시각/출처와 결속한다.
