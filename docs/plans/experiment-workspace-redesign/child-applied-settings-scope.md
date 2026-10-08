@@ -38,21 +38,22 @@ completeConfiguration=false, completeInput=false 및 comparability=unavailable�
 | --- | --- | --- |
 | packet/가격/scope/pacing | packetIdPrefix, packetExpiresInSeconds, maxCandidates, maxSnapshotAgeSeconds, optional candidateStrategyBucket/tickDelayMs | index 가격 평가와 packet 생성의 age, 후보 scope, pacing 인자 및 반환 summary 모두 같은 값 사용. tickDelay 함수 자체는 제외 |
 | constraints | maxNewPositions, maxBudgetPerSymbolKrw, allowedActions의 순서 | packet의 실제 constraint. 다른 profile 이름으로 재-resolve하지 않음 |
-| execution | fillPriceRule, slippageBps, feeBps, taxBps, halfSpreadBps, fillRatio, allowFractionalShares, maxVolumeParticipationRate, minLiquidityFillRatio, rejectStaleLiquidity, marketImpactBpsPerParticipationRate | 기존 createPaperExecutionPolicy의 normalization/default/rounding 의미 유지. 제공 여부와 실제 normalized 정책을 구분 |
+| execution | fillPriceRule, slippageBps, feeBps, taxBps, halfSpreadBps, fillRatio, allowFractionalShares, maxVolumeParticipationRate, minLiquidityFillRatio, rejectStaleLiquidity, marketImpactBpsPerParticipationRate | 기존 createPaperExecutionPolicy의 normalization/default/rounding 의미 유지. runner 경계의 supplied presence를 보존하고 기존 소비 시점에 normalize |
 | Risk base | budget/exposure/weight/reserve scalar, bucket exposure/turnover maps, sector/country/currency/unknown-metadata limits, cooldownEntries, dynamicCashReservePolicy, hedgePolicy | nested maps/arrays도 분리. packet-dependent budget fallback과 tick 시각·scheduled exposure override·dynamic regime 계산은 같은 순서로 계속 수행 |
-| allocation | policyName, exposure/reserve/budget/symbol 비율, deploymentRampDays/rampDayIndex/maxInitialDeploymentRatio, daily gross budget, initial/new/concurrent slots, positionSlotRampDays, KR/US targets | rampDayIndex omission은 원래 tick.stepIndex+1 의미. portfolio/tick에 따른 계산 결과를 미리 확정하지 않음 |
-| regime allocation | lookbackDays, policyNameSuffix, classifier threshold/count, regimeWeights | base allocation 없으면 종전처럼 사용하지 않음. 같은 고정 source와 tick 시각으로 계산 |
-| exit | takeProfitRatio, stopLossRatio, rebalanceMaxPositionWeightRatio, takeProfitMode, takeProfitSellRatio, trailingStopFromPeakRatio 및 normalized null | 기존 normalizePaperExitPolicy 결과를 소비. 비활성·absent의 의미를 바꾸지 않음 |
+| allocation | policyName, exposure/reserve/budget/symbol 비율, deploymentRampDays/rampDayIndex/maxInitialDeploymentRatio, daily gross budget, initial/new/concurrent slots, positionSlotRampDays, KR/US targets | deploymentRampDays가 있을 때만 rampDayIndex omission을 tick.stepIndex+1로 계산. portfolio/tick에 따른 계산 결과를 미리 확정하지 않음 |
+| regime allocation | lookbackDays, policyNameSuffix, classifier threshold/count, regimeWeights | base allocation 없으면 종전처럼 사용하지 않음. 실제 source 관측 상태와 tick 시각으로 계산; source unavailable이면 고정 source라고 주장하지 않음 |
+| exit | takeProfitRatio, stopLossRatio, rebalanceMaxPositionWeightRatio, takeProfitMode, takeProfitSellRatio, trailingStopFromPeakRatio | runner 경계 supplied 객체를 보존하고 기존 normalizePaperExitPolicy 결과를 소비. absent/empty/secondary-only가 normalized null이 되는 기존 의미 유지 |
 | universe lifecycle | manifest 제공 여부, 실제 member의 market/symbol/lifecycleStatus/lifecycleStatusSource, 순서·중복·presence | lifecycle consumer용 copy와 관측을 결속. description/name 등 비소비 label은 전체 universe 증거로 승격하지 않음. 새 membership filtering 없음 |
 
-정확한 중첩 Risk/allocation/execution 필드는 각 현재 interface와 소비 함수에 대조해 구현 전 v1 schema에
+정확한 중첩 필드, enum, presence와 observer 지원 한도는 [frozen v1 계약](child-applied-settings-contract.md)에
 열거한다. [Risk defaults](../../../src/paper/riskPolicy.ts), [tick 파생](../../../src/replay/replayRiskPolicy.ts),
 [execution](../../../src/paper/executionModel.ts), [allocation](../../../src/paper/allocationPolicy.ts),
 [regime](../../../src/paper/marketRegimeAllocationPolicy.ts), [exit](../../../src/paper/exitPolicy.ts),
 [universe consumer](../../../src/market/historicalPacketBuilder.ts)를 함께 검토한다.
 
-Risk의 기본 budget을 전역 숫자로 먼저 채우면 안 된다. 현재 fallback은 allocation이 적용된 해당 packet
-constraint에서 나오며, targetExposureRatio는 scheduled ceiling으로 덮어쓸 수 있다. caller now와
+Risk 기본 budget 두 개는 Risk 평가 시 해당 packet의 constraints.maxBudgetPerSymbolKrw로 fallback한다.
+allocation budget/headroom cap은 별도 packet allocation·sizing 경로에 적용되며 Risk base에 미리 대입하지
+않는다. targetExposureRatio의 scheduled ceiling override 순서를 유지한다. caller now와
 소비되지 않는 injected regime 값을 applied base라고 저장하지 않는다. 이 제외·override를 계약에 명시하고
 지원 밖 unknown field가 있으면 부분 snapshot을 조용히 만들지 않는다.
 
@@ -72,12 +73,13 @@ constraint에서 나오며, targetExposureRatio는 scheduled ceiling으로 덮�
 
 ## 크기·표현·민감 정보
 
-새 관측에 유한한 snapshot/file bytes, universe members, cooldown/map entries, strings 및 depth 한도를
-둔다. 이는 기존 replay 입력 제한이 아니다. 구현 전에 대표·경계 합성 shape의 bytes/clone/RAM을 측정해
-정확한 상수를 정한다. 전체 clone/JSON/hash 후에야 한도를 확인하는 구현은 허용하지 않는다.
+새 관측은 snapshot 4MiB/file 4MiB+64KiB, universe 20,000개, cooldown 2,048개, allowedActions
+128개와 고정 map key 한도를 적용한다. 문자열/표현/한도 근거는 frozen v1 계약에 명시한다. 이는 기존
+replay 입력 제한이 아니다. 합성 측정은 관측 지원 예산을 정하는 근거이며 제품 전체 메모리 보장이 아니다. 전체 clone/JSON/hash 후에야 한도를 확인하는 구현은 허용하지 않는다.
 
-default/coercion/trim/임의 sort/dedup으로 raw presence를 바꾸지 않는다. 실제 normalized execution/exit를
-기록할 때는 관측 경계가 normalized 값임을 명시하고 provided/absent와 원래 소비 의미를 검증한다.
+default/coercion/trim/임의 sort/dedup으로 raw presence를 바꾸지 않는다. execution/exit snapshot은
+runner가 받은 supplied 객체이며 normalized output이 아니다. private copy를 기존 normalizer의 원래
+호출 지점에 전달하고, workflow 전에 소실된 요청 presence는 복원하지 않는다.
 undefined/-0/nonfinite/잘못된 Unicode, accessor/proxy/cycle 또는 지원 밖 객체는 억지로 JSON화하지 않는다.
 
 unsupported/limit은 내용·개별 hash 없는 unavailable이며 원래 실행 지원을 자동 축소하지 않는다.
@@ -97,8 +99,11 @@ snapshot `replay_settings_snapshot.v1`이다. 이는 기존 input/runtime 계약
   기존 configuration=unavailable은 그대로 유지하고 별도 immutable 기록으로 연결한다.
 - source writer는 실제 저장한 record에서 작은 immutable reference를 만들어 같은 예약 writer에 전달한다.
   전체 source 배열을 config 저장용으로 계속 붙잡거나 사후 파일을 다시 읽어 hash를 보충하지 않는다.
-- configuration capture → reservation → initial durable → source durable → configuration durable →
-  기존 research/progress/audit 초기화 → runner ticks/provider 순서다. source redacted 안전 정지는 유지한다.
+- 정상/unsupported/limit settings 경로는 capture → reservation → initial durable → source durable →
+  settings durable → 기존 research/progress/audit 초기화 → runner ticks/provider 순서다.
+- source redacted는 기존처럼 source durable 직후 중단하므로 settings 파일은 없다. settings redacted이며
+  source가 안전하면 내용 없는 settings 관측까지 durable하게 쓰고 legacy artifacts 이전에 중단한다.
+  같은 민감 문자열이 initial/source에도 있으면 해당 관측의 기존 redacted 상태로 내용/hash를 빼는지 시험한다.
 - 새 파일/orphan을 예약 preflight의 output 부재 검사에 포함한다. exclusive write/file sync/close와
   directory open/sync/close가 끝나야 발행 완료다. 실패는 provider0, 원본/예약/부분 파일 보존이며 자동 복구 없다.
 - unavailable 상태의 파일 쓰기 실패도 성공으로 삼키지 않는다. source/initial unavailable이면 정확한 상태와
@@ -109,7 +114,8 @@ snapshot `replay_settings_snapshot.v1`이다. 이는 기존 input/runtime 계약
 - 실제 합성 child에서 initial/source/config/progress callback 및 provider await 도중 원본의 scalar와
   nested 설정을 바꾸고 관측 hash와 실제 packet limits/가격 age/scope/lifecycle/Risk/fill/exit/pacing을 대조한다.
 - 모든 v1 field와 omission/0/false/null/빈 배열·map, cooldown, 비용/spread/impact, lifecycle explicit/defaulted,
-  allocation ramp/regime 및 normalized exit의 hash 민감도·동작 호환성을 검증한다.
+  allocation ramp/regime 및 raw exit의 hash 민감도·정규화 후 동작 호환성을 검증한다.
+  hash는 관측 raw 값/presence에 반응하며 동일 normalized 결과가 같은 raw hash라는 주장은 하지 않는다.
 - fresh/reused/injected sampler, clock/session/provider의 원래 상태·호출 순서를 유지하고 그 관측은 unavailable이다.
   metadata가 같은 다른 provider 또는 session은 동일한 전체 input으로 판정하지 않는다.
 - initial/source/config/reservation 혼합·교체·hash mismatch·unknown version, alias/기존/orphan/경합/재시도 및
