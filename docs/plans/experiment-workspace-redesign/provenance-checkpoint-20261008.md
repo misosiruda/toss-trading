@@ -79,3 +79,23 @@ PR823 검증은 최종 local b6e8c35와 public2e3edc9의 동일 tree/검증 byte
 PR824 검증은 local b60765d/public5e57e03/main aa344baa의 동일 tree fa27a7ec와 실제 검증 입력 bytes를 대조했다.
 새 Linux full5,144 tests/5,111 pass/0 fail/33 skip, 집중140·issuer/API회귀111, 최종27파일 독립 검토의 잔여P1/P2 0,
 exact public head Code/Security Completed·공개 지적/thread0 및 정상 GitHub gate 후 병합했다. C1은 별도 후보 검증이 필요하다.
+
+## 2026-10-12 확인: C1 병합과 C2 설계
+
+[PR825](https://github.com/misosiruda/toss-trading/pull/825)는2026-10-12T04:54:18Z 병합됐다.
+remote main `26813e50f6c887f56aa4157e91f21d82658543cb`, tree
+`f06923fc0d381b214e6f7c542127ed58af46ec0c`를 직접 확인했다. 위 C1 후보 표시는 당시 이력이다.
+C1은 actual runner의 process scalar와 actual durable B를 결속하며 runtime/build/loaded dependency/
+Node artifact·영향 설정/결과·비교는 여전히 unavailable이다. 세 complete flag=false를 유지한다.
+
+원본 검증 기록은 local `f5d5629bf9f02cd4cee55ee3743b1a620b4fa9df`의 Linux full
+5,243 tests/5,210 pass/0 fail/33 skip/0 cancelled, build·quality·tooling23 및 exit0다.
+게시 `08fdb2bfd81fb687fda4a881eee880c71763a2e8`와 동일 tree, base, Node24.19.0,
+compiled3,447개와 dependency3,748개의 검증 입력 동일성 기록에 결속했다. 이번 복구에서
+원본 파일 무결성·Git bundle 객체와 동일 tree를 다시 확인했으며 full을 새로 실행했다고 표시하지 않는다.
+게시 head의 자동 Code/Security Completed, 공개 finding/thread0과 실제 병합 상태도 확인했다.
+
+다음은 [C2 launcher/load 설계 범위](child-runtime-launcher-scope.md)와
+[지원·증명 계약](child-runtime-launcher-contract.md)이다. 문서 설계와 runtime 구현의 완료를 구분하며,
+첫 후속 C2-A는 startup eligibility만 다룬다. 실제 bootstrap/load/Node/child 결속과 결과 producer·
+공개 reader/UI는 아직 미구현이다. 기존 branch는 보존하고 수동 review/Actions 중복 요청은 하지 않는다.
