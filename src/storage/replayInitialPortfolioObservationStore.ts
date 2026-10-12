@@ -1,3 +1,6 @@
+import { REPLAY_PROCESS_OBSERVATION_FILE_NAME } from "../domain/replayProcessObservation.js";
+import { writeReplayProcessObservation } from "./replayProcessObservationStore.js";
+import { resolveReplayProcessObservationContext, type ReplayProcessObservationContext } from "../replay/codexHistoricalReplayRunner.js";
 import { lstat, open } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { observeReplayInitialPortfolio, replayInitialPortfolioReservationSchema, replayInitialPortfolioObservationSchema,
@@ -9,7 +12,7 @@ import { REPLAY_SOURCE_OBSERVATION_FILE, writeReplaySourceObservation } from "./
 import { REPLAY_SETTINGS_OBSERVATION_FILE, writeReplaySettingsObservation } from "./replaySettingsObservationStore.js";
 import type { ReplaySettingsSnapshotObservation } from "../domain/replaySettingsSnapshot.js";
 import type { ReplayDurableSettingsReference, ReplayDurableSourceReference } from "../domain/replaySettingsObservation.js";
-import { REPLAY_ADMISSION_LINEAGE_FILE_NAME } from "../domain/replayAdmissionLineage.js";
+import { REPLAY_ADMISSION_LINEAGE_FILE_NAME, type ReplayDurableAdmissionReference } from "../domain/replayAdmissionLineage.js";
 import { writeReplayAdmissionLineage } from "./replayAdmissionLineageStore.js";
 import { resolvePaperSimulationAdmissionContext, type PaperSimulationAdmissionContext } from "./paperSimulationObservationStore.js";
 import { maskReplayRunIdentity } from "../security/masking.js";
@@ -21,7 +24,7 @@ import { HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAM
 
 export const REPLAY_INITIAL_PORTFOLIO_FILE = "historical-replay-initial-portfolio.json";
 export const REPLAY_INITIAL_PORTFOLIO_RESERVATION_FILE = "historical-replay-initial-portfolio.reserved.json";
-const replayOutputs = [REPLAY_ADMISSION_LINEAGE_FILE_NAME, REPLAY_INITIAL_PORTFOLIO_FILE, REPLAY_SOURCE_OBSERVATION_FILE, REPLAY_SETTINGS_OBSERVATION_FILE, HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
+const replayOutputs = [REPLAY_PROCESS_OBSERVATION_FILE_NAME, REPLAY_ADMISSION_LINEAGE_FILE_NAME, REPLAY_INITIAL_PORTFOLIO_FILE, REPLAY_SOURCE_OBSERVATION_FILE, REPLAY_SETTINGS_OBSERVATION_FILE, HISTORICAL_REPLAY_REPORT_FILE_NAME, HISTORICAL_REPLAY_PROGRESS_FILE_NAME,
   HISTORICAL_REPLAY_RUN_METADATA_FILE_NAME, HISTORICAL_REPLAY_RESEARCH_MANIFEST_FILE_NAME, HISTORICAL_REPLAY_PACKETS_FILE_NAME,
   HISTORICAL_REPLAY_DECISIONS_FILE_NAME, HISTORICAL_REPLAY_RISK_DECISIONS_FILE_NAME, HISTORICAL_REPLAY_TRADES_FILE_NAME,
   HISTORICAL_REPLAY_PORTFOLIO_TIMELINE_FILE_NAME];
@@ -36,6 +39,7 @@ export interface ReplayChildObservationWriter {
   observeSource(source: ReplaySourceSnapshotObservation): Promise<void>;
   observeSettings(settings: ReplaySettingsSnapshotObservation): Promise<void>;
   observeAdmission(context: PaperSimulationAdmissionContext, actual: unknown): Promise<void>;
+  observeProcess(context: ReplayProcessObservationContext): Promise<void>;
 }
 
 /** Reserve before rewriting existing replay artifacts. The immutable reservation is never removed or retried. */
@@ -61,6 +65,8 @@ export async function reserveReplayInitialPortfolioObservation(input: {
     let sourceInvoked = false;
     let settingsInvoked = false;
     let admissionInvoked = false;
+    let processInvoked = false;
+    let durableAdmissionReference: ReplayDurableAdmissionReference | undefined;
     let durableSettingsReference: ReplayDurableSettingsReference | undefined;
     let durableSourceReference: ReplayDurableSourceReference | undefined;
     let durableInitialObservation: ReplayInitialPortfolioObservation | undefined;
@@ -107,8 +113,15 @@ export async function reserveReplayInitialPortfolioObservation(input: {
         if (durableInitialObservation === undefined || durableSettingsReference === undefined) {
           throw Error("admission lineage preceding state unavailable");
         }
-        await writeReplayAdmissionLineage(context, { storageBaseDir, actual,
+        durableAdmissionReference = await writeReplayAdmissionLineage(context, { storageBaseDir, actual,
           initialObservation: durableInitialObservation, settingsReference: durableSettingsReference });
+      },
+      observeProcess: async (context: ReplayProcessObservationContext): Promise<void> => {
+        if (processInvoked) throw Error("process observation already attempted");
+        processInvoked = true;
+        resolveReplayProcessObservationContext(context);
+        if (durableAdmissionReference === undefined) throw Error("process observation preceding state unavailable");
+        await writeReplayProcessObservation(context, { storageBaseDir, admissionReference: durableAdmissionReference });
       }
     });
   } catch (error) {

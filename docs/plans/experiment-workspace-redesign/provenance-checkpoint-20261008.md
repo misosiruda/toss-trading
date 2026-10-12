@@ -1,8 +1,8 @@
 # Provenance 구현 checkpoint — 2026-10-08
 
-확인 기준 main: `e0c11bb710f085d16603618aa61baef90c5a4eed`,
-tree: `1aab1e56f3430d9c5acb7c0309b8db75018f8c29`.
-PR823은2026-10-08T09:29:33Z 병합됐다. 아래 A까지는 실제 병합 상태이며 B는 아직 설계 단계다. 과거 원장의 당시 미구현 표시는 이력으로 유지한다.
+확인 기준 main: `aa344baafdc920c0ddaf56da2d241f7f512882cc`,
+tree: `fa27a7ecb3960fe7603a26461283c2c96aec9695`.
+PR824는2026-10-08T11:29:35Z 병합됐다. 아래 B까지는 실제 병합 상태이며 C1은 별도 구현 후보다. 과거 원장의 당시 미구현 표시는 이력으로 유지한다.
 
 ## 완료와 남은 경계
 
@@ -13,7 +13,8 @@ PR823은2026-10-08T09:29:33Z 병합됐다. 아래 A까지는 실제 병합 상�
 | 접수 입력 | [PR819](https://github.com/misosiruda/toss-trading/pull/819)의 requested/effective/notices와 acceptance hash 결속 | 실제 child source·적용 설정·runtime/dependency/result 결속 |
 | 초기 portfolio | [PR820](https://github.com/misosiruda/toss-trading/pull/820)의 실제 runner 초기 상태 snapshot·hash·immutable 예약과 provider 전 동기화 | 전체 source/input/runtime/result 완전성, 공개 reader, 비교 가능성 |
 | source | [PR822](https://github.com/misosiruda/toss-trading/pull/822)의 실제 runner 소비 배열 snapshot/hash·초기 상태 결속·민감 문자열 안전 정지 | 원본 file/acquisition 신뢰, 전체 configuration/runtime/result, 공개 reader·비교 |
-| 부분 설정 A | [PR823](https://github.com/misosiruda/toss-trading/pull/823)의 supplied plain-data snapshot/private 소비·durable initial/source 결속과 실제 소비 경계 안전 정지 | clock/sampler/provider·admission B·전체 configuration/runtime/result·공개 reader·비교 |
+| 부분 설정 A | [PR823](https://github.com/misosiruda/toss-trading/pull/823)의 supplied plain-data snapshot/private 소비·durable initial/source 결속과 실제 소비 경계 안전 정지 | clock/sampler/provider·전체 configuration/runtime/result·공개 reader·비교 |
+| 접수 lineage B | [PR824](https://github.com/misosiruda/toss-trading/pull/824)의 실제 durable admission context→batch→child, 알려진 mapping 및 실제 A/initial 결속 | runtime/build/loaded dependency/결과·공개 reader·통제된 비교 |
 
 PR820은 `replay_initial_portfolio_observation.v1` 부분 관측이다. `completeInput=false`,
 source/configuration/runtime/dependencies/result/comparability의 unavailable 의미를 유지한다.
@@ -42,11 +43,13 @@ source/configuration/runtime/dependencies/result/comparability의 unavailable �
 [Child source 관측](child-source-observation-scope.md)은 PR822에서 부분 producer로 구현됐다.
 [적용 설정 부분 관측 A](child-applied-settings-scope.md)는 PR823에서 기존 plain-data 소비 의미와
 ownership을 고정했다. [Frozen v1 계약](child-applied-settings-contract.md)의 지원 입력만 recorded이며
-source/configuration 전체 완전성을 선언하지 않는다. 다음 별도 기능은 [접수 lineage B](child-admission-lineage-scope.md)이며
-[v1 계약](child-admission-lineage-contract.md)에 따라 실제 admission 소유 context → batch → child와
-별도 immutable B writer가 구현 후보에 들어갔다. 합성 중앙 focused140개와 build를 통과했고,
-독립 검토에서 calendar-filtered 경로의 잘못된 recorded 승격을 수정·회귀 확인했다.
-최종 공식 full과 자동 review·현재 GitHub 보호 gate는 별도로 충족해야 하며, 이 문서는 병합 완료 근거가 아니다.
+source/configuration 전체 완전성을 선언하지 않는다. [접수 lineage B](child-admission-lineage-scope.md)는
+PR824에서 실제 admission 소유 context→batch→child와 별도 immutable 관측으로 병합됐다.
+다음 [실제 process 부분 관측 C1](child-process-observation-scope.md)은 [v1 계약](child-process-observation-contract.md)에
+따라 actual runner→durable B→C1 연결과 합성 회귀를 구현한 후보다. 독립 구현 검토의 parser P2와
+시험 fixture2건을 수정했다. 오류 생성의 Object/Array prototype 직렬화 경계도 별도 합성 회귀로
+검증한다. 후보별 새 공식 full/자동 리뷰/현재 GitHub gate는 별도 완료 기준이다. C1은 actual runner의 bounded scalar 관측이며, launcher/source/build/
+loaded dependency/Node artifact·영향 설정의 완전성은 별도 C2 근거가 필요하다.
 
 순서는 다음과 같다.
 
@@ -72,3 +75,7 @@ calendar의 non-exporting evidence, AI 결정 재현성 및 metric 비교 조건
 
 PR823 검증은 최종 local b6e8c35와 public2e3edc9의 동일 tree/검증 bytes에서 Linux full4,966 tests/4,933 pass/0 fail/33 skip,
 독립 소비 재현36/36·durable/호환9/9, 최종 자동 Code Review/보호 gate를 확인했다. B backend 변경에는 새 검증이 필요하다.
+
+PR824 검증은 local b60765d/public5e57e03/main aa344baa의 동일 tree fa27a7ec와 실제 검증 입력 bytes를 대조했다.
+새 Linux full5,144 tests/5,111 pass/0 fail/33 skip, 집중140·issuer/API회귀111, 최종27파일 독립 검토의 잔여P1/P2 0,
+exact public head Code/Security Completed·공개 지적/thread0 및 정상 GitHub gate 후 병합했다. C1은 별도 후보 검증이 필요하다.

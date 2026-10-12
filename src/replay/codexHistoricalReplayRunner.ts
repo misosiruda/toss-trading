@@ -1,3 +1,9 @@
+import process from "node:process";
+import { types } from "node:util";
+import { PAPER_COST_MODEL_VERSION, PAPER_EXECUTION_MODEL_VERSION } from "../paper/costModel.js";
+import { replayProcessObservationBindingSchema, replayProcessScalarObservationSchema,
+  type ReplayProcessObservationBinding, type ReplayProcessObservationEvidence,
+  type ReplayProcessScalarObservation } from "../domain/replayProcessObservation.js";
 import type {
   AuditEvent,
   HistoricalMarketSnapshot,
@@ -96,6 +102,8 @@ export interface CodexHistoricalReplayRunnerOptions {
   onSettings?: (settings: ReplaySettingsSnapshotObservation) => Promise<void> | void;
   onSourceSnapshots?: (source: ReplaySourceSnapshotObservation) => Promise<void> | void;
   onInitialPortfolio?: (portfolio: VirtualPortfolio) => Promise<void> | void;
+  processObservationBinding?: ReplayProcessObservationBinding;
+  onProcessObservation?: (context: ReplayProcessObservationContext) => Promise<void> | void;
   onProgress?: (
     update: HistoricalReplayProgressUpdate
   ) => Promise<void> | void;
@@ -106,10 +114,57 @@ type ReplayRunnerSettings = Pick<CodexHistoricalReplayRunnerOptions,
   "riskPolicy" | "executionPolicy" | "allocationPolicy" | "marketRegimeAllocationPolicy" | "paperExitPolicy" |
   "candidateStrategyBucket" | "tickDelayMs"> & { universeManifest?: HistoricalUniverseLifecycleInput };
 
+declare const processObservationBrand: unique symbol;
+export interface ReplayProcessObservationContext { readonly [processObservationBrand]: true }
+const processObservations = new WeakMap<object, ReplayProcessObservationEvidence>();
+
+/** Membership is checked before any property access, including for proxies and revoked proxies. */
+export function resolveReplayProcessObservationContext(context: unknown): ReplayProcessObservationEvidence {
+  const evidence = context !== null && typeof context === "object" ? processObservations.get(context) : undefined;
+  if (evidence === undefined) throw Error("process observation context unavailable");
+  return evidence;
+}
+
+// No caller can issue from JSON or supply process scalar values. This function stays in the actual runner module.
+function captureProcessObservation(options: CodexHistoricalReplayRunnerOptions): {
+  context: ReplayProcessObservationContext; observe: NonNullable<CodexHistoricalReplayRunnerOptions["onProcessObservation"]>;
+} | undefined {
+  // Inspect only the two new selected fields; do not deep-inspect the root or opaque runtime dependencies.
+  if (types.isProxy(options)) return undefined;
+  const bindingDescriptor = Object.getOwnPropertyDescriptor(options, "processObservationBinding");
+  const callbackDescriptor = Object.getOwnPropertyDescriptor(options, "onProcessObservation");
+  if (bindingDescriptor === undefined && callbackDescriptor === undefined) return undefined;
+  if (bindingDescriptor === undefined || callbackDescriptor === undefined ||
+    !Object.hasOwn(bindingDescriptor, "value") || !Object.hasOwn(callbackDescriptor, "value") ||
+    typeof callbackDescriptor.value !== "function") throw Error("process observation binding unavailable");
+  const parsed = replayProcessObservationBindingSchema.safeParse(bindingDescriptor.value);
+  if (!parsed.success) throw Error("process observation binding unavailable");
+  const binding = parsed.data;
+  Object.freeze(binding.identity);
+  Object.freeze(binding);
+  const values: Record<string, unknown> = {};
+  for (const field of ["version", "platform", "arch"] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(process, field);
+    // Never execute accessors, coerce objects, or copy opaque values into the private evidence.
+    if (descriptor !== undefined && Object.hasOwn(descriptor, "value") && typeof descriptor.value === "string") {
+      values[field] = descriptor.value;
+    }
+  }
+  const scalar = replayProcessScalarObservationSchema.safeParse({ status: "recorded",
+    nodeVersion: values.version, platform: values.platform, architecture: values.arch,
+    costModelVersion: PAPER_COST_MODEL_VERSION, executionModelVersion: PAPER_EXECUTION_MODEL_VERSION });
+  const observation: ReplayProcessScalarObservation = scalar.success ? scalar.data
+    : { status: "unavailable", reason: "unsupported_process_observation" };
+  const context = Object.freeze(Object.create(null)) as ReplayProcessObservationContext;
+  processObservations.set(context, Object.freeze({ binding, process: Object.freeze(observation) }));
+  return { context, observe: callbackDescriptor.value as NonNullable<CodexHistoricalReplayRunnerOptions["onProcessObservation"]> };
+}
+
 export async function runCodexHistoricalReplay(
   options: CodexHistoricalReplayRunnerOptions,
   input: HistoricalReplayInput
 ): Promise<HistoricalReplayResult> {
+  const processObservation = captureProcessObservation(options);
   // Only the bound observation path changes ownership; unsupported/legacy replay remains accepted as before.
   const capturedSettings = options.onSettings === undefined ? undefined : prepareReplaySettingsSnapshot(options);
   // The strict snapshot preflight excludes own undefined; no opaque runner field is copied here.
@@ -134,6 +189,7 @@ export async function runCodexHistoricalReplay(
       if (capturedSettings.reason === "inspection_unavailable") throw Error("settings credential inspection unavailable");
     }
   }
+  if (processObservation !== undefined) await processObservation.observe(processObservation.context);
   const packets: MarketPacket[] = [];
   const decisions: VirtualDecision[] = [];
   const riskDecisions: VirtualRiskDecision[] = [];

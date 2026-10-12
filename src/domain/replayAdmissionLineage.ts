@@ -2,6 +2,7 @@ import { types } from "node:util";
 import { z } from "zod";
 import { PAPER_SIMULATION_ID_PATTERN } from "./paperSimulationObservation.js";
 import { replayDurableSettingsReferenceSchema } from "./replaySettingsObservation.js";
+import { createReplayResearchHash } from "../replay/replayRunManifest.js";
 
 export const REPLAY_ADMISSION_LINEAGE_FILE_NAME = "historical-replay-admission-lineage.json";
 export const REPLAY_ADMISSION_LINEAGE_MAX_BYTES = 8_192;
@@ -78,6 +79,45 @@ export const replayAdmissionLineageSchema = z.unknown().superRefine((value, cont
   if (!boundedLineageData(value)) context.addIssue({ code: "custom", message: "Unsupported admission lineage shape" });
 }).pipe(record);
 export type ReplayAdmissionLineage = z.infer<typeof replayAdmissionLineageSchema>;
+
+// Constructed only from the actual B record after the owning writer completes durability.
+// Like the earlier references, this data schema does not itself certify writer ownership.
+export const replayDurableAdmissionReferenceSchema = replayDurableSettingsReferenceSchema.extend({
+  identity: reference.identity.extend({ batchId: id, runIndex: z.number().int().min(0).max(19) }).strict(),
+  startedAt: instant, reservationHash: hash,
+  admissionObservation: z.object({
+    schemaVersion: z.literal("replay_admission_lineage.v1"), observationHash: hash,
+    lineage: z.discriminatedUnion("status", [
+      z.object({ status: z.literal("recorded"), mappingVersion: z.literal(PAPER_SIMULATION_CHILD_MAPPING_VERSION) }).strict(),
+      z.object({ status: z.literal("unavailable"),
+        reason: z.enum(["unsupported_derivation", "settings_unavailable", "initial_unavailable"]) }).strict()
+    ])
+  }).strict()
+}).strict();
+export type ReplayDurableAdmissionReference = z.infer<typeof replayDurableAdmissionReferenceSchema>;
+
+export function durableAdmissionLineageReference(record: ReplayAdmissionLineage): ReplayDurableAdmissionReference {
+  const parsed = replayAdmissionLineageSchema.parse(record);
+  const reference = replayDurableAdmissionReferenceSchema.parse({
+    identity: parsed.identity, startedAt: parsed.startedAt, reservationHash: parsed.reservationHash,
+    initialObservation: parsed.initialObservation, sourceObservation: parsed.sourceObservation,
+    settingsObservation: parsed.settingsObservation,
+    admissionObservation: { schemaVersion: parsed.schemaVersion, observationHash: createReplayResearchHash(parsed),
+      lineage: parsed.lineage.status === "recorded"
+        ? { status: parsed.lineage.status, mappingVersion: parsed.lineage.mappingVersion }
+        : { status: parsed.lineage.status, reason: parsed.lineage.reason } }
+  });
+  Object.freeze(reference.identity);
+  Object.freeze(reference.initialObservation.initialPortfolio);
+  Object.freeze(reference.initialObservation);
+  Object.freeze(reference.sourceObservation.source);
+  Object.freeze(reference.sourceObservation);
+  Object.freeze(reference.settingsObservation.settings);
+  Object.freeze(reference.settingsObservation);
+  Object.freeze(reference.admissionObservation.lineage);
+  Object.freeze(reference.admissionObservation);
+  return Object.freeze(reference);
+}
 
 function boundedLineageData(value: unknown, depth = 0, budget = { remaining: 128 }): boolean {
   if (--budget.remaining < 0 || depth > 5) return false;
