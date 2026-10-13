@@ -107,3 +107,25 @@ Windows helper의 `os.setxattr` 미지원 실패는 보존했고, Linux 공식 h
 runtime/dependencies/result/comparability는 계속 unavailable이며
 completeRuntime/completeConfiguration/completeInput은 모두 false다.
 실거래/provider/production HTTP/receipt 및 기존 A/B/C1/C2-A 구현은 변경하지 않는다.
+
+## 집컴 전체 인계물과 전체 gate 후속 확인
+
+07:00 UTC에 최초 요청한 전체 인계물 Library `libfile_d3964c8991948191a5ff03e27766093c` v0도
+공식 다운로드 절차로 집컴의 별도 Linux 소비 경로에 materialize했다.
+실제39,609,635 bytes 및 SHA256
+`37f34234f1a28af6f6ba4b58fb9cc73cc76a9771e41f00461cf8b6b43185156a`가 지정 값과 일치했다.
+ZIP35멤버, manifest34항목의 길이/hash/CRC와 Library metadata를 확인하고,
+원본 전체 bundle과 overlay로 또 다른 새 checkout을 복원했다.
+정본 HEAD/tree, tracked1497개, overlay10개와 `git fsck --full`이 모두 맞았다.
+
+첫 집컴 전체 gate는 candidate `3b0998aabeb6c7c5e85f25612dd645688b518f4e`,
+tree `43d2ce18f4670efa914326962bc47d2da89b400a`,
+dependency base `114a1afc8c06fd443da870805b25826f4af5083b`,
+main base `26813e50f6c887f56aa4157e91f21d82658543cb`에서 실행했다.
+`npm run check:merge`가06:58:48–07:04:20 UTC,331.99초, exit0으로 완료됐다.
+build/quality/tooling과 전체5371개 중5338 pass, fail0, cancelled0, skip33, todo0이다.
+기존33개 skip은 실제 통과가 아니며 C2-B94개는 모두 실행돼 통과했다.
+전후 소스 snapshot SHA256은
+`121ada0be8e774fd29936e43671be827553c5ec496d0e23a05f02f049b19ccc1`으로 같다.
+이 기록 추가와 문서 실행 권한 제거 뒤 게시할 최종 commit의 전체 gate는 별도 증거로 남긴다.
+실험 소스7개와 assertion/timeout/skip/runner 설정은 수정하지 않았다.
