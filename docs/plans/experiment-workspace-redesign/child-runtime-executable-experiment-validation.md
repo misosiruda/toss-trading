@@ -20,6 +20,7 @@
 | 최초 check:review | 10:04:05–10:10:02 | build/quality/tooling 통과, 영향 불명확으로 전체 fallback; total5420, pass5386, fail1, skip33, exit1 |
 | 수정 뒤 build | 10:16:15–10:16:29 | exit0 |
 | 수정 뒤 신규4개 시험 파일 | 10:16:29–10:16:33 | 49 pass, fail0, skip0, cancelled0, exit0 |
+| LF 정규화·계약 문서 반영 후 check:review | 10:22:40–10:28:49 | build/quality/tooling 통과, 전체 fallback; total5420, pass5387, fail0, skip33, cancelled0, exit0 |
 
 첫 실패는 새 stdout 경계 fixture의 수치 변환 누락이다. 계약과 assertion은4096/4097 경계였지만
 입력에 C2-B의32_768/32_769가 남아 있었다. 입력만4_096/4_097로 바꾸고1byte전 분할 위치도4_095로
@@ -33,8 +34,11 @@
 수정 후 gate 전후 source snapshot은
 `5d5458e0874586c8cc09b04eca77ef66ef2fb0423eb41ea1b9643df69de01b3d`로 동일했다.
 그 뒤 새 파일의 CRLF를 git diff --check가 거절하여 원문을 보존하고9개를 LF로 정규화했다.
-semantic assertion 변경 없이 위 source commit을 만들었으며 게시 전 review와 최종 full은
-정규화된 현재 candidate에서 다시 실행한다.
+semantic assertion 변경 없이 위 source commit을 만들었다.
+정규화·계약 문서를 포함한 HEAD `aaa632409ceb4d294ca16c38d43ba8c075616b6e`의
+check:review는 368.27초에 통과했다. 전후 source snapshot
+`68c043c9d58dca83fb3d0e7680b054ab96e1a4f237d62871b82201bff40b5c32`는 동일했다.
+이 결과를 추가한 문서 커밋까지 포함한 exact 게시 HEAD에서 최종 full을 실행한다.
 
 ## 관측한 반례
 
