@@ -36,6 +36,8 @@ completeRuntime/completeConfiguration/completeInput=false를 모든 report에 �
 | artifact_mismatch | 소유 artifact 내용 변경을 pin 비교에서 거절, compiler 미실행 |
 | unlisted_builtin | 고정 fault suffix가 허용 밖 builtin require 오류를 삼켜도 latch된 실패를 유지 |
 | unlisted_module | 고정 fault suffix가 추가 local module require 오류를 삼켜도 전체 관측 거절 |
+| callback_cap / callback_cap_over | 실제 resolve 요청을 추가해 callback32 성공, 33번째 거절 |
+| artifact_cap_over | 소유 artifact10 MiB+1을 실제 reader가 거절하고 부분 bytes를 공급하지 않음 |
 
 B의 marker는 추가 문장 평가 관측이며 memory image hash가 아니다. B에서도 고정 변환 출력은 같을
 수 있으며 출력이 같다는 사실을 artifact 동일성으로 해석하지 않는다. counterexample을 정상 인증으로
@@ -47,12 +49,14 @@ B의 marker는 추가 문장 평가 관측이며 memory image hash가 아니다.
 - compiler는 고정 file URL 하나로만 resolve하며 기본 package/file resolver로 넘기지 않는다.
 - compiler가 요청하는 builtin은 `crypto`, `fs`, `os`, `path`, `perf_hooks` 5개뿐이다.
   각 canonical node: URL의 builtin load만 위임하고 다른 요청·parent·format·attribute는 거절한다.
+  실제 CommonJS resolve에서 importAttributes 부재는 허용하되, 제공된 attribute의 key는 허용하지 않는다.
+  nextResolve의 format hint가 없는 경우는 허용한다. canonical URL과 실제 load의 builtin format은 별도로 확인한다.
 - load가 공급한 string digest와 크기를 기록하고 compiler export version·실제 변환 결과와 cache
   객체 동일성을 확인한다. compiler load 정확히1, builtin 집합 정확히5를 요구한다.
 - resolve+load callback 합계32, artifact 한 번 읽기10 MiB(+overflow 판별1byte), bootstrap64 KiB,
   stdout2,048 bytes, stderr4,096 bytes를 넘으면 실패한다. 무한 inventory를 기록하지 않는다.
 - wire는 exact field set·canonical UTF-8 JSON 한 줄이다. 고정 관측/거절 union과 최대 fixture를
-  protocol 시험에서 동결한다. 경로/env/argv/raw error/source/output은 wire에 넣지 않는다.
+  protocol 시험에서 동결한다(schema-valid 최대1,041 bytes). 경로/env/argv/raw error/source/output은 wire에 넣지 않는다.
 - stable reader는 regular file/single-link/O_NOFOLLOW, opened fd와 path의 dev/ino/size/mtime/ctime,
   fatal UTF-8을 확인한다. hash 후 default loader가 다시 읽는 경로는 정상 증거로 쓰지 않는다.
 
@@ -66,7 +70,7 @@ NODE_OPTIONS/preload/compile-cache를 상속하지 않는다. 실행10초, TERM/
 
 ## 완료 기준
 
-1. 세 실제 관측과 네 고정 거절 사례를 지원 runtime에서 실행한다. marker·공급 digest·예상 출력,
+1. 네 실제 관측과 여섯 고정 거절 사례를 지원 runtime에서 실행한다. marker·공급 digest·예상 출력,
    등록 전 cache·unknown module/builtin의 latch를 독립 assertion으로 확인한다.
 2. artifact/bootstrapping reader의 실제 링크·교체·UTF-8·상한, canonical report와 소유 lifecycle
    timeout/종료/cleanup 불확실성 경계를 검증한다. 기존 assertion/timeout/skip은 완화하지 않는다.
