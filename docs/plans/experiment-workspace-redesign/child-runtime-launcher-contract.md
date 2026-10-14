@@ -159,6 +159,8 @@ schema-valid 최대 fixture로 별도 동결한다. 상한 미확정 상태에�
   증거를 결속한다. 지원 환경의 positive/negative 없이는 completeRuntime을 발행하지 않는다.
   첫 부분 단위 [C2-C1](child-runtime-executable-experiment-scope.md)은 Linux executable file과 현재 path의 교체 반례만 관측한다.
   memory image/build/native/configuration의 결속과 전체 C2-C 완전성은 후속 의무로 남긴다.
+  다음 부분 단위 [C2-C2](child-runtime-compiler-snapshot-scope.md)는 고정 compiler 입력3개와 emit2개를 관측한다.
+  compiler artifact의 actual load와 산출물 실행, 전체 build/Node/settings 결속은 이 부분 관측으로 대체하지 않는다.
 - **C2-D, actual child producer:** 필요한 lifecycle/IPC·admission 계약과 durable schema를 먼저
   확정한 뒤 default HTTP와 actual child에 연결한다. 기존 C1 호환·부재 경계와 terminal 실패를 검증한다.
 

@@ -35,6 +35,8 @@ completeRuntime/completeConfiguration/completeInput=false를 모든 성공 관�
   제공하며 실제 getSourceFile 호출과 반환 SourceFile.text를 확인한다.
 - output은 entry.js와 value.js 2개만 허용한다. writeFile의 sourceFiles 연결, UTF-8 bytes,
   중복/추가/누락, BOM과 상한을 확인한 뒤에만 하나의 관측을 만든다. disk output은 생성하지 않는다.
+  TypeScript emit의 sourceFiles는 변환 객체이므로 getOriginalNode가 정확한 host SourceFile로
+  돌아오는지와 양쪽의 이름·text를 확인한다. 이름/text가 같은 별도 객체는 허용하지 않는다.
 
 일반 진입점은 고정 caseId만 받는다. 내부 CompilerHost fault seam은 신뢰된 unit 시험용이며
 public API나 임의 code/path/options 실행 진입점이 아니다.
@@ -63,12 +65,14 @@ public API나 임의 code/path/options 실행 진입점이 아니다.
 | source 한 파일 / 합계 | 16,384 / 49,152 bytes |
 | output 한 파일 / 합계 | 16,384 / 32,768 bytes |
 | source 제공 요청 / module resolution 요청 | 16 / 8 |
-| canonical 관측 JSON | 2,048 bytes 이하, schema-valid 최대 fixture 별도 검증 |
+| canonical 관측 JSON / schema-valid 최대 | 2,048 / 908 bytes |
 
 source는 새 소유 temp root의 고정 파일만 읽는다. lstat·O_NOFOLLOW·regular/single-link,
 열린 descriptor와 현재 path의 dev/ino/size·mtime/ctime 불변 및 fatal UTF-8을 검사한다.
 각 읽기는 고정 buffer의 최대16,385 bytes이고 overflow를 성공으로 축약하지 않는다.
 immutable snapshot string을 복사·보존하므로 이후 Map 교체나 disk 변경이 기존 소비 내용을 바꾸지 않는다.
+reader의 내부 onOpenedForTest seam으로 같은 내용의 새 inode 교체와 열린 뒤 경로 부재를
+정확한 순서에 주입한다. 일반 실험은 이 callback을 받거나 실행하지 않는다.
 
 compiler 입력/출력 inventory digest는 고정 logical id·bytes·content digest의 정렬된 JSON으로
 계산한다. options도 고정 데이터로 식별한다. raw source/output/path/env/diagnostic는 report에 없다.
