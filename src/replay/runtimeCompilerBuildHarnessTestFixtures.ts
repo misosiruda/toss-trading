@@ -1,6 +1,6 @@
 // Test-only process owner. Never imported by production runners or public APIs.
 import { spawn, type ChildProcess } from "node:child_process";
-import { lstat, mkdtemp, rm } from "node:fs/promises";
+import { lstat, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -17,6 +17,7 @@ import {
 
 const EXECUTION_MS = 10_000;
 const GRACE_MS = 1_000;
+export const COMPILER_BUILD_ALLOCATION_LIMIT = 40;
 const CHILD_ENV = Object.freeze({ TZ: "UTC", LANG: "C", LC_ALL: "C", NODE_DISABLE_COMPILE_CACHE: "1" });
 type FailedResult = Extract<CompilerBuildParentResult, { status: "failed" }>;
 type RootIdentity = { dev: number; ino: number; directory: boolean; symlink: boolean };
@@ -29,10 +30,9 @@ export interface CompilerBuildOwnedChildForTest extends EventEmitter {
 }
 export interface CompilerBuildHarnessDependenciesForTest {
   runtime: { version: string; platform: string; arch: string };
-  createRoot(): Promise<string>;
+  createRoot(caseId: CompilerBuildCaseId): Promise<string>;
   inspectRoot(root: string): Promise<RootIdentity>;
   prepareFixture(caseId: CompilerBuildCaseId, root: string): Promise<string>;
-  removeRoot(root: string): Promise<void>;
   spawnChild(bootstrap: string, caseId: CompilerBuildCaseId, root: string): CompilerBuildOwnedChildForTest;
   now(): number;
   setTimer(callback: () => void, milliseconds: number): unknown;
@@ -50,6 +50,40 @@ function failed(reason: CompilerBuildFailureReason, termination: FailedResult["t
 function sameRoot(first: RootIdentity, next: RootIdentity): boolean {
   return first.directory && !first.symlink && next.directory && !next.symlink
     && first.dev === next.dev && first.ino === next.ino;
+}
+
+type RootObservation = { status: "observed"; identity: RootIdentity } | { status: "failed" | "unconfirmed" };
+// A bounded read-only observation cannot authorize a later pathname deletion.
+function observeRoot(deps: CompilerBuildHarnessDependenciesForTest, root: string,
+  expected?: RootIdentity): Promise<RootObservation> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: unknown;
+    const deadline = deps.now() + GRACE_MS;
+    const settle = (outcome: RootObservation): void => {
+      if (settled) return;
+      settled = true;
+      deps.clearTimer(timer);
+      resolve(deps.now() >= deadline ? { status: "unconfirmed" } : outcome);
+    };
+    const armTimer = (): void => {
+      if (settled) return;
+      const remaining = deadline - deps.now();
+      if (remaining <= 0) settle({ status: "unconfirmed" });
+      else timer = deps.setTimer(armTimer, Math.ceil(remaining));
+    };
+    armTimer();
+    void (async () => {
+      try {
+        const current = await deps.inspectRoot(root);
+        if (settled) return;
+        if (!current.directory || current.symlink || (expected !== undefined && !sameRoot(expected, current))) {
+          settle({ status: "failed" }); return;
+        }
+        settle({ status: "observed", identity: current });
+      } catch { settle({ status: "failed" }); }
+    })();
+  });
 }
 
 function captureChild(deps: CompilerBuildHarnessDependenciesForTest, bootstrap: string,
@@ -187,7 +221,8 @@ function captureChild(deps: CompilerBuildHarnessDependenciesForTest, bootstrap: 
 export function createCompilerBuildHarnessForTest(deps: CompilerBuildHarnessDependenciesForTest):
   (caseId: unknown) => Promise<CompilerBuildParentResult> {
   let halted: CompilerBuildFailureReason | null = null;
-  // Serial ownership prevents concurrent callers from launching past an unresolved cleanup.
+  let allocations = 0;
+  // Serial ownership consumes the finite budget before allocation and retains every failure.
   let queue: Promise<void> = Promise.resolve();
   async function run(caseInput: unknown): Promise<CompilerBuildParentResult> {
     if (!isCompilerBuildCaseId(caseInput)) return failed("INVALID_CASE", "not_started", "not_created");
@@ -196,17 +231,23 @@ export function createCompilerBuildHarnessForTest(deps: CompilerBuildHarnessDepe
       return { status: "unsupported", reason: "RUNTIME_UNSUPPORTED", report: null,
         termination: "not_started", cleanup: "not_created" };
     }
-    let root: string;
-    try { root = await deps.createRoot(); }
-    catch { return failed("FIXTURE_PREPARATION_FAILED", "not_started", "not_created"); }
-    let identity: RootIdentity;
-    try {
-      identity = await deps.inspectRoot(root);
-      if (!identity.directory || identity.symlink) throw new Error("UNSAFE_ROOT");
-    } catch {
-      halted = "CLEANUP_FAILURE";
-      return failed("FIXTURE_PREPARATION_FAILED", "not_started", "retained");
+    if (allocations >= COMPILER_BUILD_ALLOCATION_LIMIT) {
+      halted = "ALLOCATION_LIMIT";
+      return failed(halted, "not_started", "not_created");
     }
+    allocations++;
+    let root: string;
+    try { root = await deps.createRoot(caseInput); }
+    catch {
+      halted = "FIXTURE_PREPARATION_FAILED";
+      return failed(halted, "not_started", "not_created");
+    }
+    const initial = await observeRoot(deps, root);
+    if (initial.status !== "observed") {
+      halted = initial.status === "unconfirmed" ? "ROOT_OBSERVATION_UNCONFIRMED" : "ROOT_OBSERVATION_FAILURE";
+      return failed(halted, "not_started", "cleanup_not_performed");
+    }
+    const identity = initial.identity;
     let capture: Capture = { failure: "FIXTURE_PREPARATION_FAILED", termination: "not_started", bytes: null };
     let bootstrap: string | undefined;
     try {
@@ -222,56 +263,26 @@ export function createCompilerBuildHarnessForTest(deps: CompilerBuildHarnessDepe
         failure: "EXIT_FAILURE", termination: "unconfirmed", bytes: null,
       }));
     }
-    if (capture.termination === "unconfirmed") {
+    if (capture.failure !== null || capture.termination !== "confirmed") {
       halted = capture.failure ?? "EXIT_FAILURE";
-      return failed(halted, "unconfirmed", "retained");
+      return failed(halted, capture.termination, "cleanup_not_performed");
     }
-    let report: CompilerBuildReport | null = null;
-    if (capture.failure === null) {
-      try { report = parseCompilerBuildReport(capture.bytes ?? Buffer.alloc(0), caseInput); }
-      catch { capture.failure = "INVALID_REPORT"; }
+    let report: CompilerBuildReport;
+    try { report = parseCompilerBuildReport(capture.bytes ?? Buffer.alloc(0), caseInput); }
+    catch {
+      halted = "INVALID_REPORT";
+      return failed(halted, "confirmed", "cleanup_not_performed");
     }
-    if (report?.status === "rejected" && (report.artifactRestoration === "unconfirmed" || report.inputRestoration === "unconfirmed")) {
+    if (report.status === "rejected" && (report.artifactRestoration === "unconfirmed" || report.inputRestoration === "unconfirmed")) {
       halted = "RESTORE_UNCONFIRMED";
-      return { status: "failed", reason: halted, report, termination: "confirmed", cleanup: "retained" };
+      return { status: "failed", reason: halted, report, termination: "confirmed", cleanup: "cleanup_not_performed" };
     }
-    // Identity verification is part of cleanup's bounded observation, not an unbounded prelude.
-    const cleanup = await new Promise<"removed" | "retained" | "unconfirmed">((resolve) => {
-      let settled = false;
-      let timer: unknown;
-      const deadline = deps.now() + GRACE_MS;
-      const settle = (outcome: "removed" | "retained" | "unconfirmed"): void => {
-        if (settled) return;
-        settled = true;
-        deps.clearTimer(timer);
-        resolve(deps.now() >= deadline ? "unconfirmed" : outcome);
-      };
-      const armTimer = (): void => {
-        if (settled) return;
-        const remaining = deadline - deps.now();
-        if (remaining <= 0) settle("unconfirmed");
-        else timer = deps.setTimer(armTimer, Math.ceil(remaining));
-      };
-      armTimer();
-      void (async () => {
-        try {
-          const current = await deps.inspectRoot(root);
-          if (settled) return; // Do not initiate removal after the observation deadline.
-          if (deps.now() >= deadline) { settle("unconfirmed"); return; }
-          if (!sameRoot(identity, current)) throw new Error("ROOT_CHANGED");
-          await deps.removeRoot(root); // One request; no retries after an uncertain outcome.
-          settle("removed");
-        } catch { settle("retained"); }
-      })();
-    });
-    if (cleanup !== "removed") {
-      const reason = cleanup === "unconfirmed" ? "CLEANUP_UNCONFIRMED" : "CLEANUP_FAILURE";
-      halted = reason;
-      return failed(capture.failure ?? reason, capture.termination, cleanup);
+    const observation = (await observeRoot(deps, root, identity)).status;
+    if (observation !== "observed") {
+      halted = observation === "unconfirmed" ? "ROOT_OBSERVATION_UNCONFIRMED" : "ROOT_OBSERVATION_FAILURE";
+      return failed(halted, "confirmed", "cleanup_not_performed");
     }
-    if (capture.failure !== null) return failed(capture.failure, capture.termination, "removed");
-    if (report === null || capture.termination !== "confirmed") return failed("INVALID_REPORT", capture.termination, "removed");
-    return { status: "collected", report, termination: "confirmed", cleanup: "removed" };
+    return { status: "collected", report, termination: "confirmed", cleanup: "cleanup_not_performed" };
   }
   return (caseId) => {
     const result = queue.then(() => run(caseId));
@@ -279,15 +290,23 @@ export function createCompilerBuildHarnessForTest(deps: CompilerBuildHarnessDepe
     return result;
   };
 }
+const preservedRoots: { caseId: CompilerBuildCaseId; root: string }[] = [];
+/** Local test evidence only, never serialized into the child protocol. */
+export function compilerBuildPreservedRootsForTest(): readonly Readonly<{ caseId: CompilerBuildCaseId; root: string }>[] {
+  return preservedRoots.map(record => ({ ...record }));
+}
 const realHarness = createCompilerBuildHarnessForTest({
   runtime: { version: process.version, platform: process.platform, arch: process.arch },
-  createRoot: () => mkdtemp(join(tmpdir(), "runtime-compiler-build-")),
+  createRoot: async (caseId) => {
+    const root = await mkdtemp(join(tmpdir(), "runtime-compiler-build-"));
+    preservedRoots.push({ caseId, root });
+    return root;
+  },
   inspectRoot: async (root) => {
     const stat = await lstat(root);
     return { dev: stat.dev, ino: stat.ino, directory: stat.isDirectory(), symlink: stat.isSymbolicLink() };
   },
   prepareFixture: prepareCompilerBuildFixture,
-  removeRoot: (root) => rm(root, { recursive: true, force: false, maxRetries: 0 }),
   spawnChild: (bootstrap, caseId, root): ChildProcess => spawn(process.execPath, [bootstrap, caseId], {
     cwd: root, env: { ...CHILD_ENV }, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
   }),

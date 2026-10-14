@@ -39,14 +39,15 @@ export type CompilerBuildReport = Common & (
 );
 export type CompilerBuildFailureReason = "INVALID_CASE" | "FIXTURE_PREPARATION_FAILED" | "BOOTSTRAP_LIMIT"
   | "SPAWN_FAILURE" | "EXIT_FAILURE" | "SIGNAL_EXIT" | "DEADLINE_EXCEEDED" | "STDOUT_LIMIT" | "STDERR_LIMIT"
-  | "INVALID_REPORT" | "CLEANUP_FAILURE" | "CLEANUP_UNCONFIRMED" | "RESTORE_UNCONFIRMED";
+  | "INVALID_REPORT" | "ROOT_OBSERVATION_FAILURE" | "ROOT_OBSERVATION_UNCONFIRMED" | "ALLOCATION_LIMIT" | "RESTORE_UNCONFIRMED";
+// cleanup_not_performed means no deletion was requested, not that path identity or existence is guaranteed.
 export type CompilerBuildParentResult =
-  | { status: "collected"; report: CompilerBuildReport; termination: "confirmed"; cleanup: "removed" }
+  | { status: "collected"; report: CompilerBuildReport; termination: "confirmed"; cleanup: "cleanup_not_performed" }
   | { status: "unsupported"; reason: "RUNTIME_UNSUPPORTED"; report: null; termination: "not_started"; cleanup: "not_created" }
   | { status: "failed"; reason: CompilerBuildFailureReason;
       report: Extract<CompilerBuildReport,{status:"rejected"}> | null;
       termination: "not_started" | "confirmed" | "unconfirmed";
-      cleanup: "not_created" | "removed" | "retained" | "unconfirmed" };
+      cleanup: "not_created" | "cleanup_not_performed" };
 export function isCompilerBuildCaseId(value: unknown): value is CompilerBuildCaseId {
   return typeof value === "string" && (COMPILER_BUILD_CASES as readonly string[]).includes(value);
 }

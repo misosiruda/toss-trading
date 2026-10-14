@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { createCompilerBuildHarnessForTest, type CompilerBuildHarnessDependenciesForTest,
+import { mkdtemp, mkdir, writeFile, readFile, lstat, rename } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createCompilerBuildHarnessForTest, COMPILER_BUILD_ALLOCATION_LIMIT, type CompilerBuildHarnessDependenciesForTest,
   type CompilerBuildOwnedChildForTest } from "./runtimeCompilerBuildHarnessTestFixtures.js";
 import { CompilerBuildPreparationError } from "./runtimeCompilerBuildPreparationTestFixtures.js";
 import { expectedCompilerBuildObservationForTest, compilerBuildCommonForTest,
@@ -59,7 +62,6 @@ function fixture(overrides: Partial<CompilerBuildHarnessDependenciesForTest> = {
     createRoot: async () => { calls.roots++; return "/owned-fixture"; },
     inspectRoot: async () => { calls.inspections++; return { dev: 1, ino: 2, directory: true, symlink: false }; },
     prepareFixture: async () => { calls.preparations++; return "/owned-fixture/bootstrap.mjs"; },
-    removeRoot: async () => { calls.removals++; },
     spawnChild: () => { calls.spawns++; return child; },
     now: () => clock.current, setTimer: clock.set, clearTimer: clock.clear,
     ...overrides,
@@ -74,7 +76,7 @@ function fixture(overrides: Partial<CompilerBuildHarnessDependenciesForTest> = {
   return { clock, child, calls, deps, run, start };
 }
 function assertFailed(result: CompilerBuildParentResult, reason: string,
-  termination = "confirmed", cleanup = "removed"): void {
+  termination = "confirmed", cleanup = "cleanup_not_performed"): void {
   assert.deepEqual(result, { status: "failed", reason, report: null, termination, cleanup });
 }
 
@@ -92,22 +94,22 @@ test("compiler build invalid input and unsupported runtime never create or spawn
   }
 });
 
-test("compiler build success waits for close and confirmed cleanup, including post-exit bytes", async () => {
-  const removals: (() => void)[] = [];
-  const f = fixture({ removeRoot: () => new Promise<void>((resolve) => { removals.push(resolve); }) });
+test("compiler build success waits for close and read-only root observation, including post-exit bytes", async () => {
+  const identity = { dev: 1, ino: 2, directory: true, symlink: false };
+  let inspections = 0; let complete: ((value: typeof identity) => void) | undefined;
+  const f = fixture({ inspectRoot: () => ++inspections === 1 ? Promise.resolve(identity)
+    : new Promise(resolve => { complete = resolve; }) });
   const { result } = await f.start();
   let settled = false; void result.then(() => { settled = true; });
   const bytes = encode(report());
-  f.child.stdout.emit("data", bytes.subarray(0, 25));
-  f.child.emit("exit", 0, null);
-  await flush(); assert.equal(settled, false); assert.equal(removals.length, 0);
-  f.child.stdout.emit("data", bytes.subarray(25));
-  f.child.emit("close", 0, null);
-  await flush(); assert.equal(settled, false); assert.equal(removals.length, 1);
-  assert.equal(typeof removals[0], "function");
-  removals[0]!();
-  assert.deepEqual(await result, { status: "collected", report: report(), termination: "confirmed", cleanup: "removed" });
+  f.child.stdout.emit("data", bytes.subarray(0, 25)); f.child.emit("exit", 0, null);
+  await flush(); assert.equal(settled, false); assert.equal(inspections, 1);
+  f.child.stdout.emit("data", bytes.subarray(25)); f.child.emit("close", 0, null);
+  await flush(); assert.equal(settled, false); assert.equal(inspections, 2);
+  complete?.(identity);
+  assert.deepEqual(await result, { status: "collected", report: report(), termination: "confirmed", cleanup: "cleanup_not_performed" });
   assert.deepEqual(f.child.signals, []); assert.equal(f.clock.timers.size, 0);
+  assert.equal("removeRoot" in f.deps, false);
 });
 
 test("compiler build invalid framing after exit fails without sending signals after close", async () => {
@@ -174,7 +176,7 @@ test("compiler build deadline is checked on close even if the timer callback has
 test("compiler build exit before timeout disables both signal guards but does not prove close", async () => {
   const f = fixture(); const { result } = await f.start(); f.child.output(); f.child.emit("exit", 0, null);
   f.clock.advance(12_000);
-  assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "retained");
+  assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "cleanup_not_performed");
   assert.deepEqual(f.child.signals, []); assert.equal(f.calls.removals, 0);
   assertFailed(await f.run("baseline"), "DEADLINE_EXCEEDED", "not_started", "not_created");
   assert.equal(f.calls.spawns, 1);
@@ -190,7 +192,7 @@ test("compiler build exit during TERM grace prevents later KILL but still collec
 test("compiler build successful signal delivery without close retains root and blocks queued child", async () => {
   const f = fixture(); const { result } = await f.start();
   const queued = f.run("compiler_snapshot_aba"); f.clock.advance(12_000);
-  assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "retained");
+  assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "cleanup_not_performed");
   assertFailed(await queued, "DEADLINE_EXCEEDED", "not_started", "not_created");
   assert.equal(f.calls.spawns, 1); assert.equal(f.calls.removals, 0);
   f.child.close(); await flush(); assert.equal(f.calls.removals, 0);
@@ -199,10 +201,10 @@ test("compiler build successful signal delivery without close retains root and b
 test("compiler build invalid pid, unobserved spawn and already exited children are never signaled", async () => {
   for (const pid of [undefined, 0, -1, Number.NaN, 1.5]) {
     const f = fixture(); f.child.pid = pid; const { result } = await f.start(); f.clock.advance(12_000);
-    assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "retained"); assert.deepEqual(f.child.signals, []);
+    assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "cleanup_not_performed"); assert.deepEqual(f.child.signals, []);
   }
   const f = fixture(); const result = f.run("baseline"); await flush(); f.clock.advance(12_000);
-  assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "retained"); assert.deepEqual(f.child.signals, []);
+  assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "cleanup_not_performed"); assert.deepEqual(f.child.signals, []);
 });
 
 test("compiler build spawn throws or pre-spawn error is not a running child kill error", async () => {
@@ -223,7 +225,7 @@ test("compiler build post-spawn error and kill errors never imply termination", 
       return false;
     };
     f.child.emit("error", new Error("PRIVATE_ERROR")); f.clock.advance(2_000);
-    assertFailed(await result, "EXIT_FAILURE", "unconfirmed", "retained");
+    assertFailed(await result, "EXIT_FAILURE", "unconfirmed", "cleanup_not_performed");
     assert.deepEqual(f.child.signals, ["SIGTERM", "SIGKILL"]); assert.equal(f.calls.removals, 0);
   }
 });
@@ -235,11 +237,13 @@ test("compiler build a late spawn is signaled only after spawn confirmation", as
   f.child.close(null, "SIGTERM"); assertFailed(await result, "DEADLINE_EXCEEDED");
 });
 
-test("compiler build preparation errors are fixed and owned root is removed without spawning", async () => {
+test("compiler build preparation errors preserve the first failure and block later allocation without spawning", async () => {
   for (const reason of ["FIXTURE_PREPARATION_FAILED", "BOOTSTRAP_LIMIT"] as const) {
     const f = fixture({ prepareFixture: async () => { throw new CompilerBuildPreparationError(reason); } });
     assertFailed(await f.run("baseline"), reason, "not_started");
-    assert.equal(f.calls.spawns, 0); assert.equal(f.calls.removals, 1);
+    assert.equal(f.calls.spawns, 0); assert.equal(f.calls.removals, 0);
+    assertFailed(await f.run("baseline"), reason, "not_started", "not_created");
+    assert.equal(f.calls.roots, 1);
   }
   const f = fixture({ createRoot: async () => { throw new Error("PRIVATE_ERROR"); } });
   assertFailed(await f.run("baseline"), "FIXTURE_PREPARATION_FAILED", "not_started", "not_created");
@@ -253,45 +257,53 @@ test("compiler build root replacement or symlink is retained without deleting an
     const f = fixture({ inspectRoot: async () => ++calls === 1
       ? { dev: 1, ino: 2, directory: true, symlink: false } : replacement });
     const { result } = await f.start(); f.child.output(); f.child.close();
-    assertFailed(await result, "CLEANUP_FAILURE", "confirmed", "retained"); assert.equal(f.calls.removals, 0);
+    assertFailed(await result, "ROOT_OBSERVATION_FAILURE", "confirmed", "cleanup_not_performed"); assert.equal(f.calls.removals, 0);
     assert.deepEqual(f.child.signals, []);
   }
 });
 
-test("compiler build cleanup rejection preserves first transport failure and blocks additional child", async () => {
-  const f = fixture({ removeRoot: async () => { throw new Error("PRIVATE_ERROR"); } });
-  const { result } = await f.start(); f.child.close(7);
-  assertFailed(await result, "EXIT_FAILURE", "confirmed", "retained");
-  assertFailed(await f.run("baseline"), "CLEANUP_FAILURE", "not_started", "not_created");
-  assert.equal(f.calls.spawns, 1); assert.deepEqual(f.child.signals, []);
+test("compiler build every allocated lifecycle or protocol failure halts queued allocation with its first reason", async () => {
+  for (const reason of ["EXIT_FAILURE", "INVALID_REPORT", "STDOUT_LIMIT", "STDERR_LIMIT"] as const) {
+    const f = fixture(); const { result } = await f.start(); const queued = f.run("baseline");
+    if (reason === "EXIT_FAILURE") f.child.close(7);
+    else if (reason === "INVALID_REPORT") f.child.close();
+    else { f.child[reason === "STDOUT_LIMIT" ? "stdout" : "stderr"].emit("data", Buffer.alloc(reason === "STDOUT_LIMIT" ? 2049 : 4097)); f.child.close(); }
+    assertFailed(await result, reason);
+    assertFailed(await queued, reason, "not_started", "not_created");
+    assert.equal(f.calls.roots, 1); assert.equal(f.calls.spawns, 1); assert.equal(f.calls.inspections, 1);
+  }
 });
 
-test("compiler build cleanup syscall is attempted once and unknown completion blocks queued child", async () => {
-  let removes = 0; let complete: (() => void) | undefined;
-  const f = fixture({ removeRoot: () => { removes++; return new Promise<void>((resolve) => { complete = resolve; }); } });
-  const { result } = await f.start(); f.child.output(); f.child.close(); const queued = f.run("compiler_snapshot_aba");
-  await flush(); f.clock.advance(999); let settled = false; void result.then(() => { settled = true; });
-  await flush(); assert.equal(settled, false); f.clock.advance(1);
-  assertFailed(await result, "CLEANUP_UNCONFIRMED", "confirmed", "unconfirmed");
-  assertFailed(await queued, "CLEANUP_UNCONFIRMED", "not_started", "not_created");
-  assert.equal(removes, 1); assert.equal(f.calls.spawns, 1); assert.deepEqual(f.child.signals, []);
-  complete?.(); await flush(); assertFailed(await f.run("compiler_snapshot_aba"), "CLEANUP_UNCONFIRMED", "not_started", "not_created");
+test("compiler build 40 queued allocations consume slots before creation and reject every later call", async () => {
+  const f = fixture();
+  f.deps.spawnChild = (_bootstrap, caseId) => {
+    f.calls.spawns++;
+    const child = new FakeChild();
+    queueMicrotask(() => { child.emit("spawn"); child.output(report(caseId)); child.close(); });
+    return child;
+  };
+  const results = await Promise.all(Array.from({ length: COMPILER_BUILD_ALLOCATION_LIMIT + 2 }, () => f.run("baseline")));
+  assert.equal(results.slice(0, 40).filter(result => result.status === "collected").length, 40);
+  for (const result of results.slice(40)) assertFailed(result, "ALLOCATION_LIMIT", "not_started", "not_created");
+  assert.equal(f.calls.roots, 40); assert.equal(f.calls.spawns, 40);
+  assertFailed(await f.run("baseline"), "ALLOCATION_LIMIT", "not_started", "not_created");
+  assert.equal(f.calls.roots, 40);
 });
 
-test("compiler build stalled cleanup identity check times out and cannot initiate a late remove", async () => {
+test("compiler build stalled read-only root observation times out and blocks queued allocation", async () => {
   let inspections = 0; let complete: ((value: { dev: number; ino: number; directory: boolean; symlink: boolean }) => void) | undefined;
   const identity = { dev: 1, ino: 2, directory: true, symlink: false };
   const f = fixture({ inspectRoot: () => ++inspections === 1 ? Promise.resolve(identity)
     : new Promise((resolve) => { complete = resolve; }) });
   const { result } = await f.start(); f.child.output(); f.child.close(); await flush(); f.clock.advance(1_000);
-  assertFailed(await result, "CLEANUP_UNCONFIRMED", "confirmed", "unconfirmed");
+  assertFailed(await result, "ROOT_OBSERVATION_UNCONFIRMED", "confirmed", "cleanup_not_performed");
   complete?.(identity); await flush(); assert.equal(f.calls.removals, 0);
 });
 
 test("compiler build pre-spawn error with an allocated pid does not assert not-started or delete root", async () => {
   const f = fixture(); const result = f.run("baseline"); await flush();
   f.child.emit("error", new Error("PRIVATE_ERROR")); f.clock.advance(2_000);
-  assertFailed(await result, "EXIT_FAILURE", "unconfirmed", "retained");
+  assertFailed(await result, "EXIT_FAILURE", "unconfirmed", "cleanup_not_performed");
   assert.deepEqual(f.child.signals, []); assert.equal(f.calls.removals, 0);
 });
 
@@ -305,7 +317,7 @@ test("compiler build stream errors latch failure and later valid report cannot r
 
 test("compiler build no actual close status and inconsistent close status are not success", async () => {
   const f = fixture(); const { result } = await f.start(); f.child.output(); f.child.emit("close", null, null);
-  assertFailed(await result, "EXIT_FAILURE", "unconfirmed", "retained");
+  assertFailed(await result, "EXIT_FAILURE", "unconfirmed", "cleanup_not_performed");
   assert.deepEqual(f.child.signals, []); assert.equal(f.calls.removals, 0);
   const other = fixture(); const started = await other.start(); other.child.output();
   other.child.emit("exit", 0, null); other.child.emit("close", 1, null);
@@ -323,21 +335,42 @@ test("compiler build TERM-triggered close is consumed before scheduling any furt
 test("compiler build rechecks the owned pid immediately before escalation", async () => {
   const f = fixture(); const { result } = await f.start(); f.clock.advance(10_000);
   f.child.pid = undefined; f.clock.advance(2_000);
-  assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "retained");
+  assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "cleanup_not_performed");
   assert.deepEqual(f.child.signals, ["SIGTERM"]);
 });
 
 test("compiler build initial root identity failure retains it without preparing or deleting", async () => {
   const f = fixture({ inspectRoot: async () => { throw new Error("PRIVATE_ERROR"); } });
-  assertFailed(await f.run("baseline"), "FIXTURE_PREPARATION_FAILED", "not_started", "retained");
+  assertFailed(await f.run("baseline"), "ROOT_OBSERVATION_FAILURE", "not_started", "cleanup_not_performed");
   assert.equal(f.calls.preparations, 0); assert.equal(f.calls.spawns, 0); assert.equal(f.calls.removals, 0);
-  assertFailed(await f.run("baseline"), "CLEANUP_FAILURE", "not_started", "not_created");
+  assertFailed(await f.run("baseline"), "ROOT_OBSERVATION_FAILURE", "not_started", "not_created");
 });
 
-test("compiler build cleanup failure without transport failure has its own fixed reason", async () => {
-  const f = fixture({ removeRoot: async () => { throw new Error("PRIVATE_ERROR"); } });
+test("compiler build initial root observation deadline halts queued allocation before preparation", async () => {
+  const identity = { dev: 1, ino: 2, directory: true, symlink: false };
+  let complete: ((value: typeof identity) => void) | undefined;
+  const f = fixture({ inspectRoot: () => new Promise(resolve => { complete = resolve; }) });
+  const result = f.run("baseline"), queued = f.run("both_snapshot_aba");
+  await flush(); f.clock.advance(999);
+  let settled = false; void result.then(() => { settled = true; });
+  await flush(); assert.equal(settled, false); f.clock.advance(1);
+  assertFailed(await result, "ROOT_OBSERVATION_UNCONFIRMED", "not_started");
+  assertFailed(await queued, "ROOT_OBSERVATION_UNCONFIRMED", "not_started", "not_created");
+  complete?.(identity); await flush();
+  assert.equal(f.calls.roots, 1); assert.equal(f.calls.preparations, 0); assert.equal(f.calls.spawns, 0);
+  assert.equal(f.clock.timers.size, 0);
+});
+
+test("compiler build failed or missing root observation stops allocation without claiming actual preservation", async () => {
+  let inspections = 0;
+  const f = fixture({ inspectRoot: async () => {
+    if (++inspections === 1) return { dev: 1, ino: 2, directory: true, symlink: false };
+    throw new Error("ENOENT");
+  } });
   const { result } = await f.start(); f.child.output(); f.child.close();
-  assertFailed(await result, "CLEANUP_FAILURE", "confirmed", "retained"); assert.deepEqual(f.child.signals, []);
+  assertFailed(await result, "ROOT_OBSERVATION_FAILURE");
+  assertFailed(await f.run("baseline"), "ROOT_OBSERVATION_FAILURE", "not_started", "not_created");
+  assert.equal(f.calls.roots, 1); assert.deepEqual(f.child.signals, []);
 });
 
 test("compiler build an early deadline callback re-arms against the monotonic boundary", async () => {
@@ -350,12 +383,14 @@ test("compiler build an early deadline callback re-arms against the monotonic bo
   assertFailed(await result, "DEADLINE_EXCEEDED");
 });
 
-test("compiler build cleanup deadline is enforced before a delayed timer callback", async () => {
-  let complete: (() => void) | undefined;
-  const f = fixture({ removeRoot: () => new Promise<void>((resolve) => { complete = resolve; }) });
+test("compiler build root observation deadline is enforced before a delayed timer callback", async () => {
+  const identity = { dev: 1, ino: 2, directory: true, symlink: false };
+  let inspections = 0; let complete: ((value: typeof identity) => void) | undefined;
+  const f = fixture({ inspectRoot: () => ++inspections === 1 ? Promise.resolve(identity)
+    : new Promise(resolve => { complete = resolve; }) });
   const { result } = await f.start(); f.child.output(); f.child.close(); await flush();
-  f.clock.current = 1_000; complete?.();
-  assertFailed(await result, "CLEANUP_UNCONFIRMED", "confirmed", "unconfirmed");
+  f.clock.current = 1_000; complete?.(identity);
+  assertFailed(await result, "ROOT_OBSERVATION_UNCONFIRMED");
   assert.equal(f.clock.timers.size, 0);
 });
 
@@ -365,17 +400,45 @@ test("compiler build first rejection and independent restoration states retain r
     const rejected = { ...compilerBuildCommonForTest("baseline"), status: "rejected", evidence: "unavailable",
       reason: "COMPILER_DIAGNOSTIC", artifactRestoration, inputRestoration };
     f.child.output(rejected); f.child.close(); const queued = f.run("both_snapshot_aba");
-    assert.deepEqual(await result, { status: "failed", reason: "RESTORE_UNCONFIRMED", report: rejected, termination: "confirmed", cleanup: "retained" });
+    assert.deepEqual(await result, { status: "failed", reason: "RESTORE_UNCONFIRMED", report: rejected, termination: "confirmed", cleanup: "cleanup_not_performed" });
     assertFailed(await queued, "RESTORE_UNCONFIRMED", "not_started", "not_created");
     assert.equal(f.calls.removals, 0); assert.equal(f.calls.roots, 1); assert.equal(f.calls.spawns, 1);
     assert.deepEqual(f.child.signals, []);
   }
 });
-test("compiler build confirmed rejected observation is collected only after cleanup", async () => {
+test("compiler build confirmed rejected observation is collected with explicit cleanup_not_performed", async () => {
   const f = fixture(); const { result } = await f.start();
   const rejected = { ...compilerBuildCommonForTest("baseline"), status: "rejected", evidence: "unavailable",
     reason: "COMPILER_DIAGNOSTIC", artifactRestoration: "confirmed", inputRestoration: "confirmed" };
   f.child.output(rejected); f.child.close();
-  assert.deepEqual(await result, { status: "collected", report: rejected, termination: "confirmed", cleanup: "removed" });
-  assert.equal(f.calls.removals, 1);
+  assert.deepEqual(await result, { status: "collected", report: rejected, termination: "confirmed", cleanup: "cleanup_not_performed" });
+  assert.equal(f.calls.removals, 0);
+});
+
+test("compiler build actual directory replacement after final observation never deletes either directory", { skip: process.platform !== "linux" }, async t => {
+  const container = await mkdtemp(join(tmpdir(), "compiler-build-retention-test-"));
+  const owned = join(container, "owned"), foreign = join(container, "foreign"), moved = join(container, "observed-root");
+  await mkdir(owned); await mkdir(foreign);
+  await writeFile(join(owned, "marker"), "owned evidence");
+  await writeFile(join(foreign, "marker"), "foreign evidence");
+  let inspections = 0;
+  const f = fixture({ createRoot: async () => { f.calls.roots++; return owned; }, inspectRoot: async root => {
+    const stat = await lstat(root);
+    const observed = { dev: stat.dev, ino: stat.ino, directory: stat.isDirectory(), symlink: stat.isSymbolicLink() };
+    if (++inspections === 2) { await rename(owned, moved); await rename(foreign, owned); }
+    return observed;
+  } });
+  f.deps.spawnChild = () => {
+    f.calls.spawns++;
+    queueMicrotask(() => { f.child.emit("spawn"); f.child.output(); f.child.close(); });
+    return f.child;
+  };
+  const result = await f.run("baseline");
+  assert.equal(result.status, "collected");
+  assert.equal(result.cleanup, "cleanup_not_performed");
+  assert.equal(await readFile(join(owned, "marker"), "utf8"), "foreign evidence");
+  assert.equal(await readFile(join(moved, "marker"), "utf8"), "owned evidence");
+  assert.equal("removeRoot" in f.deps, false); assert.equal(f.calls.removals, 0);
+  t.diagnostic(JSON.stringify({ evidence: "C4_retained_counterexample", root: container,
+    files: [{ path: "owned/marker", text: "foreign evidence" }, { path: "observed-root/marker", text: "owned evidence" }] }));
 });

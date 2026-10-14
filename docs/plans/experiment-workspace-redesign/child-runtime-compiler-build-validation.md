@@ -38,6 +38,28 @@ pin 수정 후 06:30:25 UTC check:review는 build·quality·tooling23·affected8
 이에 문서 번역과 cleanup 보완을 진행하며, 해당 thread와 최종 후보의 review/full gate를 확인하기 전에는 병합하지 않는다.
 수동 Codex/Actions 중복 요청이나 보호조건 변경은 하지 않는다.
 
+## 보존 방식 변경과 새 후보
+
+root identity 확인 뒤 pathname 삭제를 수행하는 P2에 대해 사용자는 자동 삭제 없는 보존을 승인했다.
+독립 검토는 상위 지침 충돌 없음과 새 신뢰 전제 불필요를 확인했다. `cleanup_not_performed`는
+삭제 요청을 하지 않았다는 상태이며 실제 경로 보존의 보증이나 기존 cleanup 성공이 아니다.
+할당40회, 후속 할당 fail-closed 조건, 반복 실행의 용량 누적과 향후 정리 의무를 scope에 동결했다.
+기존 lifecycle/wire 상한은 유지하고 삭제 성공 assertion만 승인된 보존 계약의 반례로 바꾼다.
+이 변경 후보의 영향·전체 검증과 독립 구현 검토는 별도로 수행하며 이전 HEAD 통과로 대신하지 않는다.
+
+보존 후보 첫 review는 after hook의 diagnostic context 타입 오류로 build에서 실패했다.
+후속 review는 복원 상태 fixture에 잘못 들어간 parent cleanup literal로 실패했다. 또한 실제 filesystem
+반례의 fake spawn 이벤트가 listener 준비 전에 발생하여 unit process가 대기했다. 정확한 소유 PID와
+cwd/executable을 확인한 뒤 그 process만 SIGTERM으로 종료하고 실패 실행·소스·신호 기록을 보존했다.
+독립 검토로 두 오류와 실패 manifest의 조기 assertion, 최초 root 관측의 무제한 대기를 수정했다.
+manifest는 가능한 모든 root/파일과 읽기 미확인 상태를 먼저 기록한 뒤 개수·완전성을 검사한다.
+
+07:10:08–07:10:32 UTC 수정 후보 check:review는 build·quality·tooling23·affected83을 통과했다.
+fail/skip/cancel0, exit0이며 전후 source SHA256은
+`4bc7658f1b4aa1cd44a3cb9a20907daa69e92a19645abc5e27851a2b78f1828d`로 동일했다.
+실제 harness root40개와 별도 reader/preparation root2개를 남기고 파일 manifest를 기록했다.
+실제 디렉터리 교체 반례의 별도 root1개도 남겼다. 다음 최종 HEAD 검증을 이 결과로 대신하지 않는다.
+
 ## 보존과 환경
 
 각 실행은 source-before/source-after manifest, 원본 source archive, 명령·안전한 환경,
@@ -55,3 +77,10 @@ payload64개와 실제 checkout의 Git 파일1543개를 검증했다. HEAD/tree�
 Windows 원본 파일의 xattr helper는 os.setxattr 미지원으로 실패했고, Library 식별자는 별도 기록했다.
 Linux 소비자 다운로드의 공식 helper와 metadata 적용은 성공했다. 과거 Library 대용량 prepared-upload
 미완료 backup/ref/checkout과 기존 실패 증거는 계속 보존한다. URL 추정이나 다른 저장 API로 우회하지 않는다.
+
+cleanup 결정 전 checkpoint는 Library `libfile_23f91fabd2dc8191a48ba3c3cbffeab7` v0이다.
+28,964,656bytes, SHA256 `8f199ad7b043bb0de2ca5419d847c9797da49432d0ad83370555a1de970fe384`다.
+공식 prepare_materialize/helper로 새 소비자 경로에 다시 내려받아 payload56개와 Git 파일1543개,
+HEAD `56609afe95094c98c469958f0ecf07d121130904`, tree `afaa9026b39249d611c5429bc4d9b4ac39d45b50`를
+검증했고 checkout은 clean이었다. 원본 NTFS 파일 metadata도 WSL의 공식 helper로 적용했다.
+이전 전체 gate, 문서 review, 당시 복원 실패 root6개와 소유 Node/npm process0 기록을 함께 보존했다.

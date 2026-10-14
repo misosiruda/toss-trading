@@ -1,14 +1,52 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdtemp, writeFile, rm, symlink, link, rename, unlink, readFile, stat } from "node:fs/promises";
+import test, { after } from "node:test";
+import { mkdtemp, writeFile, symlink, link, rename, unlink, readFile, stat, lstat, readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { runCompilerBuild } from "./runtimeCompilerBuildHarnessTestFixtures.js";
+import { runCompilerBuild, compilerBuildPreservedRootsForTest } from "./runtimeCompilerBuildHarnessTestFixtures.js";
 import { readCompilerBuildFileForTest, prepareCompilerBuildFixture } from "./runtimeCompilerBuildPreparationTestFixtures.js";
 import { COMPILER_BUILD_POSITIVE_CASES, COMPILER_BUILD_NEGATIVE_CASES, COMPILER_BUILD_CONSTANTS, COMPILER_ARTIFACT_LIMIT,
   compilerBuildSourcesForTest, expectedCompilerBuildObservationForTest, type CompilerBuildReport } from "./runtimeCompilerBuildProtocolTestFixtures.js";
 const supported = process.version === "v24.19.0" && process.platform === "linux" && process.arch === "x64";
+
+const extraRoots: { kind: string; root: string }[] = [];
+after(async () => {
+  if (!supported) return;
+  const records = compilerBuildPreservedRootsForTest();
+  let complete = true;
+  for (const [index, record] of records.entries()) {
+    const files: { path: string; bytes?: number; sha256?: string; status: string }[] = [];
+    for (const path of ["compiler.cjs", "bootstrap.mjs", "inputs/entry.ts", "inputs/value.ts", "inputs/lib.d.ts"]) {
+      try {
+        const bytes = await readFile(join(record.root, path));
+        files.push({ path, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"), status: "recorded" });
+      } catch { complete = false; files.push({ path, status: "read_unconfirmed" }); }
+    }
+    if (files.reduce((sum, file) => sum + (file.bytes ?? 0), 0) > 10 * 1024 * 1024 + 65536 + 49152 + 1) complete = false;
+    console.log(JSON.stringify({ evidence: "C4_retained_root", ordinal: index + 1, ...record, files }));
+  }
+  for (const record of extraRoots) {
+    const files: { path: string; bytes?: number; sha256?: string; link?: string; status: string }[] = [];
+    const visit = async (relative: string): Promise<void> => {
+      try {
+        const path = join(record.root, relative), info = await lstat(path);
+        if (info.isSymbolicLink()) files.push({ path: relative, link: await readlink(path), status: "symlink_recorded" });
+        else if (info.isDirectory()) for (const name of (await readdir(path)).sort()) await visit(join(relative, name));
+        else {
+          const bytes = await readFile(path);
+          files.push({ path: relative, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"), status: "recorded" });
+        }
+      } catch { complete = false; files.push({ path: relative, status: "read_unconfirmed" }); }
+    };
+    await visit("");
+    console.log(JSON.stringify({ evidence: "C4_retained_extra_root", ...record, files }));
+  }
+  // Record partial failures first; no failed assertion may erase the roots already allocated.
+  assert.equal(records.length, 40);
+  assert.equal(complete, true);
+});
+
 
 test("compiler-build actual single-child pinned load, Program and emit observations", { skip: !supported }, async t => {
   const positive = new Map<string, Exclude<CompilerBuildReport,{status:"rejected"}>>();
@@ -17,7 +55,7 @@ test("compiler-build actual single-child pinned load, Program and emit observati
     assert.equal(result.status,"collected",JSON.stringify(result));
     if(result.status!=="collected")return;
     assert.deepEqual(result.report,expectedCompilerBuildObservationForTest(caseId));
-    assert.equal(result.termination,"confirmed"); assert.equal(result.cleanup,"removed");
+    assert.equal(result.termination,"confirmed"); assert.equal(result.cleanup,"cleanup_not_performed");
     assert.notEqual(result.report.status,"rejected");
     if(result.report.status!=="rejected")positive.set(caseId,result.report);
   });
@@ -54,9 +92,10 @@ test("compiler-build child does not inherit hostile preload/configuration enviro
   } finally { keys.forEach((k,i)=>{if(prior[i]===undefined)delete process.env[k];else process.env[k]=prior[i];}); }
 });
 test("compiler-build bounded reader rejects links, replacements, malformed UTF8 and overflow", {skip:process.platform!=="linux"}, async () => {
-  const root = await mkdtemp(join(tmpdir(),"compiler-reader-test-"));
+  const root = await mkdtemp(join(tmpdir(),"compiler-build-reader-test-"));
+  extraRoots.push({ kind: "reader", root });
   const file = join(root,"source");
-  try {
+  {
     await writeFile(file,"A".repeat(32)); assert.equal((await readCompilerBuildFileForTest(file,32)).length,32);
     await writeFile(file,"A".repeat(33)); await assert.rejects(readCompilerBuildFileForTest(file,32), /FILE_LIMIT/);
     await writeFile(file,Buffer.from([195,40])); await assert.rejects(readCompilerBuildFileForTest(file,32));
@@ -71,11 +110,13 @@ test("compiler-build bounded reader rejects links, replacements, malformed UTF8 
     await assert.rejects(readCompilerBuildFileForTest(file,COMPILER_ARTIFACT_LIMIT+1),/FILE_LIMIT/);
     await writeFile(file," ".repeat(COMPILER_ARTIFACT_LIMIT)); assert.equal((await readCompilerBuildFileForTest(file,COMPILER_ARTIFACT_LIMIT)).length,COMPILER_ARTIFACT_LIMIT);
     await writeFile(file," ".repeat(COMPILER_ARTIFACT_LIMIT+1)); await assert.rejects(readCompilerBuildFileForTest(file,COMPILER_ARTIFACT_LIMIT),/FILE_LIMIT/);
-  } finally { await rm(root,{recursive:true,force:false,maxRetries:0}); }
+  }
+  assert.ok((await lstat(root)).isDirectory());
 });
 test("compiler-build preparation copies exact pinned artifact and builtin-only bounded bootstrap exclusively", {skip:!supported}, async () => {
-  const root = await mkdtemp(join(tmpdir(),"compiler-preparation-test-"));
-  try {
+  const root = await mkdtemp(join(tmpdir(),"compiler-build-preparation-test-"));
+  extraRoots.push({ kind: "preparation", root });
+  {
     const child = await prepareCompilerBuildFixture("baseline",root);
     const artifact = await readFile(join(root,"compiler.cjs"));
     assert.equal(artifact.length,9112572);
@@ -88,7 +129,8 @@ test("compiler-build preparation copies exact pinned artifact and builtin-only b
       assert.equal(await readFile(join(root,"inputs",name),"utf8"),text);
     await assert.rejects(prepareCompilerBuildFixture("baseline",root),/FIXTURE_PREPARATION_FAILED/);
     assert.deepEqual(await readFile(join(root,"compiler.cjs")),artifact);
-  } finally { await rm(root,{recursive:true,force:false,maxRetries:0}); }
+  }
+  assert.ok((await lstat(root)).isDirectory());
 });
 test("compiler-build bootstrap source keeps compiler and protocol imports type-only", async () => {
   const source = await readFile("src/replay/runtimeCompilerBuildTestChild.ts", "utf8");
@@ -102,7 +144,7 @@ test("compiler-build actual restoration failure retains original rejection, root
   const result=await runCompilerBuild("restore_failure");
   assert.equal(result.status,"failed",JSON.stringify(result));
   if(result.status!=="failed")return;
-  assert.equal(result.reason,"RESTORE_UNCONFIRMED"); assert.equal(result.termination,"confirmed"); assert.equal(result.cleanup,"retained");
+  assert.equal(result.reason,"RESTORE_UNCONFIRMED"); assert.equal(result.termination,"confirmed"); assert.equal(result.cleanup,"cleanup_not_performed");
   assert.equal(result.report?.reason,"COMPILER_DIAGNOSTIC");
   assert.equal(result.report?.artifactRestoration,"unconfirmed"); assert.equal(result.report?.inputRestoration,"unconfirmed");
   assert.deepEqual(await runCompilerBuild("baseline"),{status:"failed",reason:"RESTORE_UNCONFIRMED",report:null,termination:"not_started",cleanup:"not_created"});

@@ -73,7 +73,7 @@ artifactRestoration, inputRestoration이 온다. 각 복원 상태는 `not_chang
 첫 reason을 latch하고 두 복원을 각각 시도한다. 어느 쪽이든 unconfirmed면 parent는
 `RESTORE_UNCONFIRMED`와 원래 rejected report를 반환하고 root를 보존한다. 삭제를 요청하지 않고
 같은 harness의 후속 root 할당도 막는다. transport 실패에는 신뢰할 report가 없다.
-종료나 cleanup이 미확인이어도 소유 상태를 남기고 후속 child를 막는다.
+종료나 root 관측이 미확인이어도 소유 상태를 남기고 후속 child를 막는다.
 
 | 항목 | 상한 |
 | --- | ---: |
@@ -82,7 +82,7 @@ artifactRestoration, inputRestoration이 온다. 각 복원 상태는 `not_chang
 | output 개수 / 파일당 / 합계 | 2 / 16,384 / 32,768bytes |
 | source callback / resolution 요청 / loader callback | 16 / 8 / 32 |
 | stdout / stderr | 2,048 / 4,096bytes |
-| 실행 / TERM / KILL / cleanup 관측 | 10 / 1 / 1 / 1초 |
+| 실행 / TERM / KILL / 읽기 전용 root 관측 | 10 / 1 / 1 / 1초 |
 | LF 포함 schema-valid report 최대 | 1,376bytes |
 | LF 포함 rejected report 최대 | 416bytes |
 
@@ -91,6 +91,37 @@ rejected 상한은 모든 유한 case/reason/복원 상태 조합을 열거해 �
 callback12는 실제 Program 경로에서 측정해야 하는 동결된 기대값이며 C2-C3 결과를 대신 사용하지 않는다.
 통과를 위해 cap/assertion/timeout/skip을 완화하지 않는다. wire에는 원문 source/output, 경로,
 env/argv, diagnostic, 임의 ID와 비공개 hash를 넣지 않는다.
+
+## 승인된 보존 계약 변경
+
+2026-10-14 사용자 승인으로 기존 pathname 재귀 삭제를 완전히 제거했다. 마지막 identity 검사와
+삭제 사이에 다른 디렉터리가 들어올 수 있어 기존 계약을 충족할 수 없었기 때문이다. 상위 AGENTS,
+maintenance 정책, test-verification, launcher 계약의 독립 대조 검토에서 충돌은 발견되지 않았다.
+새 권한, 삭제 API 우회, 동일 UID writer가 없다는 신뢰 전제를 추가하지 않는다.
+
+할당된 parent 결과는 성공·실패 모두 `cleanup: cleanup_not_performed`를 반환한다. 이는 삭제를
+요청하지 않았다는 뜻이며, 삭제 성공이나 경로의 현재 실재·identity 유지에 대한 보증이 아니다.
+할당 전에는 `not_created`를 쓴다. child wire v1과 byte 상한은 변경하지 않는다. 기존 삭제 성공
+assertion은 이 승인된 계약에 따라 삭제 요청 없음·실제 root 잔존·교체된 다른 디렉터리 잔존 검사로
+대체한다. 실행·종료·복원·wire assertion, timeout과 skip은 완화하지 않는다.
+
+최초 identity 관측에도 독립된 1초 상한을 적용한다. 확인된 close, 유효한 terminal report, 확인된 복원 또는 not_changed, 1초 이내 같은 root identity의
+읽기 전용 관측이 모두 충족되어야 collected다. 관측 후의 pathname 교체를 배제한다는 주장은 하지
+않으며 이후 삭제 요청은 없다. 정상적인 계획 보존만 다음 고정 사례 할당을 허용한다. 준비·spawn·
+stream·exit·deadline·protocol 실패, 복원 미확인, root 관측 실패·시간 초과는 첫 실패를 보존하고
+같은 harness를 영구 중단한다. 늦은 close나 관측 완료로 이 중단을 해제하지 않는다.
+
+할당 슬롯40개를 직렬 queue 내부에서 createRoot 호출 직전에 소비한다. 41번째와 그 뒤 대기 호출은
+`ALLOCATION_LIMIT`, root/spawn 추가0이다. createRoot 실패도 같은 harness를 중단한다. 실패한 할당
+호출이 일부 디렉터리를 남겼을 가능성을 not_created로 삭제 완료라고 해석하지 않는다.
+한 root의 논리 payload 상한은 10MiB + 64KiB + 49,152 + 고정 overflow1byte다. 따라서 harness당
+40개 합계는 424,017,960bytes이며 물리 디스크 할당량이나 외부 writer의 변경 상한은 아니다.
+실제 root↔case↔실행과 파일별 크기·SHA256 manifest는 child wire 밖 검증 증거에 남긴다.
+
+reader/preparation 및 디렉터리 교체 반례의 별도 root도 자동 삭제하지 않으며 별도로 집계한다.
+실행을 반복하면 보존 root와 용량이 누적된다. 후속 담당자는 기록된 root·manifest·소유권·실행 중
+process 유무를 다시 확인하고 별도로 승인된 안전한 정리 절차를 마련해야 한다. 이 실험은 향후 정리
+의무를 해소하지 않으며, 실패 harness를 새 instance로 갈아 끼워 후속 할당 차단을 우회하지 않는다.
 
 ## 남은 의무
 
