@@ -89,8 +89,8 @@ producer 전에 compiler_output_experiment.v1의 case/reason, canonical 순서, 
 unknown/missing/reordered/duplicate key, 잘못된 UTF8/LF, case 불일치와 completeness 승격을 거부한다.
 LF 포함 observed/counterexample 최대 1276bytes, rejected 최대 457bytes다.
 전자를 transport 2048bytes와 구분한다. 독립 설계 검토 완료 전 producer를 작성하지 않는다.
-현재 실제 callback 기대값(일반5/cache2/cap8)은 Node24.19에서 확인할 동결 가설이며
-불일치 시 실패로 보존하고 설계를 재검토한다. 맞추기 위한 assertion 완화는 하지 않는다.
+동결 callback 기대값(일반5/cache2/cap8)은 실제 Node24.19.0 Linux x64 영향 검증에서
+일치했다. 이후 불일치도 실패로 보존하고 설계를 재검토한다. assertion 완화는 하지 않는다.
 
 | 항목 | 상한 |
 | --- | ---: |
