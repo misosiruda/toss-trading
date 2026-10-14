@@ -163,8 +163,8 @@ schema-valid 최대 fixture로 별도 동결한다. 상한 미확정 상태에�
   compiler artifact의 actual load와 산출물 실행, 전체 build/Node/settings 결속은 이 부분 관측으로 대체하지 않는다.
   다음 부분 단위 [C2-C3](child-runtime-compiler-load-scope.md)는 고정 compiler artifact를 실제 load하여 변환한다.
   builtin/native 구현·전체 filesystem/configuration 소비·memory image와 산출물 실행은 여전히 후속 의무다.
-  Fourth partial experiment [C2-C4](child-runtime-compiler-build-scope.md) joins pinned compiler load, fixed Program inputs and emit in one owned child.
-  Full build, emitted code execution, Node/native/configuration and C2-D admission remain future obligations.
+  네 번째 부분 실험 [C2-C4](child-runtime-compiler-build-scope.md)는 고정 compiler load, Program 입력과 emit을 하나의 소유 child에서 연결한다.
+  전체 build, 생성물 실행, Node/native/configuration과 C2-D admission은 후속 의무로 남긴다.
 - **C2-D, actual child producer:** 필요한 lifecycle/IPC·admission 계약과 durable schema를 먼저
   확정한 뒤 default HTTP와 actual child에 연결한다. 기존 C1 호환·부재 경계와 terminal 실패를 검증한다.
 
