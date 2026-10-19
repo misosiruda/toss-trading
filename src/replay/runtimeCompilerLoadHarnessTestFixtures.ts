@@ -20,7 +20,68 @@ const GRACE_MS = 1_000;
 const CHILD_ENV = Object.freeze({ TZ: "UTC", LANG: "C", LC_ALL: "C", NODE_DISABLE_COMPILE_CACHE: "1" });
 type FailedResult = Extract<CompilerLoadParentResult, { status: "failed" }>;
 type RootIdentity = { dev: number; ino: number; directory: boolean; symlink: boolean };
-// The dependency seam is only for deterministic unit faults. The ordinary entry point has no options.
+
+// This bounded, test-only snapshot is not runtime admission evidence. The handle and the
+// original returned Promise identify one invocation, including queued calls of the same case.
+declare const compilerLoadObservationBrand: unique symbol;
+export interface CompilerLoadObservationForTest {
+  readonly [compilerLoadObservationBrand]: true;
+}
+type CleanupPhase = "pre_inspect" | "inspect_pending" | "inspect_observed"
+  | "remove_pending" | "remove_observed";
+type CleanupTrigger = "timer" | "inspect" | "remove" | "error";
+type CleanupErrorPhase = "inspect" | "identity" | "remove";
+export interface CompilerLoadCleanupSnapshotForTest {
+  readonly availability: "available";
+  readonly caseId: CompilerLoadCaseId;
+  readonly phase: CleanupPhase;
+  readonly inspectSubmitted: boolean;
+  readonly removeRequests: 0 | 1;
+  readonly settlementTrigger: CleanupTrigger;
+  readonly errorPhase: CleanupErrorPhase | null;
+  readonly deadline: number;
+  readonly postInspectAt: number | null;
+  readonly settleAt: number;
+  readonly outcome: "removed" | "retained" | "unconfirmed";
+  readonly parsedStatus: CompilerLoadReport["status"] | null;
+  readonly parsedRejection: Extract<CompilerLoadReport, { status: "rejected" }>["reason"] | null;
+}
+interface ObservationState {
+  claimed: boolean;
+  run: Promise<CompilerLoadParentResult> | null;
+  snapshot: Readonly<CompilerLoadCleanupSnapshotForTest> | null;
+}
+const observations = new WeakMap<object, ObservationState>();
+const observationUnavailable = Object.freeze({ availability: "unavailable" as const });
+export function createCompilerLoadObservationForTest(): CompilerLoadObservationForTest {
+  const handle = Object.freeze({}) as CompilerLoadObservationForTest;
+  observations.set(handle, { claimed: false, run: null, snapshot: null });
+  return handle;
+}
+function claimObservation(handle: unknown): ObservationState | undefined {
+  if (typeof handle !== "object" || handle === null) return undefined;
+  const state = observations.get(handle);
+  if (state === undefined || state.claimed) return undefined;
+  state.claimed = true;
+  return state;
+}
+export function readCompilerLoadObservationForTest(handle: unknown, run: Promise<CompilerLoadParentResult>):
+  Readonly<CompilerLoadCleanupSnapshotForTest> | typeof observationUnavailable {
+  if (typeof handle !== "object" || handle === null) return observationUnavailable;
+  const state = observations.get(handle);
+  return state !== undefined && state.run === run && state.snapshot !== null
+    ? state.snapshot : observationUnavailable;
+}
+function keepCleanupSnapshot(state: ObservationState | undefined, snapshot: CompilerLoadCleanupSnapshotForTest): void {
+  if (state === undefined || state.snapshot !== null) return;
+  // Diagnostic failure cannot relabel the harness result. No path, wire bytes, or Error text is retained.
+  try {
+    if (!Number.isFinite(snapshot.deadline) || !Number.isFinite(snapshot.settleAt)
+      || (snapshot.postInspectAt !== null && !Number.isFinite(snapshot.postInspectAt))) return;
+    state.snapshot = Object.freeze(snapshot);
+  } catch { /* The reader reports unavailable; the original verdict is preserved. */ }
+}
+// The dependency seam is only for deterministic unit faults. Observation handles cannot configure execution.
 export interface CompilerLoadOwnedChildForTest extends EventEmitter {
   readonly pid?: number | undefined;
   stdout: EventEmitter | null;
@@ -185,11 +246,11 @@ function captureChild(deps: CompilerLoadHarnessDependenciesForTest, bootstrap: s
 }
 
 export function createCompilerLoadHarnessForTest(deps: CompilerLoadHarnessDependenciesForTest):
-  (caseId: unknown) => Promise<CompilerLoadParentResult> {
+  (caseId: unknown, observation?: CompilerLoadObservationForTest) => Promise<CompilerLoadParentResult> {
   let halted: CompilerLoadFailureReason | null = null;
   // Serial ownership prevents concurrent callers from launching past an unresolved cleanup.
   let queue: Promise<void> = Promise.resolve();
-  async function run(caseInput: unknown): Promise<CompilerLoadParentResult> {
+  async function run(caseInput: unknown, observation: ObservationState | undefined): Promise<CompilerLoadParentResult> {
     if (!isCompilerLoadCaseId(caseInput)) return failed("INVALID_CASE", "not_started", "not_created");
     if (halted !== null) return failed(halted, "not_started", "not_created");
     if (deps.runtime.version !== "v24.19.0" || deps.runtime.platform !== "linux" || deps.runtime.arch !== "x64") {
@@ -235,29 +296,52 @@ export function createCompilerLoadHarnessForTest(deps: CompilerLoadHarnessDepend
     const cleanup = await new Promise<"removed" | "retained" | "unconfirmed">((resolve) => {
       let settled = false;
       let timer: unknown;
+      let phase: CleanupPhase = "pre_inspect";
+      let inspectSubmitted = false;
+      let removeRequests: 0 | 1 = 0;
+      let errorPhase: CleanupErrorPhase = "inspect";
+      let postInspectAt: number | null = null;
       const deadline = deps.now() + GRACE_MS;
-      const settle = (outcome: "removed" | "retained" | "unconfirmed"): void => {
+      const settle = (outcome: "removed" | "retained" | "unconfirmed", trigger: CleanupTrigger): void => {
         if (settled) return;
         settled = true;
         deps.clearTimer(timer);
-        resolve(deps.now() >= deadline ? "unconfirmed" : outcome);
+        const settleAt = deps.now();
+        const decided = settleAt >= deadline ? "unconfirmed" : outcome;
+        if (observation !== undefined) keepCleanupSnapshot(observation, {
+          availability: "available", caseId: caseInput, phase, inspectSubmitted, removeRequests,
+          settlementTrigger: trigger, errorPhase: trigger === "error" ? errorPhase : null,
+          deadline, postInspectAt, settleAt, outcome: decided,
+          parsedStatus: report?.status ?? null,
+          parsedRejection: report?.status === "rejected" ? report.reason : null,
+        });
+        resolve(decided);
       };
       const armTimer = (): void => {
         if (settled) return;
         const remaining = deadline - deps.now();
-        if (remaining <= 0) settle("unconfirmed");
+        if (remaining <= 0) settle("unconfirmed", "timer");
         else timer = deps.setTimer(armTimer, Math.ceil(remaining));
       };
       armTimer();
       void (async () => {
         try {
+          phase = "inspect_pending";
+          inspectSubmitted = true;
           const current = await deps.inspectRoot(root);
           if (settled) return; // Do not initiate removal after the observation deadline.
-          if (deps.now() >= deadline) { settle("unconfirmed"); return; }
+          phase = "inspect_observed";
+          postInspectAt = deps.now();
+          if (postInspectAt >= deadline) { settle("unconfirmed", "inspect"); return; }
+          errorPhase = "identity";
           if (!sameRoot(identity, current)) throw new Error("ROOT_CHANGED");
+          phase = "remove_pending";
+          errorPhase = "remove";
+          removeRequests = 1;
           await deps.removeRoot(root); // One request; no retries after an uncertain outcome.
-          settle("removed");
-        } catch { settle("retained"); }
+          phase = "remove_observed";
+          settle("removed", "remove");
+        } catch { settle("retained", "error"); }
       })();
     });
     if (cleanup !== "removed") {
@@ -269,8 +353,10 @@ export function createCompilerLoadHarnessForTest(deps: CompilerLoadHarnessDepend
     if (report === null || capture.termination !== "confirmed") return failed("INVALID_REPORT", capture.termination, "removed");
     return { status: "collected", report, termination: "confirmed", cleanup: "removed" };
   }
-  return (caseId) => {
-    const result = queue.then(() => run(caseId));
+  return (caseId, handle) => {
+    const observation = claimObservation(handle);
+    const result = queue.then(() => run(caseId, observation));
+    if (observation !== undefined) observation.run = result;
     queue = result.then(() => undefined, () => undefined);
     return result;
   };
@@ -291,6 +377,6 @@ const realHarness = createCompilerLoadHarnessForTest({
   setTimer: (callback, milliseconds) => setTimeout(callback, milliseconds),
   clearTimer: (timer) => { if (timer !== undefined) clearTimeout(timer as NodeJS.Timeout); },
 });
-export function runCompilerLoad(caseId: unknown): Promise<CompilerLoadParentResult> {
-  return realHarness(caseId);
+export function runCompilerLoad(caseId: unknown, observation?: CompilerLoadObservationForTest): Promise<CompilerLoadParentResult> {
+  return realHarness(caseId, observation);
 }

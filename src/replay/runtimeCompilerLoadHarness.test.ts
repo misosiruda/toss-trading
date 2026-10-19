@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import { createCompilerLoadHarnessForTest, type CompilerLoadHarnessDependenciesForTest,
-  type CompilerLoadOwnedChildForTest } from "./runtimeCompilerLoadHarnessTestFixtures.js";
+  type CompilerLoadOwnedChildForTest, createCompilerLoadObservationForTest,
+  readCompilerLoadObservationForTest, type CompilerLoadCleanupSnapshotForTest,
+} from "./runtimeCompilerLoadHarnessTestFixtures.js";
 import { CompilerLoadPreparationError } from "./runtimeCompilerLoadPreparationTestFixtures.js";
 import { COMPILER_ARTIFACT_A, COMPILER_ARTIFACT_A_BYTES, COMPILER_LOAD_INPUT, COMPILER_LOAD_OUTPUT,
   COMPILER_LOAD_BUILTINS, type CompilerLoadCaseId, type CompilerLoadReport,
@@ -74,30 +76,58 @@ function fixture(overrides: Partial<CompilerLoadHarnessDependenciesForTest> = {}
     ...overrides,
   };
   const run = createCompilerLoadHarnessForTest(deps);
+  const observation = createCompilerLoadObservationForTest();
   const start = async () => {
-    const result = run("snapshot_baseline");
+    const result = run("snapshot_baseline", observation);
     await flush();
     child.emit("spawn");
     return { result };
   };
-  return { clock, child, calls, deps, run, start };
+  return { clock, child, calls, deps, run, start, observation };
 }
 function assertFailed(result: CompilerLoadParentResult, reason: string,
   termination = "confirmed", cleanup = "removed"): void {
   assert.deepEqual(result, { status: "failed", reason, report: null, termination, cleanup });
 }
+function assertObservationUnavailable(handle: unknown, run: Promise<CompilerLoadParentResult>): void {
+  const snapshot = readCompilerLoadObservationForTest(handle, run);
+  assert.deepEqual(snapshot, { availability: "unavailable" });
+  assert.equal(Object.isFrozen(snapshot), true);
+}
+function assertObservation(handle: unknown, run: Promise<CompilerLoadParentResult>,
+  expected: CompilerLoadCleanupSnapshotForTest): Readonly<CompilerLoadCleanupSnapshotForTest> {
+  const snapshot = readCompilerLoadObservationForTest(handle, run);
+  assert.equal(snapshot.availability, "available");
+  if (snapshot.availability !== "available") throw new Error("Expected available cleanup observation");
+  assert.deepEqual(snapshot, expected);
+  assert.equal(Object.isFrozen(snapshot), true);
+  assert.strictEqual(readCompilerLoadObservationForTest(handle, run), snapshot);
+  return snapshot;
+}
+const removedObservation: CompilerLoadCleanupSnapshotForTest = {
+  availability: "available", caseId: "snapshot_baseline", phase: "remove_observed",
+  inspectSubmitted: true, removeRequests: 1, settlementTrigger: "remove", errorPhase: null,
+  deadline: 1_000, postInspectAt: 0, settleAt: 0, outcome: "removed",
+  parsedStatus: "observed", parsedRejection: null,
+};
 
 test("compiler load invalid input and unsupported runtime never create or spawn", async () => {
   const f = fixture();
-  for (const value of [undefined, null, {}, [], "unknown", "../snapshot_baseline", 0])
-    assertFailed(await f.run(value), "INVALID_CASE", "not_started", "not_created");
+  for (const value of [undefined, null, {}, [], "unknown", "../snapshot_baseline", 0]) {
+    const handle = createCompilerLoadObservationForTest();
+    const pending = f.run(value, handle);
+    assertFailed(await pending, "INVALID_CASE", "not_started", "not_created");
+    assertObservationUnavailable(handle, pending);
+  }
   assert.equal(f.calls.roots, 0);
   for (const runtime of [{ version: "v24.18.0", platform: "linux", arch: "x64" },
     { version: "v24.19.0", platform: "win32", arch: "x64" }, { version: "v24.19.0", platform: "linux", arch: "arm64" }]) {
     const other = fixture({ runtime });
-    assert.deepEqual(await other.run("snapshot_baseline"), { status: "unsupported", reason: "RUNTIME_UNSUPPORTED",
+    const pending = other.run("snapshot_baseline", other.observation);
+    assert.deepEqual(await pending, { status: "unsupported", reason: "RUNTIME_UNSUPPORTED",
       report: null, termination: "not_started", cleanup: "not_created" });
     assert.equal(other.calls.roots, 0);
+    assertObservationUnavailable(other.observation, pending);
   }
 });
 
@@ -105,6 +135,7 @@ test("compiler load success waits for close and confirmed cleanup, including pos
   const removals: (() => void)[] = [];
   const f = fixture({ removeRoot: () => new Promise<void>((resolve) => { removals.push(resolve); }) });
   const { result } = await f.start();
+  assertObservationUnavailable(f.observation, result);
   let settled = false; void result.then(() => { settled = true; });
   const bytes = encode(report());
   f.child.stdout.emit("data", bytes.subarray(0, 25));
@@ -117,6 +148,10 @@ test("compiler load success waits for close and confirmed cleanup, including pos
   removals[0]!();
   assert.deepEqual(await result, { status: "collected", report: report(), termination: "confirmed", cleanup: "removed" });
   assert.deepEqual(f.child.signals, []); assert.equal(f.clock.timers.size, 0);
+  assertObservation(f.observation, result, removedObservation);
+  assertObservationUnavailable(f.observation, result.then(value => value));
+  for (const handle of [undefined, null, 1, "handle", {}, createCompilerLoadObservationForTest()])
+    assertObservationUnavailable(handle, result);
 });
 
 test("compiler load invalid framing after exit fails without sending signals after close", async () => {
@@ -124,6 +159,7 @@ test("compiler load invalid framing after exit fails without sending signals aft
   f.child.output(); f.child.emit("exit", 0, null); f.child.stdout.emit("data", Buffer.from("extra"));
   f.child.emit("close", 0, null);
   assertFailed(await result, "INVALID_REPORT"); assert.deepEqual(f.child.signals, []);
+  assertObservation(f.observation, result, { ...removedObservation, parsedStatus: null });
 });
 
 test("compiler load raw stdout 2048 and 2049 boundaries never become padded report success", async () => {
@@ -185,7 +221,11 @@ test("compiler load exit before timeout disables both signal guards but does not
   f.clock.advance(12_000);
   assertFailed(await result, "DEADLINE_EXCEEDED", "unconfirmed", "retained");
   assert.deepEqual(f.child.signals, []); assert.equal(f.calls.removals, 0);
-  assertFailed(await f.run("snapshot_baseline"), "DEADLINE_EXCEEDED", "not_started", "not_created");
+  assertObservationUnavailable(f.observation, result);
+  const latchedHandle = createCompilerLoadObservationForTest();
+  const latched = f.run("snapshot_baseline", latchedHandle);
+  assertFailed(await latched, "DEADLINE_EXCEEDED", "not_started", "not_created");
+  assertObservationUnavailable(latchedHandle, latched);
   assert.equal(f.calls.spawns, 1);
 });
 
@@ -247,11 +287,15 @@ test("compiler load a late spawn is signaled only after spawn confirmation", asy
 test("compiler load preparation errors are fixed and owned root is removed without spawning", async () => {
   for (const reason of ["FIXTURE_PREPARATION_FAILED", "BOOTSTRAP_LIMIT"] as const) {
     const f = fixture({ prepareFixture: async () => { throw new CompilerLoadPreparationError(reason); } });
-    assertFailed(await f.run("snapshot_baseline"), reason, "not_started");
+    const pending = f.run("snapshot_baseline", f.observation);
+    assertFailed(await pending, reason, "not_started");
     assert.equal(f.calls.spawns, 0); assert.equal(f.calls.removals, 1);
+    assertObservation(f.observation, pending, { ...removedObservation, parsedStatus: null });
   }
   const f = fixture({ createRoot: async () => { throw new Error("PRIVATE_ERROR"); } });
-  assertFailed(await f.run("snapshot_baseline"), "FIXTURE_PREPARATION_FAILED", "not_started", "not_created");
+  const pending = f.run("snapshot_baseline", f.observation);
+  assertFailed(await pending, "FIXTURE_PREPARATION_FAILED", "not_started", "not_created");
+  assertObservationUnavailable(f.observation, pending);
 });
 
 test("compiler load root replacement or symlink is retained without deleting another directory", async () => {
@@ -264,6 +308,8 @@ test("compiler load root replacement or symlink is retained without deleting ano
     const { result } = await f.start(); f.child.output(); f.child.close();
     assertFailed(await result, "CLEANUP_FAILURE", "confirmed", "retained"); assert.equal(f.calls.removals, 0);
     assert.deepEqual(f.child.signals, []);
+    assertObservation(f.observation, result, { ...removedObservation, phase: "inspect_observed",
+      removeRequests: 0, settlementTrigger: "error", errorPhase: "identity", outcome: "retained" });
   }
 });
 
@@ -271,20 +317,32 @@ test("compiler load cleanup rejection preserves first transport failure and bloc
   const f = fixture({ removeRoot: async () => { throw new Error("PRIVATE_ERROR"); } });
   const { result } = await f.start(); f.child.close(7);
   assertFailed(await result, "EXIT_FAILURE", "confirmed", "retained");
-  assertFailed(await f.run("snapshot_baseline"), "CLEANUP_FAILURE", "not_started", "not_created");
+  assertObservation(f.observation, result, { ...removedObservation, phase: "remove_pending",
+    settlementTrigger: "error", errorPhase: "remove", outcome: "retained", parsedStatus: null });
+  const latchedHandle = createCompilerLoadObservationForTest();
+  const latched = f.run("snapshot_baseline", latchedHandle);
+  assertFailed(await latched, "CLEANUP_FAILURE", "not_started", "not_created");
+  assertObservationUnavailable(latchedHandle, latched);
   assert.equal(f.calls.spawns, 1); assert.deepEqual(f.child.signals, []);
 });
 
 test("compiler load cleanup syscall is attempted once and unknown completion blocks queued child", async () => {
   let removes = 0; let complete: (() => void) | undefined;
   const f = fixture({ removeRoot: () => { removes++; return new Promise<void>((resolve) => { complete = resolve; }); } });
-  const { result } = await f.start(); f.child.output(); f.child.close(); const queued = f.run("snapshot_after_disk_aba");
+  const queuedHandle = createCompilerLoadObservationForTest();
+  const { result } = await f.start(); f.child.output(); f.child.close(); const queued = f.run("snapshot_after_disk_aba", queuedHandle);
   await flush(); f.clock.advance(999); let settled = false; void result.then(() => { settled = true; });
   await flush(); assert.equal(settled, false); f.clock.advance(1);
   assertFailed(await result, "CLEANUP_UNCONFIRMED", "confirmed", "unconfirmed");
   assertFailed(await queued, "CLEANUP_UNCONFIRMED", "not_started", "not_created");
   assert.equal(removes, 1); assert.equal(f.calls.spawns, 1); assert.deepEqual(f.child.signals, []);
+  const expected = { ...removedObservation, phase: "remove_pending", settlementTrigger: "timer",
+    settleAt: 1_000, outcome: "unconfirmed" } as const;
+  const snapshot = assertObservation(f.observation, result, expected);
+  assertObservationUnavailable(queuedHandle, queued);
   complete?.(); await flush(); assertFailed(await f.run("snapshot_after_disk_aba"), "CLEANUP_UNCONFIRMED", "not_started", "not_created");
+  assert.strictEqual(assertObservation(f.observation, result, expected), snapshot);
+  assert.equal(removes, 1); assert.equal(f.calls.spawns, 1); assert.equal(f.clock.timers.size, 0);
 });
 
 test("compiler load stalled cleanup identity check times out and cannot initiate a late remove", async () => {
@@ -294,7 +352,12 @@ test("compiler load stalled cleanup identity check times out and cannot initiate
     : new Promise((resolve) => { complete = resolve; }) });
   const { result } = await f.start(); f.child.output(); f.child.close(); await flush(); f.clock.advance(1_000);
   assertFailed(await result, "CLEANUP_UNCONFIRMED", "confirmed", "unconfirmed");
+  const expected = { ...removedObservation, phase: "inspect_pending", removeRequests: 0,
+    settlementTrigger: "timer", postInspectAt: null, settleAt: 1_000, outcome: "unconfirmed" } as const;
+  const snapshot = assertObservation(f.observation, result, expected);
   complete?.(identity); await flush(); assert.equal(f.calls.removals, 0);
+  assert.strictEqual(assertObservation(f.observation, result, expected), snapshot);
+  assert.equal(inspections, 2); assert.deepEqual(f.child.signals, []); assert.equal(f.clock.timers.size, 0);
 });
 
 test("compiler load pre-spawn error with an allocated pid does not assert not-started or delete root", async () => {
@@ -338,7 +401,9 @@ test("compiler load rechecks the owned pid immediately before escalation", async
 
 test("compiler load initial root identity failure retains it without preparing or deleting", async () => {
   const f = fixture({ inspectRoot: async () => { throw new Error("PRIVATE_ERROR"); } });
-  assertFailed(await f.run("snapshot_baseline"), "FIXTURE_PREPARATION_FAILED", "not_started", "retained");
+  const pending = f.run("snapshot_baseline", f.observation);
+  assertFailed(await pending, "FIXTURE_PREPARATION_FAILED", "not_started", "retained");
+  assertObservationUnavailable(f.observation, pending);
   assert.equal(f.calls.preparations, 0); assert.equal(f.calls.spawns, 0); assert.equal(f.calls.removals, 0);
   assertFailed(await f.run("snapshot_baseline"), "CLEANUP_FAILURE", "not_started", "not_created");
 });
@@ -347,6 +412,8 @@ test("compiler load cleanup failure without transport failure has its own fixed 
   const f = fixture({ removeRoot: async () => { throw new Error("PRIVATE_ERROR"); } });
   const { result } = await f.start(); f.child.output(); f.child.close();
   assertFailed(await result, "CLEANUP_FAILURE", "confirmed", "retained"); assert.deepEqual(f.child.signals, []);
+  assertObservation(f.observation, result, { ...removedObservation, phase: "remove_pending",
+    settlementTrigger: "error", errorPhase: "remove", outcome: "retained" });
 });
 
 test("compiler load an early deadline callback re-arms against the monotonic boundary", async () => {
@@ -360,10 +427,101 @@ test("compiler load an early deadline callback re-arms against the monotonic bou
 });
 
 test("compiler load cleanup deadline is enforced before a delayed timer callback", async () => {
-  let complete: (() => void) | undefined;
-  const f = fixture({ removeRoot: () => new Promise<void>((resolve) => { complete = resolve; }) });
+  let complete: (() => void) | undefined; let removes = 0;
+  const f = fixture({ removeRoot: () => { removes++; return new Promise<void>((resolve) => { complete = resolve; }); } });
   const { result } = await f.start(); f.child.output(); f.child.close(); await flush();
   f.clock.current = 1_000; complete?.();
   assertFailed(await result, "CLEANUP_UNCONFIRMED", "confirmed", "unconfirmed");
   assert.equal(f.clock.timers.size, 0);
+  assertObservation(f.observation, result, { ...removedObservation, settleAt: 1_000, outcome: "unconfirmed" });
+  assert.equal(removes, 1); assert.deepEqual(f.child.signals, []);
+});
+
+test("compiler load observation binds the original Promise when one handle is reused by a queued same-case call", async () => {
+  const f = fixture(); const { result } = await f.start();
+  const queued = f.run("snapshot_baseline", f.observation);
+  assert.notStrictEqual(result, queued);
+  assertObservationUnavailable(f.observation, result);
+  assertObservationUnavailable(f.observation, queued);
+  assert.equal(f.calls.spawns, 1); assert.equal(f.calls.removals, 0);
+  f.child.output(); f.child.close();
+  assert.deepEqual(await result, { status: "collected", report: report(), termination: "confirmed", cleanup: "removed" });
+  const snapshot = assertObservation(f.observation, result, removedObservation);
+  await flush(); assert.equal(f.calls.spawns, 2);
+  assertObservationUnavailable(f.observation, queued);
+  f.child.emit("spawn"); f.child.output(); f.child.close();
+  assert.deepEqual(await queued, { status: "collected", report: report(), termination: "confirmed", cleanup: "removed" });
+  assertObservationUnavailable(f.observation, queued);
+  assert.strictEqual(assertObservation(f.observation, result, removedObservation), snapshot);
+  assert.deepEqual(f.calls, { roots: 2, preparations: 2, spawns: 2, removals: 2, inspections: 4 });
+  assert.deepEqual(f.child.signals, []); assert.equal(f.clock.timers.size, 0);
+});
+
+test("compiler load pre-inspect settlement keeps the rejected reason despite later original inspect submission", async () => {
+  const identity = { dev: 1, ino: 2, directory: true, symlink: false };
+  let inspections = 0; let complete: ((value: typeof identity) => void) | undefined;
+  let cleanupClock = false; let cleanupClockReads = 0;
+  const f = fixture({
+    inspectRoot: () => ++inspections === 1 ? Promise.resolve(identity)
+      : new Promise((resolve) => { complete = resolve; }),
+    now: () => cleanupClock ? (cleanupClockReads++ === 0 ? 0 : 1_000) : 0,
+  });
+  const pending = f.run("artifact_mismatch", f.observation);
+  await flush(); f.child.emit("spawn");
+  const rejected: Extract<CompilerLoadReport, { status: "rejected" }> = {
+    schemaVersion: "compiler_load_experiment.v1", caseId: "artifact_mismatch",
+    runtime: "unavailable", dependencies: "unavailable", result: "unavailable", comparability: "unavailable",
+    completeRuntime: false, completeConfiguration: false, completeInput: false,
+    status: "rejected", evidence: "unavailable", reason: "ARTIFACT_MISMATCH",
+  };
+  f.child.output(rejected); f.child.close(); cleanupClock = true;
+  assertFailed(await pending, "CLEANUP_UNCONFIRMED", "confirmed", "unconfirmed");
+  const expected = { ...removedObservation, caseId: "artifact_mismatch", phase: "pre_inspect",
+    inspectSubmitted: false, removeRequests: 0, settlementTrigger: "timer", postInspectAt: null,
+    settleAt: 1_000, outcome: "unconfirmed", parsedStatus: "rejected", parsedRejection: "ARTIFACT_MISMATCH" } as const;
+  const snapshot = assertObservation(f.observation, pending, expected);
+  // The original IIFE still submits inspect after the synchronous first settlement.
+  assert.equal(inspections, 2); assert.equal(typeof complete, "function");
+  assert.equal(cleanupClockReads, 3); assert.equal(f.calls.removals, 0);
+  complete?.(identity); await flush();
+  assert.strictEqual(assertObservation(f.observation, pending, expected), snapshot);
+  assert.equal(cleanupClockReads, 3); assert.equal(f.calls.removals, 0); assert.equal(f.calls.spawns, 1);
+  assert.deepEqual(f.child.signals, []); assert.equal(f.clock.timers.size, 0);
+});
+
+test("compiler load observation distinguishes post-inspect deadline from late inspect and remove errors", async () => {
+  for (const boundary of ["post-inspect", "inspect-error", "remove-error"] as const) {
+    const identity = { dev: 1, ino: 2, directory: true, symlink: false };
+    let inspections = 0; let removes = 0;
+    let completeInspect: ((value: typeof identity) => void) | undefined;
+    let rejectInspect: ((reason: Error) => void) | undefined;
+    let rejectRemove: ((reason: Error) => void) | undefined;
+    const f = fixture({
+      inspectRoot: () => ++inspections === 1 ? Promise.resolve(identity)
+        : new Promise((resolve, reject) => { completeInspect = resolve; rejectInspect = reject; }),
+      removeRoot: () => { removes++; return new Promise<void>((_resolve, reject) => { rejectRemove = reject; }); },
+    });
+    const { result } = await f.start(); f.child.output(); f.child.close(); await flush();
+    assert.equal(inspections, 2); assert.equal(removes, 0);
+    if (boundary === "remove-error") {
+      completeInspect?.(identity); await flush(); assert.equal(removes, 1);
+    }
+    // Move only the fake monotonic clock: do not run its pending timer callback.
+    f.clock.current = 1_000;
+    if (boundary === "post-inspect") completeInspect?.(identity);
+    else if (boundary === "inspect-error") rejectInspect?.(new Error("PRIVATE_ERROR"));
+    else rejectRemove?.(new Error("PRIVATE_ERROR"));
+    assertFailed(await result, "CLEANUP_UNCONFIRMED", "confirmed", "unconfirmed");
+    assertObservation(f.observation, result, { ...removedObservation,
+      phase: boundary === "post-inspect" ? "inspect_observed"
+        : boundary === "inspect-error" ? "inspect_pending" : "remove_pending",
+      removeRequests: boundary === "remove-error" ? 1 : 0,
+      settlementTrigger: boundary === "post-inspect" ? "inspect" : "error",
+      errorPhase: boundary === "post-inspect" ? null : boundary === "inspect-error" ? "inspect" : "remove",
+      postInspectAt: boundary === "post-inspect" ? 1_000 : boundary === "inspect-error" ? null : 0,
+      settleAt: 1_000, outcome: "unconfirmed",
+    });
+    assert.equal(removes, boundary === "remove-error" ? 1 : 0);
+    assert.equal(f.calls.spawns, 1); assert.deepEqual(f.child.signals, []); assert.equal(f.clock.timers.size, 0);
+  }
 });

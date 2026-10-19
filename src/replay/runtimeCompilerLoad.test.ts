@@ -4,7 +4,8 @@ import { mkdtemp, writeFile, rm, symlink, link, rename, unlink, readFile, stat }
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { runCompilerLoad } from "./runtimeCompilerLoadHarnessTestFixtures.js";
+import { runCompilerLoad, createCompilerLoadObservationForTest, readCompilerLoadObservationForTest,
+} from "./runtimeCompilerLoadHarnessTestFixtures.js";
 import { readCompilerLoadFileForTest, prepareCompilerLoadFixture } from "./runtimeCompilerLoadPreparationTestFixtures.js";
 import { COMPILER_LOAD_CASES, COMPILER_ARTIFACT_A, COMPILER_ARTIFACT_B, COMPILER_ARTIFACT_A_BYTES,
   COMPILER_ARTIFACT_B_BYTES, COMPILER_ARTIFACT_LIMIT, COMPILER_LOAD_INPUT, COMPILER_LOAD_OUTPUT,
@@ -30,8 +31,19 @@ test("compiler-load actual artifact supply, ABA and latched failure cases", { sk
   const rejected: Record<string, string> = { cache_before_hook: "CACHE_PREPOPULATED", artifact_mismatch: "ARTIFACT_MISMATCH",
     unlisted_builtin: "LOAD_UNLISTED", unlisted_module: "LOAD_UNLISTED", callback_cap_over: "LOAD_LIMIT", artifact_cap_over: "ARTIFACT_LIMIT" };
   for (const caseId of COMPILER_LOAD_CASES) await t.test(caseId, async () => {
-    const result = await runCompilerLoad(caseId);
-    assert.equal(result.status, "collected", JSON.stringify(result));
+    const observation = createCompilerLoadObservationForTest();
+    const pending = runCompilerLoad(caseId, observation);
+    const result = await pending;
+    let assertionMessage = JSON.stringify(result);
+    if (result.status !== "collected") {
+      assertionMessage += "; cleanupObservation=unavailable";
+      try {
+        const text = JSON.stringify({ result,
+          cleanupObservation: readCompilerLoadObservationForTest(observation, pending) });
+        if (Buffer.byteLength(text, "utf8") <= 4_096) assertionMessage = text;
+      } catch { /* Diagnostic failure preserves the existing assertion. */ }
+    }
+    assert.equal(result.status, "collected", assertionMessage);
     if (result.status !== "collected") return;
     assert.equal(result.termination, "confirmed"); assert.equal(result.cleanup, "removed");
     if (rejected[caseId]) {
