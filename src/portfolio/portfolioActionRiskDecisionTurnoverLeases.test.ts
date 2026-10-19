@@ -92,18 +92,41 @@ test("turnover Risk sources honor short lock timeouts throughout nonempty histor
     for (const path of paths) {
       await writeFile(path, "synthetic contended source", { flag: "wx" });
       let calls = 0;
+      let matchedCauseRepository: "unknown" | "turnover_event" | "source_price_evidence" | "portfolio_sizing_snapshot"
+        | "turnover_window" | "paper_fill_execution" | "portfolio_action_risk_decision" | "rebalance_plan"
+        | "rebalance_event" | "investment_mandate" | "runtime_portfolio_policy" | "portfolio_policy_activation" = "unknown";
+      let elapsed: number;
       const started = performance.now();
       try {
         await assert.rejects(repository.withDurableRiskSources(async () => { calls += 1; }), (error: unknown) => {
           let cause = error;
           while (cause instanceof Error) {
-            if (/lock is unavailable/.test(cause.message)) return true;
+            let message: string;
+            if (/lock is unavailable/.test(message = cause.message)) {
+              // Classify only the message already read by the original predicate; never read the Error again.
+              switch (message) {
+                case "turnover event repository lock is unavailable": matchedCauseRepository = "turnover_event"; break;
+                case "source price evidence repository lock is unavailable": matchedCauseRepository = "source_price_evidence"; break;
+                case "portfolio sizing snapshot repository lock is unavailable": matchedCauseRepository = "portfolio_sizing_snapshot"; break;
+                case "turnover window repository lock is unavailable": matchedCauseRepository = "turnover_window"; break;
+                case "paper fill execution repository lock is unavailable": matchedCauseRepository = "paper_fill_execution"; break;
+                case "portfolio action risk decision repository lock is unavailable": matchedCauseRepository = "portfolio_action_risk_decision"; break;
+                case "rebalance plan repository lock is unavailable": matchedCauseRepository = "rebalance_plan"; break;
+                case "rebalance event repository lock is unavailable": matchedCauseRepository = "rebalance_event"; break;
+                case "investment mandate repository lock is unavailable": matchedCauseRepository = "investment_mandate"; break;
+                case "runtime portfolio policy repository lock is unavailable": matchedCauseRepository = "runtime_portfolio_policy"; break;
+                case "portfolio policy activation repository lock is unavailable": matchedCauseRepository = "portfolio_policy_activation"; break;
+                default: matchedCauseRepository = "unknown";
+              }
+              return true;
+            }
             cause = cause.cause;
           }
           return false;
         });
         // Allow filesystem/CI overhead, but detect a forgotten default 5-second acquisition wait.
-        assert.ok(performance.now() - started < 4_000, `historical source ignored the short timeout: ${path}`);
+        assert.ok((elapsed = performance.now() - started) < 4_000,
+          `historical source ignored the short timeout: {"elapsedMs":${Number.isFinite(elapsed) ? elapsed : "null"},"matchedCauseRepository":"${matchedCauseRepository}"}`);
         assert.equal(calls, 0);
         assert.equal(await readFile(path, "utf8"), "synthetic contended source");
       } finally { await rm(path); }
