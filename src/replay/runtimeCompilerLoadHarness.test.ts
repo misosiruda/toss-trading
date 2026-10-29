@@ -6,6 +6,7 @@ import { createCompilerLoadHarnessForTest, type CompilerLoadHarnessDependenciesF
   readCompilerLoadObservationForTest, type CompilerLoadCleanupSnapshotForTest,
 } from "./runtimeCompilerLoadHarnessTestFixtures.js";
 import { CompilerLoadPreparationError } from "./runtimeCompilerLoadPreparationTestFixtures.js";
+import { removeCompilerLoadFixtureForTest } from "./runtimeCompilerLoadCleanupTestFixtures.js";
 import { COMPILER_ARTIFACT_A, COMPILER_ARTIFACT_A_BYTES, COMPILER_LOAD_INPUT, COMPILER_LOAD_OUTPUT,
   COMPILER_LOAD_BUILTINS, type CompilerLoadCaseId, type CompilerLoadReport,
   type CompilerLoadParentResult } from "./runtimeCompilerLoadProtocolTestFixtures.js";
@@ -343,6 +344,38 @@ test("compiler load cleanup syscall is attempted once and unknown completion blo
   complete?.(); await flush(); assertFailed(await f.run("snapshot_after_disk_aba"), "CLEANUP_UNCONFIRMED", "not_started", "not_created");
   assert.strictEqual(assertObservation(f.observation, result, expected), snapshot);
   assert.equal(removes, 1); assert.equal(f.calls.spawns, 1); assert.equal(f.clock.timers.size, 0);
+});
+
+test("compiler load fixed-file cleanup cannot promote a late unlink or rmdir completion", async () => {
+  for (const pendingStep of [1, 2, 3]) for (const lateOutcome of ["resolve", "reject"] as const) {
+    let calls = 0;
+    let complete: (() => void) | undefined;
+    let reject: ((error: Error) => void) | undefined;
+    const step = (): Promise<void> => ++calls === pendingStep
+      ? new Promise<void>((resolve, fail) => { complete = resolve; reject = fail; })
+      : Promise.resolve();
+    const f = fixture({ removeRoot: (root) => removeCompilerLoadFixtureForTest(root, { unlink: step, rmdir: step }) });
+    const { result } = await f.start();
+    f.child.output(); f.child.close();
+    const queued = f.run("snapshot_after_disk_aba");
+    await flush();
+    assert.equal(calls, pendingStep);
+    let settled = false; void result.then(() => { settled = true; });
+    f.clock.advance(999); await flush(); assert.equal(settled, false);
+    f.clock.advance(1);
+    assertFailed(await result, "CLEANUP_UNCONFIRMED", "confirmed", "unconfirmed");
+    assertFailed(await queued, "CLEANUP_UNCONFIRMED", "not_started", "not_created");
+    const expected = { ...removedObservation, phase: "remove_pending", settlementTrigger: "timer",
+      settleAt: 1_000, outcome: "unconfirmed" } as const;
+    const snapshot = assertObservation(f.observation, result, expected);
+    if (lateOutcome === "resolve") complete?.(); else reject?.(new Error("PRIVATE_ERROR"));
+    await flush();
+    assert.equal(calls, lateOutcome === "resolve" ? 3 : pendingStep);
+    assert.strictEqual(assertObservation(f.observation, result, expected), snapshot);
+    assertFailed(await f.run("snapshot_baseline"), "CLEANUP_UNCONFIRMED", "not_started", "not_created");
+    assert.equal(f.calls.spawns, 1); assert.equal(f.calls.roots, 1);
+    assert.equal(f.clock.timers.size, 0); assert.deepEqual(f.child.signals, []);
+  }
 });
 
 test("compiler load stalled cleanup identity check times out and cannot initiate a late remove", async () => {
