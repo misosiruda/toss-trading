@@ -1,5 +1,8 @@
 # C2-B2: 고정 package metadata snapshot 해석
 
+2026-10-29 후속: [C2-B3 고정 조건부·전이 package metadata 소비](child-runtime-conditional-package-scope.md).
+아래 B2 범위·완료 조건·과거 기록은 유지한다.
+
 기준 main `37f738f0177316e69520f18f9011c5fbe3f558b4`.
 [상위 계약](child-runtime-launcher-contract.md)의 lock→설치→resolve→load 의무 중,
 기존 C2-B `metadata_default`는 metadata 소비를 관측하지 못하는 반례만 제공한다.

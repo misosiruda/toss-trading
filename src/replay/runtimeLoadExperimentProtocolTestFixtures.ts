@@ -1,5 +1,8 @@
 // Test-only synthetic observation protocol. This is not runtime admission evidence.
 import {
+  isConditionalPackageCaseId, parseConditionalPackageReport, type ConditionalPackageCaseId, type ConditionalPackageReport,
+} from "./runtimeConditionalPackageProtocolTestFixtures.js";
+import {
   isPackageMetadataCaseId, parsePackageMetadataReport, type PackageMetadataCaseId, type PackageMetadataReport,
 } from "./runtimePackageMetadataProtocolTestFixtures.js";
 export const RUNTIME_LOAD_EXPERIMENT_CASE_IDS = Object.freeze([
@@ -14,7 +17,7 @@ export const RUNTIME_LOAD_EXPERIMENT_CASE_IDS = Object.freeze([
   "transport_case_mismatch", "transport_stdout", "transport_stdout_over", "transport_stderr", "transport_stderr_over",
   "transport_exit", "transport_signal", "transport_timeout",
 ] as const);
-export type RuntimeLoadExperimentCaseId = typeof RUNTIME_LOAD_EXPERIMENT_CASE_IDS[number] | PackageMetadataCaseId;
+export type RuntimeLoadExperimentCaseId = typeof RUNTIME_LOAD_EXPERIMENT_CASE_IDS[number] | PackageMetadataCaseId | ConditionalPackageCaseId;
 export const RUNTIME_LOAD_EXPERIMENT_FILE_IDS = Object.freeze([
   "f01", "f02", "f03", "f04", "f05", "f06", "f07", "f08",
   "f09", "f10", "f11", "f12", "f13", "f14", "f15", "f16",
@@ -48,7 +51,7 @@ interface RuntimeLoadExperimentCommon {
   completeConfiguration: false;
   completeInput: false;
 }
-export type RuntimeLoadExperimentWireReport = PackageMetadataReport | RuntimeLoadExperimentCommon & (
+export type RuntimeLoadExperimentWireReport = ConditionalPackageReport | PackageMetadataReport | RuntimeLoadExperimentCommon & (
   | { status: "observed" | "counterexample"; evidence: "synthetic_fixture_observation";
       events: RuntimeLoadExperimentEvent[]; observations: RuntimeLoadExperimentObservation[] }
   | { status: "rejected"; evidence: "unavailable"; reason: RuntimeLoadExperimentRejectionReason }
@@ -82,13 +85,14 @@ function member(value: unknown, choices: readonly string[]): boolean {
   return typeof value === "string" && choices.includes(value);
 }
 export function isRuntimeLoadExperimentCaseId(value: unknown): value is RuntimeLoadExperimentCaseId {
-  return member(value, RUNTIME_LOAD_EXPERIMENT_CASE_IDS) || isPackageMetadataCaseId(value);
+  return member(value, RUNTIME_LOAD_EXPERIMENT_CASE_IDS) || isPackageMetadataCaseId(value) || isConditionalPackageCaseId(value);
 }
 
 export function parseRuntimeLoadExperimentWireReport(
   bytes: Buffer, expectedCaseId: RuntimeLoadExperimentCaseId,
 ): RuntimeLoadExperimentWireReport {
   try {
+    if (isConditionalPackageCaseId(expectedCaseId)) return parseConditionalPackageReport(bytes, expectedCaseId);
     if (isPackageMetadataCaseId(expectedCaseId)) return parsePackageMetadataReport(bytes, expectedCaseId);
     if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > RUNTIME_LOAD_EXPERIMENT_MAX_WIRE_BYTES
       || !isRuntimeLoadExperimentCaseId(expectedCaseId)) invalid();

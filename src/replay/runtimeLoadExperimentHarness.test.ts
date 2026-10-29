@@ -101,7 +101,7 @@ test("load experiment wire accepts every fixed case and rejection without comple
     assert.deepEqual(parseRuntimeLoadExperimentWireReport(encode(value), caseId), value);
   }
   for (const reason of RUNTIME_LOAD_EXPERIMENT_REJECTION_REASONS) {
-    const { events: _events, observations: _observations, ...common } = report() as Extract<RuntimeLoadExperimentWireReport, { status: "observed" | "counterexample" }>;
+    const { events: _events, observations: _observations, ...common } = report() as Extract<RuntimeLoadExperimentWireReport, { status: "observed" | "counterexample"; events: unknown }>;
     const value = { ...common, status: "rejected", evidence: "unavailable", reason };
     assert.deepEqual(parseRuntimeLoadExperimentWireReport(encode(value), "transport_valid"), value);
   }
