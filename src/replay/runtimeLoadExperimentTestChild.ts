@@ -10,7 +10,14 @@ import { createRequire, registerHooks, type ModuleHooks } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+const METADATA_CASE_IDS = [
+  "metadata_snapshot", "metadata_snapshot_aba", "metadata_reread_aba",
+  "metadata_json", "metadata_duplicate", "metadata_unknown", "metadata_condition", "metadata_array",
+  "metadata_escape", "metadata_query", "metadata_format", "metadata_name", "metadata_parent",
+  "metadata_attribute", "metadata_subpath", "metadata_restore_fault", "metadata_over",
+] as const;
 const CASE_IDS = [
+  ...METADATA_CASE_IDS,
   "esm_first", "cjs_first", "esm_cjs_first", "json_import_first", "json_require_first", "json_fresh_b",
   "esm_cache", "cjs_cache", "json_import_require", "json_require_import", "json_cache_source_b",
   "late_new", "closed_new", "closed_cached", "race_snapshot", "race_default", "late_registration",
@@ -28,7 +35,8 @@ type FileId = "f01" | "f02" | "f03" | "f04" | "f05" | "f06" | "f07" | "f08"
 type Format = "module" | "commonjs" | "json";
 type ParentId = "bootstrap" | FileId;
 type Reason = "MAPPING_UNSUPPORTED" | "QUERY_UNSUPPORTED" | "ATTRIBUTE_UNSUPPORTED" | "FORMAT_UNSUPPORTED"
-  | "PATH_UNSAFE" | "INVENTORY_LIMIT" | "SOURCE_LIMIT" | "TOTAL_SOURCE_LIMIT" | "EVENT_LIMIT" | "LOAD_CLOSED";
+  | "PATH_UNSAFE" | "INVENTORY_LIMIT" | "SOURCE_LIMIT" | "TOTAL_SOURCE_LIMIT" | "EVENT_LIMIT" | "LOAD_CLOSED"
+  | "METADATA_UNSUPPORTED";
 type Observation = "REGISTRATION_PRECEDES_LOAD" | "LATE_REGISTRATION_MISSED" | "ORIGINAL_VALUE"
   | "REPLACEMENT_VALUE" | "SAME_OBJECT" | "EVALUATED_ONCE" | "CACHE_CALLBACK_ABSENT" | "SUPPLIED_SOURCE_UNUSED"
   | "LATE_LOAD_RECORDED" | "CLOSED_CACHE_UNOBSERVED" | "CHAIN_BYPASS_OBSERVED" | "CHAIN_REWRITE_OBSERVED"
@@ -234,11 +242,85 @@ async function experiment(caseId: CaseId): Promise<void> {
   if (["race_snapshot", "race_default", "chain_rewrite"].includes(caseId)) totalBytes += snap("f12").source.length;
   if (caseId === "json_cache_source_b" || caseId === "json_fresh_b") totalBytes += snap("f14").source.length;
   if (caseId === "metadata_default") totalBytes += snap("f15").source.length;
+  if (["metadata_snapshot_aba", "metadata_reread_aba", "metadata_restore_fault"].includes(caseId)) {
+    totalBytes += snap("f15").source.length;
+  }
   if (totalBytes > 32_768) reject("TOTAL_SOURCE_LIMIT");
   check(snapshots.size === 16);
   if (caseId === "cap_inventory") check(paths.size === 16);
   if (caseId === "cap_source") check([...snapshots.values()].some((item) => item.source.length === 4_096));
   if (caseId === "cap_total") check(totalBytes === 32_768);
+
+  if (METADATA_CASE_IDS.some((id) => id === caseId)) {
+    // A closed flat-exports subset, not a general Node/package resolver. The immutable string
+    // read here is the exact JSON parser input; no filesystem metadata fallback is used.
+    const metadataSource = snap("f08").source;
+    const metadataEvents: Event[] = [];
+    const ownedHooks: ModuleHooks[] = [];
+    let binding: { sourceDigest: string; target: "f09" | "f10"; consumption: "snapshot" | "reread";
+      diskRestored: true } | null = null;
+    let chosen: Snapshot | null = null;
+    let rejection: Reason | null = null;
+    let changed = false;
+    const reread = caseId === "metadata_reread_aba";
+    try {
+      if (["metadata_snapshot_aba", "metadata_reread_aba", "metadata_restore_fault"].includes(caseId)) {
+        replace("f08", "f15"); changed = true;
+      }
+      ownedHooks.push(registerHooks({
+        resolve(specifier, context) {
+          if (specifier !== "c2b-fixture" || context.parentURL !== bootstrapUrl || metadataEvents.length !== 0) {
+            reject("MAPPING_UNSUPPORTED");
+          }
+          attributes(context.importAttributes, "module");
+          const source = reread ? boundedRead(snap("f08").path).source : metadataSource;
+          let parsed: unknown;
+          try { parsed = JSON.parse(source); } catch { reject("METADATA_UNSUPPORTED"); }
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) reject("METADATA_UNSUPPORTED");
+          const value = parsed as Record<string, unknown>;
+          if (JSON.stringify(Object.keys(value)) !== '["name","exports","type"]'
+            || `${JSON.stringify(value)}\n` !== source || value.name !== "c2b-fixture" || value.type !== "module"
+            || (value.exports !== "./original.mjs" && value.exports !== "./replacement.mjs")) reject("METADATA_UNSUPPORTED");
+          const target = value.exports === "./original.mjs" ? "f09" : "f10";
+          chosen = snap(target);
+          binding = { sourceDigest: digest(source), target, consumption: reread ? "reread" : "snapshot", diskRestored: true };
+          metadataEvents.push({ kind: "resolve", fileId: target, parentId: "bootstrap", route: "snapshot" });
+          return { url: chosen.url, format: "module", shortCircuit: true };
+        },
+        load(url, context) {
+          if (chosen === null || url !== chosen.url || metadataEvents.length !== 1) reject("MAPPING_UNSUPPORTED");
+          attributes(context.importAttributes, "module");
+          if (context.format !== "module") reject("FORMAT_UNSUPPORTED");
+          check(digest(chosen.source) === chosen.digest);
+          metadataEvents.push({ kind: "load", fileId: chosen.id, format: "module", sourceDigest: chosen.digest, supply: "snapshot" });
+          return { format: "module", source: chosen.source, shortCircuit: true };
+        },
+      }));
+      if (caseId === "metadata_parent") {
+        // Fixed fault in the actual resolve chain; this does not claim a genuine second caller.
+        ownedHooks.push(registerHooks({ resolve(specifier, context, nextResolve) {
+          return nextResolve(specifier, { ...context, parentURL: snap("f01").url });
+        } }));
+      }
+      const value = (await importFixed(caseId === "metadata_subpath" ? "c2b-fixture/extra" : "c2b-fixture",
+        caseId === "metadata_attribute" ? { with: { unsupported: "fixed" } } : undefined)).default;
+      check(binding !== null && metadataEvents.length === 2 && token(value) === (reread ? 202 : 101));
+    } catch (error) {
+      if (!(error instanceof Rejection) || !["METADATA_UNSUPPORTED", "MAPPING_UNSUPPORTED", "ATTRIBUTE_UNSUPPORTED"].includes(error.reason)) throw error;
+      check(metadataEvents.length === 0 && binding === null);
+      rejection = error.reason;
+    } finally {
+      for (const hook of ownedHooks.reverse()) hook.deregister();
+      if (changed && caseId !== "metadata_restore_fault") replace("f08", "f08");
+      // A failed restoration prevents any report, even when import succeeded.
+      check(boundedRead(snap("f08").path).source === metadataSource);
+    }
+    const envelope = { ...common(caseId), schemaVersion: "runtime_package_metadata_experiment.v1" };
+    if (rejection !== null) emit({ ...envelope, status: "rejected", evidence: "unavailable", reason: rejection });
+    else emit({ ...envelope, status: reread ? "counterexample" : "observed", evidence: "synthetic_fixture_observation",
+      metadata: binding, events: metadataEvents, observations: [reread ? "REPLACEMENT_VALUE" : "ORIGINAL_VALUE"] });
+    return;
+  }
 
   const events: Event[] = [];
   const observations: Observation[] = [];

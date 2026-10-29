@@ -35,6 +35,20 @@ export function buildRuntimeLoadExperimentInventory(caseId: RuntimeLoadExperimen
     "export default {token:404};\n"
   ];
   const entries: InventoryEntry[] = RUNTIME_LOAD_EXPERIMENT_FIXTURE_PATHS.map((path, index) => ({ path, source: sources[index]! }));
+  const metadataFaults: Readonly<Record<string, string>> = {
+    metadata_json: "{\n",
+    metadata_duplicate: '{"name":"c2b-fixture","exports":"./replacement.mjs","exports":"./original.mjs","type":"module"}\n',
+    metadata_unknown: '{"name":"c2b-fixture","exports":"./original.mjs","type":"module","main":"./original.mjs"}\n',
+    metadata_condition: '{"name":"c2b-fixture","exports":{"import":"./original.mjs"},"type":"module"}\n',
+    metadata_array: '{"name":"c2b-fixture","exports":["./original.mjs"],"type":"module"}\n',
+    metadata_escape: '{"name":"c2b-fixture","exports":"../original.mjs","type":"module"}\n',
+    metadata_query: '{"name":"c2b-fixture","exports":"./original.mjs?fixed","type":"module"}\n',
+    metadata_format: '{"name":"c2b-fixture","exports":"./original.mjs","type":"commonjs"}\n',
+    metadata_name: '{"name":"other-fixture","exports":"./original.mjs","type":"module"}\n',
+    metadata_over: " ".repeat(4097),
+  };
+  const metadataFault = metadataFaults[caseId];
+  if (metadataFault !== undefined) entries[7] = { ...entries[7]!, source: metadataFault };
   if (caseId === "cap_inventory_over") entries.push({ path: "extra-over.mjs", source: "export default 0;\n" });
   if (caseId === "cap_source" || caseId === "cap_source_over") {
     const last = entries[15]!;
@@ -65,6 +79,9 @@ function validateInventory(entries: readonly InventoryEntry[], caseId: RuntimeLo
   if (["race_snapshot", "race_default", "chain_rewrite"].includes(caseId)) total += Buffer.byteLength(entries[11]!.source);
   if (caseId === "json_cache_source_b" || caseId === "json_fresh_b") total += Buffer.byteLength(entries[13]!.source);
   if (caseId === "metadata_default") total += Buffer.byteLength(entries[14]!.source);
+  if (["metadata_snapshot_aba", "metadata_reread_aba", "metadata_restore_fault"].includes(caseId)) {
+    total += Buffer.byteLength(entries[14]!.source);
+  }
   if (total > 32768) throw failure();
 }
 

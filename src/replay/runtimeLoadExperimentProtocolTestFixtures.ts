@@ -1,4 +1,7 @@
 // Test-only synthetic observation protocol. This is not runtime admission evidence.
+import {
+  isPackageMetadataCaseId, parsePackageMetadataReport, type PackageMetadataCaseId, type PackageMetadataReport,
+} from "./runtimePackageMetadataProtocolTestFixtures.js";
 export const RUNTIME_LOAD_EXPERIMENT_CASE_IDS = Object.freeze([
   "esm_first", "cjs_first", "esm_cjs_first", "json_import_first", "json_require_first", "json_fresh_b",
   "esm_cache", "cjs_cache", "json_import_require", "json_require_import", "json_cache_source_b",
@@ -11,7 +14,7 @@ export const RUNTIME_LOAD_EXPERIMENT_CASE_IDS = Object.freeze([
   "transport_case_mismatch", "transport_stdout", "transport_stdout_over", "transport_stderr", "transport_stderr_over",
   "transport_exit", "transport_signal", "transport_timeout",
 ] as const);
-export type RuntimeLoadExperimentCaseId = typeof RUNTIME_LOAD_EXPERIMENT_CASE_IDS[number];
+export type RuntimeLoadExperimentCaseId = typeof RUNTIME_LOAD_EXPERIMENT_CASE_IDS[number] | PackageMetadataCaseId;
 export const RUNTIME_LOAD_EXPERIMENT_FILE_IDS = Object.freeze([
   "f01", "f02", "f03", "f04", "f05", "f06", "f07", "f08",
   "f09", "f10", "f11", "f12", "f13", "f14", "f15", "f16",
@@ -45,7 +48,7 @@ interface RuntimeLoadExperimentCommon {
   completeConfiguration: false;
   completeInput: false;
 }
-export type RuntimeLoadExperimentWireReport = RuntimeLoadExperimentCommon & (
+export type RuntimeLoadExperimentWireReport = PackageMetadataReport | RuntimeLoadExperimentCommon & (
   | { status: "observed" | "counterexample"; evidence: "synthetic_fixture_observation";
       events: RuntimeLoadExperimentEvent[]; observations: RuntimeLoadExperimentObservation[] }
   | { status: "rejected"; evidence: "unavailable"; reason: RuntimeLoadExperimentRejectionReason }
@@ -79,13 +82,14 @@ function member(value: unknown, choices: readonly string[]): boolean {
   return typeof value === "string" && choices.includes(value);
 }
 export function isRuntimeLoadExperimentCaseId(value: unknown): value is RuntimeLoadExperimentCaseId {
-  return member(value, RUNTIME_LOAD_EXPERIMENT_CASE_IDS);
+  return member(value, RUNTIME_LOAD_EXPERIMENT_CASE_IDS) || isPackageMetadataCaseId(value);
 }
 
 export function parseRuntimeLoadExperimentWireReport(
   bytes: Buffer, expectedCaseId: RuntimeLoadExperimentCaseId,
 ): RuntimeLoadExperimentWireReport {
   try {
+    if (isPackageMetadataCaseId(expectedCaseId)) return parsePackageMetadataReport(bytes, expectedCaseId);
     if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > RUNTIME_LOAD_EXPERIMENT_MAX_WIRE_BYTES
       || !isRuntimeLoadExperimentCaseId(expectedCaseId)) invalid();
     const value = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));

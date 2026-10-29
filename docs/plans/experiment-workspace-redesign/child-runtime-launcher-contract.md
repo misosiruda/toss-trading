@@ -11,6 +11,10 @@ C2-C1~C5의 제한된 실험은 병합됐지만 **C2 전체는 부분 완료**, 
 
 ## 기존 지원·증명 계약 보존
 
+2026-10-29 후속 범위: [C2-B2 고정 package metadata snapshot 해석](child-runtime-package-metadata-scope.md)은
+기존 `metadata_default` 반례 다음의 flat exports 해석·공급만 다룬다. 일반 설치·조건부/전이 dependency,
+Node/native/configuration 및 C2-D의 미충족 상태는 유지한다. 아래 과거 계약·진행 기록은 보존한다.
+
 아래 본문은 원래 계약과 단계별 추가 기록을 보존한다. 현재 구현 상태의 정정으로 검증표 또는
 실패·호환 경계를 완화하지 않는다.
 
