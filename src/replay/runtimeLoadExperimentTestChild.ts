@@ -10,6 +10,15 @@ import { createRequire, registerHooks, type ModuleHooks } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+const CONDITIONAL_CASE_IDS = [
+  "conditional_import", "conditional_root_default", "conditional_leaf_default",
+  "conditional_snapshot_aba", "conditional_reread_aba", "conditional_leaf_json",
+  "conditional_leaf_duplicate", "conditional_leaf_unknown", "conditional_leaf_nested",
+  "conditional_leaf_array", "conditional_leaf_escape", "conditional_leaf_name", "conditional_leaf_mixed",
+  "conditional_root_shape", "conditional_conditions_extra", "conditional_conditions_missing",
+  "conditional_conditions_duplicate", "conditional_direct_leaf", "conditional_attribute",
+  "conditional_unknown_package", "conditional_subpath", "conditional_restore_fault", "conditional_over",
+] as const;
 const METADATA_CASE_IDS = [
   "metadata_snapshot", "metadata_snapshot_aba", "metadata_reread_aba",
   "metadata_json", "metadata_duplicate", "metadata_unknown", "metadata_condition", "metadata_array",
@@ -17,6 +26,7 @@ const METADATA_CASE_IDS = [
   "metadata_attribute", "metadata_subpath", "metadata_restore_fault", "metadata_over",
 ] as const;
 const CASE_IDS = [
+  ...CONDITIONAL_CASE_IDS,
   ...METADATA_CASE_IDS,
   "esm_first", "cjs_first", "esm_cjs_first", "json_import_first", "json_require_first", "json_fresh_b",
   "esm_cache", "cjs_cache", "json_import_require", "json_require_import", "json_cache_source_b",
@@ -36,7 +46,7 @@ type Format = "module" | "commonjs" | "json";
 type ParentId = "bootstrap" | FileId;
 type Reason = "MAPPING_UNSUPPORTED" | "QUERY_UNSUPPORTED" | "ATTRIBUTE_UNSUPPORTED" | "FORMAT_UNSUPPORTED"
   | "PATH_UNSAFE" | "INVENTORY_LIMIT" | "SOURCE_LIMIT" | "TOTAL_SOURCE_LIMIT" | "EVENT_LIMIT" | "LOAD_CLOSED"
-  | "METADATA_UNSUPPORTED";
+  | "METADATA_UNSUPPORTED" | "CONDITIONS_UNSUPPORTED";
 type Observation = "REGISTRATION_PRECEDES_LOAD" | "LATE_REGISTRATION_MISSED" | "ORIGINAL_VALUE"
   | "REPLACEMENT_VALUE" | "SAME_OBJECT" | "EVALUATED_ONCE" | "CACHE_CALLBACK_ABSENT" | "SUPPLIED_SOURCE_UNUSED"
   | "LATE_LOAD_RECORDED" | "CLOSED_CACHE_UNOBSERVED" | "CHAIN_BYPASS_OBSERVED" | "CHAIN_REWRITE_OBSERVED"
@@ -185,7 +195,13 @@ async function experiment(caseId: CaseId): Promise<void> {
       return { source: ascii(bytes.subarray(0, used)), identity: after };
     } finally { closeSync(fd); }
   }
-  for (const [id, relative, format] of INVENTORY) {
+  const conditional = CONDITIONAL_CASE_IDS.some((id) => id === caseId);
+  const inventory: typeof INVENTORY = conditional ? [
+    ["f01", "node_modules/c2c-leaf/package.json", null], ["f02", "node_modules/c2c-leaf/original.mjs", "module"],
+    ["f03", "node_modules/c2c-leaf/replacement.mjs", "module"], ["f04", "leaf.package.replacement.json", null],
+    ...INVENTORY.slice(4),
+  ] : INVENTORY;
+  for (const [id, relative, format] of inventory) {
     if (snapshots.size >= 16) reject("INVENTORY_LIMIT");
     const path = join(root, relative);
     if (paths.has(path)) reject("PATH_UNSAFE");
@@ -245,11 +261,116 @@ async function experiment(caseId: CaseId): Promise<void> {
   if (["metadata_snapshot_aba", "metadata_reread_aba", "metadata_restore_fault"].includes(caseId)) {
     totalBytes += snap("f15").source.length;
   }
+  if (["conditional_snapshot_aba", "conditional_reread_aba", "conditional_restore_fault"].includes(caseId)) {
+    totalBytes += snap("f15").source.length + snap("f04").source.length;
+  }
   if (totalBytes > 32_768) reject("TOTAL_SOURCE_LIMIT");
   check(snapshots.size === 16);
   if (caseId === "cap_inventory") check(paths.size === 16);
   if (caseId === "cap_source") check([...snapshots.values()].some((item) => item.source.length === 4_096));
   if (caseId === "cap_total") check(totalBytes === 32_768);
+
+  if (conditional) {
+    const bindings: { metadataId: FileId; parentId: "bootstrap" | FileId; conditions: string[];
+      metadataDigest: string; target: FileId; selectedCondition: string; consumption: "snapshot" | "reread";
+      sourceDigest: string }[] = [];
+    const ownedHooks: ModuleHooks[] = [];
+    const reread = caseId === "conditional_reread_aba";
+    let rootTarget: Snapshot | null = null;
+    let pending: { module: Snapshot; binding: Omit<typeof bindings[number], "sourceDigest"> } | null = null;
+    let resolved = 0;
+    let resultToken: number | null = null;
+    let rejection: Reason | null = null;
+    let changed = false;
+    const conditions = (input: readonly string[]): string[] => {
+      const values = [...input].sort();
+      if (JSON.stringify(values) !== '["import","module-sync","node","node-addons"]') reject("CONDITIONS_UNSUPPORTED");
+      return values;
+    };
+    try {
+      if (["conditional_snapshot_aba", "conditional_reread_aba", "conditional_restore_fault"].includes(caseId)) {
+        replace("f08", "f15"); replace("f01", "f04"); changed = true;
+      }
+      ownedHooks.push(registerHooks({
+        resolve(specifier, context) {
+          const rootRequest = resolved === 0 && specifier === "c2b-fixture" && context.parentURL === bootstrapUrl;
+          const leafRequest = resolved === 1 && bindings.length === 1 && specifier === "c2c-leaf"
+            && rootTarget !== null && context.parentURL === rootTarget.url;
+          if ((!rootRequest && !leafRequest) || pending !== null) reject("MAPPING_UNSUPPORTED");
+          const active = conditions(context.conditions);
+          attributes(context.importAttributes, "module");
+          const metadataId = rootRequest ? "f08" : "f01";
+          const source = reread ? boundedRead(snap(metadataId).path).source : snap(metadataId).source;
+          let parsed: unknown;
+          try { parsed = JSON.parse(source); } catch { reject("METADATA_UNSUPPORTED"); }
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) reject("METADATA_UNSUPPORTED");
+          const value = parsed as Record<string, unknown>;
+          if (JSON.stringify(Object.keys(value)) !== '["name","exports","type"]'
+            || `${JSON.stringify(value)}\n` !== source || value.name !== (rootRequest ? "c2b-fixture" : "c2c-leaf")
+            || value.type !== "module" || typeof value.exports !== "object" || value.exports === null
+            || Array.isArray(value.exports)) reject("METADATA_UNSUPPORTED");
+          const exports = value.exports as Record<string, unknown>;
+          const keys = Object.keys(exports);
+          if (![ '["import","default"]', '["default","import"]' ].includes(JSON.stringify(keys))
+            || Object.values(exports).some((target) => target !== "./original.mjs" && target !== "./replacement.mjs")) {
+            reject("METADATA_UNSUPPORTED");
+          }
+          const selectedCondition = keys.find((key) => key === "default" || active.includes(key));
+          check(selectedCondition !== undefined);
+          const replacement = exports[selectedCondition] === "./replacement.mjs";
+          const target = rootRequest ? replacement ? "f10" : "f09" : replacement ? "f03" : "f02";
+          const module = snap(target);
+          pending = { module, binding: { metadataId, parentId: rootRequest ? "bootstrap" : rootTarget!.id,
+            conditions: active, metadataDigest: digest(source), target, selectedCondition,
+            consumption: reread ? "reread" : "snapshot" } };
+          if (rootRequest) rootTarget = module;
+          resolved += 1;
+          return { url: module.url, format: "module", shortCircuit: true };
+        },
+        load(url, context) {
+          if (pending === null || url !== pending.module.url || bindings.length + 1 !== resolved) reject("MAPPING_UNSUPPORTED");
+          conditions(context.conditions);
+          attributes(context.importAttributes, "module");
+          if (context.format !== "module") reject("FORMAT_UNSUPPORTED");
+          const module = pending.module;
+          check(digest(module.source) === module.digest);
+          bindings.push({ ...pending.binding, sourceDigest: module.digest }); pending = null;
+          return { format: "module", source: module.source, shortCircuit: true };
+        },
+      }));
+      if (caseId.startsWith("conditional_conditions_")) ownedHooks.push(registerHooks({
+        resolve(specifier, context, nextResolve) {
+          if (specifier !== "c2c-leaf") return nextResolve(specifier, context);
+          // Fixed hook-chain faults, not observations of altered OS startup settings.
+          const changedConditions = caseId === "conditional_conditions_extra" ? [...context.conditions, "unsupported"]
+            : caseId === "conditional_conditions_missing" ? context.conditions.filter((key) => key !== "import")
+            : [...context.conditions, "import"];
+          return nextResolve(specifier, { ...context, conditions: changedConditions });
+        },
+      }));
+      resultToken = token((await importFixed(caseId === "conditional_direct_leaf" ? "c2c-leaf" : "c2b-fixture")).default);
+      const expected = (reread || caseId === "conditional_root_default" ? 2000 : 1000)
+        + (reread || caseId === "conditional_leaf_default" ? 202 : 101);
+      check(resolved === 2 && bindings.length === 2 && pending === null && resultToken === expected);
+    } catch (error) {
+      if (!(error instanceof Rejection) || !["MAPPING_UNSUPPORTED", "METADATA_UNSUPPORTED",
+        "CONDITIONS_UNSUPPORTED", "ATTRIBUTE_UNSUPPORTED"].includes(error.reason)) throw error;
+      rejection = error.reason;
+    } finally {
+      for (const hook of ownedHooks.reverse()) hook.deregister();
+      if (changed) {
+        replace("f08", "f08");
+        if (caseId !== "conditional_restore_fault") replace("f01", "f01");
+      }
+      for (const id of ["f08", "f01"] as const) check(boundedRead(snap(id).path).source === snap(id).source);
+    }
+    const envelope = { ...common(caseId), schemaVersion: "runtime_conditional_package_experiment.v1" };
+    if (rejection !== null) emit({ ...envelope, status: "rejected", evidence: "unavailable", reason: rejection,
+      resolved, loaded: bindings.length });
+    else emit({ ...envelope, status: reread ? "counterexample" : "observed", evidence: "synthetic_fixture_observation",
+      bindings, token: resultToken, diskRestored: true });
+    return;
+  }
 
   if (METADATA_CASE_IDS.some((id) => id === caseId)) {
     // A closed flat-exports subset, not a general Node/package resolver. The immutable string

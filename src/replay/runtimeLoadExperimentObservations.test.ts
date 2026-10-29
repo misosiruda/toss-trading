@@ -12,7 +12,7 @@ import type {
 
 const supported = process.version === "v24.19.0" && process.platform === "linux" && process.arch === "x64";
 const actual = { skip: supported ? false : "C2-B actual observations require Node 24.19.0 Linux x64" };
-type Observed = Extract<RuntimeLoadExperimentWireReport, { status: "observed" | "counterexample" }>;
+type Observed = Extract<RuntimeLoadExperimentWireReport, { status: "observed" | "counterexample"; events: unknown }>;
 function digest(source: string): string { return `sha256:${createHash("sha256").update(source).digest("hex")}`; }
 function source(caseId: RuntimeLoadExperimentCaseId, path: string): string {
   const row = buildRuntimeLoadExperimentInventory(caseId).find((item) => item.path === path);
@@ -37,6 +37,7 @@ async function observed(caseId: RuntimeLoadExperimentCaseId, status: "observed" 
   observations: readonly RuntimeLoadExperimentObservation[]): Promise<Observed> {
   const report = await collected(caseId);
   if (report.status === "rejected") throw new Error("unexpected synthetic rejection");
+  if (report.schemaVersion === "runtime_conditional_package_experiment.v1") throw new Error("unexpected conditional report");
   assert.equal(report.status, status);
   assert.equal(report.evidence, "synthetic_fixture_observation");
   for (const item of observations) assert.ok(report.observations.includes(item), `${caseId}: ${item}`);

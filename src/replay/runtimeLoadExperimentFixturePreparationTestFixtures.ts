@@ -4,6 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { RuntimeLoadExperimentCaseId } from "./runtimeLoadExperimentProtocolTestFixtures.js";
+import { isConditionalPackageCaseId } from "./runtimeConditionalPackageProtocolTestFixtures.js";
+import { conditionalPackageInventory, CONDITIONAL_PACKAGE_LEAF_PATHS } from "./runtimeConditionalPackagePreparationTestFixtures.js";
 
 export class RuntimeLoadExperimentPreparationError extends Error {
   constructor(readonly reason: "FIXTURE_PREPARATION_FAILED" | "BOOTSTRAP_LIMIT") {
@@ -64,14 +66,17 @@ export function buildRuntimeLoadExperimentInventory(caseId: RuntimeLoadExperimen
     }
     if (remaining !== 0) throw failure();
   }
-  return Object.freeze(entries.map((entry) => Object.freeze(entry)));
+  const result = isConditionalPackageCaseId(caseId) ? conditionalPackageInventory(caseId, entries) : entries;
+  return Object.freeze(result.map((entry) => Object.freeze(entry)));
 }
 
 function validateInventory(entries: readonly InventoryEntry[], caseId: RuntimeLoadExperimentCaseId): void {
   if (entries.length > 16 || new Set(entries.map((entry) => entry.path)).size !== entries.length) throw failure();
   let total = 0;
+  const allowedPaths = isConditionalPackageCaseId(caseId)
+    ? [...CONDITIONAL_PACKAGE_LEAF_PATHS, ...RUNTIME_LOAD_EXPERIMENT_FIXTURE_PATHS.slice(4)] : RUNTIME_LOAD_EXPERIMENT_FIXTURE_PATHS;
   for (const entry of entries) {
-    if (!RUNTIME_LOAD_EXPERIMENT_FIXTURE_PATHS.some((path) => path === entry.path) ||
+    if (!allowedPaths.some((path) => path === entry.path) ||
       !/^[\x00-\x7f]*$/.test(entry.source) || Buffer.byteLength(entry.source) > 4096) throw failure();
     total += Buffer.byteLength(entry.source);
   }
@@ -81,6 +86,9 @@ function validateInventory(entries: readonly InventoryEntry[], caseId: RuntimeLo
   if (caseId === "metadata_default") total += Buffer.byteLength(entries[14]!.source);
   if (["metadata_snapshot_aba", "metadata_reread_aba", "metadata_restore_fault"].includes(caseId)) {
     total += Buffer.byteLength(entries[14]!.source);
+  }
+  if (["conditional_snapshot_aba", "conditional_reread_aba", "conditional_restore_fault"].includes(caseId)) {
+    total += Buffer.byteLength(entries[14]!.source) + Buffer.byteLength(entries[3]!.source);
   }
   if (total > 32768) throw failure();
 }
