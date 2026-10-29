@@ -1,5 +1,8 @@
 # 단계별 테스트 검증 절차
 
+특정 실패의 조사 이력은 [valuation lock timeout 재현 조사](valuation-lock-timeout-investigation-20261029.md)를 참고한다.
+재현되지 않은 원인, 진단용 계측 결과와 최종 후보의 전체 검증을 구분한다.
+
 반복 수정마다 전체 suite와 focused suite를 함께 실행하던 중복을 줄인다. 테스트 자체를 삭제하거나
 Risk/fail-closed gate를 완화하지 않으며 최종 병합 후보의 전체 검증은 필수다.
 
