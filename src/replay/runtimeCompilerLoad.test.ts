@@ -26,6 +26,25 @@ function report(caseId: CompilerLoadCaseId = "snapshot_baseline"): CompilerLoadR
     compilerLoadCount: 1, builtinLoads: COMPILER_LOAD_BUILTINS, cacheSameObject: true, observedMarker: counter ? 202 : 0,
     inputDigest: COMPILER_LOAD_INPUT, outputDigest: COMPILER_LOAD_OUTPUT, callbackCount: caseId === "callback_cap" ? 32 : 12 };
 }
+function requirePositiveReport(positive: ReadonlyMap<string, CompilerLoadReport>, caseId: CompilerLoadCaseId): CompilerLoadReport {
+  const value = positive.get(caseId);
+  assert.ok(value !== undefined, `missing collected positive report: ${caseId}`);
+  return value;
+}
+test("compiler-load positive comparison requires every collected report", () => {
+  const cases = ["snapshot_baseline", "snapshot_after_disk_aba", "reread_during_disk_aba"] as const;
+  const positive = new Map<string, CompilerLoadReport>(cases.map(caseId => [caseId, report(caseId)]));
+  for (const caseId of cases) {
+    assert.strictEqual(requirePositiveReport(positive, caseId), positive.get(caseId));
+    const missing = new Map(positive);
+    missing.delete(caseId);
+    assert.throws(() => requirePositiveReport(missing, caseId), {
+      name: "AssertionError", code: "ERR_ASSERTION", message: `missing collected positive report: ${caseId}`,
+    });
+    assert.equal(missing.size, cases.length - 1);
+    assert.equal(missing.has(caseId), false);
+  }
+});
 test("compiler-load actual artifact supply, ABA and latched failure cases", { skip: !supported }, async t => {
   const positive = new Map<string, CompilerLoadReport>();
   const rejected: Record<string, string> = { cache_before_hook: "CACHE_PREPOPULATED", artifact_mismatch: "ARTIFACT_MISMATCH",
@@ -51,9 +70,9 @@ test("compiler-load actual artifact supply, ABA and latched failure cases", { sk
       if (result.report.status === "rejected") assert.equal(result.report.reason, rejected[caseId]);
     } else { assert.deepEqual(result.report, report(caseId)); positive.set(caseId, result.report); }
   });
-  const baseline = positive.get("snapshot_baseline")!;
-  const snapshot = positive.get("snapshot_after_disk_aba")!;
-  const reread = positive.get("reread_during_disk_aba")!;
+  const baseline = requirePositiveReport(positive, "snapshot_baseline");
+  const snapshot = requirePositiveReport(positive, "snapshot_after_disk_aba");
+  const reread = requirePositiveReport(positive, "reread_during_disk_aba");
   assert.ok(baseline.status !== "rejected" && snapshot.status !== "rejected" && reread.status !== "rejected");
   assert.equal(snapshot.suppliedArtifact, baseline.suppliedArtifact);
   assert.notEqual(reread.suppliedArtifact, baseline.suppliedArtifact);

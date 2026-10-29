@@ -64,9 +64,26 @@ B의 marker는 추가 문장 평가 관측이며 memory image hash가 아니다.
 
 C2-B의 소유 child 관측 규칙을 별도 test-only harness에 유지한다. 최소 환경으로 spawn하며
 NODE_OPTIONS/preload/compile-cache를 상속하지 않는다. 실행10초, TERM/KILL 각각1초,
-정리 관측1초를 늘리지 않는다. signal 요청 성공은 종료 확인이 아니다. 불확실 종료·정리는
-소유 root를 보존하고 같은 harness의 다음 할당을 차단한다. raw PID/group kill·다른 앱 종료·
-자동 재시도·권한/보안 변경은 없다. 준비/reader/loader 첫 실패와 실패한 소스·로그를 보존한다.
+정리 관측1초를 늘리지 않는다. signal 요청 성공은 종료 확인이 아니다.
+정리 대상은 preparation이 만든 `compiler.cjs`, `bootstrap.mjs` 두 파일이다. 동일 root 확인 뒤
+두 이름만 순서대로 unlink하고 마지막에 비재귀 rmdir한다. 부분 준비로 없는 고정 파일의
+ENOENT만 허용하고 rmdir의 모든 오류는 실패다. 예상 밖 파일·디렉터리를 열거하거나 재귀 삭제하지
+않는다. 고정 이름의 symlink는 대상에 접근하지 않고 entry만 제거하며 디렉터리이면 실패한다.
+[C2-B 상세 계약](child-runtime-load-experiment-contract.md)의 제출 전·후 경계를 구분한다.
+종료가 불확실하면 소유 root를 삭제하지 않고, root identity를 확인하지 못했거나 검사 응답이
+deadline에 도달하면 삭제를 새로 요청하지 않는다. 확인된 동일 root에만 remove를 한 번 요청한다.
+
+이미 제출한 filesystem 삭제는 관측 만료 뒤에도 진행할 수 있으므로 취소·완료 또는 root의
+존속을 가정하지 않는다. 완료를 기한 안에 관측하지 못하면 `unconfirmed`를 유지하고 report를
+보류하며 같은 harness의 다음 할당을 차단한다. 늦은 완료나 사후 root 부재로 최초 실패를
+성공으로 바꾸지 않는다. 삭제 실패도 부분 삭제 전의 전체 bytes가 남았다는 증거는 아니다.
+
+기존의 소유 root·실패 소스·로그 보존 결정은 유지한다. 남아 있는 root와 증거를 추가 삭제하거나
+자동 재시도하지 않으며, 별도 보존한 source/log를 이미 제출한 삭제의 취소 또는 원래 root 전체
+보존과 동일시하지 않는다. 종전의 포괄적인 “불확실 종료·정리는 소유 root를 보존” 요약은 제출 후
+전체 bytes의 보존 보장으로 해석하지 않는다. 이 구분은 cleanup의 시간·종료·판정 조건을 변경하거나
+과거 불확실성을 해소한 것이 아니다. raw PID/group kill·다른 앱 종료·권한/보안 변경은 없으며,
+준비/reader/loader 첫 실패와 실패한 소스·로그를 보존한다.
 
 ## 완료 기준
 

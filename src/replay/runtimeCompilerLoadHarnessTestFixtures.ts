@@ -1,6 +1,6 @@
 // Test-only process owner. Never imported by production runners or public APIs.
 import { spawn, type ChildProcess } from "node:child_process";
-import { lstat, mkdtemp, rm } from "node:fs/promises";
+import { lstat, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -8,6 +8,7 @@ import type { EventEmitter } from "node:events";
 import {
   prepareCompilerLoadFixture, CompilerLoadPreparationError,
 } from "./runtimeCompilerLoadPreparationTestFixtures.js";
+import { removeCompilerLoadFixtureForTest } from "./runtimeCompilerLoadCleanupTestFixtures.js";
 import {
   isCompilerLoadCaseId, parseCompilerLoadReport,
   COMPILER_LOAD_STDOUT_LIMIT, COMPILER_LOAD_STDERR_LIMIT,
@@ -369,7 +370,7 @@ const realHarness = createCompilerLoadHarnessForTest({
     return { dev: stat.dev, ino: stat.ino, directory: stat.isDirectory(), symlink: stat.isSymbolicLink() };
   },
   prepareFixture: prepareCompilerLoadFixture,
-  removeRoot: (root) => rm(root, { recursive: true, force: false, maxRetries: 0 }),
+  removeRoot: removeCompilerLoadFixtureForTest,
   spawnChild: (bootstrap, caseId, root): ChildProcess => spawn(process.execPath, [bootstrap, caseId], {
     cwd: root, env: { ...CHILD_ENV }, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
   }),
