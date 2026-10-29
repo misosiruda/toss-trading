@@ -1,0 +1,329 @@
+{
+  "schemaVersion": 1,
+  "investigationDate": "2026-10-29",
+  "conclusion": "valuation_timeout_not_reproduced_cause_unconfirmed",
+  "productionChange": false,
+  "baselineCommit": "5da597ee1ac383bcb3888c30492e819b242ea9d7",
+  "baselineTree": "01e353da5073b0ebf0c499764f77b700b1b9bbc7",
+  "runtime": {
+    "node": "v24.19.0",
+    "platform": "linux",
+    "arch": "x64",
+    "availableParallelism": 12
+  },
+  "nodeSha256": "bc17c508ffeed0ec622934f9b7fa72f8e78da65350e63c3eceb56fa688aa5e12",
+  "sourceSha256": {
+    "bucketValuationApplicationFiles.ts": "c625ea0fc3fbf009c3940b9746de81f0071b0a139edeed3bfb683d3aba580e05",
+    "bucketValuationApplicationFiles.test.ts": "8025e38349fad62158d839840f413a57ea295e747400cf153a51274e368af4f3"
+  },
+  "preservedSettings": {
+    "lockTimeoutMs": 5000,
+    "lockRetryDelayMs": 10,
+    "concurrentExactRetries": 8,
+    "newApplications": 1,
+    "alreadyApplied": 7,
+    "markRecords": 1,
+    "equityEvents": 2,
+    "positionEvents": 4,
+    "runnerConcurrencyOverride": false
+  },
+  "historicalFailure": {
+    "source": "PR833 diagnostic-run-02",
+    "head": "ebf2ebd5d0d2c2c42dd5ff3d1d1ad190ec2cba9a",
+    "testDurationMs": 6110.201561,
+    "error": "bucket valuation application repository lock is unavailable",
+    "stdoutSha256": "bdc64e707b3a3a2cf614f967fd40c951d06091919c2afe28c6e847973945c2b7"
+  },
+  "runs": {
+    "baseline-full": {
+      "exitCode": 1,
+      "durationSeconds": 409.44924038600584,
+      "inputFileCount": 5122,
+      "inputChanges": [],
+      "testCounts": {
+        "tests": [
+          23,
+          5682
+        ],
+        "pass": [
+          23,
+          5648
+        ],
+        "fail": [
+          0,
+          1
+        ],
+        "cancelled": [
+          0,
+          0
+        ],
+        "skipped": [
+          0,
+          33
+        ]
+      },
+      "valuationTestDurationsMs": [
+        797.143919
+      ],
+      "failures": [
+        "turnover-bound Risk concurrent creators converge to one persisted observation (9307.344072ms)"
+      ],
+      "stdoutSha256": "6135c4971c8ac1a3a03db63d53898a45d47ccc36062df8c40e8a351fe7b50124",
+      "commandSha256": "d58a6909981e2896c79579705b6e469c44efa1cbb0d32282a6204cdba0aff992",
+      "inputsSha256": "c7231a134489efef23b4443f22ad78b6e2febd9c85e797597e6b46323875bddf"
+    },
+    "target-repeat": {
+      "exitCode": 0,
+      "durationSeconds": 10.232849596999586,
+      "inputFileCount": 5122,
+      "inputChanges": [],
+      "testCounts": {
+        "tests": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "pass": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "fail": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "cancelled": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "skipped": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "valuationTestDurationsMs": [
+        403.594731,
+        370.505237,
+        375.963079,
+        356.427915,
+        380.388871,
+        394.55768,
+        380.784652,
+        391.361101,
+        371.958545,
+        379.734518,
+        378.493544,
+        385.734202,
+        356.012569,
+        359.232473,
+        358.070652,
+        378.51276,
+        364.43615,
+        359.749613,
+        366.679707,
+        406.110543
+      ],
+      "failures": [],
+      "stdoutSha256": "319b54375d2c78934476920493d9d998e1ec583c2ab76e7f1685c2f87158a2c1",
+      "commandSha256": "6200391c1672f7299c21bfd395871743e6db39018c7c11f0f1a72fa98b2c2f7c",
+      "inputsSha256": "c7231a134489efef23b4443f22ad78b6e2febd9c85e797597e6b46323875bddf"
+    },
+    "diagnostic-full": {
+      "exitCode": 1,
+      "durationSeconds": 396.6605771169998,
+      "inputFileCount": 5122,
+      "inputChanges": [],
+      "testCounts": {
+        "tests": [
+          5682
+        ],
+        "pass": [
+          5648
+        ],
+        "fail": [
+          1
+        ],
+        "cancelled": [
+          0
+        ],
+        "skipped": [
+          33
+        ]
+      },
+      "valuationTestDurationsMs": [
+        837.070996
+      ],
+      "failures": [
+        "turnover Risk sources honor short lock timeouts throughout nonempty historical source resolution (21640.088487ms)"
+      ],
+      "stdoutSha256": "4d920ff57fedee546733c0383f4a244fb6b57d46fed6bc3635a7e898142823d4",
+      "commandSha256": "c5f36cedd1cdb863913629665d5606056f1c90795a10187a126efd9975203e82",
+      "inputsSha256": "c7231a134489efef23b4443f22ad78b6e2febd9c85e797597e6b46323875bddf"
+    },
+    "turnover-followup": {
+      "result": {
+        "exitCode": 0,
+        "durationSeconds": 3.9950228160014376,
+        "inputChanges": []
+      },
+      "tests": 2,
+      "pass": 2,
+      "fail": 0,
+      "stdoutSha256": "1365021d868d1b15fc411e08aea57ae3ee474f2be14aa65375b9c4493d234144",
+      "commandSha256": "0698d5a303b7222ecedc5528ebdb40a4fac2a5887371223199735956743589c5",
+      "scope": "Two separate turnover failures checked without observer; not a full-suite pass or root-cause proof"
+    }
+  },
+  "valuationTrace": {
+    "diagnosticOnly": true,
+    "observerEffectNotExcluded": true,
+    "eventCount": 8560,
+    "truncated": false,
+    "observedCalls": 8,
+    "newApplications": 1,
+    "alreadyApplied": 7,
+    "maxObservedLockWaitMs": 446.47746700000016,
+    "maxObservedLockHoldMs": 89.00261999999998,
+    "maxPerCallCumulativeFsyncMs": 78.70199500000012,
+    "wholeFileEventLoopDelayMaxMs": 24.215551,
+    "wallMonotonicDeviationMaxMs": 0.9198040000001129,
+    "observerSha256": "cd43f6d0041621ccf5463aeebc40577374eefaee511d2840d0251e6a5567de7b",
+    "rawSha256": "577580b0b55ce8dbef304e48850abb6576f09675a8076cb6c0eebf8db20e6f84"
+  },
+  "diagnosticOverlay": [
+    {
+      "path": "dist/portfolio/bucketValuationApplicationFiles.test.js",
+      "originalSha256": "f0cb5763343594cb62593458740eee7a033b3a8a4d92fd75b568b2f65c92196e",
+      "diagnosticSha256": "597f3f4af82e53a3aaa175b27e5dcf6275c9be766dd19ba114b4f6c783a4c8bf",
+      "observerSha256": "cd43f6d0041621ccf5463aeebc40577374eefaee511d2840d0251e6a5567de7b",
+      "sourceUnchanged": true,
+      "restoredSha256": "f0cb5763343594cb62593458740eee7a033b3a8a4d92fd75b568b2f65c92196e"
+    },
+    {
+      "path": "dist/portfolio/portfolioActionRiskDecisionTurnoverOrigin.test.js",
+      "originalSha256": "d5686efe47d509c99af5f8b8d0ec02fefb2a85f22b26a8f5e39397ba4cf0b399",
+      "diagnosticSha256": "9ccfbf7815d9a07d73f031182aceccbaceae3948bc32cdaad25c41b69c4e07e2",
+      "observerSha256": "cd43f6d0041621ccf5463aeebc40577374eefaee511d2840d0251e6a5567de7b",
+      "sourceUnchanged": true,
+      "restoredSha256": "d5686efe47d509c99af5f8b8d0ec02fefb2a85f22b26a8f5e39397ba4cf0b399"
+    }
+  ],
+  "limitations": [
+    "Historical failing run lacks per-lock and filesystem timing evidence",
+    "Standalone and observed passes do not prove absence of intermittency",
+    "Two separate full-suite failures remain recorded; their causes are unconfirmed",
+    "Final uninstrumented merge profile and review are separate PR gates"
+  ],
+  "invalidatedCandidateAttempts": {
+    "review-final": {
+      "result": {
+        "exitCode": -15,
+        "durationSeconds": 99.88764172200172,
+        "inputChanges": [
+          "docs/runbooks/test-verification.md"
+        ]
+      },
+      "invalidation": "invalid CRLF document snapshot replaced during verification; not valid evidence",
+      "stdoutSha256": "162d34422210e036c789490d97991d779637f168127633f285ba4fb5bd2f26e6",
+      "commandSha256": "54c62e5828cddf7a3f58da3a4ad6c28cc369f82d4d860e56e4ce761335806bf0"
+    },
+    "review-canonical": {
+      "result": {
+        "exitCode": -15,
+        "durationSeconds": 338.0657538469968,
+        "inputChanges": []
+      },
+      "invalidation": "orchestration error: overlapped prior invalid verifier during early tests; HTTP timing failure preserved; not valid isolated verification",
+      "stdoutSha256": "b0a406cc53be69623b34026529d3242a235e202bf6a2b1329a5a04144d0d427b",
+      "commandSha256": "c4abdaf12d59777a3044d5110852a65c25c258e3507ce08e775224a1c4f1b1e0"
+    }
+  }
+}
