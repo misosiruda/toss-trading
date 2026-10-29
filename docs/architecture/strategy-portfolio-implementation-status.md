@@ -1,5 +1,24 @@
 # 전략 포트폴리오: 현재 구현과 남은 연결
 
+## 2026-10-29 현재 판정
+
+기준 main `6260c5bd28b7e109f60500f52cf55318babadacf`. [현재 구현 checkpoint](implementation-checkpoint-20261029.md)와 함께 읽는다.
+
+- **완료:** [PR #788](https://github.com/misosiruda/toss-trading/pull/788)은 merge `234509734`로 반영됐다.
+  [current publisher](../../src/portfolio/currentPortfolioSizingSnapshotFiles.ts)의 callback은
+  `publication, snapshots, sessions`를 전달하며 수동·selector 예약 session을 포함한다.
+- **부분 완료:** projection CAS, append-session, paper revision·receipt 기반과 current publication의 연결.
+  아래 “다음 증거” 1번의 session 전달 부재는 더 이상 현재 상태가 아니다.
+- **미완료:** shared allocator의 slot/budget 할당 CAS, reservation→mandate→fill/accounting 원자 연결,
+  multi-cadence scheduler·conflict/trigger 처리, integrated replay/UI의 전체 수용 기준.
+- **판정 유지:** SPOM-AC-01~12는 미완료로 유지한다. 개별 primitive의 존재와 최종 운용 수용은 별개다.
+
+## 2026-10-02 관찰 기록 보존
+
+아래 기준 SHA와 “미병합”, “두 인자만 제공”, “다음 구현”은 10-02의 관찰이다. 당시 source·검토
+한계와 원문은 보존한다. 안전·원자성·검증 계약은 계속 적용하며 #788 병합으로 완화하지 않는다.
+
+
 [운용 모델 진입점](../plans/strategy-portfolio-operating-model-plan.md) · [구현 단계](../plans/strategy-portfolio/implementation-stages.md) · [최종 수용 기준](../plans/strategy-portfolio/validation-and-acceptance.md#16-최종-수용-기준) · [과거 기준선](../archive/strategy-portfolio-operating-model-history.md)
 
 ## 관찰 기준과 상태 의미

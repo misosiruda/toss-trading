@@ -1,5 +1,25 @@
 # 프로젝트 개요: 개인 AI 투자 트레이너
 
+## 2026-10-29 구현 상태 정정
+
+현재 기준은 main `6260c5bd28b7e109f60500f52cf55318babadacf`이며, 전체 상태와 source 근거는
+[구현 checkpoint](implementation-checkpoint-20261029.md)를 따른다.
+
+- **완료:** #788 current publication callback의 예약 append session 전달, 명시 비용 입력,
+  benchmark 표시·coverage, 원래 batch 요청의 새 검증·새 ID 복제가 병합됐다.
+- **부분 완료:** C1 process 관측과 C2-A/B·C2-C1~C5의 제한된 실험, EXP-01~04의 fixture 흐름.
+  전체 runtime provenance·실험 비교·Trainer 제품 수용을 뜻하지 않는다.
+- **미완료:** C2의 남은 지원 증명과 C2-D 실제 child 연결, 결과 결속·bounded reader·후보 1~3개 비교,
+  shared allocator·mandate/fill/accounting·multi-cadence 통합 및 Trainer 최종 수용.
+- **미정·미확정:** 첫 전략·시장·기간·추가 provider 등 제품 선택은 여전히 미정이다.
+  #835 valuation 조사는 완료됐지만 실패 원인은 미확정이며 코드 수정으로 해결됐다고 표시하지 않는다.
+
+## 2026-10-01 관찰 기록 보존
+
+아래의 구현 기준·PR788 미병합·현재/다음 표현은 10-01 당시 상태다. 제품 목적과 안전 경계는
+계속 적용하며, 과거 실행·review·미확정 기록은 삭제하거나 새 검증 결과로 바꾸지 않는다.
+
+
 ## 문서 상태
 
 - 제품 방향 정리: 2026-10-01

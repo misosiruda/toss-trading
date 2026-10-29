@@ -1,5 +1,24 @@
 # 기능별 PR 작업 계획
 
+## 2026-10-29 진행 상태 정정
+
+현재 main `6260c5bd28b7e109f60500f52cf55318babadacf`의 상태는
+[구현 checkpoint](../../architecture/implementation-checkpoint-20261029.md)를 따른다.
+
+| 설계 범위 | 현재 판정 |
+| --- | --- |
+| UX02c의 승인된 제한 범위 | 명시 비용 입력(#812/813), 기존 benchmark 표시·coverage(#814/817)는 완료. 새 숫자 preset·계산 정책·membership filtering은 포함하지 않음 |
+| UX06 | 원래 batch 요청 복제의 새 검증·새 ID(#815/816)는 완료. exact-pair 관측은 존재하지만 전체 카드의 후보 1~3개·완전 입력/runtime/version·통제된 비교는 미완료 |
+| UX07 | role index·native 탐색·#810의 제한된 legacy 호환 감사는 반영. 전체 payload 이전 또는 실제 사용자 origin 검증 완료가 아님 |
+| Provenance 후속 | 접수 입력·초기 상태·source/A/B/C1 및 C2의 부분 단위가 병합됨. C2 전체·C2-D·결과 producer·bounded reader·확장 비교는 미완료 |
+
+## 이전 설계와 진행 증거 보존
+
+아래 기준일·진행 표의 “결정 대기”, “clone 새 ID 미완료”는 당시 상태다. 승인된 결정은
+[승인 계약](approved-options-contract-20261006.md)을 따른다. 원래 기능 범위·수용 기준·검증·보호
+조건은 그대로 적용하고, 과거 통과·미실행·차단 기록도 보존한다.
+
+
 기준: 2026-10-02 / `main d954915` · 구현 전 범위 고정
 
 문서→실행 계약→UI 연결을 작은 PR로 진행한다. 각 단계는 목적·비범위·완료 조건을
