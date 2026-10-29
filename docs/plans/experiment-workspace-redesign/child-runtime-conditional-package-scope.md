@@ -1,5 +1,8 @@
 # C2-B3: 고정 조건부·전이 package metadata 소비
 
+2026-10-29 후속: [C2-B4 고정 dependency 계획과 파일 snapshot 결속](child-runtime-dependency-inventory-scope.md).
+아래 B3의 범위·한도·과거 기록은 보존한다.
+
 기준 main `5941bd47de7d4aa56c52b334e73cf56548f5b897`.
 [C2-B2](child-runtime-package-metadata-scope.md)는 단일 flat exports의 소비만 관측한다.
 다음 선행 의무는 actual conditions 및 전이 parent에 따른 metadata 해석이다.
