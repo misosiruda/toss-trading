@@ -1,5 +1,23 @@
 # 현재 구현 원장 및 다음 검증 범위
 
+## 2026-10-29 정정 안내
+
+이 문서의 원장은 10-06 당시 기록이다. 현재 main `6260c5bd28b7e109f60500f52cf55318babadacf`의
+[구현 checkpoint](../../architecture/implementation-checkpoint-20261029.md)를 먼저 확인한다.
+
+- **완료:** #810의 제한된 legacy 호환 감사, #812/813 비용 입력, #814/817 표시 선택·coverage,
+  #815/816 원래 batch 정본·새 검증·새 ID 복제. #788의 session composition도 병합됐다.
+- **부분 완료:** exact-pair 관측과 field별 provenance, 접수·source·설정·process 및 C2 고정 실험.
+- **미완료:** 후보 1~3개와 전체 input/runtime/version 비교, C2 전체와 실제 child/결과/공개 reader 연결.
+- 아래 “필요한 최소 결정”의 비용·표시·coverage·batch 복제 방향은 이미
+  [승인 계약](approved-options-contract-20261006.md)에 반영됐다. 같은 선택을 다시 요구하지 않는다.
+
+## 2026-10-06 원장과 후속 감사 기록 보존
+
+아래 당시 상태·검증 수치·실패·한계는 원문대로 유지한다. 부분 감사의 통과를 실제 사용자 origin,
+전체 legacy payload 이전 또는 이번 후보의 새 검증 통과로 확대하지 않는다.
+
+
 확인일2026-10-06. 기준 main `66f7b3ca6a536f60a67459772d6939b2ca9f0e17`, tree `3cbe1bd679c1cdb3323c0537d48d681fe5e0ec62`. GitHub의 실제 merged/head/main을 확인했으며 과거 문서의 hold·로컬 후보 표시는 이력으로 구분한다. 원본과 refs는 보존한다.
 
 ## 실제 완료와 남은 범위

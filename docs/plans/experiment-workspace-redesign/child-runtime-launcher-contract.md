@@ -1,5 +1,20 @@
 # Child runtime C2 — launcher/load 설계 계약
 
+## 2026-10-29 구현 상태 안내
+
+기준 main `6260c5bd28b7e109f60500f52cf55318babadacf`.
+[구현 checkpoint](../../architecture/implementation-checkpoint-20261029.md)에 따라 C2-A/B 및
+C2-C1~C5의 제한된 실험은 병합됐지만 **C2 전체는 부분 완료**, **C2-D는 미완료**다.
+아래 구현 순서는 지원·증명 의무의 순서이며 각 단위가 전부 미착수라는 뜻이 아니다.
+고정 실험 완료를 일반 build/dependency/Node/native/configuration 완전성이나 실제 HTTP child 연결로
+확대하지 않는다. 기존 positive/negative, `unavailable`, complete flag 및 자원·보호 조건은 그대로다.
+
+## 기존 지원·증명 계약 보존
+
+아래 본문은 원래 계약과 단계별 추가 기록을 보존한다. 현재 구현 상태의 정정으로 검증표 또는
+실패·호환 경계를 완화하지 않는다.
+
+
 기준 main `26813e50f6c887f56aa4157e91f21d82658543cb`.
 [범위와 완료 기준](child-runtime-launcher-scope.md), [상위 정본](input-runtime-provenance-contract.md),
 [C1 v1](child-process-observation-contract.md)을 따른다. 이 문서는 구현 또는 지원 인증이 아니다.

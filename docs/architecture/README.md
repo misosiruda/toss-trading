@@ -2,6 +2,9 @@
 
 프로젝트의 목적, 현재 코드 위치와 책임 분리를 설명한다. 실행 절차는 runbook, 세부 불변식은 contract에서 관리한다.
 
+현재 구현 상태는 [2026-10-29 checkpoint](implementation-checkpoint-20261029.md)의 기준 main과
+완료·부분 완료·미완료 구분을 먼저 확인한다. 이전 관찰 기록은 각 문서에 보존한다.
+
 1. [프로젝트 개요](project-overview.md): 개인 AI 투자 트레이너 방향과 현재 구현·미완성 경계
 2. [코드 구조](PROJECT_STRUCTURE.md): 실제 파일과 entrypoint 찾기
 3. [시스템 아키텍처](architecture.md): 장기 책임 분리. 미래 live 경로를 현재 연결 상태로 해석하지 않음
@@ -10,4 +13,4 @@
 
 전체 문서의 역할과 다음 계획은 [문서 안내](../README.md)를 확인한다.
 
-- [전략 포트폴리오 현재 구현과 남은 연결](strategy-portfolio-implementation-status.md): main source, 미병합 PR788, 제안의 구분
+- [전략 포트폴리오 구현과 남은 연결](strategy-portfolio-implementation-status.md): #788 병합 반영, 현재 미완료 범위와 10-02 관찰 이력의 구분

@@ -1,5 +1,23 @@
 # 입력·runtime/version provenance 후속 계약
 
+## 2026-10-29 구현 상태와 계약의 구분
+
+이 문서는 계속 적용할 결속·조회·비교 계약이다. 현재 main `6260c5bd28b7e109f60500f52cf55318babadacf`의
+구현 범위는 [checkpoint](../../architecture/implementation-checkpoint-20261029.md)에 정리했다.
+아래 “현재 근거” 표는 이 계약이 작성·증보될 때의 관찰을 보존한 것이며 전체 구현의 최신 부재 목록이 아니다.
+
+- 접수 snapshot, 초기 portfolio, source/A/B/C1 producer 및 C2-A/B·C2-C1~C5 부분 단위는 병합됐다.
+- 이들은 **부분 완료**다. 전체 source/input/configuration/runtime/dependency/result 완전성은 별도다.
+- C2-D, exact-child 결과 producer, 새 근거를 소비하는 bounded public reader와 확장 비교 UI는 **미완료**다.
+- 원래 batch 요청 clone은 완료됐다. v1 field projection의 `clone=unavailable`과 구분한다.
+- 모든 `unavailable`, complete=false, 원래 reader 시간·크기 한도 및 실패·민감 정보 경계는 유지한다.
+
+## 기존 계약과 관찰 이력 보존
+
+아래 목적·불변식·구현 순서·검증 의무는 정본으로 유지한다. 과거 관찰을 보존하는 것이 해당
+안전 계약을 폐기하거나 이미 구현된 부분을 다시 미구현으로 되돌리는 뜻은 아니다.
+
+
 기준: PR817 병합 main `55ba85ba8a72b71636f34e1d2a57b93bbdee5fa6`.
 이 문서는 승인된 UX06의 선행 저장·조회 계약과 구현 순서를 정한다. 문서 추가만으로 producer,
 reader, 새 endpoint, 비교 가능성 또는 화면 기능이 구현됐다고 표시하지 않는다.

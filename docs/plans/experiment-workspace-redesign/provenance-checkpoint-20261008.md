@@ -1,5 +1,24 @@
 # Provenance 구현 checkpoint — 2026-10-08
 
+## 2026-10-29 현재 checkpoint로 연결
+
+현재 main `6260c5bd28b7e109f60500f52cf55318babadacf`의
+[구현 checkpoint](../../architecture/implementation-checkpoint-20261029.md)가 10-08/10-12 이후 병합을 반영한다.
+
+- **C1 부분 producer 구현 완료:** #825, merge `26813e50f`. 아래 C1 후보 표시는 과거 이력이다.
+- **C2 부분 단위 완료:** #827 C2-A, #828 C2-B, #829~833 C2-C1~C5의 제한된 고정 실험.
+- **C2 전체는 부분 완료:** 일반 build/dependency·Node/native/configuration 완전성은 증명되지 않았다.
+- **미완료:** C2-D actual child producer/default HTTP 연결, exact-child 결과 결속,
+  bounded historical reader 및 baseline 1/candidate 1~3 UI.
+- `runtime/dependencies/result/comparability=unavailable`과 세 complete flag=false의 기존 의미를
+  유지한다. #835의 진단·최종 전체 통과는 이 완전성을 승격하는 근거가 아니다.
+
+## 2026-10-08 및 10-12 관찰 기록 보존
+
+아래 현재/후보/다음 표현과 각 head의 검증·병합 수치는 당시 기록이다. 원래의 소비·발행·조회
+계약과 검증·안전 조건은 계속 적용하며, 과거 결과를 새 후보 결과로 고치지 않는다.
+
+
 확인 기준 main: `aa344baafdc920c0ddaf56da2d241f7f512882cc`,
 tree: `fa27a7ecb3960fe7603a26461283c2c96aec9695`.
 PR824는2026-10-08T11:29:35Z 병합됐다. 아래 B까지는 실제 병합 상태이며 C1은 별도 구현 후보다. 과거 원장의 당시 미구현 표시는 이력으로 유지한다.
