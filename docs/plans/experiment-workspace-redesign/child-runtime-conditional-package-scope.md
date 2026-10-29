@@ -21,7 +21,8 @@
   custom resolver의 반례이며 Node default resolver의 ABA 관측으로 주장하지 않는다.
 - 잘못된 leaf metadata, 직접 bootstrap→leaf 요청, 다른 package/subpath/attribute,
   conditions chain fault, 복원 실패 및 byte 초과를 실제 child/준비 경계에서 거절한다.
-  전이 단계의 거절은 이미 resolve/load한 개수도 기록하여 첫 module까지 실행되지 않았다고 표시하지 않는다.
+  전이 단계의 거절은 이미 resolve/load한 개수도 기록한다. loaded는 bytes 공급 횟수이며 module body의
+  평가·완료를 뜻하지 않는다. 실제 평가 결과는 성공 사례의 최종 token으로만 확인한다.
 - 신규 report는 `runtime_conditional_package_experiment.v1` 별도 finite canonical protocol이다.
   producer 전에 성공/거절 golden fixture를 정의하고 최대 **LF 포함 1088bytes**, binding2개로 동결한다.
   기존 wire 상한과 parser 의미는 유지한다. digest/condition/parent/target/순서/개수/complete flag 변조를 거절한다.
