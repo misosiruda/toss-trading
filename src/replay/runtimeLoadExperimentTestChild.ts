@@ -3,13 +3,20 @@
 import { createHash } from "node:crypto";
 import {
   closeSync, constants, fstatSync, ftruncateSync, linkSync, lstatSync, openSync,
-  readSync, realpathSync, symlinkSync, unlinkSync, writeFileSync, writeSync,
+  opendirSync, readSync, realpathSync, symlinkSync, unlinkSync, writeFileSync, writeSync,
   type Stats,
 } from "node:fs";
 import { createRequire, registerHooks, type ModuleHooks } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+const INVENTORY_CASE_IDS = [
+  "inventory_match", "inventory_snapshot_aba", "inventory_reread_aba", "inventory_plan_json",
+  "inventory_plan_duplicate", "inventory_plan_unknown", "inventory_plan_version", "inventory_plan_missing",
+  "inventory_plan_reorder", "inventory_plan_rebound", "inventory_stale_metadata", "inventory_stale_selected",
+  "inventory_stale_unselected", "inventory_extra_file", "inventory_extra_package", "inventory_extra_directory",
+  "inventory_missing", "inventory_restore_fault", "inventory_over",
+] as const;
 const CONDITIONAL_CASE_IDS = [
   "conditional_import", "conditional_root_default", "conditional_leaf_default",
   "conditional_snapshot_aba", "conditional_reread_aba", "conditional_leaf_json",
@@ -26,6 +33,7 @@ const METADATA_CASE_IDS = [
   "metadata_attribute", "metadata_subpath", "metadata_restore_fault", "metadata_over",
 ] as const;
 const CASE_IDS = [
+  ...INVENTORY_CASE_IDS,
   ...CONDITIONAL_CASE_IDS,
   ...METADATA_CASE_IDS,
   "esm_first", "cjs_first", "esm_cjs_first", "json_import_first", "json_require_first", "json_fresh_b",
@@ -46,7 +54,7 @@ type Format = "module" | "commonjs" | "json";
 type ParentId = "bootstrap" | FileId;
 type Reason = "MAPPING_UNSUPPORTED" | "QUERY_UNSUPPORTED" | "ATTRIBUTE_UNSUPPORTED" | "FORMAT_UNSUPPORTED"
   | "PATH_UNSAFE" | "INVENTORY_LIMIT" | "SOURCE_LIMIT" | "TOTAL_SOURCE_LIMIT" | "EVENT_LIMIT" | "LOAD_CLOSED"
-  | "METADATA_UNSUPPORTED" | "CONDITIONS_UNSUPPORTED";
+  | "METADATA_UNSUPPORTED" | "CONDITIONS_UNSUPPORTED" | "PLAN_UNSUPPORTED" | "INVENTORY_MISMATCH";
 type Observation = "REGISTRATION_PRECEDES_LOAD" | "LATE_REGISTRATION_MISSED" | "ORIGINAL_VALUE"
   | "REPLACEMENT_VALUE" | "SAME_OBJECT" | "EVALUATED_ONCE" | "CACHE_CALLBACK_ABSENT" | "SUPPLIED_SOURCE_UNUSED"
   | "LATE_LOAD_RECORDED" | "CLOSED_CACHE_UNOBSERVED" | "CHAIN_BYPASS_OBSERVED" | "CHAIN_REWRITE_OBSERVED"
@@ -195,13 +203,22 @@ async function experiment(caseId: CaseId): Promise<void> {
       return { source: ascii(bytes.subarray(0, used)), identity: after };
     } finally { closeSync(fd); }
   }
-  const conditional = CONDITIONAL_CASE_IDS.some((id) => id === caseId);
+  const dependency = INVENTORY_CASE_IDS.some((id) => id === caseId);
+  const conditional = dependency || CONDITIONAL_CASE_IDS.some((id) => id === caseId);
   const inventory: typeof INVENTORY = conditional ? [
     ["f01", "node_modules/c2c-leaf/package.json", null], ["f02", "node_modules/c2c-leaf/original.mjs", "module"],
     ["f03", "node_modules/c2c-leaf/replacement.mjs", "module"], ["f04", "leaf.package.replacement.json", null],
     ...INVENTORY.slice(4),
   ] : INVENTORY;
-  for (const [id, relative, format] of inventory) {
+  const caseInventory: typeof INVENTORY = dependency ? inventory.map(([id, relative, format]) => {
+    if (id === "f07") return [id, "dependency.plan.json", null];
+    if (id === "f16") return [id, "dependency.plan.changed.json", null];
+    if (id === "f06" && caseId === "inventory_extra_file") return [id, "node_modules/c2c-leaf/extra.mjs", format];
+    if (id === "f06" && caseId === "inventory_extra_package") return [id, "node_modules/c2c-other/extra.mjs", format];
+    if (id === "f06" && caseId === "inventory_extra_directory") return [id, "node_modules/c2c-leaf/unlisted/extra.mjs", format];
+    return [id, relative, format];
+  }) : inventory;
+  for (const [id, relative, format] of caseInventory) {
     if (snapshots.size >= 16) reject("INVENTORY_LIMIT");
     const path = join(root, relative);
     if (paths.has(path)) reject("PATH_UNSAFE");
@@ -264,6 +281,9 @@ async function experiment(caseId: CaseId): Promise<void> {
   if (["conditional_snapshot_aba", "conditional_reread_aba", "conditional_restore_fault"].includes(caseId)) {
     totalBytes += snap("f15").source.length + snap("f04").source.length;
   }
+  if (["inventory_snapshot_aba", "inventory_reread_aba", "inventory_restore_fault"].includes(caseId)) {
+    totalBytes += snap("f16").source.length + snap("f03").source.length;
+  }
   if (totalBytes > 32_768) reject("TOTAL_SOURCE_LIMIT");
   check(snapshots.size === 16);
   if (caseId === "cap_inventory") check(paths.size === 16);
@@ -282,12 +302,58 @@ async function experiment(caseId: CaseId): Promise<void> {
     let resultToken: number | null = null;
     let rejection: Reason | null = null;
     let changed = false;
+    let inventoryChanged = false;
+    let planDigest: string | null = null;
     const conditions = (input: readonly string[]): string[] => {
       const values = [...input].sort();
       if (JSON.stringify(values) !== '["import","module-sync","node","node-addons"]') reject("CONDITIONS_UNSUPPORTED");
       return values;
     };
     try {
+      if (dependency) {
+        if (["inventory_snapshot_aba", "inventory_reread_aba", "inventory_restore_fault"].includes(caseId)) {
+          replace("f07", "f16"); replace("f02", "f03"); inventoryChanged = true;
+        }
+        const planSource = caseId === "inventory_reread_aba" ? boundedRead(snap("f07").path).source : snap("f07").source;
+        let parsedPlan: unknown;
+        try { parsedPlan = JSON.parse(planSource); } catch { reject("PLAN_UNSUPPORTED"); }
+        // Fixed independently of the captured files. A rewritten plan cannot authorize a rewritten module.
+        const expectedPlanDigest = "sha256:2e7f03d7626bc3932c5174bcc334508b2a50873fd2918f83947492b881398606";
+        if (`${JSON.stringify(parsedPlan)}\n` !== planSource || planSource.length !== 785
+          || digest(planSource) !== expectedPlanDigest || typeof parsedPlan !== "object" || parsedPlan === null) reject("PLAN_UNSUPPORTED");
+        const plan = parsedPlan as Record<string, unknown>;
+        if (JSON.stringify(Object.keys(plan)) !== '["schemaVersion","packages","files"]'
+          || plan.schemaVersion !== "c2_dependency_snapshot_plan.v1"
+          || JSON.stringify(plan.packages) !== '[{"name":"c2b-fixture","files":["f08","f09","f10"]},{"name":"c2c-leaf","files":["f01","f02","f03"]}]'
+          || !Array.isArray(plan.files) || plan.files.length !== 6) reject("PLAN_UNSUPPORTED");
+        const ids = ["f08", "f09", "f10", "f01", "f02", "f03"] as const;
+        for (let i = 0; i < ids.length; i += 1) {
+          const row = plan.files[i] as Record<string, unknown>;
+          if (typeof row !== "object" || row === null || JSON.stringify(Object.keys(row)) !== '["id","sourceDigest"]'
+            || row.id !== ids[i] || typeof row.sourceDigest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(row.sourceDigest)) reject("PLAN_UNSUPPORTED");
+          if (row.sourceDigest !== snap(ids[i]!).digest) reject("INVENTORY_MISMATCH");
+        }
+        const directoryEntries = (path: string, expected: readonly string[], directories: boolean): void => {
+          checkAncestors(join(path, "fixed-observation"));
+          const directory = opendirSync(path);
+          const names: string[] = [];
+          try {
+            // At most expected+1 reads; reject overflow without scanning an unbounded directory.
+            for (let i = 0; i <= expected.length; i += 1) {
+              const entry = directory.readSync();
+              if (entry === null) break;
+              if (i === expected.length || !expected.includes(entry.name)
+                || (directories ? !entry.isDirectory() : !entry.isFile())) reject("INVENTORY_MISMATCH");
+              names.push(entry.name);
+            }
+          } finally { directory.closeSync(); }
+          if (JSON.stringify(names.sort()) !== JSON.stringify([...expected].sort())) reject("INVENTORY_MISMATCH");
+        };
+        directoryEntries(join(root, "node_modules"), ["c2b-fixture", "c2c-leaf"], true);
+        for (const name of ["c2b-fixture", "c2c-leaf"]) directoryEntries(join(root, "node_modules", name),
+          ["package.json", "original.mjs", "replacement.mjs"], false);
+        planDigest = digest(planSource);
+      }
       if (["conditional_snapshot_aba", "conditional_reread_aba", "conditional_restore_fault"].includes(caseId)) {
         replace("f08", "f15"); replace("f01", "f04"); changed = true;
       }
@@ -354,7 +420,7 @@ async function experiment(caseId: CaseId): Promise<void> {
       check(resolved === 2 && bindings.length === 2 && pending === null && resultToken === expected);
     } catch (error) {
       if (!(error instanceof Rejection) || !["MAPPING_UNSUPPORTED", "METADATA_UNSUPPORTED",
-        "CONDITIONS_UNSUPPORTED", "ATTRIBUTE_UNSUPPORTED"].includes(error.reason)) throw error;
+        "CONDITIONS_UNSUPPORTED", "ATTRIBUTE_UNSUPPORTED", "PLAN_UNSUPPORTED", "INVENTORY_MISMATCH"].includes(error.reason)) throw error;
       rejection = error.reason;
     } finally {
       for (const hook of ownedHooks.reverse()) hook.deregister();
@@ -363,12 +429,17 @@ async function experiment(caseId: CaseId): Promise<void> {
         if (caseId !== "conditional_restore_fault") replace("f01", "f01");
       }
       for (const id of ["f08", "f01"] as const) check(boundedRead(snap(id).path).source === snap(id).source);
+      if (inventoryChanged) {
+        replace("f07", "f07");
+        if (caseId !== "inventory_restore_fault") replace("f02", "f02");
+      }
+      if (dependency) for (const id of ["f07", "f02"] as const) check(boundedRead(snap(id).path).source === snap(id).source);
     }
-    const envelope = { ...common(caseId), schemaVersion: "runtime_conditional_package_experiment.v1" };
+    const envelope = { ...common(caseId), schemaVersion: dependency ? "runtime_dependency_inventory_experiment.v1" : "runtime_conditional_package_experiment.v1" };
     if (rejection !== null) emit({ ...envelope, status: "rejected", evidence: "unavailable", reason: rejection,
       resolved, loaded: bindings.length });
     else emit({ ...envelope, status: reread ? "counterexample" : "observed", evidence: "synthetic_fixture_observation",
-      bindings, token: resultToken, diskRestored: true });
+      bindings, token: resultToken, diskRestored: true, ...(dependency ? { plan: { sourceDigest: planDigest, fileCount: 6 } } : {}) });
     return;
   }
 

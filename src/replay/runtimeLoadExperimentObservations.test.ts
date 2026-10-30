@@ -37,7 +37,8 @@ async function observed(caseId: RuntimeLoadExperimentCaseId, status: "observed" 
   observations: readonly RuntimeLoadExperimentObservation[]): Promise<Observed> {
   const report = await collected(caseId);
   if (report.status === "rejected") throw new Error("unexpected synthetic rejection");
-  if (report.schemaVersion === "runtime_conditional_package_experiment.v1") throw new Error("unexpected conditional report");
+  if (report.schemaVersion === "runtime_conditional_package_experiment.v1"
+    || report.schemaVersion === "runtime_dependency_inventory_experiment.v1") throw new Error("unexpected conditional report");
   assert.equal(report.status, status);
   assert.equal(report.evidence, "synthetic_fixture_observation");
   for (const item of observations) assert.ok(report.observations.includes(item), `${caseId}: ${item}`);
