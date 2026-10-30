@@ -476,7 +476,7 @@ dashboard 작성 규칙:
 
 Local Operations API 작성 규칙:
 
-- `src/api/localOperationsServer.ts`는 HTTP server bootstrap, read-only method guard, dashboard asset/API dispatch만 담당한다.
+- `src/api/localOperationsServer.ts`는 HTTP server bootstrap, 조회 method guard, guarded paper validation/create 요청 검증 및 dashboard asset/API dispatch를 담당한다. HTTP 서버 전체를 read-only로 표현하지 않으며 실거래 비활성화와 guarded paper mutation capability를 구분한다. MCP의 별도 조회 전용 노출 정책은 유지한다.
 - route table과 query parsing은 `src/api/localOperationsRouting.ts`에 둔다.
 - storage/report artifact를 읽어 응답 payload를 만드는 코드는 `src/api/localOperationsReaders.ts`에 둔다.
 - dashboard static asset mapping은 `src/api/localOperationsDashboardAssets.ts`, masked JSON 응답은 `src/api/localOperationsResponse.ts`에 둔다.
