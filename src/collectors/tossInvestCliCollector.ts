@@ -150,6 +150,15 @@ export class TossInvestCliReadOnlyCollector {
       timeoutMs: this.config.timeoutMs
     });
 
+    if (result.termination === "unconfirmed" || result.terminationRequestFailed || result.failureReason) {
+      const reason = result.termination === "unconfirmed" ? "termination_unconfirmed"
+        : result.terminationRequestFailed ? "termination_request_failed" : result.failureReason!;
+      return degraded(input.commandKey, metadata, {
+        code: reason === "timeout" ? "COMMAND_TIMEOUT" : "COMMAND_FAILED",
+        message: `tossctl process failed: ${reason}`
+      });
+    }
+
     if (result.timedOut) {
       return degraded(input.commandKey, metadata, {
         code: "COMMAND_TIMEOUT",
