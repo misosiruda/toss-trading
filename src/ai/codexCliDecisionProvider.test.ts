@@ -569,24 +569,6 @@ test("valid JSON is extracted from Codex CLI stdout logs", async () => {
   assert.equal(result.decision?.decisions[0]?.symbol, "005930");
 });
 
-test("run budget prevents execution after the instance UTC-day limit", async () => {
-  const runner = new FakeRunner({
-    exitCode: 0,
-    stdout: validDecisionJson,
-    stderr: "",
-    timedOut: false
-  });
-  const budget = new InMemoryDailyRunBudget(1);
-  const subject = provider(runner, {}, budget);
-
-  await subject.decide(packet());
-  const second = await subject.decide(packet());
-
-  assert.equal(second.attempted, false);
-  assert.equal(second.failure?.code, "RUN_BUDGET_EXCEEDED");
-  assert.equal(runner.calls.length, 1);
-});
-
 test("default provider budgets restart for a new instance and use wall-clock UTC instead of packet time", async () => {
   let now = new Date("2026-10-29T23:59:59.999Z");
   const runner = new FakeRunner({ exitCode: 0, stdout: validDecisionJson, stderr: "", timedOut: false });
@@ -668,4 +650,22 @@ test("a runner rejection retains the consumed attempt", async () => {
   await assert.rejects(subject.decide(packet()), /synthetic runner error/);
   assert.equal((await subject.decide(packet())).attempted, false);
   assert.equal(budget.used(new Date()), 1);
+});
+
+test("run budget prevents execution after the instance UTC-day limit", async () => {
+  const runner = new FakeRunner({
+    exitCode: 0,
+    stdout: validDecisionJson,
+    stderr: "",
+    timedOut: false
+  });
+  const budget = new InMemoryDailyRunBudget(1);
+  const subject = provider(runner, {}, budget);
+
+  await subject.decide(packet());
+  const second = await subject.decide(packet());
+
+  assert.equal(second.attempted, false);
+  assert.equal(second.failure?.code, "RUN_BUDGET_EXCEEDED");
+  assert.equal(runner.calls.length, 1);
 });
