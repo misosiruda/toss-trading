@@ -14,7 +14,7 @@ import {
   buildPaperDecisionPrompt,
   PAPER_DECISION_PROMPT_VERSION
 } from "./decisionPrompt.js";
-import { InMemoryDailyRunBudget } from "./runBudget.js";
+import { InMemoryDailyRunBudget, InMemoryRunBudget, type RunBudget } from "./runBudget.js";
 import type {
   ProcessRunOptions,
   ProcessRunResult,
@@ -103,7 +103,7 @@ function packet(): MarketPacket {
 function provider(
   runner: FakeRunner,
   overrides: Partial<ConstructorParameters<typeof CodexCliDecisionProvider>[0]> = {},
-  budget = new InMemoryDailyRunBudget(3)
+  budget: RunBudget = new InMemoryDailyRunBudget(3)
 ) {
   return new CodexCliDecisionProvider(
     {
@@ -569,7 +569,90 @@ test("valid JSON is extracted from Codex CLI stdout logs", async () => {
   assert.equal(result.decision?.decisions[0]?.symbol, "005930");
 });
 
-test("run budget prevents execution after daily limit", async () => {
+test("default provider budgets restart for a new instance and use wall-clock UTC instead of packet time", async () => {
+  let now = new Date("2026-10-29T23:59:59.999Z");
+  const runner = new FakeRunner({ exitCode: 0, stdout: validDecisionJson, stderr: "", timedOut: false });
+  const create = () => new CodexCliDecisionProvider({
+    enabled: true, codexPath: "codex", sandbox: "read-only", timeoutMs: 300_000,
+    maxRunsPerDay: 1, allowWebSearch: false, now: () => now
+  }, { runner });
+  const first = create();
+  assert.equal((await first.decide(packet())).attempted, true);
+  assert.equal((await first.decide(packet())).failure?.reason,
+    "Codex CLI decision budget for this provider instance and UTC day is exhausted");
+  assert.equal((await create().decide(packet())).attempted, true);
+  now = new Date("2026-10-30T00:00:00.000Z");
+  assert.equal((await first.decide(packet())).attempted, true);
+  assert.equal((await first.decide(packet())).attempted, false);
+  assert.equal(runner.calls.length, 3);
+});
+
+test("injected run budget overrides legacy daily config and survives UTC rollover", async () => {
+  let now = new Date("2026-10-29T23:59:59Z");
+  const runner = new FakeRunner({ exitCode: 0, stdout: validDecisionJson, stderr: "", timedOut: false });
+  const budget = new InMemoryRunBudget(2);
+  const subject = provider(runner, { maxRunsPerDay: 1, now: () => now }, budget);
+  assert.equal((await subject.decide(packet())).attempted, true);
+  assert.equal((await subject.decide(packet())).attempted, true);
+  now = new Date("2026-10-30T00:00:00Z");
+  const blocked = await subject.decide(packet());
+  assert.equal(blocked.attempted, false);
+  assert.equal(blocked.failure?.reason, "Codex CLI decision budget for this run is exhausted");
+  assert.equal(budget.used(now), 2);
+  assert.equal(runner.calls.length, 2);
+});
+
+test("explicitly shared budget limits concurrent provider calls before awaiting the runner", async () => {
+  const runner = new FakeRunner({ exitCode: 0, stdout: validDecisionJson, stderr: "", timedOut: false });
+  const budget = new InMemoryRunBudget(1);
+  const results = await Promise.all([
+    provider(runner, {}, budget).decide(packet()),
+    provider(runner, {}, budget).decide(packet())
+  ]);
+  assert.deepEqual(results.map((result) => result.attempted), [true, false]);
+  assert.equal(runner.calls.length, 1);
+});
+
+for (const [kind, result] of Object.entries({
+  timeout: { exitCode: null, stdout: "", stderr: "", timedOut: true },
+  nonzero: { exitCode: 1, stdout: "", stderr: "synthetic failure", timedOut: false },
+  invalidJson: { exitCode: 0, stdout: "invalid", stderr: "", timedOut: false }
+})) {
+  test(`${kind} attempt consumes budget without refund`, async () => {
+    const runner = new FakeRunner(result);
+    const budget = new InMemoryRunBudget(1);
+    const subject = provider(runner, {}, budget);
+    assert.equal((await subject.decide(packet())).failure?.code, "AI_DECISION_FAILED");
+    assert.equal((await subject.decide(packet())).attempted, false);
+    assert.equal(budget.used(new Date()), 1);
+    assert.equal(runner.calls.length, 1);
+  });
+}
+
+test("disabled and budget-rejected calls do not consume another attempt", async () => {
+  const runner = new FakeRunner({ exitCode: 0, stdout: validDecisionJson, stderr: "", timedOut: false });
+  const budget = new InMemoryRunBudget(1);
+  assert.equal((await provider(runner, { enabled: false }, budget).decide(packet())).attempted, false);
+  assert.equal(budget.used(new Date()), 0);
+  const subject = provider(runner, {}, budget);
+  await subject.decide(packet());
+  await subject.decide(packet());
+  assert.equal(budget.used(new Date()), 1);
+  assert.equal(runner.calls.length, 1);
+});
+
+test("a runner rejection retains the consumed attempt", async () => {
+  const budget = new InMemoryRunBudget(1);
+  const subject = new CodexCliDecisionProvider({
+    enabled: true, codexPath: "codex", sandbox: "read-only", timeoutMs: 300_000,
+    maxRunsPerDay: 1, allowWebSearch: false
+  }, { budget, runner: { run: async () => { throw new Error("synthetic runner error"); } } });
+  await assert.rejects(subject.decide(packet()), /synthetic runner error/);
+  assert.equal((await subject.decide(packet())).attempted, false);
+  assert.equal(budget.used(new Date()), 1);
+});
+
+test("run budget prevents execution after the instance UTC-day limit", async () => {
   const runner = new FakeRunner({
     exitCode: 0,
     stdout: validDecisionJson,

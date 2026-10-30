@@ -99,19 +99,36 @@ npm run historical:universe:coverage -- -- --data-dir data/replay-2023-01-2026-0
 
 One-shot 또는 stored packet paper run:
 
-- `AI_DECISION_MAX_RUNS_PER_DAY`는 하루 provider 호출 상한이다.
+- `AI_DECISION_MAX_RUNS_PER_DAY`는 **provider 인스턴스 내부의 UTC 일자별** 호출 시도 상한이다. 실제 wall-clock을 쓰며 packet/replay 시각을 쓰지 않는다.
+- 같은 날에도 새 provider 또는 새 CLI 프로세스는 0부터 시작한다. 여러 CLI 실행을 합친 계정별·저장 root별 공통 quota가 아니다.
+- alias 우선순위와 기본값은 유지한다: `AI_DECISION_MAX_RUNS_PER_DAY` → `CODEX_DECISION_MAX_RUNS_PER_DAY` → 일반 paper CLI `3`, single historical replay `5`.
 
 Single historical replay:
 
 - `--max-decision-calls`는 replay sampling에서 provider 호출 후보 횟수를 제한한다.
 - `--max-codex-calls`는 single replay의 Codex provider 호출 상한이다.
+- single replay는 위 인스턴스 UTC-day 상한도 함께 적용한다. 두 gate 중 먼저 소진된 제한이 호출을 차단한다.
 
 Batch historical replay:
 
 - `--max-decision-calls`는 각 replay run의 sampling call cap이다.
 - `--max-codex-calls-per-run`은 각 replay run 안의 Codex provider call cap이다.
 - batch replay는 run마다 별도 Codex provider를 생성한다.
-- `AI_DECISION_MAX_RUNS_PER_DAY`는 일반 provider env 해석에 쓰이며 batch per-run cap과 같은 의미가 아니다.
+- batch replay와 HTTP paper simulation은 `InMemoryRunBudget(maxCodexCallsPerRun)`을 명시적으로 주입한다. UTC 자정이 지나도 같은 run의 잔여량은 늘어나지 않는다.
+- 이 주입 budget이 legacy `maxRunsPerDay` 설정보다 우선한다. batch per-run cap의 숫자와 기존 replay wrapper의 추가 gate는 유지한다.
+- batch CLI preflight는 별도 provider/budget을 사용한다. preflight 호출은 각 replay run의 cap과 공유하지 않는다.
+
+Scheduler:
+
+- `PAPER_SCHEDULER_MAX_RUNS_PER_DAY`는 별도 scheduler **job 시도** 제한이다. `paper-scheduler-state.json`의 `runsUsed`와 KST 날짜를 사용하며 `--data-dir`의 state/lock 경로를 공유하는 실행에 적용된다.
+- provider의 UTC-day 메모리 budget과 단위·날짜가 다르다. scheduler gate·lock·backoff 구현은 이번 budget 계약 변경의 대상이 아니다. 이를 계정 전체의 원자적 AI quota로 해석하지 않는다.
+
+소비 기준:
+
+- enabled provider가 budget gate를 통과하면 runner를 호출하기 직전에 1회를 소비한다. 정상 결과, nonzero exit, timeout, parsing 실패, runner reject에 환불하지 않는다.
+- provider disabled 또는 budget gate에서 차단된 호출은 소비하지 않는다. replay wrapper는 delegate 호출 시도를 별도로 세므로 provider가 실행 전에 거절한 경우도 wrapper cap에는 반영될 수 있다.
+- 동일 budget 객체를 명시적으로 주입한 provider끼리는 같은 JS process에서 공유할 수 있다. process 간 공유·재시작 보존·외부 계정 비용 상한은 보장하지 않는다.
+- 자세한 scope와 호환 정책은 [AI 호출 budget 계약](../contracts/ai-call-budget.md)을 참고한다.
 
 ## 실행 절차
 

@@ -6,7 +6,8 @@ import {
 } from "../domain/schemas.js";
 import { createMarketPacketHash } from "../market/packetHash.js";
 import {
-  InMemoryDailyRunBudget
+  InMemoryInstanceUtcDayRunBudget,
+  type RunBudget
 } from "./runBudget.js";
 import {
   NodeProcessRunner,
@@ -26,6 +27,7 @@ export interface CodexCliDecisionProviderConfig {
   codexPath: string;
   sandbox: "read-only";
   timeoutMs: number;
+  /** Legacy setting: per provider instance and UTC wall-clock day; ignored by an injected budget. */
   maxRunsPerDay: number;
   allowWebSearch: boolean;
   outputSchemaPath?: string;
@@ -61,18 +63,18 @@ export interface CodexCliCommandPreview {
 
 export class CodexCliDecisionProvider {
   private readonly runner: ProcessRunner;
-  private readonly budget: InMemoryDailyRunBudget;
+  private readonly budget: RunBudget;
 
   constructor(
     private readonly config: CodexCliDecisionProviderConfig,
     dependencies: {
       runner?: ProcessRunner;
-      budget?: InMemoryDailyRunBudget;
+      budget?: RunBudget;
     } = {}
   ) {
     this.runner = dependencies.runner ?? new NodeProcessRunner();
     this.budget =
-      dependencies.budget ?? new InMemoryDailyRunBudget(config.maxRunsPerDay);
+      dependencies.budget ?? new InMemoryInstanceUtcDayRunBudget(config.maxRunsPerDay);
   }
 
   async decide(packet: MarketPacket): Promise<CodexCliDecisionResult> {
@@ -97,7 +99,9 @@ export class CodexCliDecisionProvider {
         decision: null,
         failure: {
           code: "RUN_BUDGET_EXCEEDED",
-          reason: "Daily Codex CLI decision budget is exhausted"
+          reason: this.budget.scope === "run"
+            ? "Codex CLI decision budget for this run is exhausted"
+            : "Codex CLI decision budget for this provider instance and UTC day is exhausted"
         },
         command
       };

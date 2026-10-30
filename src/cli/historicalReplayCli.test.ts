@@ -2266,7 +2266,7 @@ test("historical batch replay CLI rejects invalid per-run Codex call cap", () =>
   );
 });
 
-test("historical batch replay CLI uses ephemeral Codex sessions per run", () => {
+test("historical batch replay CLI uses isolated per-run budgets and ephemeral sessions despite legacy daily env", () => {
   const sourceDataDir = mkdtempSync(
     join(tmpdir(), "historical-batch-codex-source-")
   );
@@ -2326,6 +2326,8 @@ test("historical batch replay CLI uses ephemeral Codex sessions per run", () => 
         AI_DECISION_ENABLED: "true",
         CODEX_EXEC_PATH: process.execPath,
         CODEX_EXEC_TIMEOUT_SECONDS: "5",
+        AI_DECISION_MAX_RUNS_PER_DAY: "0",
+        CODEX_DECISION_MAX_RUNS_PER_DAY: "0",
         FAKE_CODEX_LOG_PATH: fakeCodexLogPath
       }
     }
