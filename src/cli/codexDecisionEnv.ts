@@ -10,6 +10,7 @@ export interface HistoricalCodexDecisionEnv {
 export interface CodexDecisionProviderEnvOptions {
   defaultMaxRunsPerDay?: number;
   enabled?: boolean;
+  /** Override the per-instance UTC-day cap, not a replay-run cap. */
   maxRunsPerDay?: number;
   ephemeral?: boolean;
 }

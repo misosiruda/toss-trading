@@ -81,7 +81,7 @@ test("Codex decision provider env lets AI alias disable user config isolation fa
   });
 });
 
-test("Codex decision provider env supports per-run overrides", () => {
+test("Codex decision provider env supports instance UTC-day cap overrides", () => {
   const config = readCodexDecisionProviderConfig(
     {
       AI_DECISION_ENABLED: "false",

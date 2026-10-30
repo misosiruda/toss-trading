@@ -109,10 +109,12 @@ Codex-backed paper CLI는 provider 설정을 같은 우선순위로 해석합니
 | 실행 timeout | `CODEX_EXEC_TIMEOUT_SECONDS`, 없으면 `300`초 |
 | output schema | `AI_DECISION_OUTPUT_SCHEMA_PATH`, 없으면 `CODEX_OUTPUT_SCHEMA_PATH` |
 | user config 격리 | `AI_DECISION_IGNORE_USER_CONFIG=true`, 없으면 `CODEX_IGNORE_USER_CONFIG=true` 또는 `CODEX_DECISION_IGNORE_USER_CONFIG=true` |
-| provider run budget | `AI_DECISION_MAX_RUNS_PER_DAY`, 없으면 `CODEX_DECISION_MAX_RUNS_PER_DAY`, 없으면 일반 paper CLI는 `3`, historical replay는 `5` |
+| provider 인스턴스 UTC-day budget | `AI_DECISION_MAX_RUNS_PER_DAY`, 없으면 `CODEX_DECISION_MAX_RUNS_PER_DAY`, 없으면 일반 paper CLI는 `3`, single historical replay는 `5`. 새 인스턴스/프로세스는 초기화되며 공통 일일 quota가 아님 |
 | web search | `CODEX_ALLOW_WEB_SEARCH=true`, 없으면 `CODEX_DECISION_ALLOW_WEB_SEARCH=true` |
 
 `historical:batch:replay --use-codex-ai`는 run마다 별도 Codex provider를 만들며 `--max-codex-calls-per-run`을 per-run 호출 상한으로 사용합니다. 이 값은 batch 전체 daily budget이 아니라 개별 replay run 안에서 허용되는 Codex 호출 수입니다.
+
+Batch replay와 HTTP paper simulation은 날짜에 따라 초기화되지 않는 `InMemoryRunBudget`을 주입합니다. 주입한 budget은 legacy `maxRunsPerDay` 설정 대신 적용됩니다. 일반 provider는 `InMemoryInstanceUtcDayRunBudget`을 기본으로 사용하고, 기존 `InMemoryDailyRunBudget` 이름은 호환 alias로 유지합니다. 환경 변수 이름·우선순위·기본값은 변경하지 않습니다. UTC/KST, 실제 시각/replay 시각, 실패 시 소비 기준은 [AI 호출 budget 계약](ai-call-budget.md)을 따릅니다.
 
 로컬 실행에서는 CLI와 MCP server 진입점이 프로젝트 루트 `.env`를 자동으로 읽습니다. `CODEX_EXEC_PATH`는 Windows 전역 환경 변수일 필요가 없고, 이 프로젝트의 `.env`에만 둘 수 있습니다. Windows Store alias가 `Access is denied`를 반환하는 경우에는 `codex` alias 대신 실제 Codex binary 경로를 사용합니다.
 개인 Codex config 또는 plugin 설정이 replay provider preflight를 깨뜨리면 `AI_DECISION_IGNORE_USER_CONFIG=true`로 `codex exec --ignore-user-config`를 사용합니다.
@@ -385,7 +387,7 @@ worker는 다음 경우 Codex를 unavailable로 처리해야 합니다.
 - paper order를 생성하지 않습니다.
 - `AI_DECISION_FAILED` audit event를 기록합니다.
 - 기존 virtual position은 변경하지 않습니다.
-- daily run budget이 남아 있으면 다음 scheduled run에서 재시도할 수 있습니다.
+- scheduler의 KST job budget, backoff와 provider 인스턴스의 UTC-day budget 등 해당 경로의 gate가 허용할 때 다음 scheduled run을 시도할 수 있습니다. 실패한 provider 호출 시도는 환불하지 않습니다.
 
 실패 추적 artifact:
 

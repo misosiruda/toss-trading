@@ -1,4 +1,5 @@
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
+import { InMemoryRunBudget } from "../ai/runBudget.js";
 import { readCodexDecisionProviderConfig } from "../cli/codexDecisionEnv.js";
 import {
   historicalReplayCodexProviderMetadata,
@@ -193,7 +194,6 @@ async function runPaperSimulationFromConfig(
         {
           ...readCodexDecisionProviderConfig(process.env, {
             enabled: true,
-            maxRunsPerDay: config.samplingPolicy.maxCodexCallsPerRun,
             ephemeral: true
           }),
           modelId: config.decisionProvider.modelId!,
@@ -240,7 +240,9 @@ async function runPaperSimulationFromConfig(
       ? {
           decisionProviderFactory: () =>
             new CodexHistoricalReplayDecisionProvider(
-              new CodexCliDecisionProvider(codexDecisionProviderConfig!),
+              new CodexCliDecisionProvider(codexDecisionProviderConfig!, {
+                budget: new InMemoryRunBudget(config.samplingPolicy.maxCodexCallsPerRun)
+              }),
               {
                 maxCallsPerReplay:
                   config.samplingPolicy.maxCodexCallsPerRun

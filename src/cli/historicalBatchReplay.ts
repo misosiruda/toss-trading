@@ -3,6 +3,7 @@ import "../config/loadEnv.js";
 import { readFileSync } from "node:fs";
 
 import { CodexCliDecisionProvider } from "../ai/codexCliDecisionProvider.js";
+import { InMemoryRunBudget } from "../ai/runBudget.js";
 import { summarizeCodexCliDecisionFailure } from "../ai/codexFailureSummary.js";
 import { readCalendarValidationOptionsFromArgs } from "./calendarValidationArgs.js";
 import { readCodexDecisionProviderConfig } from "./codexDecisionEnv.js";
@@ -167,13 +168,14 @@ if (
 }
 
 const createCodexDelegate = (): CodexCliDecisionProvider =>
-  new CodexCliDecisionProvider(createHistoricalCodexDecisionConfig());
+  new CodexCliDecisionProvider(createHistoricalCodexDecisionConfig(), {
+    budget: new InMemoryRunBudget(maxCodexCallsPerRun)
+  });
 
 const createHistoricalCodexDecisionConfig = () =>
     withHistoricalReplayPrompt(
       readCodexDecisionProviderConfig(process.env, {
         enabled: true,
-        maxRunsPerDay: maxCodexCallsPerRun,
         ephemeral: true
       }),
       { riskProfile: riskProfile.name }
