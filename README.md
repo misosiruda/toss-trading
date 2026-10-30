@@ -189,6 +189,14 @@ npm run ops:api -- --data-dir data/paper
 npm --prefix apps/dashboard run dev
 ```
 
+Local Operations API의 시작 로그는 다음과 같이 기능 범위를 구분합니다.
+
+```text
+mode=paper_only live_trading=false paper_mutations=guarded
+```
+
+HTTP API는 조회와 제한된 paper mutation을 제공합니다. 실제 broker 주문 기능은 제공하지 않으며, MCP는 별도 조회 전용 인터페이스입니다. `paper_mutations=guarded`는 route의 capability 설명이며 요청의 guard 통과나 실행 시작·완료를 뜻하지 않습니다. Validation-only POST는 검증만 수행하고, simulation 생성의 `accepted`는 접수, strategy bucket test 생성의 `queued`는 대기 기록을 뜻합니다. 기존 same-origin·JSON·operation header guard는 그대로 적용됩니다. 이전 `read_only=true` 로그를 외부에서 파싱했다면 새 필드로 변경해야 합니다.
+
 기본 operator URL은 `http://127.0.0.1:3000/dashboard`입니다. Local Operations API의 `http://127.0.0.1:8787/dashboard`는 기본 진입점이 아니라 migration 기간 동안 유지되는 legacy static compatibility 화면이며, 응답 헤더 `x-toss-trading-dashboard-surface: legacy-static-compat`로 식별됩니다.
 
 현재 저장소에는 `vercel.json`, `netlify.toml`, `Dockerfile`처럼 Next.js dashboard와 Local Operations API를 하나의 public host 뒤에 묶는 repo-managed deployment routing 설정 파일이 없습니다. `apps/dashboard/next.config.ts`는 존재하지만 현재 `allowedDevOrigins`와 turbopack root만 설정하며 deployment rewrite/redirect를 정의하지 않습니다. 배포 환경에서 `/dashboard`를 외부 operator-facing route로 노출한다면 Next.js `apps/dashboard`로 연결하고, Local Operations API는 Next.js BFF가 호출하는 backend/internal route로 격리해야 합니다. 같은 host 뒤에 둘 경우 `/dashboard` route precedence는 Next.js가 가져야 하며, Local Operations API static `/dashboard`를 외부 기본 route로 노출하지 않습니다.

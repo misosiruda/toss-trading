@@ -20,7 +20,8 @@ console.log(
 console.log(
   "Next.js dashboard is the primary operator UI: npm --prefix apps/dashboard run dev"
 );
-console.log("mode=paper_only read_only=true");
+console.log("mode=paper_only live_trading=false paper_mutations=guarded");
+console.log("HTTP capabilities: read endpoints and guarded paper mutations; MCP is a separate read-only interface.");
 
 function readArgValue(name: string): string | undefined {
   const index = args.indexOf(name);
