@@ -586,3 +586,18 @@ test("run budget prevents execution after daily limit", async () => {
   assert.equal(second.failure?.code, "RUN_BUDGET_EXCEEDED");
   assert.equal(runner.calls.length, 1);
 });
+
+for (const transport of [
+  { failureReason: "stdout_limit" }, { failureReason: "stderr_limit" },
+  { failureReason: "spawn_failed" }, { failureReason: "process_error" },
+  { failureReason: "timeout" }, { termination: "unconfirmed" },
+  { terminationRequestFailed: true }
+] satisfies Partial<ProcessRunResult>[]) {
+  test(`provider rejects bounded transport failure ${JSON.stringify(transport)} before parsing valid JSON`, async () => {
+    const result = await provider(new FakeRunner({ exitCode: 0, stdout: validDecisionJson,
+      stderr: "private fixture diagnostic", timedOut: false, ...transport })).decide(packet());
+    assert.equal(result.decision, null);
+    assert.equal(result.failure?.code, "AI_DECISION_FAILED");
+    assert.equal(result.failure?.stderr, undefined);
+  });
+}

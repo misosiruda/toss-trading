@@ -121,6 +121,12 @@ export class CodexCliDecisionProvider {
       }
     );
 
+    if (result.termination === "unconfirmed" || result.terminationRequestFailed || result.failureReason) {
+      const reason = result.termination === "unconfirmed" ? "termination_unconfirmed"
+        : result.terminationRequestFailed ? "termination_request_failed" : result.failureReason!;
+      return failure(command, reason, "");
+    }
+
     if (result.timedOut) {
       return failure(command, "timeout", result.stderr);
     }
