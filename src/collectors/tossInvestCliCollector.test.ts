@@ -147,3 +147,19 @@ test("invalid JSON returns degraded source status", async () => {
   assert.equal(result.status, "degraded");
   assert.equal(result.error?.code, "INVALID_JSON");
 });
+
+for (const transport of [
+  { failureReason: "stdout_limit" }, { failureReason: "stderr_limit" },
+  { failureReason: "spawn_failed" }, { failureReason: "process_error" },
+  { failureReason: "timeout" }, { termination: "unconfirmed" },
+  { terminationRequestFailed: true }
+] satisfies Partial<ProcessRunResult>[]) {
+  test(`collector rejects bounded transport failure ${JSON.stringify(transport)} before parsing valid JSON`, async () => {
+    const result = await collector(new FakeRunner({ exitCode: 0, stdout: '{"ok":true}',
+      stderr: "private fixture diagnostic", timedOut: false, ...transport })).collect({ commandKey: "market.ranking" });
+    assert.equal(result.status, "degraded");
+    assert.equal(result.data, null);
+    assert.equal(result.error?.code, transport.failureReason === "timeout" ? "COMMAND_TIMEOUT" : "COMMAND_FAILED");
+    assert.equal(result.error?.stderr, undefined);
+  });
+}
